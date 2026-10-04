@@ -1,0 +1,106 @@
+name: Release Windows installer
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing v<version> tag to build and publish'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Signed NSIS release
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      VERIFY_TAG_AT_HEAD: 'true'
+      TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: '1.98.0'
+          components: rustfmt, clippy
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Decide whether this push should publish a release
+        id: release_decision
+        run: node scripts/release-main.mjs
+
+      - name: Verify release before signing and publishing
+        if: steps.release_decision.outputs.should_release == 'true'
+        run: |
+          node --test scripts/release-config.test.mjs
+          npm run check
+
+      - name: Create the immutable version tag for a main push
+        if: steps.release_decision.outputs.should_release == 'true' && github.event_name == 'push' && github.ref_name == 'main'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag '${{ steps.release_decision.outputs.release_tag }}'
+          git push origin 'refs/tags/${{ steps.release_decision.outputs.release_tag }}'
+
+      - name: Select the validated release tag
+        if: steps.release_decision.outputs.should_release == 'true'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_TAG=${{ steps.release_decision.outputs.release_tag }}"
+
+      - name: Validate version and release tag
+        if: steps.release_decision.outputs.should_release == 'true'
+        run: node scripts/release-guard.mjs
+
+      - name: Generate signed updater configuration
+        if: steps.release_decision.outputs.should_release == 'true'
+        run: node scripts/release-config.mjs
+
+      - name: Build and publish NSIS updater artifacts
+        if: steps.release_decision.outputs.should_release == 'true'
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # action-v0.6.2
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: GitLab Desktop ${{ env.RELEASE_TAG }}
+          releaseBody: '署名済み Windows NSIS インストーラーと自動更新メタデータです。'
+          releaseDraft: false
+          prerelease: false
+          projectPath: .
+          args: --config src-tauri/tauri.release.conf.json
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          uploadUpdaterSignatures: true
