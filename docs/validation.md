@@ -1,5 +1,19 @@
 # 検証結果
 
+## 入力保護と製品品質の強化（v0.2.0 / 2026-10-04）
+
+- `npm run check`成功。フロントエンド162件、リリース設定3件、Rust54件、合計219件の通常テスト。lint / design guard / TypeScript / production build / Rust fmt / clippyが成功。既存Fast Refresh warning 6件、JSサイズwarningは残っている。
+- `npm audit --omit=dev`で、本番JavaScript依存に報告済みの脆弱性0件。Rustや全依存の安全性を保証する検査ではない。
+- schema 1から2への移行、未来schemaでのファイル非改変、アカウント別未送信コメントと結果不明記録、再起動復元、投稿前保存、成功時の本文・記録のatomic削除、中断と接続切替の競合、古い応答・UUID・二重確認をfixtureで検証。
+- 差分1万行、全文2001行、議論101件、議論内ノート200件のテストで、一度のDOM描画件数と最終ページ到達を確認。ネットワーク性能や実機のp95ではない。
+- GitLab.com公開プロジェクト検索の実通信が成功。公開MR匿名取得は401 `AUTH_REQUIRED`で失敗したため、取得成功や認証付きレビュー完了として数えていない。
+- Windows資格情報ストアへ専用の架空値を一時保存・取得・削除する明示テスト成功。glab認証検査は期限切れOAuthを秘密値を出さず拒否した。有効なGitLab.com認証の実通信は未確認。
+- ローカル署名付きNSIS build成功。インストーラー4,531,229バイト、SHA256 `55ABE5128D76ECA9C9E52748AD79B42D6BF7C778E0828AE5E74D65DF217641CA`。Rustで公開鍵との署名一致、内容1バイト改変で拒否を確認。公開CI配布物とは別のローカルbuildの記録。
+- [Windows CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184795)と[署名付きRelease](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184764)が成功。タグ`v0.2.0`はソース`398862fbd013e789da19766b42865ce6a170af5d`を指す。配布処理は9分26秒で完了。
+- 公開[インストーラー](https://github.com/ota-takeru/gitlab-desktop/releases/download/v0.2.0/GitLab.Desktop_0.2.0_x64-setup.exe)を匿名ダウンロード。4,538,262バイト、SHA256 `16A8E1C002DBED15505BED69A7CBD550EA382FE0483495F391237AD16FDE36BB`。対応する444バイトの署名をRustで検証し、1バイト改変の拒否も成功した。
+- 公開latest endpointの`latest.json`（1429バイト）がversion `0.2.0`を返し、`windows-x86_64`と`windows-x86_64-nsis`の両方で上記インストーラーURLと署名が一致した。公開後のローカルbundleにはCI配布ファイルを置いて再検証したため、そこにあるファイルのhashは公開版と同じ。
+- Computer Useは使用していない。新しい実画面、ネイティブ終了イベント、インストール・旧版からの更新と再起動は未確認。確認対象と残る項目は[製品品質の検証状況](product-readiness.md)にまとめた。
+
 ## glab保存済み認証の取り込み（v0.1.2 / 2026-10-04）
 
 Windows x64 / glab 1.107.0。接続画面の明示操作からPATまたはOAuthアクセストークンをRustで取り込む経路を追加した。

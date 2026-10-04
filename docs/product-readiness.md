@@ -24,6 +24,7 @@
 | GitLab.com公開プロジェクト | 明示した実通信テスト成功 |
 | glab保存済み認証の検査 | 期限切れOAuthを秘密値を出さず拒否する実環境テスト成功 |
 | Windows資格情報ストア | 専用の架空値を一時保存・読出し・削除する実機テスト成功 |
+| 公開CI・配布 | [Windows CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184795)と[署名付き配布](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184764)成功。匿名downloadしたNSISの署名一致・改ざん拒否、latest manifestのversion / URL / signature一致を確認 |
 
 ローカルHTTP fixtureとコンポーネントテストで、アカウント分離、再起動復元、遅い保存と削除の順序、認証失効、ログアウト後の遅延応答、結果不明の永続化、UUID一致による解除、二重解除、保存失敗時の保持、終了前flush、終了リスナー登録失敗、差分と議論の描画上限を検証しています。これは実サーバーへの投稿試験と区別します。
 
