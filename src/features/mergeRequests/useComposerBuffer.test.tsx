@@ -81,13 +81,14 @@ describe('useComposerBuffer', () => {
 
   it('refuses a 101st nonempty buffer instead of evicting an existing draft', () => {
     render(<AutoUpdateSafetyProvider>{Array.from({ length: 101 }, (_, index) => <Composer key={index} bufferKey={`buffer-${index}`} label={`body-${index}`} />)}</AutoUpdateSafetyProvider>)
+    const textboxes = screen.getAllByRole('textbox')
     for (let index = 0; index < 100; index += 1) {
-      fireEvent.change(screen.getByRole('textbox', { name: `body-${index}` }), { target: { value: `draft-${index}` } })
+      fireEvent.change(textboxes[index], { target: { value: `draft-${index}` } })
     }
-    fireEvent.change(screen.getByRole('textbox', { name: 'body-100' }), { target: { value: 'must-not-evict' } })
+    fireEvent.change(textboxes[100], { target: { value: 'must-not-evict' } })
 
-    expect(screen.getByRole('textbox', { name: 'body-100' })).toHaveValue('')
-    expect(screen.getByRole('textbox', { name: 'body-0' })).toHaveValue('draft-0')
+    expect(textboxes[100]).toHaveValue('')
+    expect(textboxes[0]).toHaveValue('draft-0')
     expect(screen.getByText(/100件まで/)).toBeInTheDocument()
   })
 })
