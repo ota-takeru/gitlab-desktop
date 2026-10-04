@@ -54,6 +54,20 @@ export async function connectGitLab(input: ConnectGitLabInput): Promise<GitLabSe
   }
 }
 
+/**
+ * Imports a credential that glab already keeps for the requested GitLab
+ * origin. The credential itself never crosses into the frontend; Rust reads
+ * it and returns only the normal, typed session DTO.
+ */
+export async function connectGitLabFromGlab(url: string): Promise<GitLabSession> {
+  ensureDesktop()
+  try {
+    return await invoke<GitLabSession>('connect_gitlab_from_glab', { url })
+  } catch (error) {
+    throw normalizeGitLabError(error)
+  }
+}
+
 export async function restoreGitLabSession(): Promise<GitLabSession | null> {
   ensureDesktop()
   try {

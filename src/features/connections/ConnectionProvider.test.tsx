@@ -62,6 +62,10 @@ function mockDefaultCommands() {
       const url = args?.input?.url ?? gitlabComSession.instanceUrl
       return Promise.resolve({ ...gitlabComSession, instanceUrl: url })
     }
+    if (command === 'connect_gitlab_from_glab') {
+      const url = (args as { url?: string } | undefined)?.url ?? gitlabComSession.instanceUrl
+      return Promise.resolve({ ...gitlabComSession, instanceUrl: url })
+    }
     if (command === 'disconnect_gitlab') return Promise.resolve(undefined)
     throw new Error(`Unexpected IPC command: ${command}`)
   })
@@ -178,6 +182,47 @@ describe('GitLab connection IPC and lifecycle', () => {
     await waitFor(() => expect(screen.getByText('トークンを確認してください。')).toBeInTheDocument())
     expect(screen.getByLabelText('Personal Access Token')).toHaveValue('')
     expect(screen.queryByDisplayValue('fixture-token')).not.toBeInTheDocument()
+  })
+
+  it('connects with glab credentials using only the origin URL', async () => {
+    renderConnectionView()
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
+    fireEvent.change(screen.getByLabelText('GitLab URL'), { target: { value: 'https://gitlab.example.com/gitlab' } })
+    fireEvent.click(screen.getByRole('button', { name: 'glabの認証情報で接続' }))
+
+    await waitFor(() => expect(screen.getByText('https://gitlab.example.com/gitlab')).toBeInTheDocument())
+    expect(invokeMock).toHaveBeenCalledWith('connect_gitlab_from_glab', {
+      url: 'https://gitlab.example.com/gitlab',
+    })
+    expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab')).toBe(false)
+    expect(screen.queryByDisplayValue('fixture-token')).not.toBeInTheDocument()
+  })
+
+  it('shows a redacted glab error while leaving manual PAT fallback available', async () => {
+    const glabError = 'glabの認証情報を読み取れませんでした。'
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(null)
+      if (command === 'connect_gitlab_from_glab') return Promise.reject({ code: 'AUTH_REQUIRED', message: glabError })
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+
+    renderConnectionView()
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
+    fireEvent.change(screen.getByLabelText('Personal Access Token'), { target: { value: 'fixture-token' } })
+    fireEvent.click(screen.getByRole('button', { name: 'glabの認証情報で接続' }))
+
+    await waitFor(() => expect(screen.getByText(glabError)).toBeInTheDocument())
+    expect(screen.getByLabelText('Personal Access Token')).toHaveValue('')
+    expect(screen.getByRole('button', { name: '接続する' })).toBeEnabled()
+  })
+
+  it('disables glab import in the browser preview', async () => {
+    setTauriEnvironment(false)
+    renderConnectionView()
+
+    const glabButton = screen.getByRole('button', { name: 'glabの認証情報で接続' })
+    expect(glabButton).toBeDisabled()
+    expect(invokeMock).not.toHaveBeenCalled()
   })
 
   it('clears preferences scoped to the disconnected account', async () => {

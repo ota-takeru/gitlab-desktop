@@ -1,12 +1,14 @@
 # GitLab Desktop
 
-Windows向けの個人用GitLab APIクライアントです。Tauri 2 / Rust / React / TypeScript / MUIを使用し、GitLab.comとSelf-ManagedへRustから直接接続します。glabやGitLabサイトの埋め込みには依存しません。
+Windows向けの個人用GitLab APIクライアントです。Tauri 2 / Rust / React / TypeScript / MUIを使用し、GitLab.comとSelf-ManagedへRustから直接接続します。通常の接続・通信はglabやGitLabサイトの埋め込みに依存しません。
 
 ソースと配布物: [GitHub](https://github.com/ota-takeru/gitlab-desktop) / [Releases](https://github.com/ota-takeru/gitlab-desktop/releases)。
 
 ## 使い方と実装範囲
 
 ReleasesのWindows NSISインストーラーから起動し、「接続設定」で `https://gitlab.com` または社内GitLabのHTTPS URLとPersonal Access Tokenを入力します。サブパス付きURLに対応しています。従来型PATの読み取りには `read_api`、レビュー投稿には `api` scopeが必要です。トークンはWindows資格情報ストアへ保存し、読出しで画面へ返しません。
+
+glabで対象GitLabへログイン済みなら、接続画面の「glabの認証情報で接続」を明示的に選んでPAT入力を省略できます。この操作ではRustが接続URLのauthorityと一致する`glab`保存済み認証だけを一度読み取り、PATまたはOAuthアクセストークンを接続確認と`/user`確認の後にWindows資格情報ストアへコピーします。OAuthの期限は未来のRFC3339値だけを受け付け、refresh tokenは取り込みません。glabのログイン・refreshやグローバル設定変更は行わず、取り込み後のGitLab API通信はすべてRustから直接行います。手動PAT接続も引き続き利用できます。
 
 - プロジェクト検索、参加中／閲覧可能・アーカイブ条件、固定・最近使った項目。
 - 現在／過去のMRのタイトル・説明検索、状態・プロジェクト・レビュー担当等の条件、ページング。
@@ -18,7 +20,7 @@ ReleasesのWindows NSISインストーラーから起動し、「接続設定」
 
 投稿は自動再送しません。結果不明時はGitLab上で確認するまで再送を止めます。公開と承認は別操作で、選択していないWeb側下書きを一括公開しません。コミット別閲覧とMR全体のコメント位置は区別します。
 
-証明書検証は常に有効です。社内CAはWindowsの信頼ストア、通信は環境のプロキシ設定を使用します。OAuth、PAC、NTLM、mTLSは現時点の対応対象に含めません。Issue、Pipeline、マージ、Suggestion適用、添付、ローカル全文検索、複数接続の同時表示は後続の設計です。Self-Managed実機との互換性と認証付き実投稿は接続後に確認する必要があります。詳細は[全体設計](docs/architecture.md)を参照してください。
+証明書検証は常に有効です。社内CAはWindowsの信頼ストア、通信は環境のプロキシ設定を使用します。アプリ自身のOAuthログイン・自動refresh、PAC、NTLM、mTLSは現時点の対応対象に含めません。明示的なglab取り込みでのOAuthアクセストークン利用とは区別してください。Issue、Pipeline、マージ、Suggestion適用、添付、ローカル全文検索、複数接続の同時表示は後続の設計です。Self-Managed実機との互換性と認証付き実投稿は接続後に確認する必要があります。詳細は[全体設計](docs/architecture.md)を参照してください。
 
 ## 開発環境
 

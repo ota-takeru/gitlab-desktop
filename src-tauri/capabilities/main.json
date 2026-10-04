@@ -3,5 +3,5 @@
   "identifier": "main",
   "description": "Only the local bundled main window may use the scoped GitLab session and signed updater.",
   "windows": ["main"],
-  "permissions": ["allow-runtime-info", "allow-connect-gitlab", "allow-restore-session", "allow-disconnect-gitlab", "allow-query-gitlab", "allow-mutate-gitlab", "allow-clear-gitlab-cache", "allow-cancel-gitlab-request", "allow-open-gitlab-url", "allow-check-app-update", "allow-install-app-update"]
+  "permissions": ["allow-runtime-info", "allow-connect-gitlab", "allow-connect-gitlab-from-glab", "allow-restore-session", "allow-disconnect-gitlab", "allow-query-gitlab", "allow-mutate-gitlab", "allow-clear-gitlab-cache", "allow-cancel-gitlab-request", "allow-open-gitlab-url", "allow-check-app-update", "allow-install-app-update"]
 }

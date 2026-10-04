@@ -19,7 +19,7 @@ import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { useConnection } from './ConnectionProvider'
 
 export function ConnectionView({ compact = false }: { compact?: boolean }) {
-  const { connect, disconnect, error, restore, session, status } = useConnection()
+  const { connect, connectFromGlab, disconnect, error, restore, session, status } = useConnection()
   const { setUnsafe: setPatUnsafe } = useAutoUpdateSafety('pat-form')
   const [url, setUrl] = useState('https://gitlab.com')
   const [token, setToken] = useState('')
@@ -42,6 +42,23 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
     } finally {
       // The PAT is only a transient form value. Clear it regardless of the
       // result so failures cannot leave a secret in the DOM longer than needed.
+      setToken('')
+      setPatUnsafe(false)
+    }
+  }
+
+  const handleGlabConnect = async () => {
+    const normalizedUrl = url.trim().replace(/\/$/u, '')
+    if (!isHttpsUrl(normalizedUrl)) {
+      setValidation('GitLab URLはhttps://から始めてください。')
+      return
+    }
+    setValidation(null)
+    try {
+      await connectFromGlab(normalizedUrl)
+    } finally {
+      // Keep the manual PAT transient even when the glab lookup fails. This
+      // also removes the unsafe-update guard if the user entered a PAT first.
       setToken('')
       setPatUnsafe(false)
     }
@@ -121,6 +138,9 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
               type="password"
               value={token}
             />
+            <Typography color="text.secondary" variant="caption">
+              glabでログイン済みならトークン入力を省略できます。
+            </Typography>
             <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
               <Button disabled={status === 'checking'} onClick={() => void restore()} startIcon={<RefreshRoundedIcon />} variant="text">
                 保存済み接続を確認
@@ -129,6 +149,13 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
                 {status === 'checking' ? '接続中…' : '接続する'}
               </Button>
             </Stack>
+            <Button
+              disabled={status === 'checking' || status === 'unsupported'}
+              onClick={() => void handleGlabConnect()}
+              variant="outlined"
+            >
+              glabの認証情報で接続
+            </Button>
           </Stack>
         </Stack>
       </CardContent>

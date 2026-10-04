@@ -3,6 +3,7 @@ use tauri::Manager;
 
 mod dto;
 mod gitlab_api;
+mod glab;
 mod native;
 mod storage;
 mod updates;
@@ -17,6 +18,13 @@ async fn connect_gitlab(
     input: ConnectInput,
 ) -> Result<Session, AppError> {
     state.connect(input).await
+}
+#[tauri::command]
+async fn connect_gitlab_from_glab(
+    state: tauri::State<'_, NativeState>,
+    url: String,
+) -> Result<Session, AppError> {
+    state.connect_from_glab(url).await
 }
 #[tauri::command]
 async fn restore_session(
@@ -106,6 +114,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime_info,
             connect_gitlab,
+            connect_gitlab_from_glab,
             restore_session,
             disconnect_gitlab,
             query_gitlab,

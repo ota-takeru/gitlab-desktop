@@ -5,7 +5,7 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -20,6 +20,8 @@ struct SavedConnection {
     user: User,
     server_version: Option<String>,
     credential_key: String,
+    #[serde(default)]
+    bearer: bool,
 }
 
 pub struct LiveSession {
@@ -45,6 +47,7 @@ struct Inner {
 pub struct NativeState {
     inner: Arc<Mutex<Inner>>,
     lifecycle: AsyncMutex<()>,
+    directory: PathBuf,
 }
 
 fn cancelled() -> AppError {
@@ -105,7 +108,7 @@ fn credential_entry(key: &str) -> Result<keyring::Entry, AppError> {
     keyring::Entry::new("GitLabDesktop", key).map_err(|_| storage_error())
 }
 
-fn http_client(token: &str) -> Result<reqwest::Client, AppError> {
+fn credential_headers(token: &str, bearer: bool) -> Result<HeaderMap, AppError> {
     if token.is_empty() || token.len() > 4096 {
         return Err(AppError::new(
             "INVALID_INPUT",
@@ -113,10 +116,27 @@ fn http_client(token: &str) -> Result<reqwest::Client, AppError> {
         ));
     }
     let mut headers = HeaderMap::new();
-    let mut value = HeaderValue::from_str(token)
+    let header = if bearer {
+        format!("Bearer {token}")
+    } else {
+        token.into()
+    };
+    let mut value = HeaderValue::from_str(&header)
         .map_err(|_| AppError::new("INVALID_INPUT", "トークンの形式が正しくありません。"))?;
     value.set_sensitive(true);
-    headers.insert("PRIVATE-TOKEN", value);
+    headers.insert(
+        if bearer {
+            "Authorization"
+        } else {
+            "PRIVATE-TOKEN"
+        },
+        value,
+    );
+    Ok(headers)
+}
+
+fn http_client(token: &str, bearer: bool) -> Result<reqwest::Client, AppError> {
+    let headers = credential_headers(token, bearer)?;
     reqwest::Client::builder()
         .default_headers(headers)
         .redirect(reqwest::redirect::Policy::none())
@@ -230,6 +250,7 @@ impl NativeState {
                 store: Store::open(&directory.join("workspace.sqlite3"))?,
             })),
             lifecycle: AsyncMutex::new(()),
+            directory: directory.to_path_buf(),
         })
     }
 
@@ -259,8 +280,20 @@ impl NativeState {
 
     pub async fn connect(&self, input: ConnectInput) -> Result<Session, AppError> {
         let _lifecycle = self.lifecycle.lock().await;
+        self.connect_locked(input, false).await
+    }
+
+    pub async fn connect_from_glab(&self, url: String) -> Result<Session, AppError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let instance = normalize_instance(&url)?;
+        let token = crate::glab::read_token(&instance, &self.directory).await?;
+        // Bearer accepts both PAT and OAuth access tokens. No token enters IPC.
+        self.connect_locked(ConnectInput { url, token }, true).await
+    }
+
+    async fn connect_locked(&self, input: ConnectInput, bearer: bool) -> Result<Session, AppError> {
         let instance = normalize_instance(&input.url)?;
-        let client = http_client(&input.token)?;
+        let client = http_client(&input.token, bearer)?;
         let api = instance.join("api/v4/").map_err(|_| cancelled())?;
         let user = identify(&client, &api).await?;
         let version = small_json(&client, api.join("version").map_err(|_| cancelled())?)
@@ -272,6 +305,7 @@ impl NativeState {
             instance_url: instance.to_string(),
             user,
             server_version: version,
+            bearer,
         };
         let session = make_session(saved.clone(), client)?;
         let public = session.public.clone();
@@ -329,7 +363,7 @@ impl NativeState {
         })
         .await
         .map_err(|_| storage_error())??;
-        let client = http_client(&token)?;
+        let client = http_client(&token, saved.bearer)?;
         let instance = normalize_instance(&saved.instance_url)?;
         let api = instance.join("api/v4/").map_err(|_| cancelled())?;
         match identify(&client, &api).await {
@@ -719,6 +753,42 @@ mod tests {
     use std::io::{Read, Write};
 
     #[test]
+    fn imported_bearer_headers_are_sensitive_and_old_connections_remain_compatible() {
+        let headers = credential_headers("fake-token-only", true).unwrap();
+        assert_eq!(headers["Authorization"], "Bearer fake-token-only");
+        assert!(headers["Authorization"].is_sensitive());
+        assert!(!headers.contains_key("PRIVATE-TOKEN"));
+        let headers = credential_headers("fake-token-only", false).unwrap();
+        assert_eq!(headers["PRIVATE-TOKEN"], "fake-token-only");
+        assert!(headers["PRIVATE-TOKEN"].is_sensitive());
+        assert!(!headers.contains_key("Authorization"));
+        let saved: SavedConnection = serde_json::from_value(serde_json::json!({
+            "instanceUrl": "https://gitlab.com/", "user": { "id": "1", "name": "One", "username": "one" },
+            "serverVersion": null, "credentialKey": "fixture"
+        })).unwrap();
+        assert!(!saved.bearer);
+        let mut imported = saved;
+        imported.bearer = true;
+        let restored: SavedConnection =
+            serde_json::from_value(serde_json::to_value(imported).unwrap()).unwrap();
+        assert!(restored.bearer);
+    }
+
+    #[tokio::test]
+    #[ignore = "Explicit read-only GitLab.com authentication check with existing glab credentials"]
+    async fn imported_glab_token_authenticates_gitlab_com() {
+        let instance = normalize_instance("https://gitlab.com").unwrap();
+        let token = crate::glab::read_token(&instance, &std::env::temp_dir())
+            .await
+            .unwrap();
+        let client = http_client(&token, true).unwrap();
+        let user = identify(&client, &instance.join("api/v4/").unwrap())
+            .await
+            .unwrap();
+        assert!(!user.id.is_empty());
+    }
+
+    #[test]
     #[ignore = "Explicit Windows OS credential storage integration check"]
     fn windows_credentials_roundtrip() {
         let entry = credential_entry(&format!("fixture-{}", uuid::Uuid::new_v4())).unwrap();
@@ -740,6 +810,7 @@ mod tests {
             },
             server_version: None,
             credential_key: uuid::Uuid::new_v4().to_string(),
+            bearer: false,
         };
         let mut live = make_session(
             saved,
@@ -757,6 +828,7 @@ mod tests {
                 store: Store::memory(),
             })),
             lifecycle: AsyncMutex::new(()),
+            directory: std::env::temp_dir(),
         });
         (state, live)
     }

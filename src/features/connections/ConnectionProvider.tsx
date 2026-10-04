@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import {
   connectGitLab,
+  connectGitLabFromGlab,
   disconnectGitLab,
   isTauri,
   normalizeGitLabError,
@@ -18,6 +19,7 @@ interface ConnectionContextValue {
   status: ConnectionStatus
   error: GitLabCommandError | null
   connect: (input: ConnectGitLabInput) => Promise<GitLabSession | null>
+  connectFromGlab: (url: string) => Promise<GitLabSession | null>
   disconnect: () => Promise<void>
   restore: () => Promise<GitLabSession | null>
 }
@@ -78,7 +80,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     return () => globalThis.removeEventListener('gitlab-auth-required', handleAuthRequired)
   }, [session])
 
-  const connect = useCallback(async (input: ConnectGitLabInput) => {
+  const connectWith = useCallback(async (attempt: () => Promise<GitLabSession>) => {
     if (!isTauri()) {
       const unsupported = new Error('ブラウザプレビューではGitLab接続を利用できません。')
       setError(normalizeGitLabError(unsupported))
@@ -90,7 +92,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     setStatus('checking')
     setError(null)
     try {
-      const nextSession = await connectGitLab(input)
+      const nextSession = await attempt()
       if (operation !== operationRef.current) return null
       if (!isSessionShape(nextSession)) throw new Error('GitLab接続の応答が不正です。')
       setSession(nextSession)
@@ -105,6 +107,9 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       return null
     }
   }, [])
+
+  const connect = useCallback((input: ConnectGitLabInput) => connectWith(() => connectGitLab(input)), [connectWith])
+  const connectFromGlab = useCallback((url: string) => connectWith(() => connectGitLabFromGlab(url)), [connectWith])
 
   const disconnect = useCallback(async () => {
     const current = session
@@ -134,12 +139,13 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ConnectionContextValue>(() => ({
     connect,
+    connectFromGlab,
     disconnect,
     error,
     restore,
     session,
     status,
-  }), [connect, disconnect, error, restore, session, status])
+  }), [connect, connectFromGlab, disconnect, error, restore, session, status])
 
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>
 }

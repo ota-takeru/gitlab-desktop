@@ -1,5 +1,20 @@
 # 検証結果
 
+## glab保存済み認証の取り込み（v0.1.2 / 2026-10-04）
+
+Windows x64 / glab 1.107.0。接続画面の明示操作からPATまたはOAuthアクセストークンをRustで取り込む経路を追加した。
+
+- `npm run check`成功。最終修正後の`npm run native:check`も成功。フロントエンド101件、リリーススクリプト3件、Rust34件の通常テスト、lint、design guard、TypeScript/Vite、fmt / Clippyを含む。
+- IPCがURLだけを送ること、取り込み成功・失敗、手動PATへの復帰、ブラウザープレビューでの無効化をUIテストで確認。
+- 対象hostだけの選択、root・別hostへのフォールバック拒否、HTTPS・port・大文字小文字を含むサブパスの一致、OAuth期限・不正設定の拒否をRustテストで確認。refresh tokenをアクセストークンとして使用しない。
+- 設定ファイルは1MiB・深さ32・10,000イベントに制限し、YAMLの重複キー・alias・anchor・tagを拒否。keyring用の一時設定には対象hostのメタデータだけを保存し、終了時に削除する。
+- 固定コマンド、環境変数の分離、子プロセス出力の上限とタイムアウト、秘密値を含まないエラー、Bearerヘッダーの秘匿属性、既存PAT接続メタデータとの互換性を確認。
+- 実glab 1.107.0のkeyring経路を隔離fixtureで確認。unique `.invalid` hostにfake tokenをWindows資格情報ストアへ登録し、対象hostだけの一時設定と固定CLIから一致する値を取得できた。fixture資格情報は削除し、不存在も確認。一時helperと設定を削除し、実認証・実設定は変更していない。
+- 旧形式の`api_host: host/subpath`は別`subfolder`が空の場合だけ照合できることを確認。相対`GLAB_CONFIG_DIR`は拒否し、相対XDGパスは候補から除く。
+- このPCの保存済みOAuthは期限切れ。修正前の読取は成功したが、本人確認APIは401を返した。修正後の明示実行テストでは期限切れを送信前に拒否し、glab側の認証更新を案内することを確認した。本物のトークンは表示・保存していない。
+
+初期JSは858.11 kB（gzip 264.45 kB）。既存のViteサイズ警告とFast Refreshのlint警告6件は残る。Computer Useは使用しておらず、今回追加したボタンの目視・実ウィンドウ操作は未検証。有効な実トークンによるGitLab.com本人確認・Self-Managed実機・OAuth自動refreshは検証済みとして扱わない。
+
 ## 実接続と配布の検証（2026-10-04）
 
 Windows x64。以下の初期基盤・モックの記録とは別に、RustのGitLab APIクライアント、資格情報・永続キャッシュ、署名付き更新を実装した。

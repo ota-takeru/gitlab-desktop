@@ -11,7 +11,7 @@
 - A personal Windows-first GitLab API client: Tauri 2 + Rust + React + TypeScript + MUI.
 - The target is Self-Managed GitLab. Project discovery and historical MR search are first-class requirements alongside MR review. Follow `docs/architecture.md` and `docs/ui-design.md` for the proposed next milestones; distinguish these plans from implemented functionality.
 - MR search covers titles and descriptions. The initial usable release includes comments, line comments, replies, own-comment edits/deletion, resolve/reopen, drafts and approve/unapprove where supported. Read-only delivery is an intermediate checkpoint.
-- Do not use glab or its authentication/configuration. Connect directly to GitLab APIs from Rust over the internal network.
+- Do not use glab for normal authentication, HTTP, login, refresh, or global configuration changes; connect directly to GitLab APIs from Rust over the internal network. The explicit user action 「glabの認証情報で接続」 is the only exception: Rust may perform the bounded, host-matched import described in `docs/architecture.md`, then stores the verified PAT/OAuth access token in the Windows credential store and uses Rust HTTP thereafter.
 - Persist fetched metadata, discussions and diffs with bounded retention by default. Prioritize responsiveness with many MRs, diff lines and discussions; measure network, cache and rendering costs separately.
 - Do not embed the GitLab website. Do not describe the application as fully native rendering or automatically faster.
 - The current milestone is an offline foundation. Label disconnected, loading, failed, empty and successful states truthfully; never substitute fabricated GitLab data.

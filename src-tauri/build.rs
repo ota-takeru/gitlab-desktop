@@ -3,6 +3,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "runtime_info",
             "connect_gitlab",
+            "connect_gitlab_from_glab",
             "restore_session",
             "disconnect_gitlab",
             "query_gitlab",
