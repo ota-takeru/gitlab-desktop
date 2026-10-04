@@ -6,7 +6,7 @@ import { readProjectVersions, validateReleaseTag } from './release-guard.mjs'
 
 test('project versions stay in lockstep', () => {
   const versions = readProjectVersions()
-  strictEqual(versions.package, '0.1.0')
+  validateReleaseTag(`v${versions.package}`, versions.package)
   strictEqual(versions.package, versions.cargo)
   strictEqual(versions.package, versions.tauri)
 })

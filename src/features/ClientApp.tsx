@@ -59,15 +59,20 @@ function SessionScopedWorkspace({ mode, onModeChange }: { mode: 'light' | 'dark'
     }
     previousSessionId.current = sessionKey
   }, [queryClient, sessionKey])
-  return <AutoUpdateSafetyProvider key={sessionKey ?? 'disconnected'}><SessionWorkspaceContents mode={mode} onModeChange={onModeChange} status={status} sessionKey={session ? `${session.instanceUrl}:${session.user.id}:${session.id}` : 'disconnected'} /></AutoUpdateSafetyProvider>
+  return <AutoUpdateSafetyProvider><SessionWorkspaceContents mode={mode} onModeChange={onModeChange} status={status} sessionKey={session ? `${session.instanceUrl}:${session.user.id}:${session.id}` : 'disconnected'} /></AutoUpdateSafetyProvider>
 }
 
 function SessionWorkspaceContents({ mode, onModeChange, sessionKey, status }: { mode: 'light' | 'dark'; onModeChange: () => void; sessionKey: string; status: string }) {
   const autoInstallAllowed = useAutoUpdateAllowed() && status !== 'checking'
-  return <ClientWorkspace autoInstallAllowed={autoInstallAllowed} key={sessionKey} mode={mode} onModeChange={onModeChange} />
+  // Updates belong to the application lifetime. Authentication expiry may reset
+  // the private workspace while a download is running, but must retain its guard.
+  return <Box sx={{ bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <Box sx={{ flexShrink: 0, ml: '224px', px: { md: 3, xs: 2 }, py: 1 }}><UpdatePanel autoInstallAllowed={autoInstallAllowed} compact /></Box>
+    <ClientWorkspace key={sessionKey} mode={mode} onModeChange={onModeChange} />
+  </Box>
 }
 
-function ClientWorkspace({ autoInstallAllowed, mode, onModeChange }: { autoInstallAllowed: boolean; mode: 'light' | 'dark'; onModeChange: () => void }) {
+function ClientWorkspace({ mode, onModeChange }: { mode: 'light' | 'dark'; onModeChange: () => void }) {
   const { session } = useConnection()
   const [location, setLocation] = useState(() => readClientLocation())
   const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null)
@@ -131,7 +136,7 @@ function ClientWorkspace({ autoInstallAllowed, mode, onModeChange }: { autoInsta
   const pageTitle = route === 'home' ? 'GitLab Desktop' : route === 'projects' ? 'Projects' : route === 'mrs' ? 'Merge requests' : route === 'mr' ? 'Merge request' : route === 'settings' ? '接続設定' : 'UI catalog'
 
   return (
-    <Box sx={{ bgcolor: 'background.default', display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ bgcolor: 'background.default', display: 'flex', flex: 1, minHeight: 0 }}>
       <Drawer
         slotProps={{ paper: { component: 'aside' } }}
         sx={{ flexShrink: 0, width: 224, '& .MuiDrawer-paper': { bgcolor: 'background.paper', borderColor: 'divider', boxSizing: 'border-box', width: 224 } }}
@@ -167,7 +172,6 @@ function ClientWorkspace({ autoInstallAllowed, mode, onModeChange }: { autoInsta
           <Typography color="text.secondary" variant="caption">{session ? session.instanceUrl : 'GitLab接続を設定してください'}</Typography>
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: { md: 3, xs: 2 }, py: { md: 2.5, xs: 2 } }}>
-          <Box sx={{ mb: 2, maxWidth: 1120, mx: 'auto' }}><UpdatePanel autoInstallAllowed={autoInstallAllowed} compact /></Box>
           {route === 'home' ? <ClientHome onPageChange={(page) => { if (page === 'merge-requests') navigate('mrs'); else navigate('projects') }} /> : null}
           {route === 'projects' ? <ProjectView key={session ? `${session.instanceUrl}:${session.user.id}` : 'anonymous'} onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
           {route === 'mrs' ? <MergeRequestList key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${location.raw}`} initialParams={location.params} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={location.params.projectId} projectName={location.params.projectName} /> : null}

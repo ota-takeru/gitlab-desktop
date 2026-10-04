@@ -6,6 +6,9 @@ import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Divider from '@mui/material/Divider'
+import Dialog from '@mui/material/Dialog'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -135,26 +138,49 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false }: Upd
 
   const copy = getCopy(state, inTauri)
   const isBusy = state.status === 'pending' || state.status === 'installing'
+  const installingDialog = state.status === 'installing' ? (
+    <Dialog
+      aria-labelledby="app-update-installing-title"
+      open
+      sx={{
+        '& .MuiDialog-paper': {
+          border: 1,
+          borderColor: 'divider',
+          boxShadow: 8,
+        },
+      }}
+    >
+      <DialogTitle id="app-update-installing-title">更新中…完了後再起動</DialogTitle>
+      <DialogContent sx={{ pt: 0 }}>
+        <Typography color="text.secondary" variant="body2">
+          インストールが完了するまで操作できません。完了後にアプリを再起動します。
+        </Typography>
+      </DialogContent>
+    </Dialog>
+  ) : null
 
   if (compact) {
-    return <Card component="section" aria-label="アプリの更新"><CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
-      <Stack spacing={0.5}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
-          <StatusPill label={copy.label} tone={copy.tone} />
-          <Typography aria-live="polite" sx={{ flex: 1 }} variant="caption">{copy.title}{availableVersion ? ` · v${availableVersion}` : ''}</Typography>
-          {inTauri ? <Button disabled={isBusy} onClick={() => void check()} size="small">更新を確認</Button> : null}
-          {state.status === 'available' ? <>
-            <Button disabled={isBusy || !autoInstallAllowed} onClick={() => void install()} size="small" variant="contained">更新をインストール</Button>
-            {autoInstallAllowed && !autoInstallDeferred ? <Button onClick={() => { setAutoInstallDeferred(true); setAutoInstallSeconds(null) }} size="small">後で</Button> : null}
-          </> : null}
+    return <>
+      <Card component="section" aria-label="アプリの更新"><CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+        <Stack spacing={0.5}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+            <StatusPill label={copy.label} tone={copy.tone} />
+            <Typography aria-live="polite" sx={{ flex: 1 }} variant="caption">{copy.title}{availableVersion ? ` · v${availableVersion}` : ''}</Typography>
+            {inTauri ? <Button disabled={isBusy} onClick={() => void check()} size="small">更新を確認</Button> : null}
+            {state.status === 'available' ? <>
+              <Button disabled={isBusy || !autoInstallAllowed} onClick={() => void install()} size="small" variant="contained">更新をインストール</Button>
+              {autoInstallAllowed && !autoInstallDeferred ? <Button onClick={() => { setAutoInstallDeferred(true); setAutoInstallSeconds(null) }} size="small">後で</Button> : null}
+            </> : null}
+          </Stack>
+          {state.status === 'error' || state.status === 'installing' ? <Typography color="text.secondary" variant="caption">{copy.message}</Typography> : null}
+          {state.status === 'available' ? <Typography color="text.secondary" variant="caption">{!autoInstallAllowed ? '入力の保存または破棄と送信処理の確認が済むまで、更新を待機しています。' : autoInstallDeferred ? '自動更新を延期しました。' : `操作のない安全な状態が${formatCountdown(autoInstallSeconds ?? 120)}続くと自動で更新します。`}</Typography> : null}
         </Stack>
-        {state.status === 'error' || state.status === 'installing' ? <Typography color="text.secondary" variant="caption">{copy.message}</Typography> : null}
-        {state.status === 'available' ? <Typography color="text.secondary" variant="caption">{!autoInstallAllowed ? '入力の保存または破棄と送信処理の確認が済むまで、更新を待機しています。' : autoInstallDeferred ? '自動更新を延期しました。' : `操作のない安全な状態が${formatCountdown(autoInstallSeconds ?? 120)}続くと自動で更新します。`}</Typography> : null}
-      </Stack>
-    </CardContent></Card>
+      </CardContent></Card>
+      {installingDialog}
+    </>
   }
 
-  return (
+  return <>
     <Card component="section" aria-labelledby="app-update-title">
       <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
         <Stack spacing={2.25}>
@@ -241,7 +267,8 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false }: Upd
         </Stack>
       </CardContent>
     </Card>
-  )
+    {installingDialog}
+  </>
 }
 
 function formatCountdown(seconds: number) {

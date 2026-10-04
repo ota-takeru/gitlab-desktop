@@ -24,10 +24,20 @@ function setTauriEnvironment(enabled: boolean) {
   Reflect.deleteProperty(window, '__TAURI__')
 }
 
-function renderPanel(autoInstallAllowed = false) {
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function renderPanel(autoInstallAllowed = false, compact = false, withBackgroundInput = false) {
   return render(
     <ThemeProvider theme={createAppTheme('dark')}>
-      <UpdatePanel autoInstallAllowed={autoInstallAllowed} />
+      {withBackgroundInput ? <><input aria-label="background input" /><UpdatePanel autoInstallAllowed={autoInstallAllowed} compact={compact} /></> : <UpdatePanel autoInstallAllowed={autoInstallAllowed} compact={compact} />}
     </ThemeProvider>,
   )
 }
@@ -111,5 +121,45 @@ describe('UpdatePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '更新をインストール' }))
     await act(async () => { await vi.advanceTimersByTimeAsync(AUTO_INSTALL_DELAY_MS + 1000) })
     expect(invokeMock).not.toHaveBeenCalledWith('install_app_update')
+  })
+
+  it('blocks background interaction until an install finishes', async () => {
+    const install = createDeferred<void>()
+    invokeMock.mockImplementation((command: string) => (
+      command === 'check_app_update'
+        ? Promise.resolve({ configured: true, version: '0.2.0', notes: null })
+        : install.promise
+    ))
+    renderPanel(true, false, true)
+
+    fireEvent.click(await screen.findByRole('button', { name: '更新をインストール' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('更新中…完了後再起動')
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.getByRole('dialog')).toBe(dialog)
+    expect(screen.queryByRole('textbox', { name: 'background input' })).not.toBeInTheDocument()
+  })
+
+  it('closes the install guard after a compact install failure and restores background access', async () => {
+    const install = createDeferred<void>()
+    invokeMock.mockImplementation((command: string) => (
+      command === 'check_app_update'
+        ? Promise.resolve({ configured: true, version: '0.2.0', notes: null })
+        : install.promise
+    ))
+    renderPanel(true, true, true)
+
+    fireEvent.click(await screen.findByRole('button', { name: '更新をインストール' }))
+    expect(await screen.findByRole('dialog')).toHaveTextContent('更新中…完了後再起動')
+
+    await act(async () => {
+      install.reject(new Error('download failed'))
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('textbox', { name: 'background input' })).toBeInTheDocument()
+    expect(screen.getByText('download failed')).toBeInTheDocument()
   })
 })
