@@ -12,6 +12,8 @@ Windows x64 / glab 1.107.0。接続画面の明示操作からPATまたはOAuth�
 - 実glab 1.107.0のkeyring経路を隔離fixtureで確認。unique `.invalid` hostにfake tokenをWindows資格情報ストアへ登録し、対象hostだけの一時設定と固定CLIから一致する値を取得できた。fixture資格情報は削除し、不存在も確認。一時helperと設定を削除し、実認証・実設定は変更していない。
 - 旧形式の`api_host: host/subpath`は別`subfolder`が空の場合だけ照合できることを確認。相対`GLAB_CONFIG_DIR`は拒否し、相対XDGパスは候補から除く。
 - このPCの保存済みOAuthは期限切れ。修正前の読取は成功したが、本人確認APIは401を返した。修正後の明示実行テストでは期限切れを送信前に拒否し、glab側の認証更新を案内することを確認した。本物のトークンは表示・保存していない。
+- ローカルの署名付きNSIS生成と署名検証・改ざん拒否テストに成功。[GitHub CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37199393484)と[自動リリース](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37199393466)も成功し、v0.1.2タグと[公開リリース](https://github.com/ota-takeru/gitlab-desktop/releases/tag/v0.1.2)を自動生成した。
+- 公開先へ認証なしでアクセスし、NSIS（4,449,910 bytes）、署名、最新`latest.json`を取得。両Windows x64 platformのURL・署名・version一致、公開NSISの署名検証・改ざん拒否を確認。SHA-256: `3204491d67f1621fa4ea46eb27c9d215f03035b280452b1b5a6c9f18faae905c`。
 
 初期JSは858.11 kB（gzip 264.45 kB）。既存のViteサイズ警告とFast Refreshのlint警告6件は残る。Computer Useは使用しておらず、今回追加したボタンの目視・実ウィンドウ操作は未検証。有効な実トークンによるGitLab.com本人確認・Self-Managed実機・OAuth自動refreshは検証済みとして扱わない。
 
