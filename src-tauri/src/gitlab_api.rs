@@ -375,7 +375,11 @@ pub async fn mutate(
         }
     }
 
-    send_mutation(client, method, url, body).await
+    let allows_empty = matches!(
+        action,
+        Action::DeleteNote { .. } | Action::DeleteDraft { .. } | Action::PublishDraft { .. }
+    );
+    send_mutation(client, method, url, body, allows_empty).await
 }
 
 fn action_project_and_iid(action: &Action) -> (&str, &str) {
@@ -743,6 +747,7 @@ async fn send_mutation(
     method: Method,
     url: Url,
     body: Value,
+    allows_empty: bool,
 ) -> Result<(), AppError> {
     let request = client.request(method, url);
     let response = if body.is_null() {
@@ -751,10 +756,35 @@ async fn send_mutation(
         request.json(&body).send().await
     };
     match response {
-        Ok(response) if response.status().is_success() => Ok(()),
+        Ok(response) if response.status().is_success() => {
+            let status = response.status();
+            if status == StatusCode::NO_CONTENT && allows_empty {
+                return Ok(());
+            }
+            // A proxy login page, malformed/truncated body, or asynchronous
+            // acceptance is not confirmation that this write completed.
+            if !matches!(status, StatusCode::OK | StatusCode::CREATED) {
+                return Err(unknown_mutation_result());
+            }
+            let bytes = read_limited(response, 2 * 1024 * 1024)
+                .await
+                .map_err(|_| unknown_mutation_result())?;
+            let value: Value =
+                serde_json::from_slice(&bytes).map_err(|_| unknown_mutation_result())?;
+            let identified_object = value.is_object()
+                && value.get("id").is_some_and(|id| {
+                    id.as_u64().is_some_and(|id| id > 0)
+                        || id.as_str().is_some_and(|id| !id.is_empty())
+                });
+            if identified_object {
+                Ok(())
+            } else {
+                Err(unknown_mutation_result())
+            }
+        }
         Ok(response) => {
             let status = response.status();
-            if is_recoverable_server_error(status) {
+            if is_recoverable_server_error(status) || status == StatusCode::REQUEST_TIMEOUT {
                 Err(AppError::new(
                     "UNKNOWN_OUTCOME",
                     "GitLab did not confirm the result of the change.",
@@ -772,6 +802,13 @@ async fn send_mutation(
             },
         )),
     }
+}
+
+fn unknown_mutation_result() -> AppError {
+    AppError::new(
+        "UNKNOWN_OUTCOME",
+        "GitLab did not confirm the result of the change. Verify it before sending again.",
+    )
 }
 
 async fn read_limited(mut response: Response, max_bytes: usize) -> Result<Vec<u8>, AppError> {
@@ -2022,5 +2059,83 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.code, "UNKNOWN_OUTCOME");
         assert_eq!(fixture.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ambiguous_success_and_timeout_never_confirm_or_retry_a_write() {
+        for (status, body) in [
+            ("200 OK", "<html>login</html>"),
+            ("200 OK", "{}"),
+            ("200 OK", "{\"id\":"),
+            ("200 OK", "[]"),
+            ("202 Accepted", "{\"id\":1}"),
+            ("204 No Content", ""),
+            ("408 Request Timeout", ""),
+        ] {
+            let fixture = Fixture::new(vec![response(status, body, "")]);
+            let error = runtime()
+                .block_on(send_mutation(
+                    &Client::new(),
+                    Method::POST,
+                    fixture.url(),
+                    json!({"body":"fixture"}),
+                    false,
+                ))
+                .unwrap_err();
+            assert_eq!(error.code, "UNKNOWN_OUTCOME", "{status}");
+            assert_eq!(fixture.requests.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[test]
+    fn write_confirmation_requires_identified_json_or_expected_no_content() {
+        for (status, body, allows_empty) in [
+            ("201 Created", "{\"id\":42}", false),
+            ("200 OK", "{\"id\":\"discussion-hash\"}", false),
+            ("204 No Content", "", true),
+        ] {
+            let fixture = Fixture::new(vec![response(status, body, "")]);
+            runtime()
+                .block_on(send_mutation(
+                    &Client::new(),
+                    Method::POST,
+                    fixture.url(),
+                    Value::Null,
+                    allows_empty,
+                ))
+                .unwrap();
+            assert_eq!(fixture.requests.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[test]
+    #[ignore = "Explicit read-only GitLab.com MR check; public endpoints must permit anonymous access"]
+    fn gitlab_com_public_merge_request_review() {
+        runtime().block_on(async {
+            let client = Client::builder()
+                .https_only(true)
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(20))
+                .build().unwrap();
+            let api = Url::parse("https://gitlab.com/api/v4/").unwrap();
+            let project_id = "278964".to_owned();
+            let started = std::time::Instant::now();
+            let list = fetch(&client, &api, &Query::Mrs {
+                search: String::new(), state: MergeRequestState::Merged,
+                project_id: Some(project_id.clone()), reviewer_id: None, author_id: None,
+                updated_after: None, updated_before: None, page: 1,
+            }).await.unwrap();
+            let rows = list.data.as_array().unwrap();
+            let iid = rows.first().unwrap()["iid"].as_str().unwrap().to_owned();
+            let mr = fetch(&client, &api, &Query::Mr {project_id: project_id.clone(), iid: iid.clone()}).await.unwrap();
+            assert_eq!(mr.data["iid"].as_str(), Some(iid.as_str()));
+            let head_sha = mr.data["diffRefs"]["headSha"].as_str().unwrap().to_owned();
+            let discussions = fetch(&client, &api, &Query::Discussions {project_id: project_id.clone(), iid: iid.clone(), page: 1}).await.unwrap();
+            let diffs = fetch(&client, &api, &Query::Diffs {project_id, iid, head_sha, page: 1}).await.unwrap();
+            assert!(discussions.data.is_array());
+            assert!(diffs.data.is_array());
+            println!("Public MR flow: {} list rows, {} discussions, {} files; network+normalization {} ms", rows.len(), discussions.data.as_array().unwrap().len(), diffs.data.as_array().unwrap().len(), started.elapsed().as_millis());
+        });
     }
 }

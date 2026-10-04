@@ -11,6 +11,9 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
 import Divider from '@mui/material/Divider'
+import Dialog from '@mui/material/Dialog'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
@@ -27,11 +30,14 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { HealthPanel } from '../components/HealthPanel'
 import { StatusPill } from '../components/StatusPill'
 import { UpdatePanel } from '../components/UpdatePanel'
+import { clearLocalDrafts } from '../lib/localDrafts'
 import type { MergeRequest, Project } from '../types/gitlab'
 import { ConnectionProvider, useConnection } from './connections/ConnectionProvider'
 import { ConnectionView } from './connections/ConnectionView'
 import { clearComposerBuffers, MergeRequestDetail } from './mergeRequests/MergeRequestDetail'
 import { clearGitLabCache } from '../lib/gitlab'
+import { clearComposerBufferStore, flushComposerBuffers } from './mergeRequests/useComposerBuffer'
+import { WindowCloseProtection } from '../components/WindowCloseProtection'
 import { MergeRequestList } from './mergeRequests/MergeRequestList'
 import { ProjectView } from './projects/ProjectView'
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed } from './shared/AutoUpdateSafety'
@@ -44,6 +50,15 @@ type ClientRoute = 'home' | 'projects' | 'mrs' | 'settings' | 'catalog' | 'mr'
 
 export function ClientApp({ mode, onModeChange }: { mode: 'light' | 'dark'; onModeChange: () => void }) {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } } }))
+  useEffect(() => {
+    const handleWorkspaceReset = () => clearComposerBuffers()
+    globalThis.addEventListener('gitlab-explicit-logout', handleWorkspaceReset)
+    globalThis.addEventListener('gitlab-account-replaced', handleWorkspaceReset)
+    return () => {
+      globalThis.removeEventListener('gitlab-explicit-logout', handleWorkspaceReset)
+      globalThis.removeEventListener('gitlab-account-replaced', handleWorkspaceReset)
+    }
+  }, [])
   return <QueryClientProvider client={queryClient}><ConnectionProvider><SessionScopedWorkspace mode={mode} onModeChange={onModeChange} /></ConnectionProvider></QueryClientProvider>
 }
 
@@ -66,7 +81,8 @@ function SessionWorkspaceContents({ mode, onModeChange, sessionKey, status }: { 
   const autoInstallAllowed = useAutoUpdateAllowed() && status !== 'checking'
   // Updates belong to the application lifetime. Authentication expiry may reset
   // the private workspace while a download is running, but must retain its guard.
-  return <Box sx={{ bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    return <Box sx={{ bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <WindowCloseProtection />
     <Box sx={{ flexShrink: 0, ml: '224px', px: { md: 3, xs: 2 }, py: 1 }}><UpdatePanel autoInstallAllowed={autoInstallAllowed} compact /></Box>
     <ClientWorkspace key={sessionKey} mode={mode} onModeChange={onModeChange} />
   </Box>
@@ -85,7 +101,6 @@ function ClientWorkspace({ mode, onModeChange }: { mode: 'light' | 'dark'; onMod
   }
 
   useEffect(() => () => {
-    clearComposerBuffers()
     clearGitLabMutationStates(session?.id)
   }, [session?.id])
 
@@ -215,16 +230,32 @@ function SettingsView() {
 
 function CacheSettings({ sessionId }: { sessionId: string | null }) {
   const [status, setStatus] = useState<string | null>(null)
+  const [discarding, setDiscarding] = useState(false)
   const clear = async () => {
     if (!sessionId) return
     try { await clearGitLabCache(sessionId); setStatus('アカウントのキャッシュを削除しました。') } catch (error) { setStatus(error instanceof Error ? error.message : 'キャッシュを削除できませんでした。') }
   }
-  const discardInputs = () => {
+  const discardInputs = async () => {
     if (!globalThis.confirm('アプリ内の未送信コメントをすべて破棄しますか？')) return
-    clearComposerBuffers()
-    setStatus('未送信コメントを破棄しました。')
+    setDiscarding(true)
+    try {
+      if (sessionId) {
+        const flushed = await flushComposerBuffers()
+        if (!flushed) {
+          setStatus('未送信コメントを保存できないため、入力を保持しています。')
+          return
+        }
+        await clearLocalDrafts(sessionId)
+      }
+      clearComposerBufferStore()
+      setStatus('未送信コメントを破棄しました。')
+    } catch {
+      setStatus('未送信コメントを破棄できませんでした。入力を保持しています。')
+    } finally {
+      setDiscarding(false)
+    }
   }
-  return <Paper component="section" sx={{ p: 2 }} variant="outlined"><Stack spacing={1}><Typography sx={{ fontWeight: 700 }} variant="body2">保存データ</Typography><Typography color="text.secondary" variant="body2">取得データはRust側のアカウント別キャッシュで管理されます。画面設定としてプロジェクトIDと検索条件だけを保存します。</Typography><Stack direction="row" spacing={1}><Button disabled={!sessionId} onClick={() => void clear()} size="small" variant="outlined">キャッシュを削除</Button><Button disabled={!sessionId} onClick={discardInputs} size="small" variant="outlined">未送信コメントをすべて破棄</Button></Stack>{status ? <Typography color="text.secondary" variant="caption">{status}</Typography> : null}</Stack></Paper>
+  return <Paper component="section" sx={{ p: 2 }} variant="outlined"><Dialog aria-labelledby="discard-inputs-title" open={discarding}><DialogTitle id="discard-inputs-title">未送信コメントを破棄中</DialogTitle><DialogContent><Typography variant="body2">保存待ちと削除が完了するまでお待ちください。</Typography></DialogContent></Dialog><Stack spacing={1}><Typography sx={{ fontWeight: 700 }} variant="body2">保存データ</Typography><Typography color="text.secondary" variant="body2">取得データはRust側のアカウント別キャッシュで管理されます。未送信コメントはこの端末のアプリ保存領域に保持し、GitLabの下書きとは別に管理します。</Typography><Stack direction="row" spacing={1}><Button disabled={!sessionId} onClick={() => void clear()} size="small" variant="outlined">キャッシュを削除</Button><Button disabled={discarding} onClick={() => void discardInputs()} size="small" variant="outlined">未送信コメントをすべて破棄</Button></Stack>{status ? <Typography color="text.secondary" variant="caption">{status}</Typography> : null}</Stack></Paper>
 }
 
 function MergeRequestRoute({ initialMergeRequest, onBack, onOpenProject, routeParams }: { initialMergeRequest: MergeRequest | null; onBack: () => void; onOpenProject: () => void; routeParams: Record<string, string> }) {

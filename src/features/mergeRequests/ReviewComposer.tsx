@@ -43,6 +43,8 @@ export function ReviewComposer({
 }: ReviewComposerProps) {
   const [kind, setKind] = useState<'comment' | 'draft'>('comment')
   const [thread, setThread] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -51,23 +53,31 @@ export function ReviewComposer({
 
   const submit = async (submitKind: 'comment' | 'draft') => {
     const trimmed = value.trim()
-    if (!trimmed || pending || disabled) return
-    const success = submitKind === 'draft'
-      ? await onSaveDraft(trimmed, targetPosition)
-      : await onSubmitComment(trimmed, thread || Boolean(replyDiscussionId), targetPosition)
-    if (success) onChange('')
+    if (!trimmed || pending || disabled || submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const success = submitKind === 'draft'
+        ? await onSaveDraft(trimmed, targetPosition)
+        : await onSubmitComment(trimmed, thread || Boolean(replyDiscussionId), targetPosition)
+      if (success) onChange('')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }
+  const controlsDisabled = disabled || pending || submitting
 
   return (
     <Paper component="section" aria-label="レビューコメント入力" sx={{ p: 1.5 }} variant="outlined">
       <Stack spacing={1.25}>
         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           <Typography sx={{ fontWeight: 700 }} variant="body2">{replyAuthor ? `${replyAuthor}に返信` : 'コメントを追加'}</Typography>
-          {replyDiscussionId ? <Chip label="スレッド返信" onDelete={onCancelReply} size="small" variant="outlined" /> : null}
-          {targetPosition ? <Chip label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={onClearPosition} size="small" variant="outlined" /> : null}
+          {replyDiscussionId ? <Chip disabled={controlsDisabled} label="スレッド返信" onDelete={onCancelReply} size="small" variant="outlined" /> : null}
+          {targetPosition ? <Chip disabled={controlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={onClearPosition} size="small" variant="outlined" /> : null}
         </Stack>
         <TextField
-          disabled={disabled || pending}
+          disabled={controlsDisabled}
           fullWidth
           inputRef={inputRef}
           label="コメント本文"
@@ -83,15 +93,15 @@ export function ReviewComposer({
           value={value}
         />
         <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
-          <ToggleButtonGroup exclusive onChange={(_, value: 'comment' | 'draft' | null) => { if (value) setKind(value) }} size="small" value={kind}>
+          <ToggleButtonGroup disabled={controlsDisabled} exclusive onChange={(_, value: 'comment' | 'draft' | null) => { if (value) setKind(value) }} size="small" value={kind}>
             <ToggleButton value="comment">今すぐコメント</ToggleButton>
             <ToggleButton value="draft">レビューに追加</ToggleButton>
           </ToggleButtonGroup>
-          {!replyDiscussionId && kind === 'comment' ? <FormControlLabel control={<Checkbox checked={thread} disabled={disabled || pending} onChange={(event) => setThread(event.target.checked)} size="small" />} label="解決可能なスレッドとして投稿" sx={{ mr: 0 }} /> : null}
+          {!replyDiscussionId && kind === 'comment' ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label="解決可能なスレッドとして投稿" sx={{ mr: 0 }} /> : null}
           <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
-            {replyDiscussionId ? <Button disabled={pending} onClick={onCancelReply} size="small">返信を取消</Button> : null}
-            <Button disabled={disabled || pending || !value.trim()} onClick={() => void submit(kind)} startIcon={kind === 'draft' ? <AddCommentRoundedIcon /> : <SendRoundedIcon />} variant="contained">
-              {pending ? '送信中…' : kind === 'draft' ? '下書きに追加' : 'コメントを投稿'}
+            {replyDiscussionId ? <Button disabled={controlsDisabled} onClick={onCancelReply} size="small">返信を取消</Button> : null}
+            <Button disabled={controlsDisabled || !value.trim()} onClick={() => void submit(kind)} startIcon={kind === 'draft' ? <AddCommentRoundedIcon /> : <SendRoundedIcon />} variant="contained">
+              {pending || submitting ? '送信中…' : kind === 'draft' ? '下書きに追加' : 'コメントを投稿'}
             </Button>
           </Stack>
         </Stack>

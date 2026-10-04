@@ -11,8 +11,13 @@ Working contract for the implementation. Credentials never return over IPC. The 
 - `mutate_gitlab({input:{sessionId,requestId,action}})` -> void
 - `clear_gitlab_cache({sessionId})` -> void
 - `open_gitlab_url({sessionId,url})` -> void (Rust validates registered instance)
+- `get_local_draft({sessionId,key})` -> {body,updatedAt}|null; `set_local_draft({sessionId,key,body})` -> void; `clear_local_drafts({sessionId})` -> void
+- `get_pending_operation({sessionId,projectId,iid})` -> {id,action,startedAt}|null; `acknowledge_pending_operation({sessionId,projectId,iid,receiptId})` -> void
+- `set_window_close_guard({unsafeToClose})` -> void; `close_app_window()` -> void. Listen to `app-close-blocked` before activating the guard; always flush pending local saves before explicit close.
 
 All objects camelCase. IDs are decimal strings. Discussion IDs are opaque hex strings.
+
+Fetched-cache removal preserves local drafts and pending operations. Explicit logout removes all private account data. Mutations persist a UUID receipt before writing, retain it on ambiguous outcomes, and refuse another write on that MR until exact-ID acknowledgement. Cancellation only preempts waiting/HTTP, never receipt finalization. BUSY refuses connection changes during mutation processing. Optional mutation `localDraftKey` links a flushed composer draft to atomic successful-write finalization; it is never used to delete a different account's draft.
 Session={id,instanceUrl,user:{id,username,name},serverVersion:string|null}
 Error={code,message,retryAfterMs?:number}; code includes AUTH_REQUIRED, FORBIDDEN, NOT_FOUND, NETWORK, TIMEOUT, RATE_LIMITED, INVALID_INPUT, STORAGE, UNSUPPORTED, TOO_LARGE, UNKNOWN_OUTCOME, CANCELLED.
 Snapshot={data:QueryData,fetchedAt:number UNIX milliseconds,source:'cache'|'network',nextPage:number|null,completeness:'page'|'complete'|'truncated'}

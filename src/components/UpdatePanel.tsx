@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { checkAppUpdate, installAppUpdate, type AppUpdate } from '../lib/updater'
 import { isTauri } from '../lib/runtime'
+import { flushComposerBuffers } from '../features/mergeRequests/useComposerBuffer'
 import { StatusPill, type StatusTone } from './StatusPill'
 
 export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -82,10 +83,13 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false }: Upd
   }, [check, inTauri])
 
   const install = useCallback(async () => {
-    if (busy.current) return
+    if (busy.current || !autoInstallAllowed) return
     busy.current = true
     setState({ status: 'installing' })
     try {
+      if (!await flushComposerBuffers()) {
+        throw new Error('未送信コメントを端末に保存できないため、更新を中止しました。入力は保持されています。')
+      }
       await installAppUpdate()
       setState({ status: 'installed' })
     } catch (error) {
@@ -93,7 +97,7 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false }: Upd
     } finally {
       busy.current = false
     }
-  }, [])
+  }, [autoInstallAllowed])
 
   const availableVersion = state.status === 'available' ? state.update.version : null
 

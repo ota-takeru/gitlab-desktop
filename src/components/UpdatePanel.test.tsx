@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAppTheme } from '../theme'
 import { AUTO_INSTALL_DELAY_MS, UpdatePanel } from './UpdatePanel'
 
-const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
+const { invokeMock, flushMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), flushMock: vi.fn() }))
+vi.mock('../features/mergeRequests/useComposerBuffer', () => ({ flushComposerBuffers: flushMock }))
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
@@ -46,6 +47,7 @@ describe('UpdatePanel', () => {
   afterEach(() => vi.useRealTimers())
   beforeEach(() => {
     invokeMock.mockReset()
+    flushMock.mockReset().mockResolvedValue(true)
     setTauriEnvironment(true)
   })
 
@@ -74,6 +76,19 @@ describe('UpdatePanel', () => {
     expect(screen.getByText('デスクトップで更新を確認できます')).toBeInTheDocument()
     await new Promise((resolve) => window.setTimeout(resolve, 0))
     expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('waits for local draft persistence and stops updating if it fails', async () => {
+    const saving = createDeferred<boolean>()
+    flushMock.mockReturnValue(saving.promise)
+    invokeMock.mockResolvedValue({ configured: true, version: '0.2.0', notes: null })
+    renderPanel(true)
+    fireEvent.click(await screen.findByRole('button', { name: '更新をインストール' }))
+    expect(flushMock).toHaveBeenCalledOnce()
+    expect(invokeMock).not.toHaveBeenCalledWith('install_app_update')
+    await act(async () => saving.resolve(false))
+    expect(await screen.findByText(/未送信コメントを端末に保存できないため/u)).toBeInTheDocument()
+    expect(invokeMock).not.toHaveBeenCalledWith('install_app_update')
   })
 
   it('lets a compact notification recover from an initial check failure', async () => {

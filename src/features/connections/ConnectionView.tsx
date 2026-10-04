@@ -64,6 +64,10 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
     }
   }
 
+  const handleDisconnect = () => {
+    if (globalThis.confirm('切断すると、GitLabの資格情報、キャッシュ、この端末に保存された未送信コメント、結果未確認の投稿記録が削除されます。切断しますか？')) void disconnect()
+  }
+
   if (session) {
     return (
       <Card component="section" aria-labelledby="gitlab-connection-title" variant="outlined">
@@ -81,7 +85,7 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
                   </Typography>
                 </Box>
               </Stack>
-              <Button disabled={status === 'checking'} onClick={() => void disconnect()} size="small" startIcon={<LogoutRoundedIcon />}>
+              <Button disabled={status === 'checking'} onClick={handleDisconnect} size="small" startIcon={<LogoutRoundedIcon />}>
                 切断
               </Button>
             </Stack>

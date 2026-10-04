@@ -1,6 +1,6 @@
 use crate::dto::{Action, AppError, Query, Session, User};
 use crate::gitlab_api;
-use crate::storage::{now_ms, storage_error, Snapshot, Store};
+use crate::storage::{now_ms, storage_error, LocalDraft, Snapshot, Store};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -48,6 +48,45 @@ pub struct NativeState {
     inner: Arc<Mutex<Inner>>,
     lifecycle: AsyncMutex<()>,
     directory: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingOperation {
+    pub id: String,
+    pub action: Action,
+    pub started_at: u64,
+}
+
+fn operation_resource(project: &str, iid: &str) -> Result<String, AppError> {
+    if [project, iid].iter().any(|value| {
+        value.is_empty()
+            || value.len() > 20
+            || !value.bytes().all(|byte| byte.is_ascii_digit())
+            || value.bytes().all(|byte| byte == b'0')
+    }) {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "有効なプロジェクトIDとMR番号を指定してください。",
+        ));
+    }
+    Ok(format!(
+        "{}:{}",
+        project.trim_start_matches('0'),
+        iid.trim_start_matches('0')
+    ))
+}
+
+fn validate_receipt_id(receipt_id: &str) -> Result<(), AppError> {
+    let parsed = uuid::Uuid::parse_str(receipt_id)
+        .map_err(|_| AppError::new("INVALID_INPUT", "送信記録の識別子が正しくありません。"))?;
+    if receipt_id.len() != 36 || parsed.hyphenated().to_string() != receipt_id {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "送信記録の識別子が正しくありません。",
+        ));
+    }
+    Ok(())
 }
 
 fn cancelled() -> AppError {
@@ -106,6 +145,32 @@ fn credential_entry(key: &str) -> Result<keyring::Entry, AppError> {
         ));
     }
     keyring::Entry::new("GitLabDesktop", key).map_err(|_| storage_error())
+}
+
+fn credential_password(key: &str) -> Result<Option<String>, AppError> {
+    match credential_entry(key)?.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(_) => Err(storage_error()),
+    }
+}
+
+fn restore_credential(key: &str, password: Option<&str>) -> Result<(), AppError> {
+    let entry = credential_entry(key)?;
+    match password {
+        Some(password) => entry.set_password(password).map_err(|_| storage_error()),
+        None => match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err(storage_error()),
+        },
+    }
+}
+
+fn delete_credential(key: &str) -> Result<(), AppError> {
+    match credential_entry(key)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(_) => Err(storage_error()),
+    }
 }
 
 fn credential_headers(token: &str, bearer: bool) -> Result<HeaderMap, AppError> {
@@ -292,6 +357,16 @@ impl NativeState {
     }
 
     async fn connect_locked(&self, input: ConnectInput, bearer: bool) -> Result<Session, AppError> {
+        let previous = self
+            .inner
+            .lock()
+            .map_err(|_| storage_error())?
+            .active
+            .clone();
+        let _write = previous
+            .as_ref()
+            .map(|session| session.mutation_lock.try_lock().map_err(|_| write_busy()))
+            .transpose()?;
         let instance = normalize_instance(&input.url)?;
         let client = http_client(&input.token, bearer)?;
         let api = instance.join("api/v4/").map_err(|_| cancelled())?;
@@ -311,30 +386,87 @@ impl NativeState {
         let public = session.public.clone();
         self.blocking(move |inner| {
             let previous: Option<SavedConnection> = inner.store.setting("connection")?;
-            let entry = credential_entry(&saved.credential_key)?;
-            entry.set_password(&input.token).map_err(|_| {
-                AppError::new(
+            let replacing = previous
+                .as_ref()
+                .filter(|previous| previous.credential_key != saved.credential_key);
+            // Snapshot both entries before any destructive step. If installing
+            // the new connection fails, the previously saved connection stays
+            // truthful and restorable even though its private cache was cleared.
+            let new_credential = credential_password(&saved.credential_key)?;
+            let previous_credential = replacing
+                .map(|previous| credential_password(&previous.credential_key))
+                .transpose()?;
+
+            if let Some(previous) = replacing {
+                inner
+                    .store
+                    .clear_private_account(&previous.credential_key)?;
+                if let Err(error) = delete_credential(&previous.credential_key) {
+                    let rollback = previous_credential.as_ref().map_or(Ok(()), |password| {
+                        restore_credential(&previous.credential_key, password.as_deref())
+                    });
+                    if rollback.is_err() {
+                        return Err(AppError::new(
+                            "STORAGE",
+                            "以前のWindows資格情報を削除できず、復元にも失敗しました。資格情報マネージャーを確認してください。",
+                        ));
+                    }
+                    return Err(error);
+                }
+            }
+
+            if credential_entry(&saved.credential_key)?
+                .set_password(&input.token)
+                .is_err()
+            {
+                let new_rollback = restore_credential(
+                    &saved.credential_key,
+                    new_credential.as_deref(),
+                );
+                let previous_rollback = replacing
+                    .zip(previous_credential.as_ref())
+                    .map(|(previous, previous_credential)| {
+                        restore_credential(
+                            &previous.credential_key,
+                            previous_credential.as_deref(),
+                        )
+                    })
+                    .transpose();
+                if new_rollback.is_err() || previous_rollback.is_err() {
+                    return Err(AppError::new(
+                        "STORAGE",
+                        "接続を保存できず、Windows資格情報の復元にも失敗しました。資格情報マネージャーを確認してください。",
+                    ));
+                }
+                return Err(AppError::new(
                     "STORAGE",
                     "Windows資格情報ストアへ保存できません。接続は保存されませんでした。",
-                )
-            })?;
+                ));
+            }
             if let Err(error) = inner.store.set_setting("connection", &saved) {
-                let _ = entry.delete_credential();
+                let new_rollback =
+                    restore_credential(&saved.credential_key, new_credential.as_deref());
+                let previous_rollback = replacing
+                    .zip(previous_credential.as_ref())
+                    .map(|(previous, previous_credential)| {
+                        restore_credential(
+                            &previous.credential_key,
+                            previous_credential.as_deref(),
+                        )
+                    })
+                    .transpose();
+                if new_rollback.is_err() || previous_rollback.is_err() {
+                    return Err(AppError::new(
+                        "STORAGE",
+                        "接続設定を保存できず、Windows資格情報の復元にも失敗しました。資格情報マネージャーを確認してください。",
+                    ));
+                }
                 return Err(error);
             }
             if let Some(old) = inner.active.take() {
                 old.cancelled.cancel();
             }
             inner.active = Some(session);
-            if let Some(previous) =
-                previous.filter(|previous| previous.credential_key != saved.credential_key)
-            {
-                inner.store.clear_account(&previous.credential_key)?;
-                match credential_entry(&previous.credential_key)?.delete_credential() {
-                    Ok(()) | Err(keyring::Error::NoEntry) => (),
-                    Err(_) => return Err(storage_error()),
-                }
-            }
             Ok(())
         })
         .await?;
@@ -393,13 +525,15 @@ impl NativeState {
     pub async fn disconnect(&self, id: String) -> Result<(), AppError> {
         let _lifecycle = self.lifecycle.lock().await;
         let session = self.active(&id)?;
+        let _write = session.mutation_lock.try_lock().map_err(|_| write_busy())?;
         // Cancellation happens before credential/DB work; late responses cannot persist.
         session.cancelled.cancel();
+        let clear_session = session.clone();
         self.blocking(move |inner| {
             inner.active = None;
-            inner.store.clear_account(&session.account)?;
+            inner.store.clear_private_account(&clear_session.account)?;
             inner.store.delete_setting("connection")?;
-            match credential_entry(&session.account)?.delete_credential() {
+            match credential_entry(&clear_session.account)?.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
                 Err(_) => Err(AppError::new("STORAGE", "データを削除しましたが、Windows資格情報の削除に失敗しました。資格情報マネージャーでGitLabDesktopを削除してください。")),
             }
@@ -412,6 +546,97 @@ impl NativeState {
         self.blocking(move |inner| {
             ensure_active(inner, &session)?;
             inner.store.clear_account(&session.account)
+        })
+        .await
+    }
+
+    pub async fn local_draft(
+        &self,
+        id: String,
+        key: String,
+    ) -> Result<Option<LocalDraft>, AppError> {
+        let session = self.active(&id)?;
+        let _pending = session
+            .pending
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            inner.store.draft(&session.account, &key)
+        })
+        .await
+    }
+
+    pub async fn save_local_draft(
+        &self,
+        id: String,
+        key: String,
+        body: String,
+    ) -> Result<(), AppError> {
+        let session = self.active(&id)?;
+        let _pending = session
+            .pending
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            inner.store.save_draft(&session.account, &key, &body)
+        })
+        .await
+    }
+
+    pub async fn clear_local_drafts(&self, id: String) -> Result<(), AppError> {
+        let session = self.active(&id)?;
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            inner.store.clear_drafts(&session.account)
+        })
+        .await
+    }
+
+    pub async fn pending_operation(
+        &self,
+        id: String,
+        project: String,
+        iid: String,
+    ) -> Result<Option<PendingOperation>, AppError> {
+        let session = self.active(&id)?;
+        let resource = operation_resource(&project, &iid)?;
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            inner
+                .store
+                .pending_operation(&session.account, &resource)?
+                .map(|value| serde_json::from_value(value).map_err(|_| storage_error()))
+                .transpose()
+        })
+        .await
+    }
+
+    pub async fn acknowledge_pending_operation(
+        &self,
+        id: String,
+        project: String,
+        iid: String,
+        receipt_id: String,
+    ) -> Result<(), AppError> {
+        validate_receipt_id(&receipt_id)?;
+        let session = self.active(&id)?;
+        let resource = operation_resource(&project, &iid)?;
+        let _write = session.mutation_lock.lock().await;
+        let target = session.clone();
+        self.blocking(move |inner| {
+            ensure_active(inner, &target)?;
+            let receipt = inner
+                .store
+                .pending_operation(&target.account, &resource)?
+                .ok_or_else(cancelled)?;
+            if receipt["id"].as_str() != Some(receipt_id.as_str()) {
+                return Err(cancelled());
+            }
+            inner.store.finish_operation(&target.account, &resource)
         })
         .await
     }
@@ -569,6 +794,26 @@ impl NativeState {
 
     pub async fn mutate(&self, input: MutationInput) -> Result<(), AppError> {
         let session = self.active(&input.session_id)?;
+        let submitted_draft = match (&input.local_draft_key, &input.action) {
+            (
+                Some(key),
+                Action::Comment { body, .. }
+                | Action::Reply { body, .. }
+                | Action::SaveDraft { body, .. },
+            ) => Some((key.clone(), body.clone())),
+            (Some(_), _) => {
+                return Err(AppError::new(
+                    "INVALID_INPUT",
+                    "この操作に未送信コメントを関連付けることはできません。",
+                ))
+            }
+            (None, _) => None,
+        };
+        let action_value = serde_json::to_value(&input.action).map_err(|_| storage_error())?;
+        let resource = operation_resource(
+            action_value["projectId"].as_str().unwrap_or_default(),
+            action_value["iid"].as_str().unwrap_or_default(),
+        )?;
         let _pending = session
             .pending
             .clone()
@@ -576,22 +821,57 @@ impl NativeState {
             .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
         let registration = RequestRegistration::new(session.clone(), input.request_id)?;
         let work = async {
-            let _write = session.mutation_lock.lock().await;
-            let _slot = session
-                .slots
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| cancelled())?;
+            // Before a receipt exists, cancelling a queued operation is known
+            // not to have sent anything. Once committed, only the HTTP phase
+            // is cancellable; finalization must not race receipt deletion.
+            let _write = tokio::select! {
+                guard = session.mutation_lock.lock() => guard,
+                _ = session.cancelled.cancelled() => return Err(cancelled()),
+                _ = registration.token.cancelled() => return Err(cancelled()),
+            };
+            let _slot = tokio::select! {
+                slot = session.slots.clone().acquire_owned() => slot.map_err(|_| cancelled())?,
+                _ = session.cancelled.cancelled() => return Err(cancelled()),
+                _ = registration.token.cancelled() => return Err(cancelled()),
+            };
             check_cooldown(&session)?;
+            let receipt_id = uuid::Uuid::new_v4().to_string();
+            let record = serde_json::json!({"id": receipt_id, "action": action_value, "startedAt": now_ms()});
+            let marker_session = session.clone();
+            let marker_resource = resource.clone();
+            let marker_draft = submitted_draft.clone();
+            // Commit before any possible write. A crash or cancellation leaves
+            // a receipt, so a restarted application cannot silently re-submit.
+            self.blocking(move |inner| {
+                ensure_active(inner, &marker_session)?;
+                if let Some((key, submitted_body)) = marker_draft.as_ref() {
+                    let draft = inner
+                        .store
+                        .draft(&marker_session.account, key)?
+                        .ok_or_else(|| {
+                            AppError::new(
+                                "INVALID_INPUT",
+                                "送信前の未送信コメントを確認できませんでした。",
+                            )
+                        })?;
+                    if draft.body.trim() != submitted_body {
+                        return Err(AppError::new(
+                            "INVALID_INPUT",
+                            "未送信コメントが変更されています。保存後に再試行してください。",
+                        ));
+                    }
+                }
+                inner
+                    .store
+                    .begin_operation(&marker_session.account, &marker_resource, &record)
+            })
+            .await?;
             session.revision.fetch_add(1, Ordering::SeqCst);
-            let result = gitlab_api::mutate(
-                &session.client,
-                &session.api_base,
-                &input.action,
-                &session.public.user.id,
-            )
-            .await;
+            let result = tokio::select! {
+                result = gitlab_api::mutate(&session.client, &session.api_base, &input.action, &session.public.user.id) => result,
+                _ = session.cancelled.cancelled() => Err(unknown_write()),
+                _ = registration.token.cancelled() => Err(unknown_write()),
+            };
             session.revision.fetch_add(1, Ordering::SeqCst);
             if let Err(error) = &result {
                 self.record_error(&session, error, None).await?;
@@ -614,10 +894,37 @@ impl NativeState {
                     return Err(AppError::new("UNKNOWN_OUTCOME", "送信後の保存データを更新できませんでした。再送せずGitLabで結果を確認してください。"));
                 }
             }
+            if !result
+                .as_ref()
+                .is_err_and(|error| error.code == "UNKNOWN_OUTCOME")
+            {
+                let marker_session = session.clone();
+                let marker_resource = resource.clone();
+                let completed_draft = if result.is_ok() {
+                    submitted_draft
+                } else {
+                    None
+                };
+                if self
+                    .blocking(move |inner| {
+                        inner.store.complete_operation(
+                            &marker_session.account,
+                            &marker_resource,
+                            &receipt_id,
+                            completed_draft
+                                .as_ref()
+                                .map(|(key, body)| (key.as_str(), body.as_str())),
+                        )
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Err(AppError::new("UNKNOWN_OUTCOME", "操作の確認記録を更新できませんでした。再送せずGitLabで結果を確認してください。"));
+                }
+            }
             result
         };
-        // Cancelling a write may occur after GitLab accepted it: never imply safe re-send.
-        let outcome = tokio::select! { result = work => result, _ = session.cancelled.cancelled()=>Err(AppError::new("UNKNOWN_OUTCOME", "接続が切り替わりました。GitLabで投稿結果を確認してください。")), _ = registration.token.cancelled()=>Err(AppError::new("UNKNOWN_OUTCOME", "送信の確認を中断しました。GitLabで結果を確認してください。")) };
+        let outcome = work.await;
         if outcome
             .as_ref()
             .is_err_and(|error| error.code == "UNKNOWN_OUTCOME")
@@ -659,6 +966,20 @@ impl NativeState {
         open::that_detached(url.as_str())
             .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
     }
+}
+
+fn write_busy() -> AppError {
+    AppError::new(
+        "BUSY",
+        "投稿処理中は接続を変更できません。処理結果を確認してから操作してください。",
+    )
+}
+
+fn unknown_write() -> AppError {
+    AppError::new(
+        "UNKNOWN_OUTCOME",
+        "送信の確認を中断しました。GitLabで結果を確認してください。",
+    )
 }
 
 fn ensure_active(inner: &Inner, session: &LiveSession) -> Result<(), AppError> {
@@ -745,6 +1066,8 @@ pub struct MutationInput {
     pub session_id: String,
     pub request_id: String,
     pub action: Action,
+    #[serde(default)]
+    pub local_draft_key: Option<String>,
 }
 
 #[cfg(test)]
@@ -831,6 +1154,482 @@ mod tests {
             directory: std::env::temp_dir(),
         });
         (state, live)
+    }
+
+    fn same_account_session(account: &str, source: &LiveSession, api: Url) -> Arc<LiveSession> {
+        let saved = SavedConnection {
+            instance_url: source.public.instance_url.clone(),
+            user: source.public.user.clone(),
+            server_version: source.public.server_version.clone(),
+            credential_key: account.to_owned(),
+            bearer: false,
+        };
+        let mut live = make_session(
+            saved,
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+        Arc::get_mut(&mut live).unwrap().api_base = api;
+        live
+    }
+
+    fn spawn_http_response(
+        status: &str,
+        body: &str,
+    ) -> (
+        Url,
+        tokio::sync::oneshot::Receiver<()>,
+        std::sync::mpsc::Sender<()>,
+        std::thread::JoinHandle<()>,
+    ) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 16 * 1024];
+            let _ = socket.read(&mut buffer);
+            started_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let _ = socket.write_all(response.as_bytes());
+        });
+        (
+            Url::parse(&format!("http://{address}/api/v4/")).unwrap(),
+            started_rx,
+            release_tx,
+            server,
+        )
+    }
+
+    fn spawn_transport_failure() -> (
+        Url,
+        tokio::sync::oneshot::Receiver<()>,
+        std::thread::JoinHandle<()>,
+    ) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 16 * 1024];
+            let _ = socket.read(&mut buffer);
+            started_tx.send(()).unwrap();
+            drop(socket);
+        });
+        (
+            Url::parse(&format!("http://{address}/api/v4/")).unwrap(),
+            started_rx,
+            server,
+        )
+    }
+
+    fn comment_action() -> Action {
+        Action::Comment {
+            project_id: "7".into(),
+            iid: "1".into(),
+            body: "テストコメント".into(),
+            thread: false,
+            position: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn mutation_persists_receipt_before_write_and_clears_after_known_success() {
+        let (api, started, release, server) = spawn_http_response("200 OK", r#"{"id":1}"#);
+        let (state, session) = test_state(api);
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let input = MutationInput {
+            session_id: session.public.id.clone(),
+            request_id,
+            action: comment_action(),
+            local_draft_key: None,
+        };
+        let worker = state.clone();
+        let pending = tokio::spawn(async move { worker.mutate(input).await });
+        tokio::time::timeout(Duration::from_secs(5), started)
+            .await
+            .unwrap()
+            .unwrap();
+        let receipt = state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .expect("receipt must be committed before the HTTP request");
+        assert!(!receipt.id.is_empty());
+        release.send(()).unwrap();
+        assert!(tokio::time::timeout(Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_ok());
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_none());
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn successful_mutation_atomically_removes_matching_local_draft() {
+        let (api, started, release, server) = spawn_http_response("200 OK", r#"{"id":1}"#);
+        let (state, session) = test_state(api);
+        state
+            .save_local_draft(
+                session.public.id.clone(),
+                "composer".into(),
+                "  テストコメント\n".into(),
+            )
+            .await
+            .unwrap();
+        let worker = state.clone();
+        let session_id = session.public.id.clone();
+        let pending = tokio::spawn(async move {
+            worker
+                .mutate(MutationInput {
+                    session_id,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    action: comment_action(),
+                    local_draft_key: Some("composer".into()),
+                })
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), started)
+            .await
+            .unwrap()
+            .unwrap();
+        release.send(()).unwrap();
+        assert!(pending.await.unwrap().is_ok());
+        assert!(state
+            .local_draft(session.public.id.clone(), "composer".into())
+            .await
+            .unwrap()
+            .is_none());
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_none());
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mutation_rejects_changed_local_draft_before_network_or_receipt() {
+        let (state, session) = test_state(Url::parse("http://127.0.0.1:1/api/v4/").unwrap());
+        state
+            .save_local_draft(
+                session.public.id.clone(),
+                "composer".into(),
+                "different text".into(),
+            )
+            .await
+            .unwrap();
+        let error = state
+            .mutate(MutationInput {
+                session_id: session.public.id.clone(),
+                request_id: uuid::Uuid::new_v4().to_string(),
+                action: comment_action(),
+                local_draft_key: Some("composer".into()),
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_INPUT");
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            state
+                .local_draft(session.public.id.clone(), "composer".into())
+                .await
+                .unwrap()
+                .unwrap()
+                .body,
+            "different text"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_after_network_start_keeps_receipt_and_blocks_connection_changes() {
+        let (api, started, release, server) = spawn_http_response("200 OK", r#"{"id":1}"#);
+        let (state, session) = test_state(api);
+        state
+            .save_local_draft(
+                session.public.id.clone(),
+                "composer".into(),
+                "テストコメント".into(),
+            )
+            .await
+            .unwrap();
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let worker = state.clone();
+        let worker_request_id = request_id.clone();
+        let session_id = session.public.id.clone();
+        let pending = tokio::spawn(async move {
+            worker
+                .mutate(MutationInput {
+                    session_id,
+                    request_id: worker_request_id,
+                    action: comment_action(),
+                    local_draft_key: Some("composer".into()),
+                })
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), started)
+            .await
+            .unwrap()
+            .unwrap();
+        let receipt = state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            state
+                .disconnect(session.public.id.clone())
+                .await
+                .unwrap_err()
+                .code,
+            "BUSY"
+        );
+        assert_eq!(
+            state
+                .connect(ConnectInput {
+                    url: "not-a-url".into(),
+                    token: String::new(),
+                })
+                .await
+                .unwrap_err()
+                .code,
+            "BUSY"
+        );
+
+        state
+            .cancel_request(&session.public.id, &request_id)
+            .unwrap();
+        let error = tokio::time::timeout(Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.code, "UNKNOWN_OUTCOME");
+        let retained = state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.id, receipt.id);
+        assert_eq!(
+            state
+                .local_draft(session.public.id.clone(), "composer".into())
+                .await
+                .unwrap()
+                .unwrap()
+                .body,
+            "テストコメント"
+        );
+        release.send(()).unwrap();
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn server_error_keeps_receipt_and_refuses_same_mr_before_second_network_send() {
+        let (api, started, release, server) =
+            spawn_http_response("500 Internal Server Error", "{}");
+        let (state, session) = test_state(api);
+        let first = MutationInput {
+            session_id: session.public.id.clone(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            action: comment_action(),
+            local_draft_key: None,
+        };
+        let worker = state.clone();
+        let pending = tokio::spawn(async move { worker.mutate(first).await });
+        tokio::time::timeout(Duration::from_secs(5), started)
+            .await
+            .unwrap()
+            .unwrap();
+        release.send(()).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(result.code, "UNKNOWN_OUTCOME");
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_some());
+
+        let second = state
+            .mutate(MutationInput {
+                session_id: session.public.id.clone(),
+                request_id: uuid::Uuid::new_v4().to_string(),
+                action: comment_action(),
+                local_draft_key: None,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(second.code, "UNKNOWN_OUTCOME");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn transport_failure_keeps_receipt_for_restart_recovery() {
+        let (api, started, server) = spawn_transport_failure();
+        let (state, session) = test_state(api);
+        let session_id = session.public.id.clone();
+        let worker_session_id = session_id.clone();
+        let worker = state.clone();
+        let pending = tokio::spawn(async move {
+            worker
+                .mutate(MutationInput {
+                    session_id: worker_session_id,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    action: comment_action(),
+                    local_draft_key: None,
+                })
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), started)
+            .await
+            .unwrap()
+            .unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(result.code, "UNKNOWN_OUTCOME");
+        assert!(state
+            .pending_operation(session_id, "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_some());
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn pending_acknowledgement_requires_current_receipt_id() {
+        let (state, session) = test_state(Url::parse("http://127.0.0.1:1/api/v4/").unwrap());
+        let action = serde_json::to_value(comment_action()).unwrap();
+        let receipt_id = uuid::Uuid::new_v4().to_string();
+        let receipt_for_store = receipt_id.clone();
+        let account = session.account.clone();
+        state
+            .blocking(move |inner| {
+                inner.store.begin_operation(
+                    &account,
+                    "7:1",
+                    &serde_json::json!({"id":receipt_for_store,"action":action,"startedAt":now_ms()}),
+                )
+            })
+            .await
+            .unwrap();
+        let stale = state
+            .acknowledge_pending_operation(
+                session.public.id.clone(),
+                "7".into(),
+                "1".into(),
+                uuid::Uuid::new_v4().to_string(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(stale.code, "CANCELLED");
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_some());
+        let malformed = state
+            .acknowledge_pending_operation(
+                session.public.id.clone(),
+                "7".into(),
+                "1".into(),
+                "stale-receipt".into(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(malformed.code, "INVALID_INPUT");
+        state
+            .acknowledge_pending_operation(
+                session.public.id.clone(),
+                "7".into(),
+                "1".into(),
+                receipt_id,
+            )
+            .await
+            .unwrap();
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn local_drafts_deny_invalid_sessions_survive_auth_deactivation_and_clear_privately() {
+        let (state, session) = test_state(Url::parse("http://127.0.0.1:1/api/v4/").unwrap());
+        let invalid = state
+            .save_local_draft("invalid-session".into(), "composer".into(), "本文".into())
+            .await
+            .unwrap_err();
+        assert_eq!(invalid.code, "AUTH_REQUIRED");
+
+        state
+            .save_local_draft(session.public.id.clone(), "composer".into(), "本文".into())
+            .await
+            .unwrap();
+        let account = session.account.clone();
+        state
+            .record_error(&session, &auth_required(), None)
+            .await
+            .unwrap();
+        let restored = same_account_session(
+            &account,
+            &session,
+            Url::parse("http://127.0.0.1:1/api/v4/").unwrap(),
+        );
+        let restored_id = restored.public.id.clone();
+        state
+            .blocking(move |inner| {
+                inner.active = Some(restored);
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .local_draft(restored_id.clone(), "composer".into())
+                .await
+                .unwrap()
+                .unwrap()
+                .body,
+            "本文"
+        );
+
+        let account = account.clone();
+        state
+            .blocking(move |inner| inner.store.clear_private_account(&account))
+            .await
+            .unwrap();
+        assert!(state
+            .local_draft(restored_id, "composer".into())
+            .await
+            .unwrap()
+            .is_none());
     }
 
     fn projects_input(session: &LiveSession, mode: ReadMode) -> QueryInput {

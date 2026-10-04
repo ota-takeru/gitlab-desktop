@@ -28,6 +28,7 @@ export interface QueryGitLabInput<Q extends GitLabQuery> {
 export interface MutateGitLabInput {
   sessionId: string
   action: GitLabAction
+  localDraftKey?: string
   requestId?: string
 }
 
@@ -104,13 +105,17 @@ export async function queryGitLab<Q extends GitLabQuery>({
 
 export async function mutateGitLab({
   action,
+  localDraftKey,
   requestId = createRequestId('mutation'),
   sessionId,
 }: MutateGitLabInput): Promise<void> {
   ensureDesktop()
   try {
+    const input = localDraftKey === undefined
+      ? { action, requestId, sessionId }
+      : { action, localDraftKey, requestId, sessionId }
     await invoke<void>('mutate_gitlab', {
-      input: { action, requestId, sessionId },
+      input,
     })
   } catch (error) {
     throw normalizeGitLabError(error)
@@ -210,6 +215,7 @@ function normalizeErrorCode(code: string): GitLabErrorCode {
     'NETWORK',
     'TIMEOUT',
     'RATE_LIMITED',
+    'BUSY',
     'INVALID_INPUT',
     'STORAGE',
     'UNSUPPORTED',

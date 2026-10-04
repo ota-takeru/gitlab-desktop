@@ -19,6 +19,9 @@ import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import type { Discussion, Note } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 
+const DISCUSSIONS_PER_PAGE = 20
+const NOTES_PER_PAGE = 50
+
 interface DiscussionListProps {
   currentUserId: string
   discussions: Discussion[]
@@ -31,20 +34,39 @@ interface DiscussionListProps {
 
 export function DiscussionList({ currentUserId, discussions, disabled = false, onDelete, onEdit, onReply, onResolve }: DiscussionListProps) {
   const [editing, setEditing] = useState<{ note: Note; body: string } | null>(null)
+  const [discussionPage, setDiscussionPage] = useState(1)
+  const [notePages, setNotePages] = useState<Record<string, number>>({})
   const { setUnsafe } = useAutoUpdateSafety('note-edit')
+  const discussionPageCount = pageCount(discussions.length, DISCUSSIONS_PER_PAGE)
+  const editingDiscussionIndex = editing ? discussions.findIndex((discussion) => discussion.notes.some((note) => note.id === editing.note.id)) : -1
+  const boundedDiscussionPage = editingDiscussionIndex >= 0
+    ? Math.floor(editingDiscussionIndex / DISCUSSIONS_PER_PAGE) + 1
+    : clampPage(discussionPage, discussionPageCount)
+  const discussionStart = (boundedDiscussionPage - 1) * DISCUSSIONS_PER_PAGE
+  const visibleDiscussions = discussions.slice(discussionStart, discussionStart + DISCUSSIONS_PER_PAGE)
+  const paginationDisabled = Boolean(editing)
+
   useEffect(() => {
     setUnsafe(Boolean(editing))
   }, [editing, setUnsafe])
 
   return (
     <Stack spacing={1.25}>
-      {discussions.map((discussion) => {
+      {visibleDiscussions.map((discussion) => {
         const canResolve = discussion.notes.some((note) => note.resolvable)
         const resolved = canResolve && discussion.notes.filter((note) => note.resolvable).every((note) => note.resolved)
+        const notePageCount = pageCount(discussion.notes.length, NOTES_PER_PAGE)
+        const editingNoteIndex = editing?.note.id ? discussion.notes.findIndex((note) => note.id === editing.note.id) : -1
+        const requestedNotePage = notePages[discussion.id] ?? 1
+        const notePage = editingNoteIndex >= 0
+          ? Math.floor(editingNoteIndex / NOTES_PER_PAGE) + 1
+          : clampPage(requestedNotePage, notePageCount)
+        const noteStart = (notePage - 1) * NOTES_PER_PAGE
+        const visibleNotes = discussion.notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
         return (
           <Paper component="article" key={discussion.id} sx={{ overflow: 'hidden' }} variant="outlined">
             <List disablePadding>
-              {discussion.notes.map((note, index) => (
+              {visibleNotes.map((note, index) => (
                 <ListItem key={note.id} sx={{ alignItems: 'flex-start', display: 'block', px: 1.5, py: 1.25 }}>
                   <Stack spacing={0.8}>
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
@@ -61,7 +83,7 @@ export function DiscussionList({ currentUserId, discussions, disabled = false, o
                         <TextField autoFocus disabled={disabled} fullWidth label="コメントを編集" multiline minRows={2} onChange={(event) => setEditing({ body: event.target.value, note })} value={editing.body} />
                         <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end' }}>
                           <Button onClick={() => setEditing(null)} size="small">取消</Button>
-                          <Button disabled={!editing.body.trim() || disabled} onClick={() => void onEdit(note, editing.body.trim()).then((success) => { if (success) setEditing(null) })} size="small" variant="contained">保存</Button>
+                          <Button disabled={!editing.body.trim() || disabled} onClick={() => void onEdit(note, editing.body.trim()).then((success) => { if (success) setEditing(null) }).catch(() => undefined)} size="small" variant="contained">保存</Button>
                         </Stack>
                       </Stack>
                     ) : <MockMarkdown body={note.body} />}
@@ -72,20 +94,35 @@ export function DiscussionList({ currentUserId, discussions, disabled = false, o
                         <Tooltip title="コメントを削除"><IconButton aria-label={`${note.id}を削除`} disabled={disabled} onClick={() => { if (globalThis.confirm('このコメントを削除しますか？')) void onDelete(note) }} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>
                       </Stack>
                     ) : null}
-                    {index < discussion.notes.length - 1 ? <Divider sx={{ mt: 0.5 }} /> : null}
+                    {index < visibleNotes.length - 1 ? <Divider sx={{ mt: 0.5 }} /> : null}
                   </Stack>
                 </ListItem>
               ))}
             </List>
             <Divider />
+            {discussion.notes.length > 0 ? (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'center', px: 1, py: 0.75 }}>
+                {notePageCount > 1 ? <Button aria-label={`${discussion.id}の前のノートページ`} disabled={disabled || paginationDisabled || notePage <= 1} onClick={() => setNotePages((current) => ({ ...current, [discussion.id]: notePage - 1 }))} size="small">前へ</Button> : null}
+                <Typography color="text.secondary" variant="caption">ノート {noteRangeStart(notePage, NOTES_PER_PAGE)}–{noteRangeEnd(notePage, NOTES_PER_PAGE, discussion.notes.length)} / {discussion.notes.length}</Typography>
+                {notePageCount > 1 ? <Button aria-label={`${discussion.id}の次のノートページ`} disabled={disabled || paginationDisabled || notePage >= notePageCount} onClick={() => setNotePages((current) => ({ ...current, [discussion.id]: notePage + 1 }))} size="small">次へ</Button> : null}
+              </Stack>
+            ) : null}
             <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', px: 1, py: 0.5 }}>
               <Button disabled={disabled} onClick={() => onReply(discussion)} size="small" startIcon={<ReplyRoundedIcon />}>返信</Button>
               {canResolve ? <Button disabled={disabled} onClick={() => void onResolve(discussion, !resolved)} size="small" startIcon={resolved ? <UndoRoundedIcon /> : <CheckRoundedIcon />}>{resolved ? '再開' : '解決'}</Button> : null}
+              {canResolve ? <Typography color="text.secondary" variant="caption">{resolved ? '解決済み' : '未解決'}</Typography> : null}
               <BoxSpacer />
             </Stack>
           </Paper>
         )
       })}
+      {discussions.length > 0 ? (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+          <Button aria-label="前の議論ページ" disabled={disabled || paginationDisabled || boundedDiscussionPage <= 1} onClick={() => setDiscussionPage((current) => clampPage(current - 1, discussionPageCount))} size="small">前へ</Button>
+          <Typography color="text.secondary" variant="caption">議論 {noteRangeStart(boundedDiscussionPage, DISCUSSIONS_PER_PAGE)}–{noteRangeEnd(boundedDiscussionPage, DISCUSSIONS_PER_PAGE, discussions.length)} / {discussions.length}</Typography>
+          <Button aria-label="次の議論ページ" disabled={disabled || paginationDisabled || boundedDiscussionPage >= discussionPageCount} onClick={() => setDiscussionPage((current) => clampPage(current + 1, discussionPageCount))} size="small">次へ</Button>
+        </Stack>
+      ) : null}
       {discussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="text.secondary" variant="body2">議論はありません。最初のコメントを追加できます。</Typography></Paper> : null}
     </Stack>
   )
@@ -93,6 +130,22 @@ export function DiscussionList({ currentUserId, discussions, disabled = false, o
 
 function BoxSpacer() {
   return <span style={{ flex: 1 }} />
+}
+
+function pageCount(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / pageSize))
+}
+
+function clampPage(page: number, totalPages: number): number {
+  return Math.min(Math.max(page, 1), totalPages)
+}
+
+function noteRangeStart(page: number, pageSize: number): number {
+  return (page - 1) * pageSize + 1
+}
+
+function noteRangeEnd(page: number, pageSize: number, total: number): number {
+  return Math.min(page * pageSize, total)
 }
 
 function formatDate(value: string): string {

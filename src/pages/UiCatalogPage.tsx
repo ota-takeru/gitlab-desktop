@@ -13,6 +13,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 
 import { EmptyState } from '../components/EmptyState'
+import { AppErrorFallback } from '../components/AppErrorBoundary'
 import { StatusPill } from '../components/StatusPill'
 import { ReviewComposer } from '../features/mergeRequests/ReviewComposer'
 import { DiffViewer } from '../features/mergeRequests/DiffViewer'
@@ -106,6 +107,12 @@ export function UiCatalogPage() {
         </CardContent>
       </Card>
 
+      <Card component="section">
+        <CardContent>
+          <Typography component="h2" variant="h2">画面エラーからの復旧</Typography>
+          <AppErrorFallback compact onGoToConnectionSettings={() => undefined} onRetry={() => undefined} retryCount={1} />
+        </CardContent>
+      </Card>
       <Stack spacing={1.5}>
         <Typography component="h2" variant="h2">レビュー入力と差分</Typography>
         <Typography color="text.secondary" variant="caption">表示サンプルです。GitLabへの取得・投稿は行いません。</Typography>

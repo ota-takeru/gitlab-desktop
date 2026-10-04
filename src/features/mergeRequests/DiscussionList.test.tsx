@@ -119,4 +119,128 @@ describe('DiscussionList note ownership and resolution', () => {
     fireEvent.click(screen.getByRole('button', { name: '再開' }))
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(allResolved, false))
   })
+
+  it('limits discussion rows to twenty and makes the final page reachable', () => {
+    const discussions = Array.from({ length: 101 }, (_, index) => {
+      const discussionNumber = index + 1
+      return createDiscussion([createNote(`discussion-${discussionNumber}-note`, otherUser)], `discussion-${discussionNumber}`)
+    })
+
+    renderList(discussions)
+
+    expect(screen.getByText('discussion-1-note の本文')).toBeInTheDocument()
+    expect(screen.queryByText('discussion-21-note の本文')).not.toBeInTheDocument()
+    expect(screen.getByText('議論 1–20 / 101')).toBeInTheDocument()
+
+    const nextPage = screen.getByRole('button', { name: '次の議論ページ' })
+    for (let page = 2; page <= 6; page += 1) {
+      fireEvent.click(nextPage)
+    }
+
+    expect(screen.queryByText('discussion-1-note の本文')).not.toBeInTheDocument()
+    expect(screen.getByText('discussion-101-note の本文')).toBeInTheDocument()
+    expect(screen.getByText('議論 101–101 / 101')).toBeInTheDocument()
+    expect(nextPage).toBeDisabled()
+  })
+
+  it('limits notes to fifty rows and makes the final note page reachable', () => {
+    const notes = Array.from({ length: 200 }, (_, index) => createNote(`note-${index + 1}`, otherUser))
+    const discussion = createDiscussion(notes)
+
+    renderList([discussion])
+
+    expect(screen.getByText('note-1 の本文')).toBeInTheDocument()
+    expect(screen.queryByText('note-51 の本文')).not.toBeInTheDocument()
+    expect(screen.getByText('ノート 1–50 / 200')).toBeInTheDocument()
+
+    const nextPage = screen.getByRole('button', { name: 'discussion-1の次のノートページ' })
+    fireEvent.click(nextPage)
+    fireEvent.click(nextPage)
+    fireEvent.click(nextPage)
+
+    expect(screen.queryByText('note-1 の本文')).not.toBeInTheDocument()
+    expect(screen.getByText('note-151 の本文')).toBeInTheDocument()
+    expect(screen.getByText('note-200 の本文')).toBeInTheDocument()
+    expect(screen.getByText('ノート 151–200 / 200')).toBeInTheDocument()
+    expect(nextPage).toBeDisabled()
+  })
+
+  it('disables pagination while editing and preserves text when save fails', async () => {
+    const ownedNote = createNote('owned-note', currentUser, { body: '編集前の本文' })
+    const discussions = [
+      createDiscussion([ownedNote], 'discussion-1'),
+      ...Array.from({ length: 20 }, (_, index) => createDiscussion([createNote(`other-${index + 1}`, otherUser)], `discussion-${index + 2}`)),
+    ]
+    const onEdit = vi.fn().mockRejectedValue(new Error('private save failure'))
+
+    renderList(discussions, { onEdit })
+
+    fireEvent.click(screen.getByRole('button', { name: 'owned-noteを編集' }))
+    const nextPage = screen.getByRole('button', { name: '次の議論ページ' })
+    expect(nextPage).toBeDisabled()
+
+    const editor = screen.getByRole('textbox')
+    fireEvent.change(editor, { target: { value: '編集後も残る本文' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(onEdit).toHaveBeenCalledWith(ownedNote, '編集後も残る本文'))
+    expect(screen.getByRole('textbox')).toHaveValue('編集後も残る本文')
+    expect(nextPage).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(nextPage).toBeEnabled()
+  })
+
+  it('clamps the visible page when discussions or notes shrink', () => {
+    const discussions = Array.from({ length: 41 }, (_, index) => {
+      const discussionNumber = index + 1
+      return createDiscussion([createNote(`discussion-${discussionNumber}-note`, otherUser)], `discussion-${discussionNumber}`)
+    })
+    const view = renderList(discussions)
+    const discussionNextPage = screen.getByRole('button', { name: '次の議論ページ' })
+    fireEvent.click(discussionNextPage)
+    fireEvent.click(discussionNextPage)
+
+    const shrunkDiscussions = discussions.slice(0, 3)
+    view.rerender(
+      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <DiscussionList
+          currentUserId={currentUser.id}
+          discussions={shrunkDiscussions}
+          onDelete={vi.fn().mockResolvedValue(true)}
+          onEdit={vi.fn().mockResolvedValue(true)}
+          onReply={vi.fn()}
+          onResolve={vi.fn().mockResolvedValue(true)}
+        />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByText('discussion-1-note の本文')).toBeInTheDocument()
+    expect(screen.getByText('discussion-3-note の本文')).toBeInTheDocument()
+    expect(screen.queryByText('discussion-41-note の本文')).not.toBeInTheDocument()
+    expect(screen.getByText('議論 1–3 / 3')).toBeInTheDocument()
+
+    const manyNotes = Array.from({ length: 101 }, (_, index) => createNote(`shrinking-note-${index + 1}`, otherUser))
+    const notesView = renderList([createDiscussion(manyNotes)])
+    const noteNextPage = screen.getByRole('button', { name: 'discussion-1の次のノートページ' })
+    fireEvent.click(noteNextPage)
+    fireEvent.click(noteNextPage)
+
+    notesView.rerender(
+      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <DiscussionList
+          currentUserId={currentUser.id}
+          discussions={[createDiscussion([manyNotes[0]])]}
+          onDelete={vi.fn().mockResolvedValue(true)}
+          onEdit={vi.fn().mockResolvedValue(true)}
+          onReply={vi.fn()}
+          onResolve={vi.fn().mockResolvedValue(true)}
+        />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByText('shrinking-note-1 の本文')).toBeInTheDocument()
+    expect(screen.queryByText('shrinking-note-101 の本文')).not.toBeInTheDocument()
+  })
 })

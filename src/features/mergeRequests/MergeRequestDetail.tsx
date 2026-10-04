@@ -25,6 +25,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useId, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
@@ -53,7 +54,7 @@ import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { DiscussionList } from './DiscussionList'
 import { DiffViewer } from './DiffViewer'
 import { ReviewComposer } from './ReviewComposer'
-import { clearComposerBufferStore, createComposerBufferKey, useComposerBuffer } from './useComposerBuffer'
+import { clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
 
 type ReviewTab = 'discussion' | 'changes' | 'overview'
 type DiscussionsQuery = ReviewResourceQuery & { kind: 'discussions' }
@@ -74,6 +75,7 @@ export interface MergeRequestDetailProps {
 
 export function MergeRequestDetail({ initialMergeRequest, onBack, onOpenProject }: MergeRequestDetailProps) {
   const { session } = useConnection()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<ReviewTab>('discussion')
   const [discussionPage, setDiscussionPage] = useState(1)
   const [draftPage, setDraftPage] = useState(1)
@@ -137,8 +139,8 @@ export function MergeRequestDetail({ initialMergeRequest, onBack, onOpenProject 
     return <Stack spacing={1.5}><Button onClick={onBack} size="small" startIcon={<ArrowBackRoundedIcon />}>一覧に戻る</Button><Alert severity="error">このMRは現在の接続先または権限では表示できません。保存済みの内容は表示しません。</Alert></Stack>
   }
 
-  const runAction = async (action: GitLabAction, refresh?: () => void) => {
-    const success = await mutation.run(action)
+  const runAction = async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
+    const success = await mutation.run(action, localDraftKey)
     if (success) refresh?.()
     return success
   }
@@ -150,12 +152,13 @@ export function MergeRequestDetail({ initialMergeRequest, onBack, onOpenProject 
       return false
     }
     setPositionError(null)
+    const localDraftKey = createComposerBackendKey(createComposerBufferKey(session, resourceId, iid, replyDiscussion?.id ?? 'new', commentPosition))
     if (replyDiscussion) {
-      const success = await runAction({ body, discussionId: replyDiscussion.id, iid, kind: 'reply', projectId: resourceId }, discussionsResult.refresh)
+      const success = await runAction({ body, discussionId: replyDiscussion.id, iid, kind: 'reply', projectId: resourceId }, discussionsResult.refresh, localDraftKey)
       if (success) setReplyDiscussion(null)
       return success
     }
-    return runAction({ body, iid, kind: 'comment', position: targetPosition, projectId: resourceId, thread: thread || Boolean(targetPosition) }, discussionsResult.refresh)
+    return runAction({ body, iid, kind: 'comment', position: targetPosition, projectId: resourceId, thread: thread || Boolean(targetPosition) }, discussionsResult.refresh, localDraftKey)
   }
   const saveDraft = async (body: string, targetPosition?: Position) => {
     if (targetPosition && !isPositionCurrent(targetPosition, mergeRequest)) {
@@ -163,8 +166,9 @@ export function MergeRequestDetail({ initialMergeRequest, onBack, onOpenProject 
       return false
     }
     setPositionError(null)
+    const localDraftKey = createComposerBackendKey(createComposerBufferKey(session, resourceId, iid, replyDiscussion?.id ?? 'new', commentPosition))
     const action = { body, discussionId: replyDiscussion?.id, iid, kind: 'saveDraft' as const, position: targetPosition, projectId: resourceId }
-    const success = await runAction(action, draftsResult.refresh)
+    const success = await runAction(action, draftsResult.refresh, localDraftKey)
     if (success) setReplyDiscussion(null)
     return success
   }
@@ -205,6 +209,27 @@ export function MergeRequestDetail({ initialMergeRequest, onBack, onOpenProject 
     }
   }
 
+  const retryUnknownReceipt = async () => {
+    if (verifyingUnknown) return
+    setVerifyingUnknown(true)
+    try {
+      await mutation.retryLookup()
+    } finally {
+      setVerifyingUnknown(false)
+    }
+  }
+
+  const acknowledgeVerifiedOutcome = async () => {
+    if (verifyingUnknown) return
+    setVerifyingUnknown(true)
+    try {
+      const success = await mutation.reset()
+      if (success) setVerificationReady(false)
+    } finally {
+      setVerifyingUnknown(false)
+    }
+  }
+
   const verifyUnknownOutcome = async () => {
     if (!session || !mutation.unknownAction || verifyingUnknown) return
     const unknownAction = mutation.unknownAction
@@ -232,32 +257,20 @@ export function MergeRequestDetail({ initialMergeRequest, onBack, onOpenProject 
         break
     }
     try {
-      await Promise.all(queries.map((query, index) => queryGitLab({
+      const keys = queries.map((query) => ['gitlab', session.id, JSON.stringify(query)] as const)
+      await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ exact: true, queryKey })))
+      const snapshots = await Promise.all(queries.map((query, index) => queryGitLab({
         mode: 'network',
         query,
         requestId: createRequestId(`verify-${index}`),
         sessionId: session.id,
       })))
-      currentResult.refresh()
-      switch (unknownAction.kind) {
-        case 'comment':
-        case 'reply':
-        case 'editNote':
-        case 'deleteNote':
-        case 'resolve':
-          discussionsResult.refresh()
-          break
-        case 'saveDraft':
-        case 'editDraft':
-        case 'deleteDraft':
-        case 'publishDraft':
-          draftsResult.refresh()
-          break
-        case 'approve':
-        case 'unapprove':
-          approvalsResult.refresh()
-          break
+      if (snapshots.some((snapshot) => !snapshot)) {
+        throw new Error('最新状態を取得できませんでした。')
       }
+      // Make the confirmed response visible before enabling acknowledgement;
+      // another background refresh must not leave the old snapshot on screen.
+      snapshots.forEach((snapshot, index) => queryClient.setQueryData(keys[index], { error: null, snapshot }))
       setVerificationReady(true)
     } catch (caught) {
       setVerificationError(normalizeGitLabError(caught).message)
@@ -301,7 +314,7 @@ export function MergeRequestDetail({ initialMergeRequest, onBack, onOpenProject 
         {activeTab === 'changes' ? <ChangesTab allowComments={!selectedCommit} changeNextPage={selectedCommit ? commitDiffResult.snapshot?.nextPage ?? null : diffsResult.snapshot?.nextPage ?? null} changePage={changePage} changesError={selectedCommit ? commitDiffResult.error : diffsResult.error} changesLoading={selectedCommit ? commitDiffResult.loading : diffsResult.loading} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} commitsLoading={commitsResult.loading} diffs={diffs} fileResult={fileResult} fileView={fileView} onComment={(nextPosition) => { setPosition(normalizePosition(nextPosition, mergeRequest)); setPositionError(null); setActiveTab('discussion') }} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onSelectCommit={(sha) => { setSelectedCommit(sha); setSelectedFile(null); setFileView('diff'); setChangePage(1); setCommitPage(1) }} onSelectFile={setSelectedFile} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={commentPosition} /> : null}
         {activeTab === 'overview' ? <OverviewTab approvals={approvals} approvalsError={approvalsResult.error} approvalsLoading={approvalsResult.loading} currentUserId={session?.user.id ?? ''} description={mergeRequest.description} disabled={mutation.isLocked || mutation.isPending || !mergeRequest.headSha} onApprove={(myApproved) => mergeRequest.headSha ? runAction({ iid, kind: myApproved ? 'unapprove' : 'approve', projectId: resourceId, ...(myApproved ? {} : { sha: mergeRequest.headSha }) } as GitLabAction, approvalsResult.refresh) : Promise.resolve(false)} /> : null}
         {positionError ? <Alert severity="warning">{positionError}</Alert> : null}
-        {mutation.error ? <Alert action={mutation.status === 'unknown' ? <Button disabled={verifyingUnknown} onClick={() => { if (verificationReady) { mutation.reset(); setVerificationReady(false) } else void verifyUnknownOutcome() }} size="small">{verifyingUnknown ? '確認中…' : verificationReady ? '再取得結果を確認した' : 'サーバーから再取得'}</Button> : undefined} severity={mutation.status === 'unknown' ? 'warning' : 'error'}>{mutation.status === 'unknown' ? verificationReady ? '最新状態を再取得しました。結果を画面で確認してから再送停止を解除してください。' : '投稿結果を確認できないため、このMRへの再送を停止しています。' : mutation.error.message}</Alert> : null}
+        {mutation.error ? <Alert action={mutation.status === 'unknown' ? <Button disabled={verifyingUnknown} onClick={() => { if (!mutation.unknownAction) void retryUnknownReceipt(); else if (verificationReady) void acknowledgeVerifiedOutcome(); else void verifyUnknownOutcome() }} size="small">{verifyingUnknown ? '確認中…' : !mutation.unknownAction ? '確認記録を再取得' : verificationReady ? '再取得結果を確認した' : 'サーバーから再取得'}</Button> : undefined} severity={mutation.status === 'unknown' ? 'warning' : 'error'}>{mutation.status === 'unknown' ? verificationReady ? '最新状態を再取得しました。結果を画面で確認してから再送停止を解除してください。' : '投稿結果を確認できないため、このMRへの再送を停止しています。' : mutation.error.message}</Alert> : null}
         {verificationError ? <Alert severity="error">確認用の再取得に失敗しました: {verificationError}</Alert> : null}
       </Stack>
     </Box>
@@ -362,9 +375,33 @@ interface DiscussionTabProps {
   selectedDrafts: string[]
 }
 
-function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof ReviewComposer>, 'onChange' | 'value'> & { bufferKey: string }) {
-  const { body, change, discard, error } = useComposerBuffer(props.bufferKey)
-  return <Stack spacing={0.5}><ReviewComposer {...props} onChange={change} value={body} />{body ? <Button color="inherit" disabled={props.pending} onClick={discard} size="small" sx={{ alignSelf: 'flex-end' }}>入力を破棄</Button> : null}{error ? <Alert severity="warning">{error}</Alert> : null}</Stack>
+export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof ReviewComposer>, 'onChange' | 'value'> & { bufferKey: string }) {
+  const { session } = useConnection()
+  const { body, change, discard, error, persistenceStatus } = useComposerBuffer(props.bufferKey, session?.id ?? null)
+  const [flushError, setFlushError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const persistenceLabel = persistenceStatus === 'hydrating' || persistenceStatus === 'saving'
+    ? '保存中…'
+    : persistenceStatus === 'saved' && body
+      ? 'この端末に保存済み'
+      : null
+  const flushBeforeSubmit = async (submit: () => Promise<boolean>): Promise<boolean> => {
+    setFlushError(null)
+    setSubmitting(true)
+    try {
+      const flushed = await flushComposerBuffers().catch(() => false)
+      if (!flushed) {
+        setFlushError('入力の保存を確認できないため、投稿を停止しました。')
+        return false
+      }
+      return await submit()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  const onSubmitComment = (nextBody: string, thread: boolean, position?: Position) => flushBeforeSubmit(() => props.onSubmitComment(nextBody, thread, position))
+  const onSaveDraft = (nextBody: string, position?: Position) => flushBeforeSubmit(() => props.onSaveDraft(nextBody, position))
+  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discard} size="small" sx={{ alignSelf: 'flex-end' }}>入力を破棄</Button> : null}{persistenceLabel ? <Typography color="text.secondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
 function DraftList({ disabled, drafts, draftEdit, nextPage, onDelete, onEdit, onNextPage, onPublish, onPublishSelected, onSelect, onSetEdit, selected, statuses }: { disabled: boolean; drafts: Draft[]; draftEdit: { id: string; body: string } | null; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (value: { id: string; body: string } | null) => void; selected: string[]; statuses: Record<string, DraftStatus> }) {

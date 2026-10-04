@@ -26,6 +26,7 @@ export type GitLabErrorCode =
   | 'NETWORK'
   | 'TIMEOUT'
   | 'RATE_LIMITED'
+  | 'BUSY'
   | 'INVALID_INPUT'
   | 'STORAGE'
   | 'UNSUPPORTED'
