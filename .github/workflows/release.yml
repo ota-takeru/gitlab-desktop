@@ -101,6 +101,5 @@ jobs:
           prerelease: false
           projectPath: .
           args: --config src-tauri/tauri.release.conf.json
-          uploadUpdaterJson: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          uploadUpdaterSignatures: true

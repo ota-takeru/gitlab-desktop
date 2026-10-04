@@ -12,6 +12,8 @@ Windows x64。以下の初期基盤・モックの記録とは別に、RustのGi
 - HTTP fixtureでタイトル・説明検索のクエリ、プロジェクト内MR、サブパス・ファイルパス、ページング、401/429、GETの再試行上限、書込の単発送信、MR差分取得前後のhead変更拒否を確認。
 - キャッシュのアカウント分離、保持期限・容量による退避、ログアウト後の遅い応答によるキャッシュ復活防止、処理待ちの上限・キャンセル、未来のDB schemaの拒否を確認。
 - 署名付きWindows NSISをローカルで生成した。更新用署名鍵はソース外で管理し、GitHub Repository secretを設定済み。Authenticode署名ではない。
+- [GitHub CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37191999302)と[自動リリース](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37191999309)が成功。mainのバージョン変更からv0.1.1タグと[公開リリース](https://github.com/ota-takeru/gitlab-desktop/releases/tag/v0.1.1)を自動生成した。
+- 公開先から認証なしでNSIS（4,330,370 bytes）、署名、latest.jsonを取得。Windows x64用URL・署名の一致とSHA-256を確認し、公開インストーラーの署名検証・改ざん拒否テストも成功。
 
 初期JSは857.45 kB（gzip 264.32 kB）。Viteのchunkサイズ警告と開発時Fast Refreshに関するlint警告は残るが、ビルド・型検査にエラーはない。この数値は起動時間や実データを含む描画性能の計測ではない。
 
