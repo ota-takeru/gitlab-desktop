@@ -37,7 +37,13 @@ pub struct LiveSession {
     mutation_lock: AsyncMutex<()>,
     revision: AtomicU64,
     retry_at: AtomicU64,
+    /// Avatar images already fetched for this session, as data URLs. `None`
+    /// records an avatar that is not an instance-hosted image.
+    avatars: Mutex<HashMap<String, Option<String>>>,
 }
+
+const AVATAR_CACHE_LIMIT: usize = 512;
+const AVATAR_MAX_BYTES: usize = 256 * 1024;
 
 struct Inner {
     active: Option<Arc<LiveSession>>,
@@ -277,6 +283,10 @@ async fn identify(client: &reqwest::Client, api: &Url) -> Result<User, AppError>
         id: id.to_string(),
         username: username.into(),
         name: body["name"].as_str().unwrap_or(username).into(),
+        avatar_url: body["avatar_url"]
+            .as_str()
+            .filter(|avatar| !avatar.is_empty() && avatar.len() <= 2048)
+            .map(Into::into),
     })
 }
 
@@ -303,6 +313,7 @@ fn make_session(
         mutation_lock: AsyncMutex::new(()),
         revision: AtomicU64::new(0),
         retry_at: AtomicU64::new(0),
+        avatars: Mutex::new(HashMap::new()),
     }))
 }
 
@@ -768,6 +779,7 @@ impl NativeState {
                 fetched_at: now_ms(),
                 source: "network".into(),
                 next_page: result.next_page,
+                total_pages: result.total_pages,
                 completeness: if result.truncated {
                     "truncated"
                 } else if result.next_page.is_some() {
@@ -947,6 +959,45 @@ impl NativeState {
         outcome
     }
 
+    /// Returns an avatar as a `data:` URL so the webview keeps its strict
+    /// `img-src`. Only images uploaded to the connected instance are fetched;
+    /// external avatars (for example Gravatar) and failures yield `None` and
+    /// the UI falls back to initials.
+    pub async fn avatar(&self, id: String, input: String) -> Result<Option<String>, AppError> {
+        let session = self.active(&id)?;
+        let Some(url) = instance_avatar_url(&session.public.instance_url, &input) else {
+            return Ok(None);
+        };
+        let key = url.to_string();
+        if let Some(hit) = session
+            .avatars
+            .lock()
+            .map_err(|_| storage_error())?
+            .get(&key)
+        {
+            return Ok(hit.clone());
+        }
+        if check_cooldown(&session).is_err() {
+            return Ok(None);
+        }
+        let fetched = tokio::select! {
+            fetched = async {
+                let _slot = session.slots.clone().acquire_owned().await.ok()?;
+                fetch_avatar(&session.client, url).await
+            } => fetched,
+            _ = session.cancelled.cancelled() => return Err(cancelled()),
+        };
+        // Network failures are not cached so a later view can retry.
+        if let Some(result) = &fetched {
+            let mut avatars = session.avatars.lock().map_err(|_| storage_error())?;
+            if avatars.len() >= AVATAR_CACHE_LIMIT {
+                avatars.clear();
+            }
+            avatars.insert(key, result.clone());
+        }
+        Ok(fetched.flatten())
+    }
+
     pub fn open_url(&self, id: &str, input: &str) -> Result<(), AppError> {
         let session = self.active(id)?;
         let base = normalize_instance(&session.public.instance_url)?;
@@ -966,6 +1017,62 @@ impl NativeState {
         open::that_detached(url.as_str())
             .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
     }
+}
+
+/// Accepts only uploads served by the connected instance (relative URLs are
+/// resolved against it). Credentials are sent to that origin only.
+fn instance_avatar_url(instance_url: &str, input: &str) -> Option<Url> {
+    let base = normalize_instance(instance_url).ok()?;
+    let url = base.join(input.trim()).ok()?;
+    let uploads = format!("{}uploads/", base.path());
+    (url.origin() == base.origin()
+        && url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+        && url.path().starts_with(&uploads)
+        && !url.path().contains("/../"))
+    .then_some(url)
+}
+
+/// `Some(None)`: the server answered with something that is not a small
+/// image. `None`: the request failed and may be retried later.
+async fn fetch_avatar(client: &reqwest::Client, url: Url) -> Option<Option<String>> {
+    use base64::Engine as _;
+    let mut response = client.get(url).send().await.ok()?;
+    if !response.status().is_success() {
+        return Some(None);
+    }
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .unwrap_or_default();
+    if !matches!(
+        content_type.as_str(),
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    ) {
+        return Some(None);
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if body.len() + chunk.len() > AVATAR_MAX_BYTES {
+            return Some(None);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Some(Some(format!(
+        "data:{content_type};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(body)
+    )))
 }
 
 fn write_busy() -> AppError {
@@ -1098,9 +1205,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Explicit read-only GitLab.com authentication check with existing glab credentials"]
-    async fn imported_glab_token_authenticates_gitlab_com() {
-        let instance = normalize_instance("https://gitlab.com").unwrap();
+    #[ignore = "Explicit read-only authentication check; set GLAB_TEST_URL to the intended saved instance"]
+    async fn imported_glab_token_authenticates_selected_instance() {
+        let url = std::env::var("GLAB_TEST_URL")
+            .expect("Set GLAB_TEST_URL for the intended saved glab instance");
+        let instance = normalize_instance(&url).unwrap();
         let token = crate::glab::read_token(&instance, &std::env::temp_dir())
             .await
             .unwrap();
@@ -1130,6 +1239,7 @@ mod tests {
                 id: "1".into(),
                 username: "fixture".into(),
                 name: "Fixture".into(),
+                avatar_url: None,
             },
             server_version: None,
             credential_key: uuid::Uuid::new_v4().to_string(),
@@ -1774,5 +1884,35 @@ mod tests {
             account_key("https://a/", "1"),
             account_key("https://a/", "2")
         );
+    }
+
+    #[test]
+    fn avatar_urls_are_limited_to_instance_uploads() {
+        let instance = "https://gitlab.example/GitLab/";
+        let accepted = instance_avatar_url(
+            instance,
+            "https://gitlab.example/GitLab/uploads/-/system/user/avatar/7/avatar.png?width=64",
+        )
+        .unwrap();
+        assert_eq!(
+            accepted.path(),
+            "/GitLab/uploads/-/system/user/avatar/7/avatar.png"
+        );
+        assert!(
+            instance_avatar_url(instance, "/GitLab/uploads/-/system/user/avatar/7/a.png").is_some()
+        );
+        for rejected in [
+            "https://secure.gravatar.com/avatar/abc?s=80",
+            "http://gitlab.example/GitLab/uploads/-/system/user/avatar/7/a.png",
+            "https://gitlab.example/GitLab/api/v4/user",
+            "https://gitlab.example/other/uploads/a.png",
+            "https://user:pass@gitlab.example/GitLab/uploads/a.png",
+            "https://gitlab.example.evil/GitLab/uploads/a.png",
+        ] {
+            assert!(
+                instance_avatar_url(instance, rejected).is_none(),
+                "{rejected}"
+            );
+        }
     }
 }

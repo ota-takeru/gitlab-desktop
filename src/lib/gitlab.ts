@@ -55,6 +55,16 @@ export async function connectGitLab(input: ConnectGitLabInput): Promise<GitLabSe
   }
 }
 
+/** Returns only the HTTPS hosts with credentials already saved by glab. */
+export async function listGlabConnections(): Promise<string[]> {
+  ensureDesktop()
+  try {
+    return await invoke<string[]>('list_glab_connections')
+  } catch (error) {
+    throw normalizeGitLabError(error)
+  }
+}
+
 /**
  * Imports a credential that glab already keeps for the requested GitLab
  * origin. The credential itself never crosses into the frontend; Rust reads
@@ -146,6 +156,20 @@ export async function openGitLabUrl(sessionId: string, url: string): Promise<voi
   ensureDesktop()
   try {
     await invoke<void>('open_gitlab_url', { sessionId, url })
+  } catch (error) {
+    throw normalizeGitLabError(error)
+  }
+}
+
+/**
+ * Returns a GitLab avatar as a `data:` URL, or null when Rust declines it
+ * (external host, not an image, too large). The webview never loads GitLab
+ * image URLs directly, so the strict `img-src` CSP stays unchanged.
+ */
+export async function getGitLabAvatar(sessionId: string, url: string): Promise<string | null> {
+  if (!isTauri()) return null
+  try {
+    return await invoke<string | null>('get_gitlab_avatar', { sessionId, url })
   } catch (error) {
     throw normalizeGitLabError(error)
   }

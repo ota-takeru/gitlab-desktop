@@ -6,6 +6,7 @@ export interface PreferenceScope {
 }
 
 export interface SavedMergeRequestSearch {
+  assignee?: string
   authorId?: string
   id: string
   label: string
@@ -15,6 +16,8 @@ export interface SavedMergeRequestSearch {
   projectId?: string
   updatedAfter?: string
   updatedBefore?: string
+  orderBy?: 'updated_at' | 'created_at'
+  sort?: 'asc' | 'desc'
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -35,7 +38,7 @@ function writeJson<T>(key: string, value: T): void {
   }
 }
 
-function scopedKey(scope: PreferenceScope, name: string): string {
+export function scopedKey(scope: PreferenceScope, name: string): string {
   const normalizedUrl = normalizeInstanceUrl(scope.instanceUrl)
   return `${preferencePrefix}${encodeURIComponent(normalizedUrl)}:${encodeURIComponent(scope.userId)}:${name}`
 }
@@ -81,11 +84,14 @@ export function readSavedSearches(scope: PreferenceScope): SavedMergeRequestSear
       && typeof candidate.label === 'string'
       && typeof candidate.query === 'string'
       && (candidate.state === 'all' || candidate.state === 'opened' || candidate.state === 'closed' || candidate.state === 'merged')
+      && optionalString(candidate.assignee)
       && optionalString(candidate.authorId)
       && optionalString(candidate.projectId)
       && optionalString(candidate.reviewer)
       && optionalString(candidate.updatedAfter)
       && optionalString(candidate.updatedBefore)
+      && (candidate.orderBy === undefined || candidate.orderBy === 'updated_at' || candidate.orderBy === 'created_at')
+      && (candidate.sort === undefined || candidate.sort === 'asc' || candidate.sort === 'desc')
   }).slice(0, 20)
 }
 
@@ -102,6 +108,8 @@ export function clearPreferences(scope: PreferenceScope): void {
     globalThis.localStorage?.removeItem(scopedKey(scope, 'pinned'))
     globalThis.localStorage?.removeItem(scopedKey(scope, 'recent'))
     globalThis.localStorage?.removeItem(scopedKey(scope, 'saved-searches'))
+    globalThis.localStorage?.removeItem(scopedKey(scope, 'personal-workspace'))
+    globalThis.dispatchEvent(new Event('gitlab-workspace-preferences-change'))
   } catch {
     // Optional local preferences should never block logout.
   }

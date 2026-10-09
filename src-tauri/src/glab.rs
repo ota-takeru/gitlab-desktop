@@ -223,7 +223,12 @@ impl EventReceiver for ConfigPolicy {
         match event {
             Event::Alias(_) => self.invalid = true,
             Event::Scalar(value, _, anchor, tag) => {
-                if anchor != 0 || tag.is_some() {
+                // glab writes timestamps as !!str; this is an ordinary string,
+                // not an alias or application-defined YAML type.
+                let string_tag = tag
+                    .as_ref()
+                    .is_none_or(|tag| tag.handle == "tag:yaml.org,2002:" && tag.suffix == "str");
+                if anchor != 0 || !string_tag {
                     self.invalid = true;
                 }
                 if let Some(Frame::Map { keys, next_key }) = self.frames.last_mut() {
@@ -284,7 +289,7 @@ fn flag(node: &Yaml, key: &str) -> Result<bool, AppError> {
     }
 }
 
-fn select_source(text: &str, instance: &Url) -> Result<CredentialSource, AppError> {
+fn parse_config(text: &str) -> Result<Yaml, AppError> {
     if text.len() > MAX_CONFIG {
         return Err(missing_auth());
     }
@@ -301,8 +306,13 @@ fn select_source(text: &str, instance: &Url) -> Result<CredentialSource, AppErro
     if documents.len() != 1 {
         return Err(missing_auth());
     }
+    documents.into_iter().next().ok_or_else(missing_auth)
+}
+
+fn select_source(text: &str, instance: &Url) -> Result<CredentialSource, AppError> {
+    let document = parse_config(text)?;
     let host = &instance[Position::BeforeHost..Position::AfterPort];
-    let node = &documents[0]["hosts"][host];
+    let node = &document["hosts"][host];
     if node.as_hash().is_none() {
         return Err(missing_auth());
     }
@@ -326,14 +336,61 @@ fn select_source(text: &str, instance: &Url) -> Result<CredentialSource, AppErro
     Ok(CredentialSource::Plaintext(check_token(token.to_owned())?))
 }
 
-fn load_source(instance: &Url) -> Result<CredentialSource, AppError> {
+fn read_config_text() -> Result<String, AppError> {
     let file = std::fs::File::open(config_path()?).map_err(|_| missing_auth())?;
     let mut bytes = Vec::new();
     file.take((MAX_CONFIG + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|_| missing_auth())?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| missing_auth())?;
-    select_source(text, instance)
+    String::from_utf8(bytes).map_err(|_| missing_auth())
+}
+
+fn load_source(instance: &Url) -> Result<CredentialSource, AppError> {
+    select_source(&read_config_text()?, instance)
+}
+
+fn configured_connections(text: &str) -> Result<Vec<String>, AppError> {
+    let document = parse_config(text)?;
+    let Some(hosts) = document["hosts"].as_hash() else {
+        return Ok(Vec::new());
+    };
+    let mut connections = Vec::new();
+    for (key, node) in hosts {
+        let Some(host) = key.as_str() else { continue };
+        let candidate = (|| -> Result<Url, AppError> {
+            let api_host = optional_string(node, "api_host", host)?;
+            let protocol = optional_string(node, "api_protocol", "https")?;
+            let subfolder = optional_string(node, "subfolder", "")?;
+            let instance = normalize_instance(&format!(
+                "https://{api_host}/{}",
+                subfolder.trim_matches('/')
+            ))?;
+            // A configured API override must never redirect another host's credential.
+            if &instance[Position::BeforeHost..Position::AfterPort] != host {
+                return Err(missing_auth());
+            }
+            check_scope(&instance, api_host, protocol, subfolder)?;
+            if !flag(node, "use_keyring")? {
+                check_token(optional_string(node, "token", "")?.to_owned())?;
+            }
+            Ok(instance)
+        })();
+        if let Ok(instance) = candidate {
+            connections.push(instance.as_str().trim_end_matches('/').to_owned());
+        }
+    }
+    Ok(connections)
+}
+
+/// Lists only connection URLs. Keyring reads and authentication happen after selection.
+pub fn list_connections() -> Result<Vec<String>, AppError> {
+    if !cfg!(windows) {
+        return Err(AppError::new(
+            "UNSUPPORTED",
+            "glab認証情報の取り込みはWindows版のみ対応しています。",
+        ));
+    }
+    configured_connections(&read_config_text()?)
 }
 
 struct TemporaryConfig {
@@ -394,6 +451,62 @@ pub async fn read_token(instance: &Url, directory: &Path) -> Result<String, AppE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_glab_standard_string_tags_without_enabling_other_yaml_types() {
+        for token in ["fake-host-token", "!!str fake-host-token"] {
+            let text = format!("last_update_check_timestamp: !!str 2026-10-08T00:00:00Z\nhosts:\n  gitlab.example.com:\n    api_protocol: https\n    token: {token}\n");
+            let instance = normalize_instance("https://gitlab.example.com").unwrap();
+            assert!(
+                matches!(select_source(&text, &instance).unwrap(), CredentialSource::Plaintext(token) if token == "fake-host-token")
+            );
+            assert_eq!(
+                configured_connections(&text).unwrap(),
+                vec!["https://gitlab.example.com"]
+            );
+        }
+    }
+
+    #[test]
+    fn lists_saved_https_connections_without_credentials_or_empty_hosts() {
+        let text = serde_json::json!({
+            "token": "fake-root-secret",
+            "host": "gitlab.com",
+            "hosts": {
+                "gitlab.com": { "token": "" },
+                "gitlab.example.com": { "token": "fake-private-secret", "api_host": "gitlab.example.com", "api_protocol": "https" },
+                "keyring.example.com": { "use_keyring": true },
+                "http.example.com": { "token": "fake-http-secret", "api_protocol": "http" },
+                "override.example.com": { "token": "fake-override-secret", "api_host": "other.example.com" }
+            }
+        }).to_string();
+        let mut connections = configured_connections(&text).unwrap();
+        connections.sort();
+        assert_eq!(
+            connections,
+            vec!["https://gitlab.example.com", "https://keyring.example.com"]
+        );
+        assert!(!serde_json::to_string(&connections)
+            .unwrap()
+            .contains("secret"));
+    }
+
+    #[test]
+    fn lists_subpath_connections_with_the_same_scope_used_for_import() {
+        for fields in [
+            serde_json::json!({ "token": "fake-token", "subfolder": "Team/GitLab" }),
+            serde_json::json!({ "token": "fake-token", "api_host": "gitlab.example.com:8443/Team/GitLab" }),
+        ] {
+            let text =
+                serde_json::json!({ "hosts": { "gitlab.example.com:8443": fields } }).to_string();
+            let connections = configured_connections(&text).unwrap();
+            assert_eq!(
+                connections,
+                vec!["https://gitlab.example.com:8443/Team/GitLab"]
+            );
+            assert!(select_source(&text, &normalize_instance(&connections[0]).unwrap()).is_ok());
+        }
+    }
 
     fn fixture(host: &str, fields: serde_json::Value) -> String {
         serde_json::json!({ "token": "fake-root-token", "hosts": { host: fields, "other.invalid": { "token": "fake-other-token" } } }).to_string()
@@ -515,13 +628,17 @@ mod tests {
         let samples = [
             "hosts:\n  gitlab.com:\n    token: fake-one\n    token: fake-two\n",
             "hosts: {gitlab.com: {token: &secret fake-token}, other.invalid: {token: *secret}}",
-            "hosts: {gitlab.com: {token: !!str fake-token}}",
+            "hosts: {gitlab.com: {token: !secret fake-token}}",
+            "hosts: {gitlab.com: {token: !!int 123}}",
             "hosts: {gitlab.com: {token: fake-token}}\n---\nhosts: {}",
             "hosts: {gitlab.com: {token: [fake-token]}}",
             "? [complex, key]\n: fake-token",
             "hosts: [unterminated",
         ];
         for text in samples {
+            assert!(configured_connections(text)
+                .map(|connections| connections.is_empty())
+                .unwrap_or(true));
             let error = select_source(text, &instance).err().unwrap();
             assert_eq!(error.code, "AUTH_REQUIRED");
             assert!(!error.message.contains("fake"));
@@ -728,5 +845,28 @@ mod tests {
                 assert!(error.message.contains("OAuth"));
             }
         }
+    }
+
+    #[test]
+    #[ignore = "Explicit local configuration check; GLAB_TEST_URL selects the saved host without networking"]
+    fn selected_saved_connection_is_discoverable() {
+        let url = std::env::var("GLAB_TEST_URL")
+            .expect("Set GLAB_TEST_URL for the intended saved glab instance");
+        let instance = normalize_instance(&url).unwrap();
+        let text = read_config_text().expect("Could not read the selected glab config file");
+        let document = parse_config(&text).expect("Could not parse the selected glab config file");
+        let host = &instance[Position::BeforeHost..Position::AfterPort];
+        assert!(
+            document["hosts"][host].as_hash().is_some(),
+            "Requested host missing from selected config"
+        );
+        assert!(
+            configured_connections(&text).unwrap().contains(&url),
+            "Saved host was not listed"
+        );
+        assert!(
+            select_source(&text, &instance).is_ok(),
+            "Saved host credential could not be selected"
+        );
     }
 }

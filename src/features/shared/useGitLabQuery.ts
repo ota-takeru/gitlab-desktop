@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo } from 'react'
+import { useQueryRefreshAllowed } from './QueryRefreshPolicy'
 
 import { cancelGitLabRequest, createRequestId, normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
 import {
@@ -37,10 +38,14 @@ export function useGitLabQuery<Q extends GitLabQuery>(
   query: Q | null,
 ): GitLabQueryState<GitLabQueryData<Q>> {
   const queryClient = useQueryClient()
+  const autoRefresh = useQueryRefreshAllowed()
   const queryJson = useMemo(() => (query ? JSON.stringify(query) : ''), [query])
   const queryKey = useMemo(() => ['gitlab', sessionId ?? '', queryJson] as const, [queryJson, sessionId])
   const loaded = useQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
     enabled: Boolean(sessionId && query),
+    refetchInterval: (current) => autoRefresh && document.visibilityState === 'visible' && query && ['mrs', 'mr', 'notes', 'discussions', 'drafts', 'todos', 'approvals'].includes(query.kind) && !current.state.error && !current.state.data?.error ? 60_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: (current) => autoRefresh && !current.state.error && !current.state.data?.error && Date.now() - current.state.dataUpdatedAt > 60_000,
     queryFn: ({ signal }) => {
       // React Query only calls queryFn while enabled, but keep this guard for
       // type safety and for future callers that manually refetch a disabled key.

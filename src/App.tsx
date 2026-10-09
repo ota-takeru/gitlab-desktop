@@ -4,81 +4,54 @@ import Typography from '@mui/material/Typography'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { ThemeProvider } from '@mui/material/styles'
 
-import { AppShell, type PageKey } from './components/AppShell'
 import { createAppTheme } from './theme'
-import { ModulePage, type ModuleKey } from './pages/ModulePage'
-import { OverviewPage } from './pages/OverviewPage'
 import { ClientApp } from './features/ClientApp'
 
-const UiCatalogPage = lazy(() =>
-  import('./pages/UiCatalogPage').then(({ UiCatalogPage: Page }) => ({ default: Page })),
-)
-const MockApp = lazy(() => import('./pages/MockApp').then(({ MockApp: Page }) => ({ default: Page })))
+const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./pages/DevelopmentApp')) : null
 
-function isModulePage(page: PageKey): page is ModuleKey {
-  return page === 'merge-requests' || page === 'issues' || page === 'pipelines'
+const colorModeKey = 'gitlab-desktop:color-mode'
+
+function readInitialMode(): 'light' | 'dark' {
+  try {
+    const saved = globalThis.localStorage?.getItem(colorModeKey)
+    if (saved === 'light' || saved === 'dark') return saved
+  } catch {
+    // A locked down WebView falls back to the OS preference.
+  }
+  return globalThis.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+function saveMode(mode: 'light' | 'dark') {
+  try {
+    globalThis.localStorage?.setItem(colorModeKey, mode)
+  } catch {
+    // The choice still applies for this session.
+  }
 }
 
 export default function App() {
-  const [mode, setMode] = useState<'light' | 'dark'>('dark')
+  const [mode, setMode] = useState<'light' | 'dark'>(readInitialMode)
   const [route, setRoute] = useState(() => window.location.hash.replace(/^#/u, ''))
   useEffect(() => {
     const handleHashChange = () => setRoute(window.location.hash.replace(/^#/u, ''))
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
-  const mockRoute = route.startsWith('mock')
-  const foundationRoute = route.startsWith('foundation')
-  const theme = useMemo(() => createAppTheme(mode, mockRoute ? 'workbench' : 'foundation'), [mode, mockRoute])
-
-  if (mockRoute) {
-    return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Suspense fallback={<CatalogLoading />}>
-          <MockApp
-            mode={mode}
-            onBackToFoundation={() => {
-              window.location.hash = '#foundation'
-            }}
-            onModeChange={() => setMode((current) => (current === 'dark' ? 'light' : 'dark'))}
-          />
-        </Suspense>
-      </ThemeProvider>
-    )
+  const developmentRoute = DevelopmentApp && (route.startsWith('mock') || route.startsWith('foundation'))
+  const theme = useMemo(() => createAppTheme(mode, 'workbench'), [mode])
+  const onModeChange = () => {
+    const next = mode === 'dark' ? 'light' : 'dark'
+    saveMode(next)
+    setMode(next)
   }
-
-  if (!foundationRoute) {
-    return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <ClientApp mode={mode} onModeChange={() => setMode((current) => (current === 'dark' ? 'light' : 'dark'))} />
-      </ThemeProvider>
-    )
-  }
-
-  return <FoundationApp mode={mode} onModeChange={() => setMode((current) => (current === 'dark' ? 'light' : 'dark'))} />
-}
-
-function FoundationApp({ mode, onModeChange }: { mode: 'light' | 'dark'; onModeChange: () => void }) {
-  const [page, setPage] = useState<PageKey>(() => window.location.hash === '#foundation/catalog' ? 'catalog' : 'overview')
   return (
-    <ThemeProvider theme={createAppTheme(mode, 'foundation')}>
+    <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AppShell
-        mode={mode}
-        onModeChange={onModeChange}
-        onPageChange={setPage}
-        page={page}
-      >
-        {page === 'overview' ? <OverviewPage onPageChange={setPage} /> : null}
-        {isModulePage(page) ? <ModulePage module={page} /> : null}
-        {page === 'catalog' ? (
-          <Suspense fallback={<CatalogLoading />}>
-            <UiCatalogPage />
-          </Suspense>
-        ) : null}
-      </AppShell>
+      {developmentRoute && DevelopmentApp ? (
+        <Suspense fallback={<CatalogLoading />}>
+          <DevelopmentApp mode={mode} onModeChange={onModeChange} route={route} />
+        </Suspense>
+      ) : <ClientApp mode={mode} onModeChange={onModeChange} />}
     </ThemeProvider>
   )
 }

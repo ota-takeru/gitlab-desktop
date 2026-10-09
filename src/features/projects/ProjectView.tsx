@@ -1,19 +1,16 @@
 import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded'
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
-import Divider from '@mui/material/Divider'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
-import List from '@mui/material/List'
-import ListItemButton from '@mui/material/ListItemButton'
-import ListItemText from '@mui/material/ListItemText'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
@@ -21,7 +18,9 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { EmptyState } from '../../components/EmptyState'
+import { ListRow } from '../../components/ListRow'
+import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
+import { Pager } from '../../components/Pager'
 import type { Project } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { preferenceScope, readPinnedProjectIds, readRecentProjectIds, writePinnedProjectIds, writeRecentProjectIds } from '../shared/preferences'
@@ -81,111 +80,77 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
   const projectById = new Map(projects.map((project) => [project.id, project]))
 
   if (!session) {
-    return <EmptyState description="GitLab URLとPATで接続すると、参加プロジェクトを検索できます。" title="プロジェクトを表示できません" />
+    return <PaneEmpty description="GitLabに接続すると、参加しているプロジェクトを検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">接続設定を開く</Button></PaneEmpty>
   }
 
   return (
-    <Box component="main" sx={{ minHeight: '100%', maxWidth: 1120, mx: 'auto' }}>
-      <Stack spacing={2}>
-        <Stack direction={{ md: 'row', xs: 'column' }} spacing={1.5} sx={{ alignItems: { md: 'end' }, justifyContent: 'space-between' }}>
-          <Box>
-            <Typography color="primary.main" variant="overline">Projects</Typography>
-            <Typography component="h1" variant="h1">プロジェクト</Typography>
-            <Typography color="text.secondary" variant="body2">参加中または閲覧可能なプロジェクトを探し、固定したプロジェクトからレビューを始めます。</Typography>
-          </Box>
-          <Button disabled={result.loading || result.refreshing} onClick={result.refresh} size="small" startIcon={<RefreshRoundedIcon />} variant="outlined">
-            更新
-          </Button>
-        </Stack>
-
-        <Paper component="form" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()); setPage(1) }} sx={{ p: 1.5 }} variant="outlined">
-          <Stack direction={{ md: 'row', xs: 'column' }} spacing={1.25} sx={{ alignItems: { md: 'center' } }}>
-            <TextField
-              fullWidth
-              label="プロジェクトを検索"
-              inputRef={searchInputRef}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="名前またはnamespace"
-              slotProps={{ htmlInput: { 'aria-label': 'プロジェクトを検索' }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }}
-              value={searchInput}
-            />
-            <Button startIcon={<SearchRoundedIcon />} sx={{ minWidth: 112 }} type="submit" variant="contained">検索</Button>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 185 }}>
-              <Switch checked={includeArchived} slotProps={{ input: { 'aria-label': 'アーカイブ済みを含める' } }} onChange={(event) => { setIncludeArchived(event.target.checked); setPage(1) }} size="small" />
-              <Typography variant="body2">アーカイブ済み</Typography>
-            </Stack>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 185 }}>
-              <Switch checked={membershipOnly} slotProps={{ input: { 'aria-label': '参加中のプロジェクトだけ' } }} onChange={(event) => { setMembershipOnly(event.target.checked); setPage(1) }} size="small" />
-              <Typography variant="body2">参加中のみ</Typography>
-            </Stack>
+    <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
+      <PaneHeader actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} title="プロジェクト">
+        <Box component="form" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()); setPage(1) }}>
+          <TextField
+            fullWidth
+            inputRef={searchInputRef}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="名前またはnamespace"
+            slotProps={{
+              htmlInput: { 'aria-label': 'プロジェクトを検索' },
+              input: {
+                startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>,
+                endAdornment: <InputAdornment position="end"><Tooltip title="検索 (Enter)"><IconButton aria-label="検索" edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
+              },
+            }}
+            value={searchInput}
+          />
+          <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mt: 0.75, rowGap: 0.5 }}>
+            <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => { setMembershipOnly(event.target.checked); setPage(1) }} slotProps={{ input: { 'aria-label': '参加中のプロジェクトだけ' } }} />} label="参加中のみ" slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} sx={{ ml: -0.5 }} />
+            <FormControlLabel control={<Switch checked={includeArchived} onChange={(event) => { setIncludeArchived(event.target.checked); setPage(1) }} slotProps={{ input: { 'aria-label': 'アーカイブ済みを含める' } }} />} label="アーカイブ済み" slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
           </Stack>
-        </Paper>
+        </Box>
+      </PaneHeader>
 
-        {pinned.length > 0 || recent.length > 0 ? <ProjectShortcuts ids={pinned} label="固定" onOpen={openProjectId} projectById={projectById} secondaryIds={recent} secondaryLabel="最近使ったプロジェクト" /> : null}
+      {pinned.length > 0 || recent.length > 0 ? <ProjectShortcuts ids={pinned} label="固定" onOpen={openProjectId} projectById={projectById} secondaryIds={recent} secondaryLabel="最近" /> : null}
+      {result.data ? <PaneStatus>{projects.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</PaneStatus> : null}
 
-        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh} size="small">再試行</Button>} severity="error">{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert severity="warning">保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
-        {result.stale && result.data ? <Typography color="text.secondary" variant="caption">保存済みデータを表示中 · {formatFetchedAt(result.snapshot?.fetchedAt)}</Typography> : null}
-        {result.loading && !result.data ? <LoadingRows /> : null}
-        {!result.loading && !result.data && !result.error ? <EmptyState description="検索条件を変えるか、別のページを取得してください。" title="プロジェクトがありません" /> : null}
-        {result.data ? (
-          <Paper variant="outlined">
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', px: 1.5, py: 1 }}>
-              <FolderOpenRoundedIcon color="primary" fontSize="small" />
-              <Typography sx={{ fontWeight: 700 }} variant="body2">検索結果</Typography>
-              <Chip label={`${projects.length}件取得`} size="small" variant="outlined" />
-              {result.snapshot?.completeness === 'truncated' ? <Chip color="warning" label="省略あり" size="small" variant="outlined" /> : null}
-            </Stack>
-            <Divider />
-            <List disablePadding>
-              {projects.map((project) => {
-                const isPinned = pinned.includes(project.id)
-                return (
-                  <ListItemButton key={project.id} onClick={() => openProject(project)} sx={{ alignItems: 'start', gap: 1, px: 1.5, py: 1.25 }}>
-                    <ListItemText
-                      primary={<Typography sx={{ fontWeight: 700 }} variant="body2">{project.name}</Typography>}
-                      secondary={<Stack spacing={0.25} sx={{ mt: 0.25 }}><Typography color="text.secondary" noWrap variant="caption">{project.pathWithNamespace}</Typography><Typography color="text.secondary" noWrap variant="body2">{project.description || '説明はありません'}</Typography></Stack>}
-                    />
-                    <Tooltip title={isPinned ? '固定を解除' : 'プロジェクトを固定'}>
-                      <IconButton aria-label={isPinned ? `${project.name}の固定を解除` : `${project.name}を固定`} onClick={(event) => { event.stopPropagation(); togglePinned(project.id) }} size="small">
-                        {isPinned ? <BookmarkRoundedIcon color="primary" fontSize="small" /> : <BookmarkBorderRoundedIcon fontSize="small" />}
-                      </IconButton>
-                    </Tooltip>
-                  </ListItemButton>
-                )
-              })}
-              {projects.length === 0 ? <Box sx={{ p: 3, textAlign: 'center' }}><Typography color="text.secondary" variant="body2">条件に一致するプロジェクトがありません。</Typography></Box> : null}
-            </List>
-            <Divider />
-            <PaginationBar nextPage={result.snapshot?.nextPage ?? null} onNext={() => setPage((current) => current + 1)} onPrevious={() => setPage((current) => Math.max(1, current - 1))} page={page} />
-          </Paper>
-        ) : null}
-      </Stack>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
+        {result.error && result.data ? <Alert severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
+        {result.loading && !result.data ? <Typography aria-label="プロジェクトを読み込み中" color="text.secondary" role="status" sx={{ display: 'block', p: 1.5 }} variant="caption">プロジェクトを読み込み中…</Typography> : null}
+        {!result.loading && !result.data && !result.error ? <PaneEmpty description="検索条件を変えるか、別のページを取得してください。" title="プロジェクトがありません" /> : null}
+        {result.data && projects.length === 0 ? <PaneEmpty description="検索条件を変えてください。" title="条件に一致するプロジェクトがありません。" /> : null}
+        {projects.length ? <Box component="ul" sx={{ m: 0, p: 0 }}>
+          {projects.map((project) => {
+            const isPinned = pinned.includes(project.id)
+            return (
+              <ListRow
+                actions={<Tooltip title={isPinned ? '固定を解除' : 'プロジェクトを固定'}><IconButton aria-label={isPinned ? `${project.name}の固定を解除` : `${project.name}を固定`} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project.id)}>{isPinned ? <BookmarkRoundedIcon /> : <BookmarkBorderRoundedIcon />}</IconButton></Tooltip>}
+                ariaLabel={project.name}
+                key={project.id}
+                leading={<FolderOpenRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />}
+                onOpen={() => openProject(project)}
+              >
+                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'baseline', minWidth: 0 }}>
+                  <Typography noWrap sx={{ fontWeight: 600, minWidth: 0 }} variant="body2">{project.name}</Typography>
+                  {project.archived ? <Chip label="アーカイブ済み" size="small" variant="outlined" /> : null}
+                </Stack>
+                <Typography color="text.secondary" component="div" noWrap variant="caption">{project.pathWithNamespace}</Typography>
+                {project.description ? <Typography color="text.secondary" component="div" noWrap sx={{ mt: 0.25 }} variant="caption">{project.description}</Typography> : null}
+              </ListRow>
+            )
+          })}
+        </Box> : null}
+      </Box>
+      {result.data && (page > 1 || result.snapshot?.nextPage) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={(result.snapshot?.nextPage ?? null) !== null} hasPrevious={page > 1} onNext={() => setPage((current) => current + 1)} onPrevious={() => setPage((current) => Math.max(1, current - 1))} page={page} /></Box> : null}
     </Box>
   )
 }
 
 function ProjectShortcuts({ ids, label, onOpen, projectById, secondaryIds, secondaryLabel }: { ids: string[]; label: string; onOpen: (projectId: string) => void; projectById: Map<string, Project>; secondaryIds: string[]; secondaryLabel: string }) {
-  return <Paper component="section" sx={{ p: 1.25 }} variant="outlined"><Stack spacing={1}><Typography sx={{ fontWeight: 700 }} variant="body2">プロジェクトへのショートカット</Typography><ShortcutGroup ids={ids} label={label} onOpen={onOpen} projectById={projectById} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} onOpen={onOpen} projectById={projectById} /></Stack></Paper>
+  return <Stack aria-label="プロジェクトへのショートカット" component="section" spacing={0.75} sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 1 }}><ShortcutGroup ids={ids} label={label} onOpen={onOpen} projectById={projectById} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} onOpen={onOpen} projectById={projectById} /></Stack>
 }
 
 function ShortcutGroup({ ids, label, onOpen, projectById }: { ids: string[]; label: string; onOpen: (projectId: string) => void; projectById: Map<string, Project> }) {
   if (ids.length === 0) return null
-  return <Stack spacing={0.5}><Typography color="text.secondary" variant="caption">{label}</Typography><Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>{ids.map((id) => { const project = projectById.get(id); return <Chip clickable key={`${label}:${id}`} label={project?.name ?? `Project ${id}`} onClick={() => onOpen(id)} size="small" variant="outlined" /> })}</Stack></Stack>
-}
-
-function PaginationBar({ nextPage, onNext, onPrevious, page }: { nextPage: number | null; onNext: () => void; onPrevious: () => void; page: number }) {
-  return (
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end', p: 1 }}>
-      <Typography color="text.secondary" sx={{ mr: 'auto' }} variant="caption">ページ {page}</Typography>
-      <Button disabled={page <= 1} onClick={onPrevious} size="small">前へ</Button>
-      <Button disabled={nextPage === null} onClick={onNext} size="small" variant="outlined">次へ</Button>
-    </Stack>
-  )
-}
-
-function LoadingRows() {
-  return <Paper aria-label="プロジェクトを読み込み中" sx={{ p: 2 }} variant="outlined"><Stack spacing={1}><Typography color="text.secondary" variant="body2">プロジェクトを読み込み中…</Typography><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 40 }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 40 }} /></Stack></Paper>
+  return <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}><Typography color="text.secondary" sx={{ flex: '0 0 32px' }} variant="caption">{label}</Typography><Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => { const project = projectById.get(id); return <Chip clickable key={`${label}:${id}`} label={project?.name ?? `Project ${id}`} onClick={() => onOpen(id)} size="small" variant="outlined" /> })}</Stack></Stack>
 }
 
 function formatFetchedAt(timestamp?: number): string {

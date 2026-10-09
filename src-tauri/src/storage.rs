@@ -36,6 +36,9 @@ pub struct Snapshot {
     pub fetched_at: u64,
     pub source: String,
     pub next_page: Option<u32>,
+    /// Total pages reported by GitLab; absent in snapshots cached before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_pages: Option<u32>,
     pub completeness: String,
 }
 
@@ -473,6 +476,7 @@ mod tests {
             fetched_at: now_ms(),
             source: "network".into(),
             next_page: Some(2),
+            total_pages: None,
             completeness: "page".into(),
         };
         store.put("a", "query", &snapshot).unwrap();
@@ -500,6 +504,7 @@ mod tests {
             fetched_at: now_ms(),
             source: "network".into(),
             next_page: None,
+            total_pages: None,
             completeness: "complete".into(),
         };
         store.put("a", "old", &snapshot).unwrap();
@@ -564,6 +569,7 @@ mod tests {
             fetched_at: now_ms(),
             source: "network".into(),
             next_page: None,
+            total_pages: None,
             completeness: "complete".into(),
         };
         store.put("account-a", "query", &snapshot).unwrap();
@@ -609,6 +615,7 @@ mod tests {
             fetched_at: now_ms(),
             source: "network".into(),
             next_page: None,
+            total_pages: None,
             completeness: "complete".into(),
         };
         let existing_json = serde_json::to_string(&existing_snapshot).unwrap();
