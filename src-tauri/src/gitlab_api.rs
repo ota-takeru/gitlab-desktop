@@ -1841,12 +1841,20 @@ mod tests {
             let address = format!("http://{}{path}", listener.local_addr().unwrap());
             let requests = Arc::new(Mutex::new(Vec::new()));
             let captured = Arc::clone(&requests);
+            // Each response closes its connection (see `response`), so every
+            // request arrives on a new connection. A test that sends fewer
+            // requests than expected must fail instead of blocking `Drop`.
+            listener.set_nonblocking(true).unwrap();
             let thread = thread::spawn(move || {
                 for response in responses {
-                    let (mut stream, _) = listener.accept().unwrap();
+                    let Some(mut stream) = accept_within(&listener, FIXTURE_WAIT) else {
+                        return;
+                    };
+                    stream.set_nonblocking(false).unwrap();
+                    stream.set_read_timeout(Some(FIXTURE_WAIT)).unwrap();
                     let request = read_request(&mut stream);
                     captured.lock().unwrap().push(request);
-                    stream.write_all(response.as_bytes()).unwrap();
+                    let _ = stream.write_all(response.as_bytes());
                 }
             });
             Self {
@@ -1869,6 +1877,24 @@ mod tests {
         }
     }
 
+    const FIXTURE_WAIT: Duration = Duration::from_secs(10);
+
+    fn accept_within(listener: &TcpListener, wait: Duration) -> Option<TcpStream> {
+        let deadline = std::time::Instant::now() + wait;
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => return Some(stream),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if std::time::Instant::now() >= deadline {
+                        return None;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(_) => return None,
+            }
+        }
+    }
+
     fn read_request(stream: &mut TcpStream) -> String {
         let mut buffer = [0_u8; 8192];
         let length = stream.read(&mut buffer).unwrap_or(0);
@@ -1877,7 +1903,7 @@ mod tests {
 
     fn response(status: &str, body: &str, headers: &str) -> String {
         format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: application/json\r\n{headers}\r\n{}",
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n{headers}\r\n{}",
             body.len(),
             body
         )
