@@ -35,10 +35,10 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
-function renderPanel(autoInstallAllowed = false, compact = false, withBackgroundInput = false) {
+function renderPanel(autoInstallAllowed = false, compact = false, withBackgroundInput = false, notificationOnly = false) {
   return render(
     <ThemeProvider theme={createAppTheme('dark')}>
-      {withBackgroundInput ? <><input aria-label="background input" /><UpdatePanel autoInstallAllowed={autoInstallAllowed} compact={compact} /></> : <UpdatePanel autoInstallAllowed={autoInstallAllowed} compact={compact} />}
+      {withBackgroundInput ? <><input aria-label="background input" /><UpdatePanel autoInstallAllowed={autoInstallAllowed} compact={compact} notificationOnly={notificationOnly} /></> : <UpdatePanel autoInstallAllowed={autoInstallAllowed} compact={compact} notificationOnly={notificationOnly} />}
     </ThemeProvider>,
   )
 }
@@ -74,6 +74,40 @@ describe('UpdatePanel', () => {
     renderPanel()
 
     expect(screen.getByText('デスクトップで更新を確認できます')).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('hides the current-version state in notification-only mode', async () => {
+    invokeMock.mockResolvedValue({ configured: true, version: null, notes: null })
+    renderPanel(true, true, false, true)
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('check_app_update'))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'アプリの更新' })).not.toBeInTheDocument())
+  })
+
+  it('keeps available updates and their install guard actionable in notification-only mode', async () => {
+    const installation = createDeferred<void>()
+    invokeMock.mockImplementation((command: string) => command === 'install_app_update'
+      ? installation.promise
+      : Promise.resolve({ configured: true, version: '0.2.0', notes: '改善と修正' }))
+    const panel = renderPanel(true, true, false, true)
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('check_app_update'))
+    expect(await screen.findByRole('region', { name: 'アプリの更新' })).toHaveTextContent('新しいバージョンがあります')
+    fireEvent.click(screen.getByRole('button', { name: '更新をインストール' }))
+    expect(await screen.findByRole('dialog')).toHaveTextContent('更新中…完了後再起動')
+    await act(async () => installation.resolve(undefined))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    panel.unmount()
+  })
+
+  it('hides the browser preview label in notification-only mode', async () => {
+    setTauriEnvironment(false)
+    renderPanel(false, true, false, true)
+
+    expect(screen.queryByText('デスクトップで更新を確認できます')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'アプリの更新' })).not.toBeInTheDocument()
     await new Promise((resolve) => window.setTimeout(resolve, 0))
     expect(invokeMock).not.toHaveBeenCalled()
   })
@@ -163,7 +197,7 @@ describe('UpdatePanel', () => {
         ? Promise.resolve({ configured: true, version: '0.2.0', notes: null })
         : install.promise
     ))
-    renderPanel(true, true, true)
+    renderPanel(true, true, true, true)
 
     fireEvent.click(await screen.findByRole('button', { name: '更新をインストール' }))
     expect(await screen.findByRole('dialog')).toHaveTextContent('更新中…完了後再起動')

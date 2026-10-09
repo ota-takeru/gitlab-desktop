@@ -12,6 +12,10 @@ pub struct User {
     pub id: String,
     pub username: String,
     pub name: String,
+    /// GitLab's avatar URL. The frontend never loads it directly; it asks the
+    /// native side, which only fetches images from the connected instance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +95,21 @@ pub enum MergeRequestState {
     rename_all_fields = "camelCase"
 )]
 pub enum Query {
+    Users {
+        search: String,
+        page: u32,
+    },
+    Project {
+        path: String,
+    },
+    Todos {
+        page: u32,
+    },
+    Notes {
+        project_id: String,
+        iid: String,
+        page: u32,
+    },
     Projects {
         search: String,
         membership: bool,
@@ -105,11 +124,17 @@ pub enum Query {
         #[serde(skip_serializing_if = "Option::is_none")]
         reviewer_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        assignee_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         author_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         updated_after: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         updated_before: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        order_by: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sort: Option<String>,
         page: u32,
     },
     Mr {
@@ -259,9 +284,12 @@ mod tests {
             "state": "all",
             "projectId": "7",
             "reviewerId": "8",
+            "assigneeId": "9",
             "authorId": null,
             "updatedAfter": null,
             "updatedBefore": null,
+            "orderBy": "created_at",
+            "sort": "asc",
             "page": 2,
         }))
         .unwrap();
@@ -270,9 +298,23 @@ mod tests {
             Query::Mrs {
                 project_id: Some(ref project_id),
                 reviewer_id: Some(ref reviewer_id),
+                assignee_id: Some(ref assignee_id),
                 ..
-            } if project_id == "7" && reviewer_id == "8"
+            } if project_id == "7" && reviewer_id == "8" && assignee_id == "9"
         ));
+        assert_eq!(serde_json::to_value(&parsed).unwrap()["assigneeId"], "9");
+        let wire = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(wire["orderBy"], "created_at");
+        assert_eq!(wire["sort"], "asc");
+        for value in [
+            serde_json::json!({"kind": "users", "search": "alice", "page": 1}),
+            serde_json::json!({"kind": "project", "path": "group/project"}),
+            serde_json::json!({"kind": "todos", "page": 2}),
+            serde_json::json!({"kind": "notes", "projectId": "7", "iid": "3", "page": 1}),
+        ] {
+            let query: Query = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(query).unwrap(), value);
+        }
 
         let diffs = serde_json::to_value(Query::Diffs {
             project_id: "7".to_owned(),

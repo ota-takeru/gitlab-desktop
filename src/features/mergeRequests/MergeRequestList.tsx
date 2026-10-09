@@ -1,32 +1,56 @@
-import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
+import BookmarksOutlinedIcon from '@mui/icons-material/BookmarksOutlined'
+import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
+import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
+import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import Collapse from '@mui/material/Collapse'
 import Divider from '@mui/material/Divider'
+import Dialog from '@mui/material/Dialog'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import DialogTitle from '@mui/material/DialogTitle'
+import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
-import List from '@mui/material/List'
-import ListItemButton from '@mui/material/ListItemButton'
-import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 
-import { EmptyState } from '../../components/EmptyState'
-import { StatusPill, type StatusTone } from '../../components/StatusPill'
-import type { MergeRequest, MergeRequestState, MergeRequestsQuery } from '../../types/gitlab'
+import { ListRow } from '../../components/ListRow'
+import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
+import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
+import { Pager } from '../../components/Pager'
+import { PipelineStatus } from '../../components/PipelineStatus'
+import { RelativeTime } from '../../components/RelativeTime'
+import type { MergeRequest, MergeRequestQuery, MergeRequestState, MergeRequestsQuery } from '../../types/gitlab'
+import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, writeSavedSearches } from '../shared/preferences'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
+import { ProjectSearchPicker, UserSearchPicker } from './SearchPickers'
+
+type OrderBy = NonNullable<MergeRequestsQuery['orderBy']>
+type SortDirection = NonNullable<MergeRequestsQuery['sort']>
+type StoredSearch = SavedMergeRequestSearch & { orderBy?: OrderBy; sort?: SortDirection }
 
 export interface MergeRequestListProps {
+  /** The MR currently shown in the detail pane. */
+  selected?: MrRef | null
   projectId?: string
   projectName?: string
   initialQuery?: string
@@ -36,6 +60,7 @@ export interface MergeRequestListProps {
 }
 
 interface SearchDraft {
+  assignee: string
   search: string
   state: MergeRequestState
   authorId: string
@@ -43,21 +68,29 @@ interface SearchDraft {
   updatedAfter: string
   updatedBefore: string
   projectId: string
+  orderBy: OrderBy
+  sort: SortDirection
 }
 
 interface AppliedSearch extends SearchDraft {
   page: number
 }
 
-export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpenMergeRequest, onSearchStateChange, projectId, projectName }: MergeRequestListProps) {
+export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpenMergeRequest, onSearchStateChange, projectId, projectName, selected }: MergeRequestListProps) {
   const { session } = useConnection()
+  const personalWorkspace = usePersonalWorkspace(session)
   const scope = useMemo(() => preferenceScope(session?.instanceUrl ?? 'anonymous', session?.user.id ?? 'anonymous'), [session?.instanceUrl, session?.user.id])
   const searchInputRef = useRef<HTMLInputElement>(null)
   const initial = useMemo(() => makeInitialState(initialParams, initialQuery, projectId, session?.user.id), [initialParams, initialQuery, projectId, session?.user.id])
   const [draft, setDraft] = useState<SearchDraft>(initial.draft)
+  const [showAdvanced, setShowAdvanced] = useState(() => hasAdvancedFilters(initial.draft, projectName ? projectId : undefined))
   const [applied, setApplied] = useState<AppliedSearch | null>(initial.error ? null : initial.applied)
   const [filterError, setFilterError] = useState<string | null>(initial.error)
-  const [savedSearches, setSavedSearches] = useState(() => readSavedSearches(scope))
+  const [savedSearches, setSavedSearches] = useState<StoredSearch[]>(() => readSavedSearches(scope))
+  const [saveLabel, setSaveLabel] = useState('')
+  const [savedSearchesOpen, setSavedSearchesOpen] = useState(false)
+  const [renameLabels, setRenameLabels] = useState<Record<string, string>>({})
+  const [pipelineOpenError, setPipelineOpenError] = useState<string | null>(null)
   const query = useMemo<MergeRequestsQuery | null>(() => applied && session ? buildQuery(applied, session.user.id) : null, [applied, session])
   const result = useGitLabQuery(session?.id ?? null, query)
 
@@ -83,19 +116,22 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
     emitApplied(next)
   }
 
-  const saveSearch = () => {
+  const saveSearch = (): boolean => {
     const error = validateDraft(draft, session?.user.id)
     if (error) {
       setFilterError(error)
-      return
+      return false
     }
-    const nextSearch: SavedMergeRequestSearch = {
+    const nextSearch: StoredSearch = {
+      assignee: cleanOptional(draft.assignee),
       authorId: cleanOptional(draft.authorId),
       id: `search-${Date.now()}`,
-      label: draft.search.trim() || `${draft.state} MR`,
+      label: cleanOptional(saveLabel) ?? defaultSearchLabel(draft),
+      orderBy: draft.orderBy,
       projectId: cleanOptional(draft.projectId),
       query: draft.search.trim(),
       reviewer: cleanOptional(draft.reviewer),
+      sort: draft.sort,
       state: draft.state,
       updatedAfter: cleanOptional(draft.updatedAfter),
       updatedBefore: cleanOptional(draft.updatedBefore),
@@ -103,11 +139,14 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
     const next = [nextSearch, ...savedSearches.filter((item) => !sameSavedSearch(item, nextSearch))].slice(0, 20)
     setSavedSearches(next)
     writeSavedSearches(scope, next)
+    setSaveLabel('')
     setFilterError(null)
+    return true
   }
 
   const applySavedSearch = (saved: SavedMergeRequestSearch) => {
     const nextDraft: SearchDraft = {
+      assignee: saved.assignee ?? '',
       authorId: saved.authorId ?? '',
       projectId: saved.projectId ?? '',
       reviewer: saved.reviewer ?? '',
@@ -115,6 +154,8 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
       state: saved.state,
       updatedAfter: saved.updatedAfter ?? '',
       updatedBefore: saved.updatedBefore ?? '',
+      orderBy: validOrderBy(saved.orderBy) ? saved.orderBy : 'updated_at',
+      sort: validSort(saved.sort) ? saved.sort : 'desc',
     }
     const error = validateDraft(nextDraft, session?.user.id)
     setDraft(nextDraft)
@@ -136,131 +177,292 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
     emitApplied(next)
   }
 
-  if (!session) {
-    return <Stack spacing={1.5}><Typography component="h1" variant="h1">Merge requests</Typography><EmptyState description="GitLab の接続設定が完了すると、ここにレビュー対象を表示できます。現在はデータを読み込んでいません。" title="Merge requests は未接続です" /></Stack>
+  const openPipeline = async (url: string) => {
+    if (!session) return
+    try {
+      await openGitLabUrl(session.id, url)
+      setPipelineOpenError(null)
+    } catch (error) {
+      setPipelineOpenError(normalizeGitLabError(error).message)
+    }
   }
 
+  const renameSavedSearch = (saved: StoredSearch) => {
+    const label = cleanOptional(renameLabels[saved.id])
+    if (!label || label === saved.label) return
+    const next = savedSearches.map((item) => item.id === saved.id ? { ...item, label } : item)
+    setSavedSearches(next)
+    writeSavedSearches(scope, next)
+    setRenameLabels((current) => ({ ...current, [saved.id]: label }))
+  }
+
+  const deleteSavedSearch = (id: string) => {
+    const next = savedSearches.filter((item) => item.id !== id)
+    setSavedSearches(next)
+    writeSavedSearches(scope, next)
+    setRenameLabels((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id)))
+  }
+
+  if (!session) {
+    return <PaneEmpty description="GitLabに接続すると、レビュー対象を検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">接続設定を開く</Button></PaneEmpty>
+  }
+
+  const personalQueue = personalQueueFor(initialParams, session.user.id)
+  const title = projectName ?? (personalQueue === 'assigned' ? '自分の担当MR' : personalQueue === 'created' ? '自分が作成' : personalQueue === 'waiting' ? 'レビュー待ち' : 'MR検索')
+  const advancedActive = hasAdvancedFilters(draft, projectName ? projectId : undefined)
+  const page = applied?.page ?? 1
+  const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
+
   return (
-    <Box component="main" sx={{ minHeight: '100%', maxWidth: 1180, mx: 'auto' }}>
-      <Stack spacing={2}>
-        <Stack direction={{ md: 'row', xs: 'column' }} spacing={1.5} sx={{ alignItems: { md: 'end' }, justifyContent: 'space-between' }}>
-          <Box>
-            <Typography color="primary.main" variant="overline">{projectName ? 'Project review' : 'Merge requests'}</Typography>
-            <Typography component="h1" variant="h1">{projectName ?? 'Merge requests'}</Typography>
-            <Typography color="text.secondary" variant="body2">タイトルと説明を検索し、状態を明示してレビュー対象を開きます。</Typography>
-          </Box>
-          <Button disabled={result.loading || result.refreshing} onClick={result.refresh} size="small" startIcon={<RefreshRoundedIcon />} variant="outlined">更新</Button>
-        </Stack>
-
-        <Paper component="form" onSubmit={(event) => { event.preventDefault(); applyDraft() }} sx={{ p: 1.5 }} variant="outlined">
-          <Stack spacing={1.25}>
-            <Stack direction={{ md: 'row', xs: 'column' }} spacing={1}>
-              <TextField
-                fullWidth
-                label="MRを検索"
-                onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))}
-                placeholder="タイトルまたは説明"
-                slotProps={{ htmlInput: { 'aria-label': 'MRをタイトル・説明で検索' }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }}
-                inputRef={searchInputRef}
-                value={draft.search}
-              />
-              <Select aria-label="MRの状態" onChange={(event) => setDraft((current) => ({ ...current, state: event.target.value as MergeRequestState }))} sx={{ minWidth: 150 }} value={draft.state}>
-                <MenuItem value="all">すべて</MenuItem>
-                <MenuItem value="opened">Open</MenuItem>
-                <MenuItem value="merged">Merged</MenuItem>
-                <MenuItem value="closed">Closed</MenuItem>
-              </Select>
-              <Button startIcon={<SearchRoundedIcon />} sx={{ minWidth: 112 }} type="submit" variant="contained">検索</Button>
-              <Button onClick={saveSearch} startIcon={<SaveRoundedIcon />} sx={{ minWidth: 130 }} type="button" variant="outlined">検索を保存</Button>
-            </Stack>
-            <Stack direction={{ lg: 'row', xs: 'column' }} spacing={1}>
-              <TextField
-                label="作者ID"
-                onChange={(event) => setDraft((current) => ({ ...current, authorId: event.target.value }))}
-                placeholder="例: 42"
-                slotProps={{ htmlInput: { 'aria-label': 'MRの作者ID' } }}
-                value={draft.authorId}
-              />
-              <Select aria-label="レビュー担当" onChange={(event) => setDraft((current) => ({ ...current, reviewer: event.target.value }))} sx={{ minWidth: 190 }} value={reviewerSelectValue(draft.reviewer)}>
-                <MenuItem value="">担当なし</MenuItem>
-                <MenuItem value="self">自分へのレビュー待ち</MenuItem>
-                <MenuItem value="id">指定した担当者ID</MenuItem>
-              </Select>
-              {draft.reviewer !== '' && draft.reviewer !== 'self' ? <TextField label="担当者ID" onChange={(event) => setDraft((current) => ({ ...current, reviewer: event.target.value }))} placeholder="例: 42" slotProps={{ htmlInput: { 'aria-label': 'MRのレビュー担当者ID' } }} value={draft.reviewer} /> : null}
-              <TextField label="更新日（開始）" onChange={(event) => setDraft((current) => ({ ...current, updatedAfter: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（開始）' } }} type="date" value={toDateInputValue(draft.updatedAfter)} />
-              <TextField label="更新日（終了）" onChange={(event) => setDraft((current) => ({ ...current, updatedBefore: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（終了）' } }} type="date" value={toDateInputValue(draft.updatedBefore)} />
-              <TextField label="プロジェクトID" onChange={(event) => setDraft((current) => ({ ...current, projectId: event.target.value }))} placeholder="例: 7" slotProps={{ htmlInput: { 'aria-label': 'MRのプロジェクトID' } }} value={draft.projectId} />
-            </Stack>
-            {filterError ? <Alert severity="error">{filterError}</Alert> : null}
-            {savedSearches.length > 0 ? (
-              <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.75 }}>
-                <HistoryRoundedIcon color="disabled" fontSize="small" />
-                <Typography color="text.secondary" variant="caption">保存済み</Typography>
-                {savedSearches.slice(0, 6).map((saved) => <Chip clickable key={saved.id} label={saved.label} onClick={() => applySavedSearch(saved)} size="small" variant="outlined" />)}
-              </Stack>
-            ) : null}
+    <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
+      <PaneHeader
+        actions={<>
+          <Tooltip title="保存済み検索"><IconButton aria-label={`保存済み検索を管理（${savedSearches.length}）`} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>
+          <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>
+        </>}
+        subtitle={projectName ? 'プロジェクトのマージリクエスト' : undefined}
+        title={title}
+      >
+        <Box component="form" onSubmit={(event) => { event.preventDefault(); applyDraft() }}>
+          <TextField
+            fullWidth
+            onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))}
+            placeholder="タイトル・説明を検索"
+            slotProps={{
+              htmlInput: { 'aria-label': 'MRをタイトル・説明で検索' },
+              input: {
+                startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>,
+                endAdornment: <InputAdornment position="end"><Tooltip title="検索 (Enter)"><IconButton aria-label="検索" edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
+              },
+            }}
+            inputRef={searchInputRef}
+            value={draft.search}
+          />
+          <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+            <Select aria-label="MRの状態" onChange={(event) => setDraft((current) => ({ ...current, state: event.target.value as MergeRequestState }))} sx={pillSelectSx} value={draft.state}>
+              <MenuItem value="all">すべての状態</MenuItem>
+              <MenuItem value="opened">Open</MenuItem>
+              <MenuItem value="merged">Merged</MenuItem>
+              <MenuItem value="closed">Closed</MenuItem>
+            </Select>
+            <Select aria-label="レビュー担当" displayEmpty onChange={(event) => setDraft((current) => ({ ...current, reviewer: event.target.value }))} sx={pillSelectSx} value={personSelectValue(draft.reviewer)}>
+              <MenuItem value="">レビュアー: すべて</MenuItem>
+              <MenuItem value="self">自分がレビュアー</MenuItem>
+              <MenuItem value="id">レビュアーを指定</MenuItem>
+            </Select>
+            <Select aria-label="MR担当者" displayEmpty onChange={(event) => setDraft((current) => ({ ...current, assignee: event.target.value }))} sx={pillSelectSx} value={personSelectValue(draft.assignee)}>
+              <MenuItem value="">担当: すべて</MenuItem>
+              <MenuItem value="self">自分が担当</MenuItem>
+              <MenuItem value="id">担当者を指定</MenuItem>
+            </Select>
+            <Select aria-label="MRの並び順" displayEmpty onChange={(event) => setDraft((current) => ({ ...current, orderBy: event.target.value as OrderBy }))} sx={pillSelectSx} value={draft.orderBy}>
+              <MenuItem value="updated_at">更新日時</MenuItem>
+              <MenuItem value="created_at">作成日時</MenuItem>
+            </Select>
+            <Select aria-label="並び順の方向" onChange={(event) => setDraft((current) => ({ ...current, sort: event.target.value as SortDirection }))} sx={pillSelectSx} value={draft.sort}>
+              <MenuItem value="desc">新しい順</MenuItem>
+              <MenuItem value="asc">古い順</MenuItem>
+            </Select>
+            <Button aria-controls="mr-advanced-filters" aria-expanded={showAdvanced} color={advancedActive ? 'primary' : 'inherit'} onClick={() => setShowAdvanced((current) => !current)} startIcon={<TuneRoundedIcon />} sx={{ color: advancedActive ? undefined : 'text.secondary', minHeight: 26, px: 1 }}>詳細条件{advancedActive ? ' · 設定あり' : ''}</Button>
           </Stack>
-        </Paper>
+          {draft.reviewer !== '' && draft.reviewer !== 'self' ? <Box sx={{ mt: 1 }}><UserSearchPicker ariaLabel="MRのレビュアー" label="レビュアーを選択" onChange={(id) => setDraft((current) => ({ ...current, reviewer: id }))} value={draft.reviewer} /></Box> : null}
+          {draft.assignee !== '' && draft.assignee !== 'self' ? <Box sx={{ mt: 1 }}><UserSearchPicker ariaLabel="MRの担当者" label="担当者を選択" onChange={(id) => setDraft((current) => ({ ...current, assignee: id }))} value={draft.assignee} /></Box> : null}
+          <Collapse in={showAdvanced}>
+            <Box id="mr-advanced-filters" sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', pt: 1.25 }}>
+              <Box sx={{ gridColumn: '1 / -1' }}><UserSearchPicker ariaLabel="MRの作者" label="作者" onChange={(id) => setDraft((current) => ({ ...current, authorId: id }))} value={draft.authorId} /></Box>
+              <TextField label="更新日（開始）" onChange={(event) => setDraft((current) => ({ ...current, updatedAfter: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（開始）' }, inputLabel: { shrink: true } }} type="date" value={toDateInputValue(draft.updatedAfter)} />
+              <TextField label="更新日（終了）" onChange={(event) => setDraft((current) => ({ ...current, updatedBefore: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（終了）' }, inputLabel: { shrink: true } }} type="date" value={toDateInputValue(draft.updatedBefore)} />
+              <Box sx={{ gridColumn: '1 / -1' }}><ProjectSearchPicker ariaLabel="MRのプロジェクト" label="プロジェクト" onChange={(id) => setDraft((current) => ({ ...current, projectId: id }))} value={draft.projectId} /></Box>
+            </Box>
+          </Collapse>
+          {filterError ? <Alert severity="error" sx={{ mt: 1 }}>{filterError}</Alert> : null}
+        </Box>
+      </PaneHeader>
 
-        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh} size="small">再試行</Button>} severity="error">{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert severity="warning">保存済みの結果を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
-        {result.stale && result.data ? <Typography color="text.secondary" variant="caption">保存済みデータを表示中 · {formatFetchedAt(result.snapshot?.fetchedAt)}</Typography> : null}
+      <Dialog fullWidth maxWidth="sm" onClose={() => setSavedSearchesOpen(false)} open={savedSearchesOpen}>
+        <DialogTitle>保存済み検索</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2}>
+            <Box>
+              <Typography color="text.secondary" sx={{ display: 'block', mb: 0.75 }} variant="overline">現在の条件を保存</Typography>
+              <Stack direction="row" spacing={1}>
+                <TextField fullWidth label="保存名（任意）" onChange={(event) => setSaveLabel(event.target.value)} value={saveLabel} />
+                <Button onClick={() => { if (saveSearch()) setSavedSearchesOpen(false) }} startIcon={<SaveRoundedIcon />} type="button" variant="contained">検索を保存</Button>
+              </Stack>
+            </Box>
+            <Box>
+              <Typography color="text.secondary" sx={{ display: 'block', mb: 0.75 }} variant="overline">保存済み（{savedSearches.length}）</Typography>
+              {savedSearches.length === 0 ? <Typography color="text.secondary" variant="body2">保存済み検索はありません。</Typography> : (
+                <Stack divider={<Divider flexItem />} sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                  {savedSearches.map((saved) => (
+                    <Stack key={saved.id} spacing={0.75} sx={{ p: 1 }}>
+                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                        <Button onClick={() => { applySavedSearch(saved); setSavedSearchesOpen(false) }} sx={{ flex: 1, justifyContent: 'flex-start', minWidth: 0, overflowWrap: 'anywhere', textAlign: 'left', whiteSpace: 'normal' }}>
+                          {saved.label}
+                        </Button>
+                        <Tooltip title="削除"><IconButton aria-label={`${saved.label}を削除`} onClick={() => deleteSavedSearch(saved.id)}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
+                      </Stack>
+                      <Stack direction="row" spacing={0.75}>
+                        <TextField fullWidth label="保存名" onChange={(event) => setRenameLabels((current) => ({ ...current, [saved.id]: event.target.value }))} value={renameLabels[saved.id] ?? saved.label} />
+                        <Button disabled={!cleanOptional(renameLabels[saved.id]) || (renameLabels[saved.id] ?? saved.label).trim() === saved.label} onClick={() => renameSavedSearch(saved)} startIcon={<EditOutlinedIcon />} sx={{ flexShrink: 0 }}>名前を変更</Button>
+                      </Stack>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setSavedSearchesOpen(false)}>閉じる</Button></DialogActions>
+      </Dialog>
+
+      {result.data ? <PaneStatus>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{freshness ? ` · ${freshness}` : ''}</PaneStatus> : null}
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
+        {result.error && result.data ? <Alert severity="warning" sx={{ m: 1.5 }}>保存済みの結果を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
+        {pipelineOpenError ? <Alert onClose={() => setPipelineOpenError(null)} severity="error" sx={{ m: 1.5 }}>CIパイプラインを開けませんでした: {pipelineOpenError}</Alert> : null}
         {result.loading && !result.data ? <LoadingRows /> : null}
-        {!result.loading && !result.data && !result.error && !filterError ? <EmptyState description="検索語や状態を変えてください。検索対象はタイトルと説明です。" title="MRがありません" /> : null}
-        {result.data ? <MergeRequestResults mergeRequests={result.data} nextPage={result.snapshot?.nextPage ?? null} onNext={() => updatePage((applied?.page ?? 1) + 1)} onOpenMergeRequest={onOpenMergeRequest} onPrevious={() => updatePage(Math.max(1, (applied?.page ?? 1) - 1))} page={applied?.page ?? 1} /> : null}
-      </Stack>
+        {!result.loading && !result.data && !result.error && !filterError ? <PaneEmpty description="検索語や状態を変えてください。検索対象はタイトルと説明です。" title="MRがありません" /> : null}
+        {result.data ? <MergeRequestResults mergeRequests={result.data} onOpenMergeRequest={onOpenMergeRequest} onOpenPipeline={openPipeline} personalWorkspace={personalWorkspace} selected={selected ?? null} sessionId={session.id} /> : null}
+      </Box>
+      {result.data && (page > 1 || result.snapshot?.nextPage) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={(result.snapshot?.nextPage ?? null) !== null} hasPrevious={page > 1} onNext={() => updatePage(page + 1)} onPrevious={() => updatePage(Math.max(1, page - 1))} page={page} /></Box> : null}
     </Box>
   )
 }
 
-function MergeRequestResults({ mergeRequests, nextPage, onNext, onOpenMergeRequest, onPrevious, page }: { mergeRequests: MergeRequest[]; nextPage: number | null; onNext: () => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onPrevious: () => void; page: number }) {
+const pillSelectSx = {
+  bgcolor: 'transparent',
+  fontSize: '0.75rem',
+  height: 26,
+  '& .MuiSelect-select': { pl: 1, pr: '24px !important', py: 0 },
+  '& .MuiSvgIcon-root': { fontSize: 18, right: 4 },
+} as const
+
+function hasAdvancedFilters(draft: SearchDraft, projectId?: string) {
+  return Boolean(draft.authorId || draft.updatedAfter || draft.updatedBefore || (draft.projectId && draft.projectId !== projectId))
+}
+
+function personalQueueFor(params: Record<string, string>, currentUserId: string): 'assigned' | 'created' | 'waiting' | null {
+  if (params.assignee === 'self') return 'assigned'
+  if (params.reviewer === 'self') return 'waiting'
+  if (params.authorId === currentUserId) return 'created'
+  return null
+}
+
+function MergeRequestResults({ mergeRequests, onOpenMergeRequest, onOpenPipeline, personalWorkspace, selected, sessionId }: { mergeRequests: MergeRequest[]; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; selected: MrRef | null; sessionId: string }) {
+  if (mergeRequests.length === 0) return <PaneEmpty description="検索語や条件を変えてください。" title="条件に一致するMRがありません。" />
   return (
-    <Paper variant="outlined">
-      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', px: 1.5, py: 1 }}>
-        <Typography sx={{ fontWeight: 700 }} variant="body2">検索結果</Typography>
-        <Chip label={`${mergeRequests.length}件取得`} size="small" variant="outlined" />
+    <Box aria-label="MR検索結果" component="ul" onKeyDown={focusMergeRequestRow} role="list" sx={{ m: 0, p: 0 }}>
+      {mergeRequests.map((mergeRequest) => <MergeRequestResultRow
+        key={`${mergeRequest.projectId}:${mergeRequest.iid}`}
+        mergeRequest={mergeRequest}
+        onOpenMergeRequest={onOpenMergeRequest}
+        onOpenPipeline={onOpenPipeline}
+        personalWorkspace={personalWorkspace}
+        selected={selected?.projectId === mergeRequest.projectId && selected.iid === mergeRequest.iid}
+        sessionId={sessionId}
+      />)}
+    </Box>
+  )
+}
+
+function MergeRequestResultRow({ mergeRequest, onOpenMergeRequest, onOpenPipeline, personalWorkspace, selected, sessionId }: { mergeRequest: MergeRequest; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; selected: boolean; sessionId: string }) {
+  const ref = { iid: mergeRequest.iid, projectId: mergeRequest.projectId }
+  const pinned = personalWorkspace.isPinned(ref)
+  const unread = personalWorkspace.unreadCount(ref)
+  const [pipelineRequested, setPipelineRequested] = useState(false)
+  const pipelineQuery = useMemo<MergeRequestQuery | null>(() => pipelineRequested
+    ? { iid: mergeRequest.iid, kind: 'mr', projectId: mergeRequest.projectId }
+    : null, [mergeRequest.iid, mergeRequest.projectId, pipelineRequested])
+  const pipelineResult = useGitLabQuery<MergeRequestQuery>(sessionId, pipelineQuery)
+  const pipeline = mergeRequest.pipeline ?? (pipelineRequested ? pipelineResult.data?.pipeline : undefined)
+  const pipelineConfirmedEmpty = pipelineRequested && !pipelineResult.loading && !pipelineResult.error && pipelineResult.data !== null && !pipeline
+  const pipelineConfirmationMissing = pipelineRequested && !pipelineResult.loading && !pipelineResult.error && pipelineResult.data === null
+  const people = [
+    mergeRequest.assignees?.length ? `担当 ${mergeRequest.assignees.map((person) => person.name).join('、')}` : null,
+    mergeRequest.reviewers?.length ? `レビュー ${mergeRequest.reviewers.map((person) => person.name).join('、')}` : null,
+  ].filter(Boolean).join(' · ')
+  const hasUnread = unread !== undefined && unread > 0
+
+  return (
+    <ListRow
+      actions={<>
+        {!pipelineRequested && !pipeline ? <Button onClick={() => setPipelineRequested(true)} sx={{ fontSize: 12, minHeight: 26, minWidth: 0, px: 0.75 }}>CIを確認</Button> : null}
+        {pipelineRequested && pipelineResult.loading ? <Button disabled sx={{ fontSize: 12, minHeight: 26, minWidth: 0, px: 0.75 }}>確認中…</Button> : null}
+        {pipelineRequested && (pipelineResult.error || pipelineConfirmationMissing) ? <Button onClick={() => pipelineResult.refresh()} sx={{ fontSize: 12, minHeight: 26, minWidth: 0, px: 0.75 }}>再試行</Button> : null}
+        {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
+        <Tooltip title={pinned ? '固定を解除' : 'MRを固定'}>
+          <IconButton aria-label={`!${mergeRequest.iid}を${pinned ? '固定解除' : '固定'}`} color={pinned ? 'primary' : 'default'} onClick={() => personalWorkspace.togglePinned(ref)}>
+            {pinned ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}
+          </IconButton>
+        </Tooltip>
+      </>}
+      leading={<MergeRequestStateIcon state={mergeRequest.state} />}
+      onOpen={() => onOpenMergeRequest(mergeRequest)}
+      selected={selected}
+    >
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
+        <Typography color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`} !{mergeRequest.iid}</Typography>
+        <RelativeTime value={mergeRequest.updatedAt} />
       </Stack>
-      <Divider />
-      <List disablePadding>
-        {mergeRequests.map((mergeRequest) => (
-          <ListItemButton key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onClick={() => onOpenMergeRequest(mergeRequest)} sx={{ alignItems: 'flex-start', px: 1.5, py: 1.25 }}>
-            <ListItemText
-              primary={<Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><Typography sx={{ fontWeight: 700 }} variant="body2">{mergeRequest.title}</Typography><StatusPill label={formatState(mergeRequest.state)} size="small" tone={stateTone(mergeRequest.state)} /></Stack>}
-              secondary={<Stack spacing={0.25} sx={{ mt: 0.35 }}><Typography color="text.secondary" variant="caption">{mergeRequest.projectId} · !{mergeRequest.iid} · {mergeRequest.author.name} · 更新 {formatDate(mergeRequest.updatedAt)}</Typography><Typography color="text.secondary" noWrap variant="body2">{mergeRequest.description || '説明はありません'}</Typography></Stack>}
-            />
-          </ListItemButton>
-        ))}
-        {mergeRequests.length === 0 ? <Box sx={{ p: 3, textAlign: 'center' }}><Typography color="text.secondary" variant="body2">条件に一致するMRがありません。</Typography></Box> : null}
-      </List>
-      <Divider />
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end', p: 1 }}>
-        <Typography color="text.secondary" sx={{ mr: 'auto' }} variant="caption">ページ {page}</Typography>
-        <Button disabled={page <= 1} onClick={onPrevious} size="small">前へ</Button>
-        <Button disabled={nextPage === null} onClick={onNext} size="small" variant="outlined">次へ</Button>
+      <Typography sx={{ display: '-webkit-box', fontWeight: hasUnread || selected ? 600 : 500, lineHeight: 1.45, mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{mergeRequest.title}</Typography>
+      <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, rowGap: 0.25 }}>
+        <Typography color="text.secondary" variant="caption">{mergeRequest.author.name}</Typography>
+        {pinned ? <StarRoundedIcon aria-label="固定済み" color="primary" sx={{ fontSize: 14 }} /> : null}
+        {mergeRequest.draft ? <Chip label="Draft" size="small" variant="outlined" /> : null}
+        {pipeline ? <PipelineStatus status={pipeline.status} /> : null}
+        {hasUnread ? <Tooltip title="既知のコメントの未読数です。未取得のコメントは含みません。"><Chip color="primary" label={`未読 ${unread}`} size="small" /></Tooltip> : null}
+        {(mergeRequest.labels ?? []).map((label) => <Chip key={label} label={label} size="small" sx={{ maxWidth: '100%' }} variant="outlined" />)}
       </Stack>
-    </Paper>
+      {people ? <Typography color="text.secondary" component="div" noWrap sx={{ mt: 0.25 }} variant="caption">{people}</Typography> : null}
+      {pipelineConfirmedEmpty ? <Typography aria-label="CI情報なし" color="text.secondary" component="div" variant="caption">CI情報なし</Typography> : null}
+      {pipelineRequested && pipelineResult.loading ? <Typography color="text.secondary" component="div" variant="caption">CI情報を確認中…</Typography> : null}
+      {pipelineResult.error ? <Typography color="error.main" component="div" role="alert" variant="caption">CI状態を取得できませんでした: {pipelineResult.error.message}</Typography> : null}
+      {pipelineConfirmationMissing ? <Typography color="error.main" component="div" role="alert" variant="caption">MR詳細の応答を確認できませんでした。</Typography> : null}
+    </ListRow>
   )
 }
 
 function LoadingRows() {
-  return <Paper aria-label="MRを読み込み中" sx={{ p: 2 }} variant="outlined"><Stack spacing={1}><Typography color="text.secondary" variant="body2">MRを読み込み中…</Typography><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 48 }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 48 }} /></Stack></Paper>
+  return <Box aria-label="MRを読み込み中" role="status" sx={{ p: 1.5 }}><Stack spacing={1.25}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 10, width: '60%' }} /></Stack>)}<Typography color="text.secondary" variant="caption">MRを読み込み中…</Typography></Stack></Box>
+}
+
+function focusMergeRequestRow(event: KeyboardEvent<HTMLElement>): void {
+  if (isEditableTarget(event.target)) return
+  const direction = event.key === 'ArrowDown' || event.key === 'j' ? 1 : event.key === 'ArrowUp' || event.key === 'k' ? -1 : 0
+  if (!direction) return
+  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-mr-open="true"]'))
+  if (rows.length === 0) return
+  event.preventDefault()
+  const activeIndex = rows.indexOf(document.activeElement as HTMLButtonElement)
+  const nextIndex = activeIndex < 0 ? (direction > 0 ? 0 : rows.length - 1) : Math.min(rows.length - 1, Math.max(0, activeIndex + direction))
+  rows[nextIndex]?.focus()
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
 }
 
 export function buildQuery(filters: AppliedSearch, currentUserId?: string): MergeRequestsQuery {
+  if (filters.assignee === 'self' && !isPositiveDecimalId(currentUserId ?? '')) throw new Error('接続ユーザーIDが不明なため、自分の担当MRを検索できません。')
   const query: MergeRequestsQuery = {
     kind: 'mrs',
+    orderBy: filters.orderBy,
     page: filters.page,
     search: filters.search.trim(),
+    sort: filters.sort,
     state: filters.state,
   }
   const projectId = cleanOptional(filters.projectId)
   const authorId = cleanOptional(filters.authorId)
   const reviewerId = filters.reviewer === 'self' ? cleanOptional(currentUserId) : cleanOptional(filters.reviewer)
+  const assigneeId = filters.assignee === 'self' ? cleanOptional(currentUserId) : cleanOptional(filters.assignee)
   const updatedAfter = cleanOptional(filters.updatedAfter)
   const updatedBefore = cleanOptional(filters.updatedBefore)
   if (projectId) query.projectId = projectId
   if (authorId) query.authorId = authorId
   if (reviewerId) query.reviewerId = reviewerId
+  if (assigneeId) query.assigneeId = assigneeId
   if (updatedAfter) query.updatedAfter = toGitLabDate(updatedAfter, false)
   if (updatedBefore) query.updatedBefore = toGitLabDate(updatedBefore, true)
   return query
@@ -270,16 +472,20 @@ export function serializeSearch(filters: AppliedSearch): Record<string, string> 
   const params: Record<string, string> = { page: String(filters.page), state: filters.state }
   addParam(params, 'search', filters.search)
   addParam(params, 'authorId', filters.authorId)
+  addParam(params, 'assignee', filters.assignee)
   addParam(params, 'reviewer', filters.reviewer)
   addParam(params, 'updatedAfter', filters.updatedAfter)
   addParam(params, 'updatedBefore', filters.updatedBefore)
   addParam(params, 'projectId', filters.projectId)
+  addParam(params, 'orderBy', filters.orderBy)
+  addParam(params, 'sort', filters.sort)
   return params
 }
 
 function makeInitialState(params: Record<string, string>, initialQuery: string, projectId: string | undefined, currentUserId: string | undefined): { applied: AppliedSearch; draft: SearchDraft; error: string | null } {
   const state = isState(params.state) ? params.state : 'all'
   const draft: SearchDraft = {
+    assignee: params.assignee ?? params.assigneeId ?? '',
     authorId: params.authorId ?? params.author ?? '',
     projectId: params.projectId ?? params.project ?? projectId ?? '',
     reviewer: params.reviewer ?? params.reviewerId ?? '',
@@ -287,6 +493,8 @@ function makeInitialState(params: Record<string, string>, initialQuery: string, 
     state,
     updatedAfter: params.updatedAfter ?? '',
     updatedBefore: params.updatedBefore ?? '',
+    orderBy: validOrderBy(params.orderBy) ? params.orderBy : 'updated_at',
+    sort: validSort(params.sort) ? params.sort : 'desc',
   }
   const page = parsePage(params.page)
   const error = validateDraft(draft, currentUserId)
@@ -299,6 +507,8 @@ function validateDraft(draft: SearchDraft, currentUserId?: string): string | nul
   if (draft.authorId.trim() && !isPositiveDecimalId(draft.authorId)) return '作者IDは1以上の数字で入力してください。'
   if (draft.reviewer.trim() && draft.reviewer !== 'self' && !isPositiveDecimalId(draft.reviewer)) return 'レビュー担当者IDは1以上の数字で入力してください。'
   if (draft.reviewer === 'self' && currentUserId && !isPositiveDecimalId(currentUserId)) return '接続ユーザーIDを確認できないため、レビュー待ちを検索できません。'
+  if (draft.assignee.trim() && draft.assignee !== 'self' && !isPositiveDecimalId(draft.assignee)) return '担当者IDは1以上の数字で入力してください。'
+  if (draft.assignee === 'self' && !isPositiveDecimalId(currentUserId ?? '')) return '接続ユーザーIDを確認できないため、自分の担当MRを検索できません。'
   if (draft.updatedAfter && !isIsoDateValue(draft.updatedAfter)) return '更新日（開始）はISO形式の日付を入力してください。'
   if (draft.updatedBefore && !isIsoDateValue(draft.updatedBefore)) return '更新日（終了）はISO形式の日付を入力してください。'
   if (draft.updatedAfter && draft.updatedBefore && Date.parse(toGitLabDate(draft.updatedAfter, false)) > Date.parse(toGitLabDate(draft.updatedBefore, true))) return '更新日の開始は終了以前にしてください。'
@@ -332,7 +542,7 @@ function toDateInputValue(value: string): string {
   return value.trim().slice(0, 10)
 }
 
-function reviewerSelectValue(value: string): string {
+function personSelectValue(value: string): string {
   if (value === '' || value === 'self') return value
   return 'id'
 }
@@ -362,28 +572,24 @@ function sameSavedSearch(left: SavedMergeRequestSearch, right: SavedMergeRequest
     && left.state === right.state
     && left.projectId === right.projectId
     && left.authorId === right.authorId
+    && left.assignee === right.assignee
     && left.reviewer === right.reviewer
+    && (left.orderBy ?? 'updated_at') === (right.orderBy ?? 'updated_at')
+    && (left.sort ?? 'desc') === (right.sort ?? 'desc')
     && left.updatedAfter === right.updatedAfter
     && left.updatedBefore === right.updatedBefore
 }
 
-function formatState(state: string): string {
-  if (state === 'opened' || state === 'open') return 'Open'
-  if (state === 'merged') return 'Merged'
-  if (state === 'closed') return 'Closed'
-  return state || 'Unknown'
+function defaultSearchLabel(draft: SearchDraft): string {
+  return draft.search.trim() || `${draft.state} MR`
 }
 
-function stateTone(state: string): StatusTone {
-  if (state === 'opened' || state === 'open') return 'success'
-  if (state === 'merged') return 'info'
-  if (state === 'closed') return 'default'
-  return 'warning'
+function validOrderBy(value: string | undefined): value is OrderBy {
+  return value === 'updated_at' || value === 'created_at'
 }
 
-function formatDate(value: string): string {
-  const timestamp = Date.parse(value)
-  return Number.isNaN(timestamp) ? value : new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric' }).format(timestamp)
+function validSort(value: string | undefined): value is SortDirection {
+  return value === 'asc' || value === 'desc'
 }
 
 function formatFetchedAt(timestamp?: number): string {

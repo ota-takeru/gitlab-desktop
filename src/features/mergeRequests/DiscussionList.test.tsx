@@ -4,7 +4,8 @@ import { ThemeProvider } from '@mui/material/styles'
 
 import { createAppTheme } from '../../theme'
 import type { Discussion, GitLabUser, Note } from '../../types/gitlab'
-import { DiscussionList } from './DiscussionList'
+import type { Position } from '../../types/gitlab'
+import { DiscussionList, type OlderDiscussions } from './DiscussionList'
 
 const currentUser: GitLabUser = { id: 'user-1', name: '自分', username: 'reviewer' }
 const otherUser: GitLabUser = { id: 'user-2', name: '他の人', username: 'colleague' }
@@ -32,8 +33,12 @@ function renderList(
   callbacks: {
     onDelete?: (note: Note) => Promise<boolean>
     onEdit?: (note: Note, body: string) => Promise<boolean>
+    onMarkRead?: (notes: Note[]) => void
+    onOpenPosition?: (position: Position) => void
     onReply?: (discussion: Discussion) => void
     onResolve?: (discussion: Discussion, resolved: boolean) => Promise<boolean>
+    replyDiscussionId?: string
+    unreadNoteIds?: string[]
   } = {},
 ) {
   return render(
@@ -41,6 +46,10 @@ function renderList(
       <DiscussionList
         currentUserId={currentUser.id}
         discussions={discussions}
+        onMarkRead={callbacks.onMarkRead}
+        onOpenPosition={callbacks.onOpenPosition}
+        replyDiscussionId={callbacks.replyDiscussionId}
+        unreadNoteIds={callbacks.unreadNoteIds}
         onDelete={callbacks.onDelete ?? vi.fn().mockResolvedValue(true)}
         onEdit={callbacks.onEdit ?? vi.fn().mockResolvedValue(true)}
         onReply={callbacks.onReply ?? vi.fn()}
@@ -91,9 +100,9 @@ describe('DiscussionList note ownership and resolution', () => {
     const onResolve = vi.fn().mockResolvedValue(true)
     const view = renderList([discussion], { onResolve })
 
-    fireEvent.click(screen.getByRole('button', { name: '解決' }))
+    fireEvent.click(screen.getByRole('button', { name: '未解決（解決済みにする）' }))
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(discussion, true))
-    expect(screen.queryByRole('button', { name: '再開' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '解決済み（未解決に戻す）' })).not.toBeInTheDocument()
 
     onResolve.mockClear()
     const allResolved = createDiscussion([
@@ -114,33 +123,186 @@ describe('DiscussionList note ownership and resolution', () => {
       </ThemeProvider>,
     )
 
-    expect(screen.getByRole('button', { name: '再開' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '解決' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '再開' }))
+    expect(screen.getByRole('button', { name: '解決済み（未解決に戻す）' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '未解決（解決済みにする）' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '解決済み（未解決に戻す）' }))
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(allResolved, false))
   })
 
-  it('limits discussion rows to twenty and makes the final page reachable', () => {
-    const discussions = Array.from({ length: 101 }, (_, index) => {
-      const discussionNumber = index + 1
-      return createDiscussion([createNote(`discussion-${discussionNumber}-note`, otherUser)], `discussion-${discussionNumber}`)
-    })
+  it('hides system-only discussions and shows the comment-specific empty state', () => {
+    const historyOnly = createDiscussion([
+      createNote('history-only', otherUser, { body: '表示してはいけない履歴', system: true }),
+    ])
 
-    renderList(discussions)
+    renderList([historyOnly])
 
-    expect(screen.getByText('discussion-1-note の本文')).toBeInTheDocument()
-    expect(screen.queryByText('discussion-21-note の本文')).not.toBeInTheDocument()
-    expect(screen.getByText('議論 1–20 / 101')).toBeInTheDocument()
+    expect(screen.getByText('表示できるコメントはありません。')).toBeInTheDocument()
+    expect(screen.queryByText('表示してはいけない履歴')).not.toBeInTheDocument()
+    expect(screen.queryByText(/議論 \d/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/ノート \d/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '次の議論ページ' })).not.toBeInTheDocument()
+  })
 
-    const nextPage = screen.getByRole('button', { name: '次の議論ページ' })
-    for (let page = 2; page <= 6; page += 1) {
-      fireEvent.click(nextPage)
-    }
+  it('hides history in mixed discussions and sends the original discussion to actions', async () => {
+    const history = createNote('history-first', otherUser, { body: '表示してはいけない履歴', system: true })
+    const comment = createNote('visible-comment', otherUser, { resolvable: true })
+    const discussion = createDiscussion([history, comment])
+    const onReply = vi.fn()
+    const onResolve = vi.fn().mockResolvedValue(true)
 
-    expect(screen.queryByText('discussion-1-note の本文')).not.toBeInTheDocument()
-    expect(screen.getByText('discussion-101-note の本文')).toBeInTheDocument()
-    expect(screen.getByText('議論 101–101 / 101')).toBeInTheDocument()
-    expect(nextPage).toBeDisabled()
+    renderList([discussion], { onReply, onResolve })
+
+    expect(screen.getByText('visible-comment の本文')).toBeInTheDocument()
+    expect(screen.queryByText('表示してはいけない履歴')).not.toBeInTheDocument()
+    expect(screen.queryByText('システム')).not.toBeInTheDocument()
+    expect(screen.queryByText(/1–1 \/ 1/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'discussion-1の次のノートページ' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '次の議論ページ' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '返信' }))
+    await waitFor(() => expect(onReply).toHaveBeenCalledWith(discussion))
+    fireEvent.click(screen.getByRole('button', { name: '未解決（解決済みにする）' }))
+    await waitFor(() => expect(onResolve).toHaveBeenCalledWith(discussion, true))
+  })
+
+  it('shows every loaded discussion with comments and hides history-only threads', () => {
+    const comments = Array.from({ length: 21 }, (_, index) => createDiscussion([
+      createNote(`comment-${index + 1}`, otherUser),
+    ], `comment-discussion-${index + 1}`))
+    const history = Array.from({ length: 25 }, (_, index) => createDiscussion([
+      createNote(`history-${index + 1}`, otherUser, { body: `隠す履歴 ${index + 1}`, system: true }),
+    ], `history-discussion-${index + 1}`))
+
+    renderList([...history, ...comments])
+
+    expect(screen.getByText('comment-1 の本文')).toBeInTheDocument()
+    expect(screen.getByText('comment-21 の本文')).toBeInTheDocument()
+    expect(screen.queryByText('隠す履歴 1')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '次の議論ページ' })).not.toBeInTheDocument()
+  })
+
+  it('does not count hidden history notes toward note pagination', () => {
+    const visibleNotes = [createNote('comment-root', otherUser), createNote('comment-reply', currentUser)]
+    const historyNotes = Array.from({ length: 60 }, (_, index) => createNote(`history-note-${index + 1}`, otherUser, {
+      body: `隠すノート ${index + 1}`,
+      system: true,
+    }))
+
+    renderList([createDiscussion([...historyNotes, ...visibleNotes])])
+
+    expect(screen.getByText('comment-root の本文')).toBeInTheDocument()
+    expect(screen.getByText('comment-reply の本文')).toBeInTheDocument()
+    expect(screen.queryByText('隠すノート 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/1–2 \/ 2/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'discussion-1の次のノートページ' })).not.toBeInTheDocument()
+  })
+
+  it('filters resolved discussions and keeps their collapsed comments expandable', () => {
+    const resolved = createDiscussion([createNote('resolved-note', otherUser, { resolvable: true, resolved: true })], 'resolved')
+    const unresolved = createDiscussion([createNote('unresolved-note', otherUser, { resolvable: true })], 'unresolved')
+
+    renderList([resolved, unresolved])
+
+    expect(screen.queryByText('resolved-note の本文')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '内容を表示' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '未解決' }))
+    expect(screen.queryByText('resolved-note の本文')).not.toBeInTheDocument()
+    expect(screen.getByText('unresolved-note の本文')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
+    fireEvent.click(screen.getByRole('button', { name: '内容を表示' }))
+    expect(screen.getByText('resolved-note の本文')).toBeInTheDocument()
+  })
+
+  it('jumps to the chronologically earliest unread and latest notes across loaded pages', () => {
+    const discussions = Array.from({ length: 21 }, (_, index) => createDiscussion([
+      createNote(`dated-${index + 1}`, otherUser, {
+        createdAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+        resolvable: true,
+      }),
+    ], `dated-discussion-${index + 1}`))
+    discussions[0] = createDiscussion([
+      createNote('chronologically-latest', otherUser, { createdAt: '2026-04-01T00:00:00.000Z', resolvable: true }),
+    ], 'dated-discussion-1')
+    const onMarkRead = vi.fn()
+
+    renderList(discussions, { onMarkRead, unreadNoteIds: ['dated-21', 'chronologically-latest'] })
+
+    fireEvent.click(screen.getByRole('button', { name: /未読へ/ }))
+    expect(screen.getByText('dated-21 の本文')).toBeInTheDocument()
+    expect(document.activeElement).toHaveAttribute('data-note-id', 'dated-21')
+
+    fireEvent.click(screen.getByRole('button', { name: '最新へ' }))
+    expect(screen.getByText('chronologically-latest の本文')).toBeInTheDocument()
+    expect(document.activeElement).toHaveAttribute('data-note-id', 'chronologically-latest')
+  })
+
+  it('marks only visible, uncollapsed page notes through the explicit read action', () => {
+    const notes = Array.from({ length: 61 }, (_, index) => createNote(`read-${index + 1}`, otherUser))
+    const onMarkRead = vi.fn()
+    renderList([createDiscussion(notes)], { onMarkRead, unreadNoteIds: notes.map((note) => note.id) })
+
+    fireEvent.click(screen.getByRole('button', { name: '表示中を既読' }))
+
+    expect(onMarkRead).toHaveBeenCalledTimes(1)
+    expect(onMarkRead.mock.calls[0][0]).toHaveLength(50)
+    expect(onMarkRead.mock.calls[0][0].map((note: Note) => note.id)).toEqual(notes.slice(0, 50).map((note) => note.id))
+  })
+
+  it('sends a positioned comment location to the diff navigation callback', () => {
+    const position: Position = { baseSha: 'base', headSha: 'head', newLine: 7, newPath: 'src/file.ts', oldPath: 'src/file.ts', positionType: 'text', startSha: 'start' }
+    const note = createNote('positioned', otherUser, { position })
+    const onOpenPosition = vi.fn()
+    renderList([createDiscussion([note])], { onOpenPosition })
+
+    fireEvent.click(screen.getByRole('button', { name: '差分へ移動: src/file.ts:7' }))
+
+    expect(onOpenPosition).toHaveBeenCalledWith(position)
+  })
+
+  it('keeps the filter fixed while editing or replying to a discussion', () => {
+    const discussion = createDiscussion([createNote('reply-target', otherUser)], 'target')
+    const view = renderList([discussion], { replyDiscussionId: discussion.id })
+
+    expect(screen.getByRole('button', { name: 'すべて' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '未解決' })).toBeDisabled()
+    view.unmount()
+
+    renderList([createDiscussion([createNote('owned-note', currentUser)], 'owned')])
+    fireEvent.click(screen.getByRole('button', { name: 'owned-noteを編集' }))
+    expect(screen.getByRole('button', { name: 'すべて' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '未解決' })).toBeDisabled()
+  })
+
+  it('offers older discussions above the loaded ones and reports loading, errors and the limit', () => {
+    const discussions = [createDiscussion([createNote('newest-page-note', otherUser)], 'newest')]
+    const onLoad = vi.fn()
+    const onRetry = vi.fn()
+    const older: OlderDiscussions = { error: null, hasOlder: true, limitReached: false, loading: false, onLoad, onRetry }
+    const view = render(
+      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={discussions} older={older} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>,
+    )
+    const rerender = (next: typeof older) => view.rerender(
+      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={discussions} older={next} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '以前の議論を読み込む' }))
+    expect(onLoad).toHaveBeenCalledTimes(1)
+
+    rerender({ ...older, loading: true })
+    expect(screen.getByRole('status')).toHaveTextContent('以前の議論を読み込み中…')
+
+    rerender({ ...older, error: 'network down' })
+    expect(screen.getByText('以前の議論を読み込めませんでした: network down')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '再試行' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+
+    rerender({ ...older, hasOlder: false, limitReached: true })
+    expect(screen.getByText('読み込み上限に達しました。これより前の議論はGitLabで確認してください。')).toBeInTheDocument()
+    expect(screen.getByText('newest-page-note の本文')).toBeInTheDocument()
   })
 
   it('limits notes to fifty rows and makes the final note page reachable', () => {
@@ -151,7 +313,8 @@ describe('DiscussionList note ownership and resolution', () => {
 
     expect(screen.getByText('note-1 の本文')).toBeInTheDocument()
     expect(screen.queryByText('note-51 の本文')).not.toBeInTheDocument()
-    expect(screen.getByText('ノート 1–50 / 200')).toBeInTheDocument()
+    expect(screen.getByText('コメント 1–50 / 200')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '返信' })).toBeInTheDocument()
 
     const nextPage = screen.getByRole('button', { name: 'discussion-1の次のノートページ' })
     fireEvent.click(nextPage)
@@ -161,11 +324,11 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.queryByText('note-1 の本文')).not.toBeInTheDocument()
     expect(screen.getByText('note-151 の本文')).toBeInTheDocument()
     expect(screen.getByText('note-200 の本文')).toBeInTheDocument()
-    expect(screen.getByText('ノート 151–200 / 200')).toBeInTheDocument()
+    expect(screen.getByText('コメント 151–200 / 200')).toBeInTheDocument()
     expect(nextPage).toBeDisabled()
   })
 
-  it('disables pagination while editing and preserves text when save fails', async () => {
+  it('preserves edited text when save fails', async () => {
     const ownedNote = createNote('owned-note', currentUser, { body: '編集前の本文' })
     const discussions = [
       createDiscussion([ownedNote], 'discussion-1'),
@@ -176,8 +339,6 @@ describe('DiscussionList note ownership and resolution', () => {
     renderList(discussions, { onEdit })
 
     fireEvent.click(screen.getByRole('button', { name: 'owned-noteを編集' }))
-    const nextPage = screen.getByRole('button', { name: '次の議論ページ' })
-    expect(nextPage).toBeDisabled()
 
     const editor = screen.getByRole('textbox')
     fireEvent.change(editor, { target: { value: '編集後も残る本文' } })
@@ -185,22 +346,18 @@ describe('DiscussionList note ownership and resolution', () => {
 
     await waitFor(() => expect(onEdit).toHaveBeenCalledWith(ownedNote, '編集後も残る本文'))
     expect(screen.getByRole('textbox')).toHaveValue('編集後も残る本文')
-    expect(nextPage).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(nextPage).toBeEnabled()
   })
 
-  it('clamps the visible page when discussions or notes shrink', () => {
+  it('follows shrinking discussions and clamps the note page when notes shrink', () => {
     const discussions = Array.from({ length: 41 }, (_, index) => {
       const discussionNumber = index + 1
       return createDiscussion([createNote(`discussion-${discussionNumber}-note`, otherUser)], `discussion-${discussionNumber}`)
     })
     const view = renderList(discussions)
-    const discussionNextPage = screen.getByRole('button', { name: '次の議論ページ' })
-    fireEvent.click(discussionNextPage)
-    fireEvent.click(discussionNextPage)
+    expect(screen.getByText('discussion-41-note の本文')).toBeInTheDocument()
 
     const shrunkDiscussions = discussions.slice(0, 3)
     view.rerender(
@@ -219,7 +376,7 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.getByText('discussion-1-note の本文')).toBeInTheDocument()
     expect(screen.getByText('discussion-3-note の本文')).toBeInTheDocument()
     expect(screen.queryByText('discussion-41-note の本文')).not.toBeInTheDocument()
-    expect(screen.getByText('議論 1–3 / 3')).toBeInTheDocument()
+    expect(screen.queryByText('議論 1–3 / 3')).not.toBeInTheDocument()
 
     const manyNotes = Array.from({ length: 101 }, (_, index) => createNote(`shrinking-note-${index + 1}`, otherUser))
     const notesView = renderList([createDiscussion(manyNotes)])
