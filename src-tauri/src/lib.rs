@@ -36,6 +36,13 @@ async fn connect_gitlab(
     state.native()?.connect(input).await
 }
 #[tauri::command]
+async fn list_glab_connections() -> Result<Vec<String>, AppError> {
+    tauri::async_runtime::spawn_blocking(glab::list_connections)
+        .await
+        .map_err(|_| AppError::new("AUTH_REQUIRED", "glabの接続先を読み取れませんでした。"))?
+}
+
+#[tauri::command]
 async fn connect_gitlab_from_glab(
     state: tauri::State<'_, ApplicationState>,
     url: String,
@@ -83,6 +90,14 @@ fn cancel_gitlab_request(
     request_id: String,
 ) -> Result<(), AppError> {
     state.native()?.cancel_request(&session_id, &request_id)
+}
+#[tauri::command]
+async fn get_gitlab_avatar(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    url: String,
+) -> Result<Option<String>, AppError> {
+    state.native()?.avatar(session_id, url).await
 }
 #[tauri::command]
 fn open_gitlab_url(
@@ -191,6 +206,7 @@ fn runtime_info() -> RuntimeInfo {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(updates::UpdateState::default())
         .manage(CloseGuard::default())
         .on_window_event(|window, event| {
@@ -221,6 +237,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime_info,
             connect_gitlab,
+            list_glab_connections,
             connect_gitlab_from_glab,
             restore_session,
             disconnect_gitlab,
@@ -229,6 +246,7 @@ pub fn run() {
             clear_gitlab_cache,
             cancel_gitlab_request,
             open_gitlab_url,
+            get_gitlab_avatar,
             get_local_draft,
             set_local_draft,
             clear_local_drafts,

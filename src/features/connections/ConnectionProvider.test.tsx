@@ -65,6 +65,7 @@ function renderConnectionView() {
 function mockDefaultCommands() {
   invokeMock.mockImplementation((command: string, args?: { input?: { url?: string } }) => {
     if (command === 'restore_session') return Promise.resolve(null)
+    if (command === 'list_glab_connections') return Promise.resolve([gitlabComSession.instanceUrl])
     if (command === 'connect_gitlab') {
       const url = args?.input?.url ?? gitlabComSession.instanceUrl
       return Promise.resolve({ ...gitlabComSession, instanceUrl: url })
@@ -193,18 +194,72 @@ describe('GitLab connection IPC and lifecycle', () => {
     expect(screen.queryByDisplayValue('fixture-token')).not.toBeInTheDocument()
   })
 
-  it('connects with glab credentials using only the origin URL', async () => {
+  it('reads glab targets only on demand and ignores the manual PAT URL', async () => {
     renderConnectionView()
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
-    fireEvent.change(screen.getByLabelText('GitLab URL'), { target: { value: 'https://gitlab.example.com/gitlab' } })
+    expect(invokeMock).not.toHaveBeenCalledWith('list_glab_connections')
+    fireEvent.change(screen.getByLabelText('GitLab URL'), { target: { value: 'https://unrelated.example.invalid' } })
     fireEvent.click(screen.getByRole('button', { name: 'glabの認証情報で接続' }))
 
-    await waitFor(() => expect(screen.getByText('https://gitlab.example.com/gitlab')).toBeInTheDocument())
+    expect(await screen.findByRole('dialog', { name: 'glabに保存された接続先' })).toBeInTheDocument()
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('list_glab_connections'))
+    expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab_from_glab')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Personal Access Token')).toBeInTheDocument()
+    expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab_from_glab')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'glabの認証情報で接続' }))
+    await waitFor(() => expect(invokeMock.mock.calls.filter(([command]) => command === 'list_glab_connections')).toHaveLength(2))
+
+    fireEvent.click(screen.getByRole('button', { name: 'この接続先に接続' }))
+    await waitFor(() => expect(screen.getByText(gitlabComSession.instanceUrl)).toBeInTheDocument())
     expect(invokeMock).toHaveBeenCalledWith('connect_gitlab_from_glab', {
-      url: 'https://gitlab.example.com/gitlab',
+      url: gitlabComSession.instanceUrl,
     })
     expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab')).toBe(false)
     expect(screen.queryByDisplayValue('fixture-token')).not.toBeInTheDocument()
+  })
+
+  it('requires an explicit choice when glab has multiple saved targets', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(null)
+      if (command === 'list_glab_connections') return Promise.resolve([gitlabComSession.instanceUrl, otherAccountSession.instanceUrl])
+      if (command === 'connect_gitlab_from_glab') return Promise.resolve(otherAccountSession)
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+
+    renderConnectionView()
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
+    fireEvent.click(screen.getByRole('button', { name: 'glabの認証情報で接続' }))
+
+    expect(await screen.findByLabelText('glabでログイン済みのGitLab接続先')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'この接続先に接続' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('radio', { name: otherAccountSession.instanceUrl }))
+    expect(screen.getByRole('button', { name: 'この接続先に接続' })).toBeEnabled()
+    expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab_from_glab')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'この接続先に接続' }))
+    await waitFor(() => expect(screen.getByText(otherAccountSession.instanceUrl)).toBeInTheDocument())
+    expect(invokeMock).toHaveBeenCalledWith('connect_gitlab_from_glab', { url: otherAccountSession.instanceUrl })
+  })
+
+  it('does not connect when a saved-target dialog is canceled and explains an empty glab config', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(null)
+      if (command === 'list_glab_connections') return Promise.resolve([])
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+
+    renderConnectionView()
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
+    fireEvent.click(screen.getByRole('button', { name: 'glabの認証情報で接続' }))
+
+    expect(await screen.findByText(/glabに保存済みの接続先がありません/u)).toBeInTheDocument()
+    expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab_from_glab')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(screen.getByLabelText('Personal Access Token')).toBeInTheDocument()
+    expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab_from_glab')).toBe(false)
   })
 
   it('keeps the current session and emits no logout event when disconnect is busy', async () => {
@@ -365,6 +420,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     const glabError = 'glabの認証情報を読み取れませんでした。'
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(null)
+      if (command === 'list_glab_connections') return Promise.resolve([gitlabComSession.instanceUrl])
       if (command === 'connect_gitlab_from_glab') return Promise.reject({ code: 'AUTH_REQUIRED', message: glabError })
       throw new Error(`Unexpected IPC command: ${command}`)
     })
@@ -373,9 +429,12 @@ describe('GitLab connection IPC and lifecycle', () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
     fireEvent.change(screen.getByLabelText('Personal Access Token'), { target: { value: 'fixture-token' } })
     fireEvent.click(screen.getByRole('button', { name: 'glabの認証情報で接続' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'この接続先に接続' }))
 
     await waitFor(() => expect(screen.getByText(glabError)).toBeInTheDocument())
     expect(screen.getByLabelText('Personal Access Token')).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: '接続する' })).toBeEnabled()
   })
 

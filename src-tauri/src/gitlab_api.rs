@@ -19,11 +19,19 @@ const PER_PAGE: u32 = 30;
 pub struct ApiResult {
     pub data: Value,
     pub next_page: Option<u32>,
+    /// `X-Total-Pages`, when GitLab reports it. GitLab omits it for very large
+    /// collections, so callers must also cope with `None`.
+    #[serde(default)]
+    pub total_pages: Option<u32>,
     pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum ResponseKind {
+    Users,
+    Project,
+    Todos,
+    Notes,
     Projects,
     Mrs,
     Mr,
@@ -77,6 +85,7 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         return Ok(ApiResult {
             data: json!({ "content": content }),
             next_page: None,
+            total_pages: None,
             truncated: false,
         });
     }
@@ -93,11 +102,13 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     })?;
     let data = normalize_response(response_kind, value)?;
     let next_page = parse_next_page(&headers)?;
+    let total_pages = parse_total_pages(&headers);
     let truncated = contains_truncation_marker(&data);
 
     Ok(ApiResult {
         data,
         next_page,
+        total_pages,
         truncated,
     })
 }
@@ -422,6 +433,57 @@ fn action_project_and_iid(action: &Action) -> (&str, &str) {
 
 fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind), AppError> {
     let (url, response_kind, params) = match query {
+        Query::Users { search, page } => {
+            validate_page(*page)?;
+            (
+                endpoint(api_base, &["users"])?,
+                ResponseKind::Users,
+                vec![
+                    ("search".to_owned(), search.clone()),
+                    ("active".to_owned(), "true".to_owned()),
+                    ("page".to_owned(), page.to_string()),
+                    ("per_page".to_owned(), PER_PAGE.to_string()),
+                ],
+            )
+        }
+        Query::Project { path } => {
+            validate_project_path(path)?;
+            (
+                endpoint(api_base, &["projects", path])?,
+                ResponseKind::Project,
+                Vec::new(),
+            )
+        }
+        Query::Todos { page } => {
+            validate_page(*page)?;
+            (
+                endpoint(api_base, &["todos"])?,
+                ResponseKind::Todos,
+                vec![
+                    ("type".to_owned(), "MergeRequest".to_owned()),
+                    ("state".to_owned(), "pending".to_owned()),
+                    ("page".to_owned(), page.to_string()),
+                    ("per_page".to_owned(), PER_PAGE.to_string()),
+                ],
+            )
+        }
+        Query::Notes {
+            project_id,
+            iid,
+            page,
+        } => {
+            let (url, kind, mut params) = paged_mr_query(
+                api_base,
+                project_id,
+                iid,
+                *page,
+                "notes",
+                ResponseKind::Notes,
+            )?;
+            params.push(("sort".to_owned(), "desc".to_owned()));
+            params.push(("order_by".to_owned(), "updated_at".to_owned()));
+            (url, kind, params)
+        }
         Query::Projects {
             search,
             membership,
@@ -451,23 +513,39 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             state,
             project_id,
             reviewer_id,
+            assignee_id,
             author_id,
             updated_after,
             updated_before,
+            order_by,
+            sort,
             page,
         } => {
             validate_page(*page)?;
+            let order_by = order_by.as_deref().unwrap_or("updated_at");
+            let sort = sort.as_deref().unwrap_or("desc");
+            if !matches!(order_by, "updated_at" | "created_at") || !matches!(sort, "asc" | "desc") {
+                return Err(AppError::new(
+                    "INVALID_INPUT",
+                    "Invalid merge request ordering.",
+                ));
+            }
             if let Some(project_id) = project_id {
                 validate_id(project_id, "projectId")?;
             }
             if let Some(reviewer_id) = reviewer_id {
                 validate_id(reviewer_id, "reviewerId")?;
             }
+            if let Some(assignee_id) = assignee_id {
+                validate_id(assignee_id, "assigneeId")?;
+            }
             if let Some(author_id) = author_id {
                 validate_id(author_id, "authorId")?;
             }
             let mut params = vec![
                 ("scope".to_owned(), "all".to_owned()),
+                ("order_by".to_owned(), order_by.to_owned()),
+                ("sort".to_owned(), sort.to_owned()),
                 ("state".to_owned(), state_to_string(state).to_owned()),
                 ("page".to_owned(), page.to_string()),
                 ("per_page".to_owned(), PER_PAGE.to_string()),
@@ -481,6 +559,7 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 endpoint(api_base, &["merge_requests"])?
             };
             add_optional_param(&mut params, "reviewer_id", reviewer_id);
+            add_optional_param(&mut params, "assignee_id", assignee_id);
             add_optional_param(&mut params, "author_id", author_id);
             add_optional_param(&mut params, "updated_after", updated_after);
             add_optional_param(&mut params, "updated_before", updated_before);
@@ -924,6 +1003,19 @@ fn transport_error(timeout: bool) -> AppError {
     }
 }
 
+/// The total page count is only a navigation hint, so a missing or malformed
+/// header is ignored rather than failing the page that was fetched.
+fn parse_total_pages(headers: &HeaderMap) -> Option<u32> {
+    headers
+        .get("x-total-pages")?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|pages| *pages > 0 && *pages <= MAX_PAGE)
+}
+
 fn parse_next_page(headers: &HeaderMap) -> Result<Option<u32>, AppError> {
     let Some(value) = headers.get("x-next-page") else {
         return Ok(None);
@@ -949,6 +1041,10 @@ fn parse_next_page(headers: &HeaderMap) -> Result<Option<u32>, AppError> {
 
 fn normalize_response(kind: ResponseKind, value: Value) -> Result<Value, AppError> {
     match kind {
+        ResponseKind::Users => normalize_array(value, None, normalize_user),
+        ResponseKind::Project => normalize_project(&value),
+        ResponseKind::Todos => normalize_todos(value),
+        ResponseKind::Notes => normalize_array(value, None, normalize_note),
         ResponseKind::Projects => normalize_array(value, None, normalize_project),
         ResponseKind::Mrs => normalize_array(value, None, normalize_merge_request),
         ResponseKind::Mr => normalize_merge_request(&value),
@@ -1021,6 +1117,52 @@ fn normalize_project(value: &Value) -> Result<Value, AppError> {
     }))
 }
 
+fn normalize_todos(value: Value) -> Result<Value, AppError> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| unsupported_response("GitLab returned an invalid todo list."))?;
+    let mut normalized = Vec::new();
+    for item in items {
+        if item.get("target_type").and_then(Value::as_str) != Some("MergeRequest") {
+            continue;
+        }
+        let target = item
+            .get("target")
+            .ok_or_else(|| unsupported_response("GitLab returned an invalid todo target."))?;
+        let project =
+            normalize_project(item.get("project").ok_or_else(|| {
+                unsupported_response("GitLab returned an invalid todo project.")
+            })?)?;
+        let author = normalize_user(
+            item.get("author")
+                .ok_or_else(|| unsupported_response("GitLab returned an invalid todo author."))?,
+        )?;
+        normalized.push(json!({
+            "id": required_id_field(item, "id", "todo")?,
+            "actionName": required_string_field(item, "action_name", "todo")?,
+            "body": string_field(item, "body"),
+            "createdAt": required_string_field(item, "created_at", "todo")?,
+            "projectId": project["id"],
+            "projectName": project["name"],
+            "iid": required_id_field(target, "iid", "todo target")?,
+            "title": required_string_field(target, "title", "todo target")?,
+            "webUrl": required_string_field(item, "target_url", "todo")?,
+            "author": author,
+        }));
+    }
+    Ok(Value::Array(normalized))
+}
+
+fn optional_users(value: &Value, field: &str) -> Result<Vec<Value>, AppError> {
+    match value.get(field) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(users)) => users.iter().map(normalize_user).collect(),
+        _ => Err(unsupported_response(
+            "GitLab returned an invalid user list.",
+        )),
+    }
+}
+
 fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
     require_object(value, "GitLab returned an invalid merge request.")?;
     let id = required_id_field(value, "id", "merge request")?;
@@ -1043,6 +1185,34 @@ fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
         }
     });
     let head_sha = string_field(value, "sha");
+    let project_path = value
+        .get("references")
+        .and_then(|refs| refs.get("full"))
+        .and_then(Value::as_str)
+        .and_then(|reference| reference.strip_suffix(&format!("!{iid}")))
+        .filter(|path| validate_project_path(path).is_ok());
+    let labels = match value.get("labels") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(labels)) => labels
+            .iter()
+            .map(|label| {
+                label
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| unsupported_response("GitLab returned invalid labels."))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => return Err(unsupported_response("GitLab returned invalid labels.")),
+    };
+    let pipeline = value
+        .get("head_pipeline")
+        .filter(|pipeline| pipeline.is_object())
+        .map(|pipeline| {
+            json!({
+                "status": string_field(pipeline, "status"),
+                "webUrl": string_field(pipeline, "web_url"),
+            })
+        });
     let head_sha = if head_sha.is_empty() {
         diff_refs
             .as_ref()
@@ -1067,6 +1237,12 @@ fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
         "updatedAt": string_field(value, "updated_at"),
         "headSha": if head_sha.is_empty() { Value::Null } else { Value::String(head_sha) },
         "diffRefs": diff_refs.unwrap_or(Value::Null),
+        "projectPath": project_path,
+        "draft": bool_field(value, "draft"),
+        "labels": labels,
+        "assignees": optional_users(value, "assignees")?,
+        "reviewers": optional_users(value, "reviewers")?,
+        "pipeline": pipeline,
     }))
 }
 
@@ -1110,6 +1286,7 @@ fn normalize_note(value: &Value) -> Result<Value, AppError> {
         "body": string_field(value, "body"),
         "author": author,
         "createdAt": string_field(value, "created_at"),
+        "updatedAt": value.get("updated_at").and_then(Value::as_str),
         "system": bool_field(value, "system"),
         "resolvable": bool_field(value, "resolvable"),
         "resolved": bool_field(value, "resolved"),
@@ -1211,11 +1388,19 @@ fn normalize_approvals(value: &Value) -> Result<Value, AppError> {
 
 fn normalize_user(value: &Value) -> Result<Value, AppError> {
     require_object(value, "GitLab returned an invalid user.")?;
-    Ok(json!({
+    let mut user = json!({
         "id": required_id_field(value, "id", "user")?,
         "username": required_string_field(value, "username", "user")?,
         "name": required_string_field(value, "name", "user")?,
-    }))
+    });
+    if let Some(avatar) = value
+        .get("avatar_url")
+        .and_then(Value::as_str)
+        .filter(|avatar| !avatar.is_empty() && avatar.len() <= 2048)
+    {
+        user["avatarUrl"] = avatar.into();
+    }
+    Ok(user)
 }
 
 fn require_object(value: &Value, message: &str) -> Result<(), AppError> {
@@ -1428,6 +1613,22 @@ fn validate_sha(value: &str, field: &str) -> Result<(), AppError> {
         return Err(AppError::new(
             "INVALID_INPUT",
             &format!("{field} must be a full hexadecimal commit SHA."),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_project_path(value: &str) -> Result<(), AppError> {
+    if value.chars().any(char::is_control)
+        || value.contains('\\')
+        || value.split('/').count() < 2
+        || value
+            .split('/')
+            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
+    {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "Invalid project namespace path.",
         ));
     }
     Ok(())
@@ -1979,6 +2180,77 @@ mod tests {
     }
 
     #[test]
+    fn mr_assignment_filters_reach_gitlab_for_global_and_project_lists() {
+        let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+        for project_id in [None, Some("42".to_owned())] {
+            let query = Query::Mrs {
+                search: String::new(),
+                state: MergeRequestState::Opened,
+                project_id: project_id.clone(),
+                reviewer_id: Some("8".to_owned()),
+                assignee_id: Some("9".to_owned()),
+                author_id: None,
+                updated_after: None,
+                updated_before: None,
+                order_by: None,
+                sort: None,
+                page: 2,
+            };
+            let (url, _) = build_query_url(&api, &query).unwrap();
+            let params = url
+                .query_pairs()
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(params.get("assignee_id").unwrap(), "9");
+            assert_eq!(params.get("reviewer_id").unwrap(), "8");
+            assert_eq!(params.get("scope").unwrap(), "all");
+            assert_eq!(params.get("state").unwrap(), "opened");
+            assert_eq!(params.get("page").unwrap(), "2");
+            assert_eq!(params.get("order_by").unwrap(), "updated_at");
+            assert_eq!(params.get("sort").unwrap(), "desc");
+            assert_eq!(
+                url.path(),
+                if project_id.is_some() {
+                    "/api/v4/projects/42/merge_requests"
+                } else {
+                    "/api/v4/merge_requests"
+                }
+            );
+            let mut ordered = query.clone();
+            if let Query::Mrs { order_by, sort, .. } = &mut ordered {
+                *order_by = Some("created_at".to_owned());
+                *sort = Some("asc".to_owned());
+            }
+            let (ordered_url, _) = build_query_url(&api, &ordered).unwrap();
+            assert!(ordered_url
+                .query_pairs()
+                .any(|(key, value)| key == "order_by" && value == "created_at"));
+            if let Query::Mrs { sort, .. } = &mut ordered {
+                *sort = Some("arbitrary".to_owned());
+            }
+            assert_eq!(
+                build_query_url(&api, &ordered).unwrap_err().code,
+                "INVALID_INPUT"
+            );
+            if let Query::Mrs { order_by, sort, .. } = &mut ordered {
+                *sort = None;
+                *order_by = Some("arbitrary".to_owned());
+            }
+            assert_eq!(
+                build_query_url(&api, &ordered).unwrap_err().code,
+                "INVALID_INPUT"
+            );
+            let mut invalid = query;
+            if let Query::Mrs { assignee_id, .. } = &mut invalid {
+                *assignee_id = Some("self".to_owned());
+            }
+            assert_eq!(
+                build_query_url(&api, &invalid).unwrap_err().code,
+                "INVALID_INPUT"
+            );
+        }
+    }
+
+    #[test]
     fn uses_project_scoped_mr_and_repository_commit_diff_routes() {
         let fixture = Fixture::new(vec![
             response("200 OK", "[]", ""),
@@ -1994,9 +2266,12 @@ mod tests {
             state: MergeRequestState::All,
             project_id: Some("42".to_owned()),
             reviewer_id: None,
+            assignee_id: None,
             author_id: None,
             updated_after: None,
             updated_before: None,
+            order_by: None,
+            sort: None,
             page: 1,
         };
         runtime()
@@ -2018,6 +2293,159 @@ mod tests {
         assert!(requests[0].contains("/api/v4/projects/42/merge_requests?"));
         assert!(requests[1].contains("/api/v4/projects/42/repository/commits/"));
         assert!(!requests[1].contains("merge_requests/9/commits"));
+    }
+
+    #[test]
+    fn discovery_queries_encode_paths_and_bound_lists() {
+        let api = Url::parse("https://gitlab.example/prefix/api/v4/").unwrap();
+        let (project, _) = build_query_url(
+            &api,
+            &Query::Project {
+                path: "group/sub/project".to_owned(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            project.path(),
+            "/prefix/api/v4/projects/group%2Fsub%2Fproject"
+        );
+        for path in [
+            "",
+            "42",
+            "group/../project",
+            "group//project",
+            "/group/project",
+            "group/project\n",
+        ] {
+            assert_eq!(
+                build_query_url(
+                    &api,
+                    &Query::Project {
+                        path: path.to_owned()
+                    }
+                )
+                .unwrap_err()
+                .code,
+                "INVALID_INPUT"
+            );
+        }
+        let (users, _) = build_query_url(
+            &api,
+            &Query::Users {
+                search: "A & B".to_owned(),
+                page: 2,
+            },
+        )
+        .unwrap();
+        let params = users
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(params.get("search").unwrap(), "A & B");
+        assert_eq!(params.get("active").unwrap(), "true");
+        assert_eq!(params.get("per_page").unwrap(), "30");
+        assert_eq!(params.get("page").unwrap(), "2");
+        let (todos, _) = build_query_url(&api, &Query::Todos { page: 1 }).unwrap();
+        let params = todos
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(params.get("type").unwrap(), "MergeRequest");
+        assert_eq!(params.get("state").unwrap(), "pending");
+        assert_eq!(params.get("per_page").unwrap(), "30");
+        assert!(build_query_url(&api, &Query::Todos { page: 0 }).is_err());
+    }
+
+    #[test]
+    fn notes_query_preserves_system_notes_and_updated_order() {
+        let api = Url::parse("https://gitlab.example/prefix/api/v4/").unwrap();
+        let query = Query::Notes {
+            project_id: "7".to_owned(),
+            iid: "3".to_owned(),
+            page: 2,
+        };
+        let (url, kind) = build_query_url(&api, &query).unwrap();
+        assert_eq!(
+            url.path(),
+            "/prefix/api/v4/projects/7/merge_requests/3/notes"
+        );
+        let params = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(params.get("sort").unwrap(), "desc");
+        assert_eq!(params.get("order_by").unwrap(), "updated_at");
+        assert_eq!(params.get("page").unwrap(), "2");
+        assert_eq!(params.get("per_page").unwrap(), "30");
+        let user = json!({"id": 9, "username": "alice", "name": "Alice"});
+        let data = normalize_response(kind, json!([
+            {"id": 1, "body": "changed labels", "author": user, "created_at": "2026-10-09T00:00:00Z", "updated_at": "2026-10-09T00:00:01Z", "system": true},
+            {"id": 2, "body": "Please review", "author": user, "system": false}
+        ])).unwrap();
+        assert_eq!(data.as_array().unwrap().len(), 2);
+        assert_eq!(data[0]["system"], true);
+        assert_eq!(data[0]["updatedAt"], "2026-10-09T00:00:01Z");
+        assert_eq!(data[1]["system"], false);
+        assert!(data[1]["updatedAt"].is_null());
+        for invalid in [
+            Query::Notes {
+                project_id: "bad/path".to_owned(),
+                iid: "3".to_owned(),
+                page: 1,
+            },
+            Query::Notes {
+                project_id: "7".to_owned(),
+                iid: "0".to_owned(),
+                page: 1,
+            },
+            Query::Notes {
+                project_id: "7".to_owned(),
+                iid: "3".to_owned(),
+                page: 0,
+            },
+        ] {
+            assert_eq!(
+                build_query_url(&api, &invalid).unwrap_err().code,
+                "INVALID_INPUT"
+            );
+        }
+    }
+
+    #[test]
+    fn optional_review_metadata_and_todos_preserve_resource_types() {
+        let user = json!({"id": 7, "username": "alice", "name": "Alice"});
+        let mut mr = json!({"id": 11, "iid": 3, "project_id": 2, "title": "Review", "state": "opened", "author": user});
+        let normalized = normalize_merge_request(&mr).unwrap();
+        assert!(normalized["projectPath"].is_null());
+        assert!(normalized["pipeline"].is_null());
+        assert_eq!(normalized["assignees"], json!([]));
+        assert_eq!(normalized["labels"], json!([]));
+        mr["references"] = json!({"full": "group/project!3"});
+        mr["draft"] = json!(true);
+        mr["labels"] = json!(["bug"]);
+        mr["assignees"] = json!([user.clone()]);
+        mr["reviewers"] = json!([user.clone()]);
+        mr["head_pipeline"] =
+            json!({"status": "success", "web_url": "https://gitlab.example/pipelines/1"});
+        let normalized = normalize_merge_request(&mr).unwrap();
+        assert_eq!(normalized["projectPath"], "group/project");
+        assert_eq!(normalized["draft"], true);
+        assert_eq!(normalized["assignees"][0]["id"], "7");
+        assert_eq!(normalized["reviewers"][0]["name"], "Alice");
+        assert_eq!(normalized["pipeline"]["status"], "success");
+        let todo = json!({"id": 4, "target_type": "MergeRequest", "target": {"iid": 3, "title": "Review"}, "project": {"id": 2, "name": "Project", "path_with_namespace": "group/project"}, "author": user, "action_name": "assigned", "body": "Please review", "created_at": "2026-10-09T00:00:00Z", "target_url": "https://gitlab.example/group/project/-/merge_requests/3"});
+        let normalized =
+            normalize_todos(json!([{"target_type": "Issue", "target": {"iid": 3}}, todo.clone()]))
+                .unwrap();
+        assert_eq!(normalized.as_array().unwrap().len(), 1);
+        assert_eq!(normalized[0]["projectId"], "2");
+        assert_eq!(normalized[0]["iid"], "3");
+        let mut invalid = todo;
+        invalid["target"] = Value::Null;
+        assert!(normalize_todos(json!([invalid])).is_err());
+        mr["assignees"] = json!([{"id": 7, "username": "alice"}]);
+        assert!(normalize_merge_request(&mr).is_err());
+        let note =
+            normalize_note(&json!({"id": 1, "author": user, "updated_at": "2026-10-09T00:00:00Z"}))
+                .unwrap();
+        assert_eq!(note["updatedAt"], "2026-10-09T00:00:00Z");
     }
 
     #[test]
@@ -2123,8 +2551,8 @@ mod tests {
             let started = std::time::Instant::now();
             let list = fetch(&client, &api, &Query::Mrs {
                 search: String::new(), state: MergeRequestState::Merged,
-                project_id: Some(project_id.clone()), reviewer_id: None, author_id: None,
-                updated_after: None, updated_before: None, page: 1,
+                project_id: Some(project_id.clone()), reviewer_id: None, assignee_id: None, author_id: None,
+                updated_after: None, updated_before: None, order_by: None, sort: None, page: 1,
             }).await.unwrap();
             let rows = list.data.as_array().unwrap();
             let iid = rows.first().unwrap()["iid"].as_str().unwrap().to_owned();
@@ -2137,5 +2565,27 @@ mod tests {
             assert!(diffs.data.is_array());
             println!("Public MR flow: {} list rows, {} discussions, {} files; network+normalization {} ms", rows.len(), discussions.data.as_array().unwrap().len(), diffs.data.as_array().unwrap().len(), started.elapsed().as_millis());
         });
+    }
+
+    #[test]
+    fn users_keep_only_a_bounded_avatar_url() {
+        let user = normalize_user(&json!({"id": 3, "username": "a", "name": "A", "avatar_url": "https://gitlab.example/uploads/a.png"})).unwrap();
+        assert_eq!(user["avatarUrl"], "https://gitlab.example/uploads/a.png");
+        let user =
+            normalize_user(&json!({"id": 3, "username": "a", "name": "A", "avatar_url": null}))
+                .unwrap();
+        assert!(user.get("avatarUrl").is_none());
+    }
+
+    #[test]
+    fn total_pages_is_an_optional_navigation_hint() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(parse_total_pages(&headers), None);
+        headers.insert("x-total-pages", "4".parse().unwrap());
+        assert_eq!(parse_total_pages(&headers), Some(4));
+        headers.insert("x-total-pages", "0".parse().unwrap());
+        assert_eq!(parse_total_pages(&headers), None);
+        headers.insert("x-total-pages", "many".parse().unwrap());
+        assert_eq!(parse_total_pages(&headers), None);
     }
 }

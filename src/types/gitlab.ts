@@ -10,6 +10,8 @@ export interface GitLabUser {
   id: string
   username: string
   name: string
+  /** GitLab's avatar URL; load it only through `getGitLabAvatar`. */
+  avatarUrl?: string | null
 }
 
 export interface GitLabSession {
@@ -71,10 +73,31 @@ export interface MergeRequestsQuery {
   state: MergeRequestState
   projectId?: string
   reviewerId?: string
+  assigneeId?: string
   authorId?: string
   updatedAfter?: string
   updatedBefore?: string
   page: number
+  orderBy?: 'updated_at' | 'created_at'
+  sort?: 'asc' | 'desc'
+}
+
+export interface UsersQuery { kind: 'users'; search: string; page: number }
+export interface ProjectLookupQuery { kind: 'project'; path: string }
+export interface TodosQuery { kind: 'todos'; page: number }
+export interface NotesQuery { kind: 'notes'; projectId: string; iid: string; page: number }
+
+export interface GitLabTodo {
+  id: string
+  actionName: string
+  body: string
+  createdAt: string
+  projectId: string
+  projectName: string
+  iid: string
+  title: string
+  webUrl: string
+  author: GitLabUser
 }
 
 export interface MergeRequestQuery {
@@ -121,6 +144,10 @@ export interface ApprovalsQuery {
 
 export type GitLabQuery =
   | ProjectQuery
+  | UsersQuery
+  | ProjectLookupQuery
+  | TodosQuery
+  | NotesQuery
   | MergeRequestsQuery
   | MergeRequestQuery
   | ReviewResourceQuery
@@ -158,6 +185,12 @@ export interface MergeRequest {
   updatedAt: string
   headSha: string | null
   diffRefs: DiffRefs | null
+  projectPath?: string | null
+  draft?: boolean
+  labels?: string[]
+  assignees?: GitLabUser[]
+  reviewers?: GitLabUser[]
+  pipeline?: { status: string; webUrl: string } | null
 }
 
 export interface Diff {
@@ -187,6 +220,7 @@ export interface Note {
   body: string
   author: GitLabUser
   createdAt: string
+  updatedAt?: string
   system: boolean
   resolvable: boolean
   resolved: boolean
@@ -223,6 +257,10 @@ export interface FileContent {
 
 export type QueryData =
   | Project[]
+  | Project
+  | GitLabUser[]
+  | GitLabTodo[]
+  | Note[]
   | MergeRequest[]
   | MergeRequest
   | Diff[]
@@ -237,6 +275,8 @@ export interface GitLabSnapshot<T = QueryData> {
   fetchedAt: number
   source: 'cache' | 'network'
   nextPage: number | null
+  /** GitLab's X-Total-Pages; missing for old cache entries and very large collections. */
+  totalPages?: number | null
   completeness: 'page' | 'complete' | 'truncated'
 }
 
@@ -339,6 +379,10 @@ export type GitLabAction =
 
 export type GitLabQueryData<Q extends GitLabQuery> =
   Q extends ProjectQuery ? Project[]
+    : Q extends UsersQuery ? GitLabUser[]
+      : Q extends ProjectLookupQuery ? Project
+        : Q extends TodosQuery ? GitLabTodo[]
+          : Q extends NotesQuery ? Note[]
     : Q extends MergeRequestsQuery ? MergeRequest[]
       : Q extends MergeRequestQuery ? MergeRequest
         : Q extends DiffsQuery ? Diff[]

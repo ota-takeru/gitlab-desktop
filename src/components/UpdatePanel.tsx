@@ -38,9 +38,11 @@ export interface UpdatePanelProps {
   /** The owning screen should opt in only when no unsaved work is present. */
   autoInstallAllowed?: boolean
   compact?: boolean
+  /** Keep update checks and install guards active while hiding routine status. */
+  notificationOnly?: boolean
 }
 
-export function UpdatePanel({ autoInstallAllowed = false, compact = false }: UpdatePanelProps) {
+export function UpdatePanel({ autoInstallAllowed = false, compact = false, notificationOnly = false }: UpdatePanelProps) {
   const inTauri = isTauri()
   const [state, setState] = useState<UpdateState>({ status: inTauri ? 'pending' : 'unconfigured' })
   const [autoInstallDeferred, setAutoInstallDeferred] = useState(false)
@@ -162,6 +164,10 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false }: Upd
       </DialogContent>
     </Dialog>
   ) : null
+
+  if (notificationOnly && !['available', 'error', 'installing'].includes(state.status)) {
+    return installingDialog
+  }
 
   if (compact) {
     return <>

@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import App from './App'
+import { ThemeProvider } from '@mui/material/styles'
+import DevelopmentApp from './pages/DevelopmentApp'
+import { createAppTheme } from './theme'
+
+function App() {
+  return <ThemeProvider theme={createAppTheme('dark', 'workbench')}><DevelopmentApp mode="dark" onModeChange={() => undefined} route="foundation" /></ThemeProvider>
+}
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
 
@@ -22,7 +28,7 @@ function setTauriEnvironment(enabled: boolean) {
   Reflect.deleteProperty(window, '__TAURI__')
 }
 
-describe('GitLab Desktop foundation', () => {
+describe('development-only foundation screens', () => {
   beforeEach(() => {
     invokeMock.mockReset()
     setTauriEnvironment(true)
@@ -96,7 +102,7 @@ describe('GitLab Desktop foundation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /UI catalog コンポーネント一覧/ }))
 
-    expect(await screen.findByRole('heading', { name: 'UI catalog' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'UI catalog' }, { timeout: 5000 })).toBeInTheDocument()
     expect(await screen.findByText('Status pills')).toBeInTheDocument()
     expect(await screen.findByText('表示するデータがありません')).toBeInTheDocument()
   })
