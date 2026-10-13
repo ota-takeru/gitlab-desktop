@@ -12,20 +12,18 @@ import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
-import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { MarkdownLivePreview, MarkdownToolbar } from '../../components/MarkdownToolbar'
+import { MarkdownEditor } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { RelativeTime } from '../../components/RelativeTime'
 import type { Discussion, Note, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
-import { useMarkdownFormatting } from '../shared/useMarkdownFormatting'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
 
 const NOTES_PER_PAGE = 50
@@ -69,8 +67,6 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
   const [collapsedThreads, setCollapsedThreads] = useState<Record<string, boolean>>({})
   const [pendingJumpNoteId, setPendingJumpNoteId] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
-  const editInputRef = useRef<HTMLTextAreaElement | null>(null)
-  const { applyFormat, handleFormatShortcut } = useMarkdownFormatting(editInputRef, editing?.body ?? '', (body) => setEditing((current) => current ? { ...current, body } : current))
   const restoreScrollRef = useRef<{ element: HTMLElement; top: number; left: number } | null>(null)
   const anchorRef = useRef<{ id: string; offset: number } | null>(null)
   const olderRef = useRef(older)
@@ -229,7 +225,7 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
         const positionLabel = position ? `${position.newPath}:${position.newLine ?? position.oldLine ?? 'file'}` : null
         const firstNote = notes[0]
         return (
-          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 2, minWidth: 0, overflow: 'hidden' }}>
+          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 2, minWidth: 0, overflow: 'hidden' }}>
             {isThreadCollapsible(notes) ? (
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: isCollapsed ? 0 : 1, borderColor: 'divider', justifyContent: 'space-between', minHeight: 36, pl: 1.5, pr: 1, py: 0.5 }}>
                 <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
@@ -308,27 +304,31 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                       </Stack>
                       {editing?.note.id === note.id ? (
                         <Stack spacing={0.75} sx={{ mt: 0.75 }}>
-                          <MarkdownToolbar disabled={disabled} onFormat={applyFormat} />
-                          <TextField autoFocus disabled={disabled} fullWidth inputRef={editInputRef} label="コメントを編集" multiline minRows={3} onChange={(event) => setEditing({ body: event.target.value, note })} onKeyDown={(event) => { handleFormatShortcut(event) }} value={editing.body} />
-                          <MarkdownLivePreview body={editing.body} label="編集中のコメントのプレビュー" />
+                          <MarkdownEditor autoFocus disabled={disabled} label="コメントを編集" onChange={(body) => setEditing({ body, note })} value={editing.body} />
                           <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end' }}>
                             <Button onClick={() => setEditing(null)}>取消</Button>
                             <Button disabled={!editing.body.trim() || disabled} onClick={() => void onEdit(note, editing.body.trim()).then((success) => { if (success) setEditing(null) }).catch(() => undefined)} variant="contained">保存</Button>
                           </Stack>
                         </Stack>
-                      ) : <Box sx={{ color: 'text.primary', maxWidth: 760, mt: 0.25 }}><MockMarkdown body={note.body} size="body1" /></Box>}
+                      ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><MockMarkdown body={note.body} size="body1" /></Box>}
                     </Box>
                   </Box>
                 )
               })}
             </Box> : null}
-            {replying ? <Box sx={{ borderTop: 1, borderColor: 'divider', p: 1 }}>{replyComposer}</Box> : null}
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: 1, borderColor: 'divider', flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.25 }}>
-              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                {replying ? null : <Button disabled={disabled} onClick={() => onReply(discussion)} startIcon={<ReplyRoundedIcon />}>返信</Button>}
-              </Stack>
+              {replying ? <Box sx={{ flex: '1 1 100%', minWidth: 0 }}>{replyComposer}</Box> : (
+                <Button
+                  aria-label="返信"
+                  color="inherit"
+                  disabled={disabled}
+                  onClick={() => onReply(discussion)}
+                  startIcon={<ReplyRoundedIcon />}
+                  sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', color: 'text.secondary', flex: '1 1 240px', fontWeight: 400, justifyContent: 'flex-start', '&:hover': { bgcolor: 'background.paper', borderColor: 'text.secondary' } }}
+                >返信を書く…</Button>
+              )}
               {!isCollapsed && notePageCount > 1 ? (
-                <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
+                <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
                   <Button aria-label={`${discussion.id}の前のノートページ`} disabled={disabled || paginationDisabled || notePage <= 1} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage - 1 })))} size="small">前へ</Button>
                   <Typography color="text.secondary" variant="caption">コメント {noteRangeStart(notePage, NOTES_PER_PAGE)}–{noteRangeEnd(notePage, NOTES_PER_PAGE, notes.length)} / {notes.length}</Typography>
                   <Button aria-label={`${discussion.id}の次のノートページ`} disabled={disabled || paginationDisabled || notePage >= notePageCount} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage + 1 })))} size="small">次へ</Button>

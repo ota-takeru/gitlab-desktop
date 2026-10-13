@@ -149,7 +149,7 @@ describe('BufferedReviewComposer', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('入力の保存を確認できないため、投稿を停止しました。')
   })
 
-  it('wires read-only MR discussion, unread marking, position navigation, Markdown preview, and mention lookup', async () => {
+  it('wires read-only MR discussion, unread marking, position navigation, and mention lookup', async () => {
     detailMocks.useComposerBufferMock.mockImplementation(() => {
       const [body, setBody] = useState('**保持する本文**\n\n@al')
       return { body, change: setBody, discard: vi.fn(), error: null, persistenceStatus: 'saved' }
@@ -177,7 +177,6 @@ describe('BufferedReviewComposer', () => {
     expect(detailMocks.markReadMock.mock.calls[0][1]).toHaveLength(2)
     expect(detailMocks.markReadMock.mock.calls[0][1].some((note: Note) => note.system)).toBe(false)
 
-    await waitFor(() => expect(within(screen.getByLabelText('コメントプレビュー')).getByText('保持する本文').tagName).toBe('STRONG'))
     const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
     textbox.setSelectionRange(textbox.value.length, textbox.value.length)
     fireEvent.click(textbox)
@@ -190,6 +189,11 @@ describe('BufferedReviewComposer', () => {
     const diffComment = await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })
     await waitFor(() => expect(diffComment.closest('[data-testid="diff-line"]')).toHaveFocus())
     expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'diffs', iid: '120', projectId: '7' }))
+
+    fireEvent.click(diffComment)
+    const code = await screen.findByRole('figure', { name: 'コメント対象のコード' })
+    expect(within(code).getAllByTestId('diff-line').map((line) => line.textContent)).toEqual([expect.stringContaining('line one'), expect.stringContaining('line two')])
+    expect(within(code).getAllByTestId('diff-line')[1]).toHaveAttribute('data-selected', 'true')
     expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
     expect(detailMocks.notifyWorkspaceMock).not.toHaveBeenCalled()
   })

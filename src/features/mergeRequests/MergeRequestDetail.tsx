@@ -65,7 +65,10 @@ import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { clearGitLabMutationStates, useGitLabMutation } from '../shared/useGitLabMutation'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { DiscussionList, type OlderDiscussions } from './DiscussionList'
-import { DiffViewer } from './DiffViewer'
+import { DiffSnippet, DiffViewer } from './DiffViewer'
+import { DiscussionLayout } from './DiscussionLayout'
+import { isUnresolvedDiscussion } from './discussionStatus'
+import { UnresolvedThreadNav } from './UnresolvedThreadNav'
 import type { ReviewedFileContext } from './useReviewedFiles'
 import { MergeRequestPeopleDialog } from './MergeRequestPeopleDialog'
 import { ReviewComposer } from './ReviewComposer'
@@ -97,6 +100,16 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
   const { session } = useConnection()
   const workspace = usePersonalWorkspace(session)
   const sectionRef = useRef<HTMLElement | null>(null)
+  const headerRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    // Sticky content below the sticky header starts at its current height.
+    const header = headerRef.current
+    const section = sectionRef.current
+    if (!header || !section || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => section.style.setProperty('--detail-header-height', `${header.offsetHeight}px`))
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [])
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<ReviewTab>('discussion')
   const [viewPosition, setViewPosition] = useState<Position | undefined>()
@@ -109,6 +122,8 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
   const [fileView, setFileView] = useState<'diff' | 'file'>('diff')
   const [replyDiscussion, setReplyDiscussion] = useState<Discussion | null>(null)
   const [position, setPosition] = useState<Position | undefined>()
+  // The diff of the line being commented on, kept because the discussion tab does not load diffs.
+  const [positionDiff, setPositionDiff] = useState<{ diff: Diff; position: Position } | null>(null)
   const [positionError, setPositionError] = useState<string | null>(null)
   const [selectedDrafts, setSelectedDrafts] = useState<string[]>([])
   const [draftStatuses, setDraftStatuses] = useState<Record<string, DraftStatus>>({})
@@ -421,17 +436,14 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
     // List pages group by approval; let them pick up the change.
     void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') })
   }) : Promise.resolve(false)
-  const unresolvedCount = discussions.filter((discussion) => {
-    const resolvable = discussion.notes.filter((note) => note.resolvable && !note.system)
-    return resolvable.length > 0 && !resolvable.every((note) => note.resolved)
-  }).length
+  const unresolvedCount = discussions.filter(isUnresolvedDiscussion).length
 
   return (
     <Box component="section" ref={sectionRef} sx={{ minHeight: '100%', width: '100%' }}>
-      <Box component="header" data-sticky-header="true" sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', position: 'sticky', px: { md: 3, xs: 2 }, pt: 1.25, top: 0, zIndex: 2 }}>
+      <Box component="header" data-sticky-header="true" ref={headerRef} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', position: 'sticky', px: 2, pt: 1.25, top: 0, zIndex: 2 }}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32 }}>
           {onBack ? <Tooltip title="一覧に戻る (Esc)"><IconButton aria-label="一覧に戻る" onClick={onBack} sx={{ ml: -0.75 }}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
-          {onToggleList ? <Tooltip title={listHidden ? '一覧を表示' : '一覧を隠して広く表示'}><IconButton aria-label={listHidden ? '一覧を表示' : '一覧を隠す'} aria-pressed={Boolean(listHidden)} onClick={onToggleList} sx={{ ml: -0.75 }}>{listHidden ? <ViewSidebarOutlinedIcon /> : <WidthFullOutlinedIcon />}</IconButton></Tooltip> : null}
+          {onToggleList ? <Tooltip title={listHidden ? '一覧を表示（Ctrl+\\）' : '一覧を隠して広く表示（Ctrl+\\）'}><IconButton aria-label={listHidden ? '一覧を表示' : '一覧を隠す'} aria-pressed={Boolean(listHidden)} onClick={onToggleList} sx={{ ml: -0.75 }}>{listHidden ? <ViewSidebarOutlinedIcon /> : <WidthFullOutlinedIcon />}</IconButton></Tooltip> : null}
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
             <Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, overflow: 'hidden', px: 0.75, textOverflow: 'ellipsis' }}>{mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`}</Button>
             <Typography color="text.secondary" sx={{ flexShrink: 0 }} variant="body2">!{mergeRequest.iid}</Typography>
@@ -474,20 +486,28 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
         </Tabs>
       </Box>
 
-      <Stack spacing={1} sx={{ px: { md: 3, xs: 2 }, py: 2 }}>
+      <Stack spacing={1} sx={{ px: 2, py: 2 }}>
         {positionError ? <Alert severity="warning">{positionError}</Alert> : null}
         {mutation.error ? <Alert action={mutation.status === 'unknown' ? <Button color="inherit" disabled={verifyingUnknown} onClick={() => { if (!mutation.unknownAction) void retryUnknownReceipt(); else if (verificationReady) void acknowledgeVerifiedOutcome(); else void verifyUnknownOutcome() }}>{verifyingUnknown ? '確認中…' : !mutation.unknownAction ? '確認記録を再取得' : verificationReady ? '再取得結果を確認した' : 'サーバーから再取得'}</Button> : undefined} severity={mutation.status === 'unknown' ? 'warning' : 'error'}>{mutation.status === 'unknown' ? verificationReady ? '最新状態を再取得しました。結果を画面で確認してから再送停止を解除してください。' : '投稿結果を確認できないため、このMRへの再送を停止しています。' : mutation.error.message}</Alert> : null}
         {verificationError ? <Alert severity="error">確認用の再取得に失敗しました: {verificationError}</Alert> : null}
-        {activeTab === 'discussion' ? <Box sx={{ maxWidth: 960, width: '100%' }}><DiscussionTab onUploadAttachment={uploadAttachment} attachmentTargetKey={JSON.stringify([session?.id, resourceId, iid])} composerKey={createComposerBufferKey(session, resourceId, iid, 'new', commentPosition)} replyComposerKey={replyDiscussion ? replyComposerKey(replyDiscussion) : null} onSaveReplyDraft={saveReplyDraft} onSubmitReply={submitReply} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEdit={draftEdit} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftStatuses={draftStatuses} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEdit} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} onClearPosition={() => setPosition(undefined)} position={commentPosition} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
+        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab onUploadAttachment={uploadAttachment} attachmentTargetKey={JSON.stringify([session?.id, resourceId, iid])} composerKey={createComposerBufferKey(session, resourceId, iid, 'new', commentPosition)} replyComposerKey={replyDiscussion ? replyComposerKey(replyDiscussion) : null} onSaveReplyDraft={saveReplyDraft} onSubmitReply={submitReply} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEdit={draftEdit} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftStatuses={draftStatuses} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEdit} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} onClearPosition={() => setPosition(undefined)} position={commentPosition} positionCode={positionDiff && commentPosition && positionDiff.position === commentPosition ? <DiffSnippet diff={positionDiff.diff} position={commentPosition} /> : null} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {discussionWindow.observers}
-        {activeTab === 'changes' ? <ChangesTab reviewContext={session && !selectedCommit && mergeRequestHeadSha ? { instanceUrl: session.instanceUrl, userId: session.user.id, projectId: resourceId, mergeRequestIid: iid, revision: mergeRequestHeadSha } : undefined} allowComments={!selectedCommit} changeNextPage={selectedCommit ? commitDiffResult.snapshot?.nextPage ?? null : diffsResult.snapshot?.nextPage ?? null} changePage={changePage} changesError={selectedCommit ? commitDiffResult.error : diffsResult.error} changesLoading={Boolean(pendingFileTarget) || (selectedCommit ? commitDiffResult.loading : diffsResult.loading)} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={fileView} onComment={(nextPosition) => { setViewPosition(undefined); setPosition(normalizePosition(nextPosition, mergeRequest)); setPositionError(null); setActiveTab('discussion') }} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onSelectCommit={(sha) => { setSelectedCommit(sha); setSelectedFile(null); setFileView('diff'); setChangePage(1); setCommitPage(1) }} onSelectFile={setSelectedFile} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} /> : null}
+        {activeTab === 'changes' ? <ChangesTab reviewContext={session && !selectedCommit && mergeRequestHeadSha ? { instanceUrl: session.instanceUrl, userId: session.user.id, projectId: resourceId, mergeRequestIid: iid, revision: mergeRequestHeadSha } : undefined} allowComments={!selectedCommit} changeNextPage={selectedCommit ? commitDiffResult.snapshot?.nextPage ?? null : diffsResult.snapshot?.nextPage ?? null} changePage={changePage} changesError={selectedCommit ? commitDiffResult.error : diffsResult.error} changesLoading={Boolean(pendingFileTarget) || (selectedCommit ? commitDiffResult.loading : diffsResult.loading)} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={fileView} onComment={(nextPosition) => {
+          const normalized = normalizePosition(nextPosition, mergeRequest)
+          const diff = diffs.find((item) => item.newPath === nextPosition.newPath && item.oldPath === nextPosition.oldPath)
+          setViewPosition(undefined)
+          setPosition(normalized)
+          setPositionDiff(diff ? { diff, position: normalized } : null)
+          setPositionError(null)
+          setActiveTab('discussion')
+        }} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onSelectCommit={(sha) => { setSelectedCommit(sha); setSelectedFile(null); setFileView('diff'); setChangePage(1); setCommitPage(1) }} onSelectFile={setSelectedFile} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} /> : null}
         {activeTab === 'overview' ? <OverviewTab approvedBy={approvedBy} approvalsError={approvalsResult.error} approvalsLoading={approvalsResult.loading} description={mergeRequest.description} mergeRequest={mergeRequest} /> : null}
       </Stack>
     </Box>
   )
 }
 
-function DiscussionTab({ onUploadAttachment, attachmentTargetKey, composerKey, replyComposerKey, onSaveReplyDraft, onSubmitReply, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEdit, draftError, draftLoading, draftNextPage, draftStatuses, drafts, loading, mutationLocked, mutationPending, onCancelReply, onClearPosition, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onNextDraftPage, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, position, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
+function DiscussionTab({ onUploadAttachment, attachmentTargetKey, composerKey, replyComposerKey, onSaveReplyDraft, onSubmitReply, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEdit, draftError, draftLoading, draftNextPage, draftStatuses, drafts, loading, mutationLocked, mutationPending, onCancelReply, onClearPosition, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onNextDraftPage, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, position, positionCode, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
   const replyComposer = replyDiscussion && replyComposerKey ? (
@@ -507,17 +527,30 @@ function DiscussionTab({ onUploadAttachment, attachmentTargetKey, composerKey, r
       replyDiscussionId={replyDiscussion.id}
     />
   ) : null
+  const openThread = (discussionId: string) => {
+    const thread = document.querySelector<HTMLElement>(`[data-discussion-id="${CSS.escape(discussionId)}"]`)
+    if (!thread) return
+    thread.scrollIntoView?.({ behavior: 'auto', block: 'start' })
+    thread.querySelector<HTMLElement>('[data-note-id]')?.focus({ preventScroll: true })
+  }
   return (
-    <Stack spacing={0.75}>
-      {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
-      {discussionError && discussions.length ? <Alert severity="warning">保存済みの議論を表示中です。更新に失敗しました: {discussionError.message}</Alert> : null}
-      {loading && !discussions.length ? <LoadingPanel label="議論を読み込み中…" /> : null}
-      {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList older={older} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} /> : null}
-      {draftError && !drafts.length ? <Alert severity="error">下書きを取得できませんでした: {draftError.message}</Alert> : null}
-      {draftError && drafts.length ? <Alert severity="warning">保存済みの下書きを表示中です。更新に失敗しました: {draftError.message}</Alert> : null}
-      {(!draftLoading || drafts.length) && (!draftError || drafts.length) ? <DraftList disabled={mutationDisabled} draftEdit={draftEdit} drafts={drafts} nextPage={draftNextPage} statuses={draftStatuses} selected={selectedDrafts} onDelete={onDeleteDraft} onEdit={onEditDraft} onNextPage={onNextDraftPage} onPublish={onPublishDraft} onPublishSelected={onPublishSelectedDrafts} onSelect={onSelectDraft} onSetEdit={onSetDraftEdit} /> : null}
-      <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={onClearPosition} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={mutationPending} targetPosition={position} />
-    </Stack>
+    <DiscussionLayout
+      composer={(
+        <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={onClearPosition} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={mutationPending} targetCode={positionCode} targetPosition={position} />
+      )}
+      navigator={discussions.length ? <UnresolvedThreadNav discussions={discussions} olderNotLoaded={older.hasOlder} onSelect={openThread} /> : null}
+      side={<>
+        {draftError && !drafts.length ? <Alert severity="error">下書きを取得できませんでした: {draftError.message}</Alert> : null}
+        {draftError && drafts.length ? <Alert severity="warning">保存済みの下書きを表示中です。更新に失敗しました: {draftError.message}</Alert> : null}
+        {(!draftLoading || drafts.length) && (!draftError || drafts.length) ? <DraftList disabled={mutationDisabled} draftEdit={draftEdit} drafts={drafts} nextPage={draftNextPage} statuses={draftStatuses} selected={selectedDrafts} onDelete={onDeleteDraft} onEdit={onEditDraft} onNextPage={onNextDraftPage} onPublish={onPublishDraft} onPublishSelected={onPublishSelectedDrafts} onSelect={onSelectDraft} onSetEdit={onSetDraftEdit} /> : null}
+      </>}
+      threads={<>
+        {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
+        {discussionError && discussions.length ? <Alert severity="warning">保存済みの議論を表示中です。更新に失敗しました: {discussionError.message}</Alert> : null}
+        {loading && !discussions.length ? <LoadingPanel label="議論を読み込み中…" /> : null}
+        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList older={older} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} /> : null}
+      </>}
+    />
   )
 }
 
@@ -561,6 +594,8 @@ interface DiscussionTabProps {
   onSetDraftEdit: (value: { id: string; body: string } | null) => void
   onSubmitComment: (body: string, thread: boolean, position?: Position) => Promise<boolean>
   position?: Position
+  /** The code at `position`, when it is known. */
+  positionCode?: React.ReactNode
   replyDiscussion: Discussion | null
   selectedDrafts: string[]
 }

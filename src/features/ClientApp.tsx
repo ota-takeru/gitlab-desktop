@@ -58,6 +58,27 @@ import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
 import { clearGitLabMutationStates } from './shared/useGitLabMutation'
 import { useGitLabQuery } from './shared/useGitLabQuery'
 
+const LIST_HIDDEN_KEY = 'gitlab-desktop:list-hidden'
+const SIDEBAR_COLLAPSED_BROWSING_KEY = 'gitlab-desktop:sidebar-collapsed'
+const SIDEBAR_COLLAPSED_REVIEWING_KEY = 'gitlab-desktop:sidebar-collapsed-reviewing'
+
+function readLayoutPreference(key: string, fallback: boolean): boolean {
+  try {
+    const value = globalThis.localStorage?.getItem(key)
+    return value === null || value === undefined ? fallback : value === 'true'
+  } catch {
+    return fallback
+  }
+}
+
+function writeLayoutPreference(key: string, value: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(key, String(value))
+  } catch {
+    // The layout still changes until the window is reopened.
+  }
+}
+
 type ClientRoute = 'projects' | 'mrs' | 'settings' | 'todos' | 'pinned' | 'recent'
 
 export function ClientApp({ mode, onModeChange }: { mode: 'light' | 'dark'; onModeChange: () => void }) {
@@ -110,15 +131,31 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
   const location = readClientLocation(Boolean(session), locationHash)
   const [openedMergeRequest, setOpenedMergeRequest] = useState<{ sessionKey: string; mergeRequest: MergeRequest } | null>(null)
   const [openUrlDialog, setOpenUrlDialog] = useState(false)
-  const [listHidden, setListHidden] = useState(false)
+  const [listHidden, setListHidden] = useState(() => readLayoutPreference(LIST_HIDDEN_KEY, false))
   // Wide windows show the list and the detail side by side; narrow windows show one at a time.
   const isWide = useMediaQuery('(min-width:1100px)')
   const isNarrowNav = useMediaQuery('(max-width:1000px)')
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // Reading an MR gets the width: the navigation shrinks to icons while an MR is open
+  // unless the reader expanded it there, and the choice is kept separately for each case.
+  const [sidebarCollapsedBrowsing, setSidebarCollapsedBrowsing] = useState(() => readLayoutPreference(SIDEBAR_COLLAPSED_BROWSING_KEY, false))
+  const [sidebarCollapsedReviewing, setSidebarCollapsedReviewing] = useState(() => readLayoutPreference(SIDEBAR_COLLAPSED_REVIEWING_KEY, true))
   const [narrowSidebarExpanded, setNarrowSidebarExpanded] = useState(false)
-  const sidebarIsCollapsed = isNarrowNav ? !narrowSidebarExpanded : sidebarCollapsed
   const { route, params } = location
   const selected = parseSelection(params.mr)
+  const reviewing = Boolean(selected) && route !== 'settings'
+  const sidebarIsCollapsed = isNarrowNav ? !narrowSidebarExpanded : reviewing ? sidebarCollapsedReviewing : sidebarCollapsedBrowsing
+  const toggleSidebar = () => {
+    if (isNarrowNav) {
+      setNarrowSidebarExpanded((current) => !current)
+      return
+    }
+    const next = !sidebarIsCollapsed
+    if (reviewing) setSidebarCollapsedReviewing(next)
+    else setSidebarCollapsedBrowsing(next)
+    writeLayoutPreference(reviewing ? SIDEBAR_COLLAPSED_REVIEWING_KEY : SIDEBAR_COLLAPSED_BROWSING_KEY, next)
+  }
+  const toggleList = useCallback(() => setListHidden((current) => !current), [setListHidden])
+  useEffect(() => writeLayoutPreference(LIST_HIDDEN_KEY, listHidden), [listHidden])
   const listParams = useMemo(() => withoutSelection(params), [params])
   const listKey = JSON.stringify(listParams)
 
@@ -149,9 +186,36 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
   }, [location.params, location.route, location.raw, locationHash, session, status])
 
   useEffect(() => {
+    // The mouse's back/forward side buttons move through the screens visited in
+    // this window. If the WebView navigates by itself anyway, its popstate
+    // arrives first and the history is not moved twice.
+    let pending: ReturnType<typeof globalThis.setTimeout> | undefined
+    const cancelPending = () => { globalThis.clearTimeout(pending); pending = undefined }
+    const handleSideButton = (event: MouseEvent) => {
+      if (event.button !== 3 && event.button !== 4) return
+      event.preventDefault()
+      cancelPending()
+      const back = event.button === 3
+      pending = globalThis.setTimeout(() => {
+        pending = undefined
+        if (back) window.history.back()
+        else window.history.forward()
+      }, 50)
+    }
+    window.addEventListener('mouseup', handleSideButton)
+    window.addEventListener('popstate', cancelPending)
+    return () => {
+      cancelPending()
+      window.removeEventListener('mouseup', handleSideButton)
+      window.removeEventListener('popstate', cancelPending)
+    }
+  }, [])
+
+  useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       const modifier = event.ctrlKey || event.metaKey
       if (modifier && event.key.toLowerCase() === 'o') { event.preventDefault(); setOpenUrlDialog(true); return }
+      if (modifier && event.key === '\\' && isWide && selected) { event.preventDefault(); toggleList(); return }
       if (modifier && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         if (route !== 'projects' && route !== 'mrs') {
@@ -181,7 +245,7 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [isWide, navigate, route, select, selected])
+  }, [isWide, navigate, route, select, selected, toggleList])
 
   const openProject = (nextProject: Project) => {
     navigate('mrs', { projectId: nextProject.id, projectName: nextProject.name })
@@ -256,7 +320,7 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
             <Tooltip placement="right" title={sidebarIsCollapsed ? 'ナビゲーションを展開' : 'ナビゲーションを折りたたむ'}>
               <IconButton
                 aria-label={sidebarIsCollapsed ? 'ナビゲーションを展開' : 'ナビゲーションを折りたたむ'}
-                onClick={() => isNarrowNav ? setNarrowSidebarExpanded((current) => !current) : setSidebarCollapsed((current) => !current)}
+                onClick={toggleSidebar}
               >
                 {sidebarIsCollapsed ? <MenuRoundedIcon /> : <MenuOpenRoundedIcon />}
               </IconButton>
@@ -310,7 +374,7 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
                   listHidden={isWide ? listHidden : undefined}
                   onBack={isWide ? undefined : () => select(null)}
                   onOpenProject={() => navigate('mrs', { projectId: selected.projectId })}
-                  onToggleList={isWide ? () => setListHidden((current) => !current) : undefined}
+                  onToggleList={isWide ? toggleList : undefined}
                   selected={selected}
                 /> : <DetailPlaceholder hasSession={Boolean(session)} />}
               </Box>

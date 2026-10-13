@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import type { GitLabSession, Note } from '../../types/gitlab'
 import { scopedKey, type PreferenceScope } from './preferences'
 
@@ -28,9 +28,26 @@ function timestamps(value: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(value).filter(([id, date]) => /^[1-9]\d*$/u.test(id) && typeof date === 'string' && Number.isFinite(Date.parse(date))).slice(-2000))
 }
 function key(scope: PreferenceScope) { return scopedKey(scope, 'personal-workspace') }
+function storedWorkspace(scope: PreferenceScope): string {
+  try { return localStorage.getItem(key(scope)) ?? '' } catch { return '' }
+}
+/** A fresh copy that the caller may change and save. */
 export function readWorkspace(scope: PreferenceScope): WorkspaceData {
+  return parseWorkspace(storedWorkspace(scope))
+}
+let snapshot: { key: string; raw: string; data: WorkspaceData } | null = null
+/**
+ * The stored workspace for reading only. Parsing validates every read marker
+ * (up to 16,000), so it is parsed again only when the stored text changes.
+ */
+function readWorkspaceSnapshot(scope: PreferenceScope): WorkspaceData {
+  const storageKey = key(scope)
+  const raw = storedWorkspace(scope)
+  if (snapshot?.key !== storageKey || snapshot.raw !== raw) snapshot = { data: parseWorkspace(raw), key: storageKey, raw }
+  return snapshot.data
+}
+function parseWorkspace(raw: string): WorkspaceData {
   try {
-    const raw = localStorage.getItem(key(scope))
     if (!raw) return emptyData()
     const value = JSON.parse(raw) as Partial<WorkspaceData>
     const reading: Record<string, Reading> = {}
@@ -82,11 +99,17 @@ export function observeComments(scope: PreferenceScope, ref: MrRef, notes: Note[
   save(scope, data)
 }
 export function unreadComments(scope: PreferenceScope, ref: MrRef, notes: Note[], currentUserId: string): string[] {
-  const record = readWorkspace(scope).reading[mrRefKey(ref)]
+  return unreadIn(readWorkspaceSnapshot(scope), ref, notes, currentUserId)
+}
+function unreadIn(data: WorkspaceData, ref: MrRef, notes: Note[], currentUserId: string): string[] {
+  const record = data.reading[mrRefKey(ref)]
   return notes.filter((note) => !note.system && note.author.id !== currentUserId && record?.read[note.id] !== stamp(note)).map((note) => note.id)
 }
 export function workspaceUnreadCount(scope: PreferenceScope, ref: MrRef): number | undefined {
-  const record = readWorkspace(scope).reading[mrRefKey(ref)]
+  return unreadCountIn(readWorkspaceSnapshot(scope), ref)
+}
+function unreadCountIn(data: WorkspaceData, ref: MrRef): number | undefined {
+  const record = data.reading[mrRefKey(ref)]
   return record ? Object.entries(record.known).filter(([id, date]) => record.read[id] !== date).length : undefined
 }
 function subscribe(listener: () => void) {
@@ -95,31 +118,38 @@ function subscribe(listener: () => void) {
   return () => { globalThis.removeEventListener(changedEvent, listener); globalThis.removeEventListener('storage', listener) }
 }
 export function usePersonalWorkspace(session: GitLabSession | null) {
-  const scope = { instanceUrl: session?.instanceUrl ?? 'anonymous', userId: session?.user.id ?? 'anonymous' }
-  const getSnapshot = () => { try { return localStorage.getItem(key(scope)) ?? '' } catch { return '' } }
-  const version = useSyncExternalStore(subscribe, getSnapshot, () => '')
-  const data = readWorkspace(scope)
+  const instanceUrl = session?.instanceUrl ?? 'anonymous'
+  const userId = session?.user.id ?? 'anonymous'
+  const connected = Boolean(session)
+  const version = useSyncExternalStore(subscribe, () => storedWorkspace({ instanceUrl, userId }), () => '')
+  // Rows of long lists ask for unread counts, so they share this one parsed copy.
+  const data = readWorkspaceSnapshot({ instanceUrl, userId })
+  // The same object until the stored workspace changes, so effects that use it do not rerun on every render.
+  return useMemo(() => workspaceApi({ instanceUrl, userId }, connected, data, version), [connected, data, instanceUrl, userId, version])
+}
+
+function workspaceApi(scope: PreferenceScope, connected: boolean, data: WorkspaceData, version: string) {
   return {
     version, pinned: data.pinned, recent: data.recent, settings: data.settings,
-    unreadIds: (ref: MrRef, notes: Note[]) => unreadComments(scope, ref, notes, scope.userId),
-    unreadCount: (ref: MrRef) => workspaceUnreadCount(scope, ref),
-    observe: (ref: MrRef, notes: Note[]) => { if (session) observeComments(scope, ref, notes, scope.userId) },
-    markRead: (ref: MrRef, notes: Note[]) => { if (session) observeComments(scope, ref, notes, scope.userId, true) },
+    unreadIds: (ref: MrRef, notes: Note[]) => unreadIn(data, ref, notes, scope.userId),
+    unreadCount: (ref: MrRef) => unreadCountIn(data, ref),
+    observe: (ref: MrRef, notes: Note[]) => { if (connected) observeComments(scope, ref, notes, scope.userId) },
+    markRead: (ref: MrRef, notes: Note[]) => { if (connected) observeComments(scope, ref, notes, scope.userId, true) },
     isPinned: (ref: MrRef) => data.pinned.some((item) => mrRefKey(item) === mrRefKey(ref)),
     togglePinned: (ref: MrRef) => {
-      if (!session || !validRef(ref)) return
+      if (!connected || !validRef(ref)) return
       const current = readWorkspace(scope)
       current.pinned = current.pinned.some((item) => mrRefKey(item) === mrRefKey(ref)) ? current.pinned.filter((item) => mrRefKey(item) !== mrRefKey(ref)) : [ref, ...current.pinned].slice(0, 100)
       save(scope, current)
     },
     recordRecent: (ref: MrRef) => {
-      if (!session || !validRef(ref)) return
+      if (!connected || !validRef(ref)) return
       const current = readWorkspace(scope)
       current.recent = [ref, ...current.recent.filter((item) => mrRefKey(item) !== mrRefKey(ref))].slice(0, 30)
       save(scope, current)
     },
     setSettings: (settings: Partial<WorkspaceSettings>) => {
-      if (!session) return
+      if (!connected) return
       const current = readWorkspace(scope)
       current.settings = { ...current.settings, ...settings }
       save(scope, current)

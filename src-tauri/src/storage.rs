@@ -6,6 +6,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_CACHE_BYTES: i64 = 128 * 1024 * 1024;
+const MAX_CACHE_ENTRIES: i64 = 10_000;
 const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 const STORAGE_SCHEMA_VERSION: u32 = 2;
 const MAX_LOCAL_DRAFTS: i64 = 100;
@@ -14,6 +15,11 @@ const MAX_LOCAL_DRAFT_BODY_BYTES: usize = 64 * 1024;
 const MAX_PENDING_OPERATIONS: i64 = 100;
 const MAX_PENDING_RESOURCE_BYTES: usize = 256;
 const MAX_PENDING_ACTION_BYTES: usize = 256 * 1024;
+
+/// Cached snapshots fetched before this time are expired.
+fn retention_cutoff() -> i64 {
+    (now_ms() as i64).saturating_sub(RETENTION_MS)
+}
 
 pub fn now_ms() -> u64 {
     SystemTime::now()
@@ -83,7 +89,7 @@ impl Store {
         {
             let migration = connection.transaction().map_err(|_| storage_error())?;
             migration
-                .execute_batch("CREATE TABLE IF NOT EXISTS cache (account TEXT NOT NULL, key TEXT NOT NULL, snapshot TEXT NOT NULL, fetched INTEGER NOT NULL, size INTEGER NOT NULL, PRIMARY KEY(account,key)); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS local_drafts (account TEXT NOT NULL, key TEXT NOT NULL, body TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY(account,key)); CREATE TABLE IF NOT EXISTS pending_operations (account TEXT NOT NULL, resource TEXT NOT NULL, action TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY(account,resource)); PRAGMA user_version = 2;")
+                .execute_batch("CREATE TABLE IF NOT EXISTS cache (account TEXT NOT NULL, key TEXT NOT NULL, snapshot TEXT NOT NULL, fetched INTEGER NOT NULL, size INTEGER NOT NULL, PRIMARY KEY(account,key)); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS local_drafts (account TEXT NOT NULL, key TEXT NOT NULL, body TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY(account,key)); CREATE TABLE IF NOT EXISTS pending_operations (account TEXT NOT NULL, resource TEXT NOT NULL, action TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY(account,resource)); CREATE INDEX IF NOT EXISTS cache_fetched_size ON cache(fetched, size); PRAGMA user_version = 2;")
                 .map_err(|_| storage_error())?;
             migration.commit().map_err(|_| storage_error())?;
         }
@@ -123,12 +129,13 @@ impl Store {
     }
 
     pub fn get(&mut self, account: &str, key: &str) -> Result<Option<Snapshot>, AppError> {
-        self.prune()?;
+        // Expired rows are skipped here and deleted by the next write, so a read
+        // does not have to scan the whole cache.
         let text: Option<String> = self
             .0
             .query_row(
-                "SELECT snapshot FROM cache WHERE account=? AND key=?",
-                params![account, key],
+                "SELECT snapshot FROM cache WHERE account=? AND key=? AND fetched >= ?",
+                params![account, key, retention_cutoff()],
                 |row| row.get(0),
             )
             .optional()
@@ -166,29 +173,47 @@ impl Store {
     }
 
     fn prune(&mut self) -> Result<(), AppError> {
+        // Every query here is answered from the (fetched, size) index; reading
+        // the table itself would walk every cached payload.
         self.0
-            .execute(
-                "DELETE FROM cache WHERE fetched < ?",
-                [(now_ms() as i64).saturating_sub(RETENTION_MS)],
+            .execute("DELETE FROM cache WHERE fetched < ?", [retention_cutoff()])
+            .map_err(|_| storage_error())?;
+        let (size, count): (i64, i64) = self
+            .0
+            .query_row(
+                "SELECT COALESCE(SUM(size),0), COUNT(*) FROM cache",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|_| storage_error())?;
-        loop {
-            let size: i64 = self
-                .0
-                .query_row("SELECT COALESCE(SUM(size),0) FROM cache", [], |row| {
-                    row.get(0)
-                })
-                .map_err(|_| storage_error())?;
-            let count: i64 = self
-                .0
-                .query_row("SELECT COUNT(*) FROM cache", [], |row| row.get(0))
-                .map_err(|_| storage_error())?;
-            if size <= MAX_CACHE_BYTES && count <= 10_000 {
-                break;
-            }
-            self.0.execute("DELETE FROM cache WHERE rowid IN (SELECT rowid FROM cache ORDER BY fetched LIMIT 1)", []).map_err(|_| storage_error())?;
+        let mut excess_size = size - MAX_CACHE_BYTES;
+        let mut excess_count = count - MAX_CACHE_ENTRIES;
+        if excess_size <= 0 && excess_count <= 0 {
+            return Ok(());
         }
-        Ok(())
+        let mut oldest = Vec::new();
+        {
+            let mut statement = self
+                .0
+                .prepare("SELECT rowid, size FROM cache ORDER BY fetched")
+                .map_err(|_| storage_error())?;
+            let mut rows = statement.query([]).map_err(|_| storage_error())?;
+            while excess_size > 0 || excess_count > 0 {
+                let Some(row) = rows.next().map_err(|_| storage_error())? else {
+                    break;
+                };
+                oldest.push(row.get::<_, i64>(0).map_err(|_| storage_error())?);
+                excess_size -= row.get::<_, i64>(1).map_err(|_| storage_error())?;
+                excess_count -= 1;
+            }
+        }
+        let eviction = self.0.transaction().map_err(|_| storage_error())?;
+        for rowid in oldest {
+            eviction
+                .execute("DELETE FROM cache WHERE rowid=?", [rowid])
+                .map_err(|_| storage_error())?;
+        }
+        eviction.commit().map_err(|_| storage_error())
     }
 
     pub fn clear_account(&mut self, account: &str) -> Result<(), AppError> {

@@ -141,6 +141,47 @@ it('opens a legacy full-page MR link beside the review queue', async () => {
   expect(screen.getByRole('button', { name: 'レビュー依頼' })).toHaveAttribute('aria-current', 'page')
 })
 
+it('shrinks the navigation while an MR is open and remembers each choice', async () => {
+  localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
+  localStorage.removeItem('gitlab-desktop:sidebar-collapsed-reviewing')
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
+    ? { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    : emptyQueryResult())
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+
+  expect(await screen.findByRole('button', { name: 'ナビゲーションを展開' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'ナビゲーションを展開' }))
+  expect(localStorage.getItem('gitlab-desktop:sidebar-collapsed-reviewing')).toBe('false')
+
+  fireEvent.click(await screen.findByRole('button', { name: '一覧に戻る' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  expect(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' })).toBeInTheDocument()
+  expect(localStorage.getItem('gitlab-desktop:sidebar-collapsed')).toBeNull()
+})
+
+it('hides the list beside an open MR with Ctrl+\\ and remembers it', async () => {
+  localStorage.removeItem('gitlab-desktop:list-hidden')
+  vi.stubGlobal('matchMedia', (query: string) => ({ addEventListener: () => undefined, addListener: () => undefined, dispatchEvent: () => false, matches: query.includes('min-width:1100px'), media: query, onchange: null, removeEventListener: () => undefined, removeListener: () => undefined }))
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
+    ? { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    : emptyQueryResult())
+  try {
+    render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+
+    expect(await screen.findByRole('button', { name: '一覧を隠す' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { ctrlKey: true, key: '\\' })
+    expect(await screen.findByRole('button', { name: '一覧を表示' })).toBeInTheDocument()
+    expect(localStorage.getItem('gitlab-desktop:list-hidden')).toBe('true')
+  } finally {
+    vi.unstubAllGlobals()
+    localStorage.removeItem('gitlab-desktop:list-hidden')
+  }
+})
+
 it('keeps the list mounted and only toggles the selection parameter when opening an MR', async () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
@@ -211,6 +252,24 @@ it.each([
   await waitFor(() => expect(window.location.hash).toBe(`#client/mrs?${queryString}`))
   expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-current', 'page')
   expect(screen.getByRole('button', { name: 'MR検索' })).not.toHaveAttribute('aria-current', 'page')
+})
+
+it('moves back and forward with the mouse side buttons without moving twice', async () => {
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined)
+  const forward = vi.spyOn(window.history, 'forward').mockImplementation(() => undefined)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+
+  fireEvent.mouseUp(window, { button: 3 })
+  await waitFor(() => expect(back).toHaveBeenCalledTimes(1))
+  fireEvent.mouseUp(window, { button: 4 })
+  await waitFor(() => expect(forward).toHaveBeenCalledTimes(1))
+
+  // The WebView already went back on its own.
+  fireEvent.mouseUp(window, { button: 3 })
+  fireEvent.popState(window)
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 100))
+  expect(back).toHaveBeenCalledTimes(1)
 })
 
 it('keeps the collapsed navigation controls accessible', () => {

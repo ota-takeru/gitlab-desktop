@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 
+import { MARKDOWN_EDITOR_MODE_KEY } from '../../components/MarkdownEditor'
 import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import { ReviewComposer } from './ReviewComposer'
 
@@ -50,18 +51,17 @@ describe('ReviewComposer', () => {
     expect(onChange).toHaveBeenCalledWith('')
   })
 
-  it('previews the Markdown below the editor while typing', async () => {
-    function StatefulComposer() {
-      const [value, setValue] = useState('')
-      return <ReviewComposer onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} value={value} />
-    }
+  it('formats Markdown in place in the rich editor', async () => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
+    const onChange = vi.fn()
+    render(<ReviewComposer onCancelReply={() => undefined} onChange={onChange} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} value="**太字の本文**" />)
 
-    render(<StatefulComposer />)
-    const textbox = screen.getByRole('textbox', { name: 'コメント本文' })
-    fireEvent.change(textbox, { target: { value: '**太字の本文**' } })
+    const editor = screen.getByRole('textbox', { name: 'コメント本文' })
+    expect(within(editor).getByText('太字の本文').tagName).toBe('STRONG')
+    expect(screen.queryByLabelText('コメントプレビュー')).not.toBeInTheDocument()
 
-    expect(textbox).toHaveValue('**太字の本文**')
-    await waitFor(() => expect(within(screen.getByLabelText('コメントプレビュー')).getByText('太字の本文').tagName).toBe('STRONG'))
+    fireEvent.click(screen.getByRole('button', { name: '箇条書きを挿入' }))
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith('- **太字の本文**'))
   })
 
   it('formats the selection from the toolbar and the keyboard', () => {

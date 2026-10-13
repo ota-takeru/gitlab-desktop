@@ -132,6 +132,17 @@ describe('DiffViewer', () => {
     expect(screen.getByRole('button', { name: `次の${DIFF_PAGE_SIZE}行` })).toBeDisabled()
   }, 15000)
 
+  it('highlights code syntax and marks search matches across highlighted tokens', () => {
+    renderViewer(makeDiff('@@ -1 +1 @@\n-const enabled = false\n+const enabled = true\n'))
+
+    const added = screen.getAllByTestId('diff-line')[1]
+    expect(within(added).getByText('const')).toHaveClass('hljs-keyword')
+    expect(within(added).getByText('true')).toHaveClass('hljs-literal')
+
+    fireEvent.change(screen.getByRole('textbox', { name: '差分内を検索' }), { target: { value: 't enabled' } })
+    expect(Array.from(added.querySelectorAll('mark')).map((mark) => mark.textContent).join('')).toBe('t enabled')
+  })
+
   it('pages full-file content separately and reaches the end without an invented trailing line', () => {
     const content = Array.from({ length: 2_001 }, (_, index) => `内容 ${index + 1}`).join('\r\n')
     const diff = makeDiff('@@ -1 +1 @@\n-old\n+new\n')
@@ -146,7 +157,7 @@ describe('DiffViewer', () => {
     fireEvent.click(screen.getByRole('button', { name: `次の${FILE_PAGE_SIZE}行` }))
     expect(screen.getAllByTestId('file-line')).toHaveLength(1)
     expect(screen.getByText(/表示 2001.*2001.*2001行/u)).toBeInTheDocument()
-    expect(screen.getByText('内容 2001')).toBeInTheDocument()
+    expect(screen.getAllByTestId('file-line').at(-1)).toHaveTextContent('内容 2001')
   })
 
   it('opens the page containing a selected comment position and preserves its line number', async () => {

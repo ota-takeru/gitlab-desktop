@@ -9,16 +9,12 @@ import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import StrikethroughSRoundedIcon from '@mui/icons-material/StrikethroughSRounded'
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined'
 import TitleRoundedIcon from '@mui/icons-material/TitleRounded'
-import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
-import Typography from '@mui/material/Typography'
-import { useDeferredValue, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import type { MarkdownFormat } from '../lib/markdownFormat'
-import { MockMarkdown } from './mock/MockMarkdown'
 
 const tools: { format: MarkdownFormat; icon: ReactNode; label: string; shortcut?: string }[] = [
   { format: 'heading', icon: <TitleRoundedIcon />, label: '見出し' },
@@ -53,17 +49,5 @@ export function MarkdownToolbar({ disabled = false, onFormat }: { disabled?: boo
         </Tooltip>
       ))}
     </Stack>
-  )
-}
-
-/** The rendered Markdown shown under the editor while typing. */
-export function MarkdownLivePreview({ body, label }: { body: string; label: string }) {
-  const deferredBody = useDeferredValue(body)
-  return (
-    <Paper aria-label={label} sx={{ bgcolor: 'background.default', maxHeight: 240, overflow: 'auto', px: 1, py: 0.75 }} variant="outlined">
-      {deferredBody.trim()
-        ? <Box sx={{ color: 'text.primary' }}><MockMarkdown body={deferredBody} /></Box>
-        : <Typography color="text.secondary" variant="caption">入力するとここにプレビューが表示されます。</Typography>}
-    </Paper>
   )
 }

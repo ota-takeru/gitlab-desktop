@@ -1,5 +1,17 @@
 import { alpha, createTheme, type PaletteMode } from '@mui/material/styles'
 
+interface SyntaxPalette {
+  keyword: string
+  string: string
+  comment: string
+  number: string
+  title: string
+  type: string
+  attribute: string
+  tag: string
+  variable: string
+}
+
 declare module '@mui/material/styles' {
   interface Palette {
     diff: {
@@ -8,6 +20,8 @@ declare module '@mui/material/styles' {
       addedText: string
       deletedText: string
     }
+    /** Code token colours for syntax highlighting. */
+    syntax: SyntaxPalette
     /** Layered surfaces of the three-pane workspace. */
     surface: {
       nav: string
@@ -25,6 +39,7 @@ declare module '@mui/material/styles' {
       addedText: string
       deletedText: string
     }
+    syntax?: SyntaxPalette
     surface?: {
       nav: string
       list: string
@@ -50,6 +65,12 @@ declare module '@mui/material/Typography' {
 }
 
 export type ThemeAppearance = 'foundation' | 'workbench'
+
+// GitHub-like token colours, readable on both the plain and the added/removed diff backgrounds.
+const syntaxTokens: Record<PaletteMode, SyntaxPalette> = {
+  light: { keyword: '#cf222e', string: '#0a3069', comment: '#6e7781', number: '#0550ae', title: '#8250df', type: '#953800', attribute: '#0550ae', tag: '#116329', variable: '#953800' },
+  dark: { keyword: '#ff7b72', string: '#a5d6ff', comment: '#8b949e', number: '#79c0ff', title: '#d2a8ff', type: '#ffa657', attribute: '#79c0ff', tag: '#7ee787', variable: '#ffa657' },
+}
 
 interface Tokens {
   canvas: string
@@ -149,6 +170,7 @@ export function createAppTheme(
       error: { main: palette.error },
       info: { main: palette.info },
       diff: palette.diff,
+      syntax: syntaxTokens[mode],
       surface: {
         nav: palette.nav,
         list: palette.list,

@@ -21,6 +21,7 @@ import { alpha, type Theme } from '@mui/material/styles'
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { Diff, Position } from '../../types/gitlab'
+import { highlightLines, languageForPath, type SyntaxToken } from '../../lib/syntaxHighlight'
 import { parseDiff, splitFileLines, type ParsedLine } from './diffParser'
 import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
 
@@ -107,6 +108,8 @@ export function DiffViewer({ allowComments = true, diffs, fileContent, fileLoadi
   }
 
   const rows = parsed.lines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE)
+  const language = displayedPath ? languageForPath(displayedPath) : null
+  const rowTokens = useMemo(() => highlightDiffLines(parsed.lines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), language), [diffOffset, language, parsed])
   const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
   const lineCounts = useMemo(() => ({ added: parsed.lines.filter((line) => line.kind === 'add').length, removed: parsed.lines.filter((line) => line.kind === 'remove').length }), [parsed])
   const commentsEnabled = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
@@ -184,41 +187,66 @@ export function DiffViewer({ allowComments = true, diffs, fileContent, fileLoadi
               <ToggleButton value="file">ファイル全体</ToggleButton>
             </ToggleButtonGroup>
           </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', p: 1 }}>
+          {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
             <TextField
               fullWidth
-              helperText="表示中の差分ページを検索します。他のページは対象外です。"
-              label="差分内を検索"
               onChange={(event) => { setDiffSearch(event.target.value); setActiveSearch(null) }}
+              placeholder="差分内を検索"
               size="small"
+              sx={denseFieldSx}
+              title="表示中の差分ページを検索します。他のページは対象外です。"
               value={diffSearch}
-              slotProps={{ input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{diffSearch.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><IconButton aria-label="前の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton><IconButton aria-label="次の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></InputAdornment> } }}
+              slotProps={{ htmlInput: { 'aria-label': '差分内を検索' }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{diffSearch.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><IconButton aria-label="前の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton><IconButton aria-label="次の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></InputAdornment> } }}
             />
             <TextField
               fullWidth
-              label="ファイル名を検索"
               onChange={(event) => setFileSearch(event.target.value)}
+              placeholder="ファイル名を検索"
               size="small"
+              sx={denseFieldSx}
               value={fileSearch}
-              slotProps={{ input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{fileSearch.trim() ? `${displayedFileMatchIndex >= 0 ? displayedFileMatchIndex + 1 : 0}/${fileSearchMatches.length}` : ''}</Typography><IconButton aria-label="前の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton><IconButton aria-label="次の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></InputAdornment> } }}
+              slotProps={{ htmlInput: { 'aria-label': 'ファイル名を検索' }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{fileSearch.trim() ? `${displayedFileMatchIndex >= 0 ? displayedFileMatchIndex + 1 : 0}/${fileSearchMatches.length}` : ''}</Typography><IconButton aria-label="前の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton><IconButton aria-label="次の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></InputAdornment> } }}
             />
           </Stack>
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">この差分は大きすぎるため省略されています。</Typography></Stack></Box> : null}
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="text.secondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
-          {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} loading={fileLoading} /> : <>
+          {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} /> : <>
             {parsed.status !== 'valid' ? <Typography color="warning.main" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
             {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">取得済みの差分に一致する行はありません。</Typography> : null}
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={parsed.lines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, parsed.lines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {layout === 'split'
-              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} />
-              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} />}
+              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} tokens={rowTokens} />
+              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} tokens={rowTokens} />}
           </>}
         </Box>
       </Stack>
     </Box>
   )
 }
+
+const SNIPPET_LINES_BEFORE = 3
+const NO_SEARCH_MATCHES = new Set<number>()
+
+/** The commented diff line with the lines just above it, as shown while writing a line comment. */
+export function DiffSnippet({ diff, position }: { diff: Diff; position: Position }) {
+  const parsed = useMemo(() => parseDiff(diff.diff, diff.oldPath, diff.newPath), [diff])
+  const target = parsed.lines.findIndex((line) => matchesPosition(line, position))
+  const start = Math.max(0, target - SNIPPET_LINES_BEFORE)
+  const lines = useMemo(() => target < 0 ? [] : parsed.lines.slice(start, target + 1), [parsed, start, target])
+  const language = languageForPath(diff.newPath || diff.oldPath)
+  const tokens = useMemo(() => highlightDiffLines(lines, language), [language, lines])
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  if (lines.length === 0) return null
+  return (
+    <Box aria-label="コメント対象のコード" component="figure" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, m: 0, overflow: 'hidden' }}>
+      <UnifiedDiff activeSearchMatch={-1} allowComments={false} lines={lines} onComment={() => undefined} scrollRef={scrollRef} searchMatchIndices={NO_SEARCH_MATCHES} searchTerm="" selectedPosition={position} startIndex={start} tokens={tokens} />
+    </Box>
+  )
+}
+
+const denseFieldSx = { '& .MuiInputBase-input': { py: 0.5 } }
 
 function FileKindMark({ diff }: { diff: Diff }) {
   const [label, color] = diff.newFile ? ['A', 'success.main'] : diff.deletedFile ? ['D', 'error.main'] : diff.renamedFile ? ['R', 'info.main'] : ['M', 'warning.main']
@@ -237,7 +265,7 @@ function PageControls({ offset, pageSize, total, onNext, onPrevious }: { offset:
   </Stack>
 }
 
-function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number }) {
+function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; tokens: SyntaxToken[][] }) {
   const skipped = skippedLines(lines, startIndex)
   // Rows are plain elements styled from this one block: a page holds up to
   // DIFF_PAGE_SIZE rows, and per-row styled components dominate render time.
@@ -253,7 +281,9 @@ function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrol
       '& .diff-gutter': { backgroundColor: 'var(--row-bg)', display: 'flex', flexShrink: 0, left: 0, paddingRight: '26px', position: 'sticky', zIndex: 1 },
       '& .diff-number': { color: theme.palette.text.secondary, opacity: 0.8, padding: '0 6px', textAlign: 'right', userSelect: 'none', width: 44 },
       '& .diff-row:hover .diff-action, & .diff-row:focus-within .diff-action, & .diff-row[data-selected="true"] .diff-action': { opacity: 1 },
-      '& .diff-code': { flex: 1, paddingRight: '24px', whiteSpace: 'pre' },
+      '& .diff-code': { color: theme.palette.text.primary, flex: 1, paddingRight: '24px', whiteSpace: 'pre' },
+      '& .diff-row[data-kind="add"] .diff-prefix': { color: theme.palette.diff?.addedText },
+      '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
       '& .diff-gap > span': { left: '12px', position: 'sticky' },
     })}>
       {lines.length === 0 ? <Typography color="text.secondary" sx={{ fontFamily: 'typography.fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
@@ -270,7 +300,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrol
                 <span className="diff-number">{line.newLine ?? ''}</span>
                 {position && allowComments ? <button aria-label={`${line.newPath}の${line.newLine ?? line.oldLine}行にコメント`} className="diff-action line-action" onClick={() => onComment(position)} title="この行にコメント" type="button">+</button> : null}
               </span>
-              <span className="diff-code">{line.prefix} {renderSearchMatch(line.text, searchTerm)}</span>
+              <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(tokens[index] ?? [{ text: line.text }], searchTerm)}</span>
             </div>
           </Fragment>
         })}
@@ -345,7 +375,7 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
   return rows
 }
 
-function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number }) {
+function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; tokens: SyntaxToken[][] }) {
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
   const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
     // Context rows offer one comment action, on the new side, with both line numbers.
@@ -361,7 +391,7 @@ function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollR
         {number ?? ''}
         {position ? <button aria-label={label} className="diff-action line-action" onClick={() => onComment(position)} title="この行にコメント" type="button">+</button> : null}
       </span>
-      <span className="split-code" data-kind={kind} data-search-match={lineIndex !== undefined && searchMatchIndices.has(lineIndex) ? 'true' : undefined}>{line ? renderSearchMatch(line.text, searchTerm) : ''}</span>
+      <span className="split-code" data-kind={kind} data-search-match={lineIndex !== undefined && searchMatchIndices.has(lineIndex) ? 'true' : undefined}>{line && lineIndex !== undefined ? renderCode(tokens[lineIndex - startIndex] ?? [{ text: line.text }], searchTerm) : ''}</span>
     </>
   }
   return (
@@ -374,9 +404,9 @@ function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollR
       '& .split-number .diff-action': { right: '2px' },
       '& .split-number[data-side="new"]': { borderLeft: `1px solid ${theme.palette.divider}` },
       '& .split-code': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, overflowWrap: 'anywhere', padding: '0 10px 0 6px', whiteSpace: 'pre-wrap' },
-      '& [data-kind="remove"]': { backgroundColor: theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
+      '& [data-kind="remove"]': { backgroundColor: theme.palette.diff?.deletedBackground },
       '& .split-number[data-kind="remove"]': { color: theme.palette.diff?.deletedText },
-      '& [data-kind="add"]': { backgroundColor: theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
+      '& [data-kind="add"]': { backgroundColor: theme.palette.diff?.addedBackground },
       '& .split-number[data-kind="add"]': { color: theme.palette.diff?.addedText },
       '& [data-kind="empty"]': { backgroundColor: theme.palette.action.hover },
       '& .split-row:hover .diff-action, & .split-row:focus-within .diff-action, & .split-row[data-selected="true"] .diff-action': { opacity: 1 },
@@ -412,8 +442,45 @@ function diffBaseStyles(theme: Theme) {
     '& .diff-action': { alignItems: 'center', backgroundColor: theme.palette.primary.dark, border: 0, borderRadius: '4px', color: theme.palette.primary.contrastText, cursor: 'pointer', fontFamily: theme.typography.fontFamily, fontSize: 14, fontWeight: 700, height: 18, lineHeight: '18px', opacity: 0, padding: 0, position: 'absolute', right: '3px', textAlign: 'center', top: 2, width: 20 },
     '& .diff-action:hover': { backgroundColor: alpha(theme.palette.primary.dark, 0.85) },
     '& .diff-action:focus-visible': { opacity: 1, outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
+    ...syntaxStyles(theme),
     '& .diff-gap': { backgroundColor: theme.palette.action.hover, color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily, fontSize: theme.typography.caption.fontSize, padding: '2px 12px' },
   }
+}
+
+/** Colours for highlight.js token classes. */
+function syntaxStyles(theme: Theme) {
+  const syntax = theme.palette.syntax
+  if (!syntax) return {}
+  return {
+    '& .hljs-keyword, & .hljs-doctag, & .hljs-template-tag, & .hljs-selector-tag': { color: syntax.keyword },
+    '& .hljs-string, & .hljs-regexp, & .hljs-char': { color: syntax.string },
+    '& .hljs-comment, & .hljs-quote': { color: syntax.comment, fontStyle: 'italic' },
+    '& .hljs-number, & .hljs-literal, & .hljs-symbol, & .hljs-bullet, & .hljs-meta, & .hljs-link': { color: syntax.number },
+    '& .hljs-title, & .hljs-section': { color: syntax.title },
+    '& .hljs-type, & .hljs-built_in': { color: syntax.type },
+    '& .hljs-attr, & .hljs-attribute, & .hljs-property, & .hljs-selector-attr, & .hljs-selector-class, & .hljs-selector-id': { color: syntax.attribute },
+    '& .hljs-name, & .hljs-tag, & .hljs-selector-pseudo': { color: syntax.tag },
+    '& .hljs-variable, & .hljs-template-variable': { color: syntax.variable },
+  }
+}
+
+/**
+ * Highlights a page of diff lines. Each side is highlighted as one text so
+ * multi-line strings and comments keep their colour; context lines use the new side.
+ */
+function highlightDiffLines(lines: ParsedLine[], language: string | null): SyntaxToken[][] {
+  const oldSide: number[] = []
+  const newSide: number[] = []
+  lines.forEach((line, index) => {
+    if (line.kind !== 'add') oldSide.push(index)
+    if (line.kind !== 'remove') newSide.push(index)
+  })
+  const result: SyntaxToken[][] = []
+  const oldTokens = highlightLines(oldSide.map((index) => lines[index].text), language)
+  oldSide.forEach((lineIndex, index) => { result[lineIndex] = oldTokens[index] })
+  const newTokens = highlightLines(newSide.map((index) => lines[index].text), language)
+  newSide.forEach((lineIndex, index) => { result[lineIndex] = newTokens[index] })
+  return result
 }
 
 /** Number of unchanged lines GitLab omitted before each displayed line. */
@@ -431,7 +498,7 @@ function skippedLines(lines: ParsedLine[], startIndex: number): number[] {
   })
 }
 
-function FullFileView({ content, loading }: { content?: string | null; loading: boolean }) {
+function FullFileView({ content, language, loading }: { content?: string | null; language: string | null; loading: boolean }) {
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
   const [filePaging, setFilePaging] = useState({ contentKey: '', offset: 0 })
@@ -443,13 +510,15 @@ function FullFileView({ content, loading }: { content?: string | null; loading: 
     })
   }
 
+  const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
+  const visibleTokens = useMemo(() => highlightLines(visibleLines, language), [language, visibleLines])
+
   if (loading) return <Typography color="text.secondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
   if (content === null || content === undefined) return <Typography color="text.secondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
   if (!content) return <Typography color="text.secondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
-  const visibleLines = lines.slice(offset, offset + FILE_PAGE_SIZE)
   return <>
     <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
-    <Box data-testid="file-lines" sx={{ maxHeight: DIFF_VIEWPORT_HEIGHT, overflow: 'auto', py: 0.5 }}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="text.secondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', px: 1, whiteSpace: 'pre' }} variant="code">{line}</Typography></Stack>)}</Box>
+    <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), maxHeight: DIFF_VIEWPORT_HEIGHT, overflow: 'auto', py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="text.secondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', px: 1, whiteSpace: 'pre' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
   </>
 }
 
@@ -466,22 +535,36 @@ function positionLineId(position: Pick<Position, 'newPath' | 'oldPath' | 'newLin
   return JSON.stringify([position.newPath, position.oldPath, position.oldLine ?? null, position.newLine ?? null])
 }
 
-function renderSearchMatch(text: string, query: string): React.ReactNode {
-  if (!query) return text
-  const normalizedText = text.toLocaleLowerCase()
-  const normalizedQuery = query.toLocaleLowerCase()
-  const segments: React.ReactNode[] = []
-  let cursor = 0
-  let match = normalizedText.indexOf(normalizedQuery, cursor)
-  while (match >= 0) {
-    if (match > cursor) segments.push(text.slice(cursor, match))
-    segments.push(<mark key={`${match}:${segments.length}`}>{text.slice(match, match + query.length)}</mark>)
-    cursor = match + query.length
-    match = normalizedText.indexOf(normalizedQuery, cursor)
+/** Renders highlighted tokens, marking case-insensitive matches of `query` across token boundaries. */
+function renderCode(tokens: SyntaxToken[], query: string): React.ReactNode {
+  const text = tokens.map((token) => token.text).join('')
+  const matches: Array<[number, number]> = []
+  if (query) {
+    const normalizedText = text.toLocaleLowerCase()
+    const normalizedQuery = query.toLocaleLowerCase()
+    let match = normalizedText.indexOf(normalizedQuery)
+    while (match >= 0) {
+      matches.push([match, match + query.length])
+      match = normalizedText.indexOf(normalizedQuery, match + query.length)
+    }
   }
-  if (cursor === 0) return text
-  if (cursor < text.length) segments.push(text.slice(cursor))
-  return segments
+  if (matches.length === 0 && tokens.every((token) => !token.className)) return text
+  let offset = 0
+  return tokens.map((token, tokenIndex) => {
+    const end = offset + token.text.length
+    const parts: React.ReactNode[] = []
+    let cursor = offset
+    for (const [matchStart, matchEnd] of matches) {
+      if (matchEnd <= cursor || matchStart >= end) continue
+      if (matchStart > cursor) parts.push(text.slice(cursor, matchStart))
+      const markEnd = Math.min(matchEnd, end)
+      parts.push(<mark key={cursor}>{text.slice(Math.max(matchStart, cursor), markEnd)}</mark>)
+      cursor = markEnd
+    }
+    if (cursor < end) parts.push(text.slice(cursor, end))
+    offset = end
+    return token.className ? <span className={token.className} key={tokenIndex}>{parts}</span> : <Fragment key={tokenIndex}>{parts}</Fragment>
+  })
 }
 
 function splitPath(path: string): { directory: string; name: string } {

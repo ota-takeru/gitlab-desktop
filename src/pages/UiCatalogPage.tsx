@@ -15,6 +15,7 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { useState } from 'react'
 
 import { EmptyState } from '../components/EmptyState'
 import { AppErrorFallback } from '../components/AppErrorBoundary'
@@ -25,8 +26,11 @@ import { Pager } from '../components/Pager'
 import { PipelineStatus } from '../components/PipelineStatus'
 import { RelativeTime } from '../components/RelativeTime'
 import { StatusPill } from '../components/StatusPill'
+import { DiscussionLayout } from '../features/mergeRequests/DiscussionLayout'
+import { DiscussionList } from '../features/mergeRequests/DiscussionList'
+import { UnresolvedThreadNav } from '../features/mergeRequests/UnresolvedThreadNav'
 import { ReviewComposer } from '../features/mergeRequests/ReviewComposer'
-import { DiffViewer } from '../features/mergeRequests/DiffViewer'
+import { DiffSnippet, DiffViewer } from '../features/mergeRequests/DiffViewer'
 
 export function UiCatalogPage() {
   return (
@@ -166,8 +170,9 @@ export function UiCatalogPage() {
       <Stack spacing={1.5}>
         <Typography component="h2" variant="h2">レビュー入力と差分</Typography>
         <Typography color="text.secondary" variant="caption">表示サンプルです。GitLabへの取得・投稿は行いません。</Typography>
-        <ReviewComposer disabled value="変更の意図を確認するコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
-        <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments={false} diffs={[{ oldPath: 'example.ts', newPath: 'example.ts', diff: '@@ -1 +1 @@\n-export const enabled = false\n+export const enabled = true', newFile: false, deletedFile: false, renamedFile: false, tooLarge: false, collapsed: false }]} selectedFile="example.ts" selectedPosition={undefined} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
+        <ReviewComposer disabled targetCode={<DiffSnippet diff={catalogDiff} position={catalogPosition} />} targetPosition={catalogPosition} value="変更の意図を確認するコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
+        <DiscussionLayout composer={null} navigator={<UnresolvedThreadNav discussions={[catalogDiscussion]} olderNotLoaded={false} onSelect={() => undefined} />} side={null} threads={<CatalogReplyThread />} />
+        <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments={false} diffs={[catalogDiff]} selectedFile="example.ts" selectedPosition={undefined} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
       </Stack>
 
       <Stack spacing={1.5}>
@@ -180,5 +185,33 @@ export function UiCatalogPage() {
         />
       </Stack>
     </Stack>
+  )
+}
+
+const catalogDiff = { oldPath: 'example.ts', newPath: 'example.ts', diff: '@@ -1,5 +1,6 @@\n /** Feature flags read at startup. */\n-export const enabled = false\n+export const enabled = true\n+const retries = 3\n export function label(name: string): string {\n-  return `flag: ${name}`\n+  return `flag: ${name} (${retries})`\n }', newFile: false, deletedFile: false, renamedFile: false, tooLarge: false, collapsed: false }
+const catalogPosition = { baseSha: '', headSha: '', newLine: 5, newPath: 'example.ts', oldPath: 'example.ts', positionType: 'text' as const, startSha: '' }
+
+const catalogAuthor = { id: 'catalog-reviewer', name: 'Reviewer', username: 'reviewer' }
+const catalogDiscussion = {
+  id: 'catalog-thread',
+  individualNote: false,
+  notes: [{ author: catalogAuthor, body: '**この条件**は `null` のときも通りますか？', createdAt: '2026-01-05T09:00:00Z', id: 'catalog-note', position: null, resolvable: true, resolved: false, system: false }],
+}
+
+/** A thread with its reply editor; nothing is sent to GitLab. */
+function CatalogReplyThread() {
+  const [replying, setReplying] = useState(false)
+  const [body, setBody] = useState('')
+  return (
+    <DiscussionList
+      currentUserId="catalog-user"
+      discussions={[catalogDiscussion]}
+      onDelete={async () => false}
+      onEdit={async () => false}
+      onReply={() => setReplying(true)}
+      onResolve={async () => false}
+      replyComposer={<ReviewComposer onCancelReply={() => setReplying(false)} onChange={setBody} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} replyAuthor={catalogAuthor.name} replyDiscussionId={catalogDiscussion.id} value={body} />}
+      replyDiscussionId={replying ? catalogDiscussion.id : undefined}
+    />
   )
 }
