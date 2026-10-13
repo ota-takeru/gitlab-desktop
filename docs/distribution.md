@@ -1,6 +1,6 @@
 # 配布と自動更新
 
-公開リポジトリ `ota-takeru/gitlab-desktop` のバージョンを上げてmainへpushすると、検査後に署名済みWindows NSISリリースを自動公開します。配布版は起動時と表示中の6時間ごとに更新を確認します。未保存の入力や送信処理がなく、2分間操作がないときに自動インストール・再起動します。更新通知の「後で」から延期できます。
+公開リポジトリ `ota-takeru/gitlab-desktop` のmainへpushすると、ドキュメントだけの変更を除き、検査後に署名済みWindows NSISリリースを自動公開します。配布版は起動時と表示中の6時間ごとに更新を確認します。未保存の入力や送信処理がなく、2分間操作がないときに自動インストール・再起動します。更新通知の「後で」から延期できます。
 
 ## GitHub 側の設定
 
@@ -16,7 +16,12 @@
 
 ## リリース手順
 
-`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` のバージョンを同じ SemVer に更新し、lockfileを更新してmainへpushします。Actionsが検査後にタグを作成し、公開します。手動でタグを作成する場合は次の方法も使えます。
+mainへpushすると、Actionsが検査後にタグを作成して公開します。バージョンは次のどちらかで決まります。
+
+- バージョンを変えずにpushした場合: Actionsがパッチ版を1つ上げ（例: 0.4.0→0.4.1）、`Release v<version>` コミットをmainへpushしてから、そのコミットを公開します。手元のmainは1コミット遅れるので、次の作業の前に `git pull --ff-only` します。
+- 先にバージョンを上げてpushした場合: そのバージョンをそのまま公開します。機能追加などでマイナー版以上を上げるときは `npm run version:bump -- minor`（`patch` / `major` / `x.y.z` も可）で `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/tauri.conf.json` を同時に更新してコミットします。
+
+push範囲の変更が `docs/` と `*.md` だけの場合は公開しません。手動でタグを作成する場合は次の方法も使えます。
 
 ```powershell
 $version = "0.1.0"
@@ -24,13 +29,13 @@ git tag "v$version"
 git push origin "v$version"
 ```
 
-リリースワークフローはタグを検証し、3 つのバージョンが一致しない場合や、タグがチェックアウトされたコミットを指していない場合は停止します。main への push で 3 つのバージョンが前のコミットから変わっていれば、Actions がそのコミットへ `v<version>` タグを作成して同じ実行で公開します。同じバージョンの通常の main push は公開せず、既存のタグも再利用しません。`scripts/release-config.mjs` は Actions の repository variable から公開鍵だけを読み、固定した次の URL と NSIS 設定を含む一時的な Tauri 設定を生成します。
+リリースワークフローはタグを検証し、3 つのバージョンが一致しない場合や、タグがチェックアウトされたコミットを指していない場合は停止します。main への push では、push 前のコミットと比べてバージョンが変わっていればそのバージョンを、変わっていなければ自動で上げたパッチ版を、同じ実行で検査・タグ作成・公開します。既存のタグは再利用しません。自動で上げたパッチ版のタグが既にある場合と、検査中に別の push で main が進んだ場合は公開せずに停止します。Actions が `GITHUB_TOKEN` で push したバージョンコミットは新しいワークフローを起動しないため、公開が連鎖しません。`scripts/release-config.mjs` は Actions の repository variable から公開鍵だけを読み、固定した次の URL と NSIS 設定を含む一時的な Tauri 設定を生成します。
 
 `https://github.com/ota-takeru/gitlab-desktop/releases/latest/download/latest.json`
 
 ワークフローは `tauri-apps/tauri-action` で `latest.json`、NSIS セットアップファイル、署名ファイルを同じ公開 GitHub Release にアップロードします。既存の `v<version>` タグを GitHub の Actions 画面から `workflow_dispatch` で選んで再実行することもできます。その場合もタグとバージョンの一致、およびタグがチェックアウトされたコミットを指すことを検証します。
 
-main ブランチへの通常の push は、バージョンが変わっていない限り CI の Windows 検査だけを実行します。バージョンを更新した main への merge は上記の自動リリース対象になります。`v*` タグの push と `workflow_dispatch` による既存タグの再実行も利用できます。
+ドキュメントだけを変えた main への push は CI の Windows 検査だけを実行します。それ以外の main への push と merge は上記の自動リリース対象になります。`v*` タグの push と `workflow_dispatch` による既存タグの再実行も利用できます。
 
 ## アプリ側の動作
 

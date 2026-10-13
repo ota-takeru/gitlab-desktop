@@ -1,7 +1,7 @@
 {
   "name": "gitlab-desktop",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "engines": {
     "node": ">=24 <25",
@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:release": "node --test scripts/release-config.test.mjs",
+    "version:bump": "node scripts/version-bump.mjs",
     "ui:snap": "playwright test",
     "ui:snap:update": "playwright test --update-snapshots",
     "preview": "vite preview --host localhost --port 1421",

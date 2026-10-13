@@ -35,6 +35,12 @@
 - Future authentication: least-privilege access, OS credential storage, validated instance origin, HTTPS verification and redacted errors. Never turn off certificate checks to fix a Self-Managed connection.
 - Future caches must be separated by instance and account, have bounded retention, and clear private data on logout. No unbounded parallel requests or whole-instance polling.
 
+## Versioning and release
+
+- Every push to `main` that changes more than documentation (`docs/`, `*.md`) publishes a signed release. If the push leaves the version unchanged, Actions bumps the patch version, commits `Release v<version>` to `main` and publishes it; run `git pull --ff-only` before the next local commit.
+- Before pushing to `main`, decide the version yourself: `npm run version:bump -- minor` for new user-visible features or changed behaviour, `major` only when the user asks, and leave fixes and small UI adjustments to the automatic patch bump. Commit the bump with the change it releases.
+- Do not bump for documentation-only pushes; they are not released.
+
 ## Reproducibility
 
 - Use npm with `package-lock.json`, commit Cargo.lock, and use the project-pinned Rust toolchain.

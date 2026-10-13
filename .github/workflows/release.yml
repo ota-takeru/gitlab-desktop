@@ -31,6 +31,8 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
       VERIFY_TAG_AT_HEAD: 'true'
+      # The pushed range decides whether the version changed and whether only documentation changed.
+      PUSH_BEFORE: ${{ github.event.before }}
       TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
     steps:
       - name: Check out the release tag
@@ -58,6 +60,17 @@ jobs:
         id: release_decision
         run: node scripts/release-main.mjs
 
+      - name: Bump the patch version for a main push without a version change
+        if: steps.release_decision.outputs.auto_bump == 'true'
+        shell: pwsh
+        run: |
+          node scripts/version-bump.mjs '${{ steps.release_decision.outputs.release_version }}'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit --all --message 'Release ${{ steps.release_decision.outputs.release_tag }}'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Verify release before signing and publishing
         if: steps.release_decision.outputs.should_release == 'true'
         run: |
@@ -70,6 +83,12 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # The verified version commit goes to main first; a push made meanwhile rejects it and stops the release.
+          # Pushes with GITHUB_TOKEN do not start workflows, so this commit does not trigger another release.
+          if ('${{ steps.release_decision.outputs.auto_bump }}' -eq 'true') {
+            git push origin HEAD:refs/heads/main
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
           git tag '${{ steps.release_decision.outputs.release_tag }}'
           git push origin 'refs/tags/${{ steps.release_decision.outputs.release_tag }}'
 

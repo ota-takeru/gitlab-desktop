@@ -85,7 +85,7 @@ npm run desktop:build -- --no-bundle
 
 release実行ファイル: `src-tauri/target/release/gitlab-desktop.exe`。配布は公開鍵を埋め込んだNSISインストーラーを使用します。更新署名鍵はGitHub Repository secretに保存し、ソースには含めません。Tauriの更新署名はWindowsのAuthenticode署名と別です。実行先にもWebView2が必要です。
 
-`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`のバージョンを同じ値へ更新し、lockfileを更新してmainへpushすると、検査後にActionsがタグ・インストーラー・署名・`latest.json`を自動公開します。同じバージョンの通常コミットでは再配布しません。[配布と自動更新](docs/distribution.md)を参照してください。
+mainへpushすると、検査後にActionsがタグ・インストーラー・署名・`latest.json`を自動公開します。バージョンを変えずにpushした場合はActionsがパッチ版を上げてmainへコミットし、`npm run version:bump -- minor` などで先に上げた場合はそのバージョンを公開します。ドキュメントだけの変更は公開しません。[配布と自動更新](docs/distribution.md)を参照してください。
 
 個別コマンド:
 
