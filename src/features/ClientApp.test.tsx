@@ -220,6 +220,39 @@ it('keeps the list mounted and only toggles the selection parameter when opening
   expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })).toHaveValue('unsent draft')
 })
 
+it('returns to the list through history, so Back does not reopen the MR', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => {
+    if (query?.kind === 'mrs') return { ...emptyQueryResult(), data: [mergeRequestFixture], snapshot: snapshot([mergeRequestFixture]) }
+    if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    return emptyQueryResult()
+  })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
+  fireEvent.click(await screen.findByRole('tab', { name: '変更' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7&tab=changes'))
+  expect(window.history.state).toEqual({ depth: 2, list: '#client/mrs?reviewer=self&state=opened' })
+  const entries = window.history.length
+
+  // Two entries back to the list, not a third entry on top of the MR.
+  fireEvent.click(screen.getByRole('button', { name: 'レビュー依頼に戻る' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  expect(window.history.length).toBe(entries)
+  expect(screen.queryByRole('button', { name: 'レビュー依頼に戻る' })).not.toBeInTheDocument()
+
+  // Reached directly, the MR has no list behind it and the list is opened instead.
+  act(() => {
+    window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+    globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
+  })
+  expect(await screen.findByRole('button', { name: 'レビュー依頼に戻る' })).toBeInTheDocument()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+})
+
 it('preserves MR search filters when returning from an opened request', async () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&search=needle')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
@@ -238,7 +271,8 @@ it('preserves MR search filters when returning from an opened request', async ()
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
 
-  await waitFor(() => expect(window.location.hash).toContain('reviewer=self&state=opened&search=needle'))
+  // Returning goes back through history, which completes after the click.
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&search=needle'))
   expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })).toHaveValue('needle')
   expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
 })
@@ -328,7 +362,12 @@ it('switches a project screen between its MRs and branches, and shows the MRs of
   fireEvent.click(await screen.findByRole('button', { name: 'feature/searchのMRを表示' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject&sourceBranch=feature%2Fsearch&state=all'))
   expect(screen.getByRole('tab', { name: 'MR' })).toHaveAttribute('aria-selected', 'true')
-  expect(screen.getByRole('textbox', { name: 'MRのソースブランチ' })).toHaveValue('feature/search')
+  expect(screen.getByText('ブランチ: feature/search')).toBeInTheDocument()
+
+  // Choosing MR again returns to all the project's MRs.
+  fireEvent.click(screen.getByRole('tab', { name: 'MR' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject'))
+  expect(screen.queryByText('ブランチ: feature/search')).not.toBeInTheDocument()
 })
 
 it('keeps the account, theme and connection in one settings entry', async () => {

@@ -162,7 +162,19 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
   const listKey = JSON.stringify(listParams)
 
   const navigate = useCallback((nextRoute: ClientRoute, nextParams?: Record<string, string>) => {
-    window.location.hash = locationToHash(nextRoute, nextParams ?? {}).replace(/^#/u, '')
+    const hash = locationToHash(nextRoute, nextParams ?? {})
+    if (window.location.hash === hash) return
+    // Entries showing an MR remember the list it was opened from and how many
+    // entries ago that list was, so returning to the list can go back instead
+    // of adding an entry that Back would turn into the MR again.
+    const next = readClientLocation(true, hash)
+    const listOfNext = next.params.mr ? locationToHash(next.route, withoutSelection(next.params)) : null
+    const current = readClientLocation(true)
+    const previous = readMrHistoryState(window.history.state)
+    let state: MrHistoryState | null = null
+    if (listOfNext && current.params.mr && previous?.list === listOfNext) state = { depth: previous.depth + 1, list: listOfNext }
+    else if (listOfNext && !current.params.mr && locationToHash(current.route, current.params) === listOfNext) state = { depth: 1, list: listOfNext }
+    window.history.pushState(state, '', hash)
     globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
   }, [])
 
@@ -173,6 +185,16 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
     if (ref && current.params.mr === `${ref.projectId}-${ref.iid}` && current.params.tab) base.tab = current.params.tab
     navigate(targetRoute, ref ? { ...base, mr: `${ref.projectId}-${ref.iid}` } : base)
   }, [navigate, session])
+
+  // Back to the list an MR was opened from: through history when the list is
+  // the entry it came from, so Back does not reopen the MR afterwards.
+  const returnToList = useCallback(() => {
+    const current = readClientLocation(Boolean(session))
+    const list = locationToHash(current.route, withoutSelection(current.params))
+    const history = readMrHistoryState(window.history.state)
+    if (current.route !== 'settings' && current.params.mr && history?.list === list) window.history.go(-history.depth)
+    else select(null)
+  }, [select, session])
 
   useEffect(() => () => {
     clearGitLabMutationStates(session?.id)
@@ -221,7 +243,7 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
       if (modifier && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         if (route !== 'projects' && route !== 'mrs') navigate('mrs')
-        else if (selected) select(null)
+        else if (selected) returnToList()
         else {
           globalThis.dispatchEvent(new Event('gitlab-focus-project-search'))
           return
@@ -248,11 +270,11 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
         globalThis.dispatchEvent(new Event('gitlab-focus-project-search'))
         return
       }
-      if (event.key === 'Escape' && selected) select(null)
+      if (event.key === 'Escape' && selected) returnToList()
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [navigate, route, select, selected])
+  }, [navigate, returnToList, route, select, selected])
 
   const openProject = (nextProject: Project) => {
     navigate('mrs', { projectId: nextProject.id, projectName: nextProject.name })
@@ -331,7 +353,8 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
   const projectNavigation = projectTab ? <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
     <Typography component="div" noWrap sx={{ flexShrink: 1, minWidth: 0 }} variant="h1">{params.projectName}</Typography>
     <Tabs aria-label="プロジェクトの表示" onChange={(_, value: 'mrs' | 'branches') => navigate(value, { projectId: params.projectId, projectName: params.projectName })} scrollButtons={false} sx={{ flexShrink: 0 }} value={projectTab} variant="scrollable">
-      <Tab label="MR" value="mrs" />
+      {/* Choosing MR again, e.g. after a branch's MRs, returns to all the project's MRs. */}
+      <Tab label="MR" onClick={() => { if (projectTab === 'mrs' && Object.keys(listParams).some((key) => key !== 'projectId' && key !== 'projectName')) navigate('mrs', { projectId: params.projectId, projectName: params.projectName }) }} value="mrs" />
       <Tab label="ブランチ" value="branches" />
     </Tabs>
   </Stack> : undefined
@@ -398,7 +421,7 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
                   initialMergeRequest={mergeRequest}
                   key={`${selected.projectId}:${selected.iid}`}
                   backLabel={backLabel}
-                  onBack={() => select(null)}
+                  onBack={returnToList}
                   onOpenProject={(projectPath) => openProjectId(selected.projectId, projectPath)}
                   onTabChange={(tab) => {
                     // Each tab is a history entry, so Back returns to the previous tab.
@@ -579,6 +602,14 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash): {
     params = {}
   }
   return { params, raw, route }
+}
+
+interface MrHistoryState { list: string; depth: number }
+
+function readMrHistoryState(value: unknown): MrHistoryState | null {
+  if (!value || typeof value !== 'object') return null
+  const { depth, list } = value as Partial<MrHistoryState>
+  return typeof list === 'string' && typeof depth === 'number' && Number.isSafeInteger(depth) && depth > 0 ? { depth, list } : null
 }
 
 function locationToHash(route: ClientRoute, params: Record<string, string>) {

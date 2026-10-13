@@ -16,7 +16,7 @@ export function UnresolvedThreadNav({ discussions, olderNotLoaded, onSelect }: {
         <Typography color="text.secondary" sx={{ ml: 'auto' }} variant="caption">{threads.length}件</Typography>
       </Stack>
       {threads.length === 0 ? <Typography color="text.secondary" sx={{ px: 1.25, py: 1 }} variant="caption">表示中の議論に未解決のスレッドはありません。</Typography> : (
-        <List disablePadding sx={{ maxHeight: 320, overflowY: 'auto', py: 0.5 }}>
+        <List disablePadding sx={{ py: 0.5 }}>
           {threads.map((discussion) => {
             const first = discussion.notes.find((note) => !note.system)
             const position = discussion.notes.find((note) => note.position)?.position

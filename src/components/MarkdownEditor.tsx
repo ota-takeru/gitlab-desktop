@@ -74,7 +74,8 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
 
   return (
     <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 1, minWidth: 0, '&:focus-within': { borderColor: 'primary.main' } }}>
-      <Stack direction="row" sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', columnGap: 0.5, flexWrap: 'wrap', px: 0.5, py: 0.25 }}>
+      {/* The editor grows with its text, so its toolbar stays in view below the MR header. */}
+      <Stack direction="row" sx={{ alignItems: 'center', bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider', borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.25, top: 'var(--detail-header-height, 0px)', zIndex: 1 }}>
         <MarkdownToolbar
           disabled={disabled}
           onFormat={(format) => {
@@ -271,7 +272,6 @@ function SourceInput({ autoFocus, disabled = false, handleRef, inputHandleRef, l
       fullWidth
       inputProps={{ 'aria-label': label }}
       inputRef={inputRef}
-      maxRows={12}
       minRows={2}
       multiline
       onChange={(event) => {
@@ -331,10 +331,8 @@ function writeMode(mode: MarkdownEditorMode) {
 const richEditorSx = {
   '& .ProseMirror': {
     ...markdownBodySx('body2'),
-    maxHeight: 320,
     minHeight: 60,
     outline: 'none',
-    overflowY: 'auto',
     px: 1.25,
     py: 1,
     '& p.is-editor-empty:first-of-type::before': { color: 'text.disabled', content: 'attr(data-placeholder)', float: 'left', height: 0, pointerEvents: 'none' },

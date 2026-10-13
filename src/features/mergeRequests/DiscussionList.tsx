@@ -27,6 +27,8 @@ import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
 
 const NOTES_PER_PAGE = 50
+/** Thread width from which a line comment's code sits beside its comments. */
+const THREAD_WITH_CODE_WIDE = '@container (min-width: 960px)'
 
 interface DiscussionListProps {
   /** Session used to load GitLab avatars; initials are shown without it. */
@@ -46,6 +48,8 @@ interface DiscussionListProps {
   onResolve: (discussion: Discussion, resolved: boolean) => Promise<boolean>
   /** Older discussions above the loaded ones (newest pages load first). */
   older?: OlderDiscussions
+  /** The code a line comment refers to, shown beside the thread's comments. */
+  renderCodeContext?: (position: Position) => React.ReactNode
 }
 
 export interface OlderDiscussions {
@@ -60,7 +64,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, older, onDelete, onEdit, onMarkRead, onOpenPosition, onReply, onResolve, replyComposer, replyDiscussionId, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, older, onDelete, onEdit, onMarkRead, onOpenPosition, onReply, onResolve, renderCodeContext, replyComposer, replyDiscussionId, unreadNoteIds = [] }: DiscussionListProps) {
   const [editing, setEditing] = useState<{ note: Note; body: string } | null>(null)
   const [notePages, setNotePages] = useState<Record<string, number>>({})
   const [filter, setFilter] = useState<'all' | 'unresolved'>('all')
@@ -214,8 +218,9 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
         const position = notes.find((note) => note.position)?.position ?? null
         const positionLabel = position ? `${position.newPath}:${position.newLine ?? position.oldLine ?? 'file'}` : null
         const firstNote = notes[0]
+        const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
         return (
-          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 2, minWidth: 0, overflow: 'hidden' }}>
+          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 2, minWidth: 0, overflow: 'clip' }}>
             {isThreadCollapsible(notes) ? (
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: isCollapsed ? 0 : 1, borderColor: 'divider', justifyContent: 'space-between', minHeight: 36, pl: 1.5, pr: 1, py: 0.5 }}>
                 <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
@@ -248,7 +253,11 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                 </Stack>
               </Stack>
             ) : null}
-            {!isCollapsed ? <Box component="ol" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+            {!isCollapsed ? <Box sx={{ containerType: 'inline-size' }}><Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', [THREAD_WITH_CODE_WIDE]: codeContext ? { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } : {} }}>
+            {/* Narrow threads put the code above the comments; wide ones keep the comments where
+                every thread starts and the code on their right, kept in view while reading. */}
+            {codeContext ? <Box sx={{ borderBottom: 1, borderColor: 'divider', minWidth: 0, [THREAD_WITH_CODE_WIDE]: { alignSelf: 'start', borderBottom: 0, borderLeft: 1, gridColumn: 2, gridRow: 1, position: 'sticky', top: 'calc(var(--detail-header-height, 0px) + 8px)' } }}>{codeContext}</Box> : null}
+            <Box component="ol" sx={{ listStyle: 'none', m: 0, minWidth: 0, p: 0, [THREAD_WITH_CODE_WIDE]: { gridColumn: 1, gridRow: 1 } }}>
               {visibleNotes.map((note, index) => {
                 const unread = unreadIds.has(note.id)
                 const own = note.author.id === currentUserId
@@ -305,7 +314,8 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                   </Box>
                 )
               })}
-            </Box> : null}
+            </Box>
+            </Box></Box> : null}
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: 1, borderColor: 'divider', flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.25 }}>
               {replying ? <Box sx={{ flex: '1 1 100%', minWidth: 0 }}>{replyComposer}</Box> : (
                 <Button

@@ -30,7 +30,8 @@ import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
 export const DIFF_PAGE_SIZE = 600
 export const FILE_PAGE_SIZE = 1000
 /** Keep the file list and code inside the window so long diffs scroll in place. */
-const DIFF_VIEWPORT_HEIGHT = 'max(360px, calc(100vh - 290px))'
+/** Below the MR header, which stays at the top of the detail while it scrolls. */
+const BELOW_DETAIL_HEADER = 'calc(var(--detail-header-height, 0px) + 8px)'
 const EMPTY_PARSED_DIFF = { lines: [], status: 'valid' as const }
 
 interface DiffViewerProps {
@@ -169,6 +170,16 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
     target?.scrollIntoView?.({ behavior: 'auto', block: 'center' })
   }, [currentSearchMatch, diffOffset, layout, view])
 
+  // The page is the only vertical scroll, so a newly chosen file starts at its top.
+  const fileTopRef = useRef<HTMLDivElement>(null)
+  const shownPath = useRef(displayedPath)
+  useLayoutEffect(() => {
+    if (shownPath.current === displayedPath) return
+    shownPath.current = displayedPath
+    const top = fileTopRef.current
+    if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView?.({ behavior: 'auto', block: 'start' })
+  }, [displayedPath])
+
   const selectRelative = (delta: number) => {
     const next = diffs[displayedIndex + delta]
     if (next) onSelectFile(next.newPath || next.oldPath)
@@ -177,7 +188,7 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
   return (
     <Box sx={{ containerType: 'inline-size' }}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start', minHeight: 420 }}>
-        <Box component="nav" aria-label="変更ファイル" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: DIFF_VIEWPORT_HEIGHT, minWidth: 0, position: 'sticky', top: 0, '@container (min-width: 820px)': { display: 'flex' } }}>
+        <Box component="nav" aria-label="変更ファイル" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 48px)`, minWidth: 0, position: 'sticky', top: BELOW_DETAIL_HEADER, '@container (min-width: 820px)': { display: 'flex' } }}>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.25, py: 0.75 }}><Typography color="text.secondary" variant="overline">変更ファイル</Typography><Typography color="text.secondary" variant="caption">{fileSearchMatches.length}/{diffs.length}</Typography></Stack>
           <List disablePadding sx={{ overflowY: 'auto', p: 0.5 }}>
             {fileSearchMatches.map(({ diff, path }) => {
@@ -188,8 +199,8 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
             {fileSearchMatches.length === 0 ? <Box sx={{ p: 2 }}><Typography color="text.secondary" variant="caption">{diffs.length === 0 ? '変更ファイルはありません。' : '一致するファイルはありません。'}</Typography></Box> : null}
           </List>
         </Box>
-        <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', minHeight: 40, px: 1, py: 0.5 }}>
+        <Box ref={fileTopRef} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, overflow: 'clip', scrollMarginTop: BELOW_DETAIL_HEADER }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', minHeight: 40, position: 'sticky', px: 1, py: 0.5, top: 'var(--detail-header-height, 0px)', zIndex: 2 }}>
             <Tooltip title="前のファイル"><span><IconButton aria-label="前のファイル" disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip>
             <Tooltip title="次のファイル"><span><IconButton aria-label="次のファイル" disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, minWidth: 0 }}>
@@ -273,23 +284,20 @@ function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrol
   // DIFF_PAGE_SIZE rows, and per-row styled components dominate render time.
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
-      // Threads take the visible width while long code lines scroll sideways.
-      containerType: 'inline-size',
-      '& .diff-threads': { left: 0, position: 'sticky', width: '100cqw' },
-      '& .diff-rows': { minWidth: '100%', width: 'max-content' },
+      // Long code lines wrap, so the page stays the only scroll.
+      '& .diff-rows': { minWidth: 0 },
       '& .diff-row': { '--row-bg': theme.palette.background.paper, backgroundColor: 'var(--row-bg)', color: theme.palette.text.primary, display: 'flex', minHeight: 22 },
       '& .diff-row[data-kind="add"]': { '--row-bg': theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"]': { '--row-bg': theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
       '& .diff-row[data-selected="true"]': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
       '& .diff-row[data-search-active="true"]': { outline: `2px solid ${theme.palette.secondary.main}`, outlineOffset: -2 },
       '& mark': { backgroundColor: theme.palette.warning.light, color: theme.palette.warning.contrastText },
-      '& .diff-gutter': { backgroundColor: 'var(--row-bg)', display: 'flex', flexShrink: 0, left: 0, paddingRight: '26px', position: 'sticky', zIndex: 1 },
+      '& .diff-gutter': { backgroundColor: 'var(--row-bg)', display: 'flex', flexShrink: 0, paddingRight: '26px', position: 'relative' },
       '& .diff-number': { color: theme.palette.text.secondary, opacity: 0.8, padding: '0 6px', textAlign: 'right', userSelect: 'none', width: 44 },
       '& .diff-row:hover .diff-action, & .diff-row:focus-within .diff-action, & .diff-row[data-selected="true"] .diff-action': { opacity: 1 },
-      '& .diff-code': { color: theme.palette.text.primary, flex: 1, paddingRight: '24px', whiteSpace: 'pre' },
+      '& .diff-code': { color: theme.palette.text.primary, flex: 1, minWidth: 0, overflowWrap: 'anywhere', paddingRight: '24px', whiteSpace: 'pre-wrap' },
       '& .diff-row[data-kind="add"] .diff-prefix': { color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
-      '& .diff-gap > span': { left: '12px', position: 'sticky' },
     })}>
       {lines.length === 0 ? <Typography color="text.secondary" sx={{ fontFamily: 'typography.fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
       <div className="diff-rows">
@@ -444,8 +452,7 @@ function diffBaseStyles(theme: Theme) {
     fontFamily: theme.typography.code?.fontFamily ?? 'monospace',
     fontSize: theme.typography.code?.fontSize ?? '0.8125rem',
     lineHeight: '22px',
-    maxHeight: DIFF_VIEWPORT_HEIGHT,
-    overflow: 'auto',
+    minWidth: 0,
     py: 0.5,
     '& .diff-action': { alignItems: 'center', backgroundColor: theme.palette.primary.dark, border: 0, borderRadius: '4px', color: theme.palette.primary.contrastText, cursor: 'pointer', fontFamily: theme.typography.fontFamily, fontSize: 14, fontWeight: 700, height: 18, lineHeight: '18px', opacity: 0, padding: 0, position: 'absolute', right: '3px', textAlign: 'center', top: 2, width: 20 },
     '& .diff-action:hover': { backgroundColor: alpha(theme.palette.primary.dark, 0.85) },
@@ -526,7 +533,7 @@ function FullFileView({ content, language, loading }: { content?: string | null;
   if (!content) return <Typography color="text.secondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
   return <>
     <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
-    <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), maxHeight: DIFF_VIEWPORT_HEIGHT, overflow: 'auto', py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="text.secondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', px: 1, whiteSpace: 'pre' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
+    <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="text.secondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
   </>
 }
 

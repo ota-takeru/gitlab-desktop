@@ -1,4 +1,5 @@
 import BookmarksOutlinedIcon from '@mui/icons-material/BookmarksOutlined'
+import CancelRoundedIcon from '@mui/icons-material/CancelRounded'
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -91,7 +92,8 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   const searchInputRef = useRef<HTMLInputElement>(null)
   const initial = useMemo(() => makeInitialState(initialParams, initialQuery, projectId, session?.user.id), [initialParams, initialQuery, projectId, session?.user.id])
   const [draft, setDraft] = useState<SearchDraft>(initial.draft)
-  const [showAdvanced, setShowAdvanced] = useState(() => hasAdvancedFilters(initial.draft, projectName ? projectId : undefined))
+  // A project's branch shows as its own chip, so it does not open the detailed conditions.
+  const [showAdvanced, setShowAdvanced] = useState(() => hasAdvancedFilters(projectName ? { ...initial.draft, sourceBranch: '' } : initial.draft, projectName ? projectId : undefined))
   const [applied, setApplied] = useState<AppliedSearch | null>(initial.error ? null : initial.applied)
   const [filterError, setFilterError] = useState<string | null>(initial.error)
   const [savedSearches, setSavedSearches] = useState<StoredSearch[]>(() => readSavedSearches(scope))
@@ -186,6 +188,14 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
     emitApplied(next)
   }
 
+  const clearSourceBranch = () => {
+    const nextDraft = { ...draft, sourceBranch: '' }
+    const next: AppliedSearch = { ...(applied ?? nextDraft), page: 1, sourceBranch: '' }
+    setDraft(nextDraft)
+    setApplied(next)
+    emitApplied(next)
+  }
+
   const updatePage = (page: number) => {
     if (!applied) return
     const next = { ...applied, page }
@@ -228,7 +238,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   // belongs to MR search, so the queue's tab never changes under the reader.
   const fixedQueue = personalQueue !== null
   const title = projectName ?? (personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
-  const advancedActive = hasAdvancedFilters(draft, projectName ? projectId : undefined)
+  const advancedActive = hasAdvancedFilters(projectName ? { ...draft, sourceBranch: '' } : draft, projectName ? projectId : undefined)
   const page = applied?.page ?? 1
   const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
 
@@ -259,6 +269,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
             value={draft.search}
           />
           <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+            {projectName && applied?.sourceBranch ? <Chip color="primary" label={`ブランチ: ${applied.sourceBranch}`} onDelete={clearSourceBranch} size="small" deleteIcon={<CancelRoundedIcon aria-label="ブランチの絞り込みを解除" />} sx={{ fontFamily: 'typography.code.fontFamily', maxWidth: '100%' }} variant="outlined" /> : null}
             <Select aria-label="MRの状態" onChange={(event) => setDraft((current) => ({ ...current, state: event.target.value as MergeRequestState }))} sx={pillSelectSx} value={draft.state}>
               <MenuItem value="all">すべての状態</MenuItem>
               <MenuItem value="opened">Open</MenuItem>

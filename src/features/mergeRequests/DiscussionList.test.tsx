@@ -420,3 +420,22 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.queryByText('shrinking-note-101 の本文')).not.toBeInTheDocument()
   })
 })
+
+describe('DiscussionList code beside line comments', () => {
+  it('shows the code of an open line thread and loads none for a folded one', () => {
+    const at = (newLine: number): Position => ({ baseSha: 'base', headSha: 'head', newLine, newPath: 'src/a.ts', oldPath: 'src/a.ts', positionType: 'text', startSha: 'base' })
+    const open = createDiscussion([createNote('open-note', otherUser, { position: at(3), resolvable: true })], 'open')
+    const folded = createDiscussion([createNote('folded-note', otherUser, { position: at(9), resolvable: true, resolved: true })], 'folded')
+    const general = createDiscussion([createNote('general-note', otherUser)], 'general')
+    const renderCodeContext = vi.fn((position: Position) => <div>code at {position.newLine}</div>)
+    render(
+      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={[open, folded, general]} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} renderCodeContext={renderCodeContext} />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByText('code at 3')).toBeInTheDocument()
+    expect(renderCodeContext.mock.calls.map(([position]) => position.newLine)).not.toContain(9)
+    expect(screen.queryByText('code at 9')).not.toBeInTheDocument()
+  })
+})

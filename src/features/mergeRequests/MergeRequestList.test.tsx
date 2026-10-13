@@ -106,6 +106,21 @@ describe('MergeRequestList search filters', () => {
     expect(screen.getByRole('button', { name: '詳細条件' })).toBeInTheDocument()
   })
 
+  it('shows a project branch as a chip that returns to all the project MRs when removed', () => {
+    const onSearchStateChange = vi.fn()
+    render(<MergeRequestList initialParams={{ projectId: '9', projectName: 'group/project', sourceBranch: 'feature/search', state: 'all' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} projectId="9" projectName="group/project" />)
+
+    expect(screen.getByText('ブランチ: feature/search')).toBeInTheDocument()
+    expect(latestHookMrsQuery()).toMatchObject({ projectId: '9', sourceBranch: 'feature/search' })
+    // The chip shows the branch, so the detailed conditions stay closed and unmarked.
+    expect(screen.getByRole('button', { name: '詳細条件' })).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(screen.getByLabelText('ブランチの絞り込みを解除'))
+    expect(screen.queryByText('ブランチ: feature/search')).not.toBeInTheDocument()
+    expect(latestHookMrsQuery()?.sourceBranch).toBeUndefined()
+    expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.not.objectContaining({ sourceBranch: expect.anything() }))
+  })
+
   it('passes all applied filters to the typed query and maps self/date values', () => {
     const seen: unknown[] = []
     queryMock.mockImplementation((_sessionId: string, query: unknown) => {
