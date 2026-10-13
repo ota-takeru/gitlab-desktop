@@ -19,11 +19,13 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { MarkdownLivePreview, MarkdownToolbar } from '../../components/MarkdownToolbar'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { RelativeTime } from '../../components/RelativeTime'
 import type { Discussion, Note, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
+import { useMarkdownFormatting } from '../shared/useMarkdownFormatting'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
 
 const NOTES_PER_PAGE = 50
@@ -36,6 +38,8 @@ interface DiscussionListProps {
   disabled?: boolean
   unreadNoteIds?: string[]
   replyDiscussionId?: string
+  /** The reply editor, shown inside the thread being replied to. */
+  replyComposer?: React.ReactNode
   onDelete: (note: Note) => Promise<boolean>
   onEdit: (note: Note, body: string) => Promise<boolean>
   onMarkRead?: (notes: Note[]) => void
@@ -58,13 +62,15 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, older, onDelete, onEdit, onMarkRead, onOpenPosition, onReply, onResolve, replyDiscussionId, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, older, onDelete, onEdit, onMarkRead, onOpenPosition, onReply, onResolve, replyComposer, replyDiscussionId, unreadNoteIds = [] }: DiscussionListProps) {
   const [editing, setEditing] = useState<{ note: Note; body: string } | null>(null)
   const [notePages, setNotePages] = useState<Record<string, number>>({})
   const [filter, setFilter] = useState<'all' | 'unresolved'>('all')
-  const [collapsedResolved, setCollapsedResolved] = useState<Record<string, boolean>>({})
+  const [collapsedThreads, setCollapsedThreads] = useState<Record<string, boolean>>({})
   const [pendingJumpNoteId, setPendingJumpNoteId] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const editInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const { applyFormat, handleFormatShortcut } = useMarkdownFormatting(editInputRef, editing?.body ?? '', (body) => setEditing((current) => current ? { ...current, body } : current))
   const restoreScrollRef = useRef<{ element: HTMLElement; top: number; left: number } | null>(null)
   const anchorRef = useRef<{ id: string; offset: number } | null>(null)
   const olderRef = useRef(older)
@@ -145,7 +151,7 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
     }
     const anchor = anchorRef.current
     if (host && listRef.current && anchor) restoreAnchor(host, listRef.current, anchor)
-  }, [collapsedResolved, filter, notePages, pendingJumpNoteId, visibleDiscussions, older?.loading, older?.hasOlder, older?.error])
+  }, [collapsedThreads, filter, notePages, pendingJumpNoteId, visibleDiscussions, older?.loading, older?.hasOlder, older?.error])
 
   const updatePreservingScroll = (update: () => void): void => {
     restoreScrollRef.current = captureScrollPosition(listRef.current)
@@ -159,14 +165,14 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
     restoreScrollRef.current = null
     setFilter(targetFilter)
     setNotePages((current) => ({ ...current, [discussion.id]: Math.floor(Math.max(0, noteIndex) / NOTES_PER_PAGE) + 1 }))
-    setCollapsedResolved((current) => ({ ...current, [discussion.id]: false }))
+    setCollapsedThreads((current) => ({ ...current, [discussion.id]: false }))
     setPendingJumpNoteId(note.id)
   }
 
   const visiblePageNotes = visibleDiscussions.flatMap(({ discussion, notes }) => {
     const canResolve = notes.some((note) => note.resolvable)
     const resolved = canResolve && notes.filter((note) => note.resolvable).every((note) => note.resolved)
-    if (resolved && (collapsedResolved[discussion.id] ?? true)) return []
+    if (isThreadCollapsible(notes) && (collapsedThreads[discussion.id] ?? resolved)) return []
     const notePage = clampPage(notePages[discussion.id] ?? 1, pageCount(notes.length, NOTES_PER_PAGE))
     const noteStart = (notePage - 1) * NOTES_PER_PAGE
     return notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
@@ -216,13 +222,15 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
         const noteStart = (notePage - 1) * NOTES_PER_PAGE
         const visibleNotes = notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
         const containsEditingNote = Boolean(editing?.note && notes.some((note) => note.id === editing.note.id))
-        const isCollapsed = resolved && (collapsedResolved[discussion.id] ?? true) && !containsEditingNote
+        // Resolved threads start collapsed; any thread can be folded or opened.
+        const replying = discussion.id === replyDiscussionId && Boolean(replyComposer)
+        const isCollapsed = isThreadCollapsible(notes) && (collapsedThreads[discussion.id] ?? resolved) && !containsEditingNote && !replying
         const position = notes.find((note) => note.position)?.position ?? null
         const positionLabel = position ? `${position.newPath}:${position.newLine ?? position.oldLine ?? 'file'}` : null
         const firstNote = notes[0]
         return (
           <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 2, minWidth: 0, overflow: 'hidden' }}>
-            {position || canResolve ? (
+            {isThreadCollapsible(notes) ? (
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: isCollapsed ? 0 : 1, borderColor: 'divider', justifyContent: 'space-between', minHeight: 36, pl: 1.5, pr: 1, py: 0.5 }}>
                 <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
                   {position ? <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} /> : <ForumOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />}
@@ -246,11 +254,11 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                     sx={{ minHeight: 26, px: 1, py: 0 }}
                     variant="outlined"
                   >{resolved ? `解決済み${isCollapsed ? ` · ${notes.length}件` : ''}` : '未解決'}</Button></span></Tooltip> : null}
-                  {resolved ? <Button
+                  <Button
                     aria-expanded={!isCollapsed}
-                    disabled={containsEditingNote}
-                    onClick={() => updatePreservingScroll(() => setCollapsedResolved((current) => ({ ...current, [discussion.id]: !isCollapsed })))}
-                  >{isCollapsed ? '内容を表示' : '折り畳む'}</Button> : null}
+                    disabled={containsEditingNote || replying}
+                    onClick={() => updatePreservingScroll(() => setCollapsedThreads((current) => ({ ...current, [discussion.id]: !isCollapsed })))}
+                  >{isCollapsed ? resolved ? '内容を表示' : `内容を表示 · ${notes.length}件` : '折り畳む'}</Button>
                 </Stack>
               </Stack>
             ) : null}
@@ -300,7 +308,9 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                       </Stack>
                       {editing?.note.id === note.id ? (
                         <Stack spacing={0.75} sx={{ mt: 0.75 }}>
-                          <TextField autoFocus disabled={disabled} fullWidth label="コメントを編集" multiline minRows={3} onChange={(event) => setEditing({ body: event.target.value, note })} value={editing.body} />
+                          <MarkdownToolbar disabled={disabled} onFormat={applyFormat} />
+                          <TextField autoFocus disabled={disabled} fullWidth inputRef={editInputRef} label="コメントを編集" multiline minRows={3} onChange={(event) => setEditing({ body: event.target.value, note })} onKeyDown={(event) => { handleFormatShortcut(event) }} value={editing.body} />
+                          <MarkdownLivePreview body={editing.body} label="編集中のコメントのプレビュー" />
                           <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end' }}>
                             <Button onClick={() => setEditing(null)}>取消</Button>
                             <Button disabled={!editing.body.trim() || disabled} onClick={() => void onEdit(note, editing.body.trim()).then((success) => { if (success) setEditing(null) }).catch(() => undefined)} variant="contained">保存</Button>
@@ -312,9 +322,10 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                 )
               })}
             </Box> : null}
+            {replying ? <Box sx={{ borderTop: 1, borderColor: 'divider', p: 1 }}>{replyComposer}</Box> : null}
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: 1, borderColor: 'divider', flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.25 }}>
               <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                <Button disabled={disabled} onClick={() => onReply(discussion)} startIcon={<ReplyRoundedIcon />}>返信</Button>
+                {replying ? null : <Button disabled={disabled} onClick={() => onReply(discussion)} startIcon={<ReplyRoundedIcon />}>返信</Button>}
               </Stack>
               {!isCollapsed && notePageCount > 1 ? (
                 <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
@@ -367,4 +378,9 @@ function captureScrollPosition(root: HTMLElement | null): { element: HTMLElement
   if (element) return { element, left: element.scrollLeft, top: element.scrollTop }
   const scrollingElement = document.scrollingElement
   return scrollingElement ? { element: scrollingElement as HTMLElement, left: scrollingElement.scrollLeft, top: scrollingElement.scrollTop } : null
+}
+
+/** Threads (line comments, resolvable or with replies) can be folded; a single plain comment cannot. */
+function isThreadCollapsible(notes: Note[]): boolean {
+  return notes.length > 1 || notes.some((note) => note.resolvable || note.position)
 }

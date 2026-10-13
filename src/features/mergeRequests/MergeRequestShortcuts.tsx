@@ -1,4 +1,4 @@
-import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded'
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -25,7 +25,7 @@ export function MergeRequestShortcuts({ kind, onOpen, selected = null }: { kind:
     <PaneHeader subtitle={kind === 'pinned' ? 'よく確認するMRをこの端末に固定しています' : 'この端末で最近開いたMR'} title={kind === 'pinned' ? '固定したMR' : '最近開いたMR'} />
     <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       {!session ? <Alert severity="info" sx={{ m: 1.5 }}>接続設定でGitLabに接続してください。</Alert> : null}
-      {refs.length === 0 ? <PaneEmpty description={kind === 'pinned' ? 'MR一覧や詳細の星ボタンで固定できます。' : 'MRを開くと、ここに履歴を表示します。'} icon={kind === 'pinned' ? <BookmarkBorderRoundedIcon fontSize="inherit" /> : <HistoryRoundedIcon fontSize="inherit" />} title={kind === 'pinned' ? '固定したMRはありません' : '履歴はありません'} />
+      {refs.length === 0 ? <PaneEmpty description={kind === 'pinned' ? 'MR一覧や詳細のピンのボタンで固定できます。' : 'MRを開くと、ここに履歴を表示します。'} icon={kind === 'pinned' ? <PushPinOutlinedIcon fontSize="inherit" /> : <HistoryRoundedIcon fontSize="inherit" />} title={kind === 'pinned' ? '固定したMRはありません' : '履歴はありません'} />
         : <Box component="ul" sx={{ m: 0, p: 0 }}>{visible.map((ref) => <ShortcutRow key={`${ref.projectId}:${ref.iid}`} mrRef={ref} onOpen={onOpen} selected={selected?.projectId === ref.projectId && selected.iid === ref.iid} />)}</Box>}
     </Box>
     {refs.length > 10 ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={page * 10 < refs.length} hasPrevious={page > 1} onNext={() => setPage(page + 1)} onPrevious={() => setPage(page - 1)} page={page} /></Box> : null}

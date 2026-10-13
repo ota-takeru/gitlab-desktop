@@ -1,7 +1,7 @@
 import AddCommentRoundedIcon from '@mui/icons-material/AddCommentRounded'
-import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined'
-import PreviewOutlinedIcon from '@mui/icons-material/PreviewOutlined'
+import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
 import SendRoundedIcon from '@mui/icons-material/SendRounded'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Checkbox from '@mui/material/Checkbox'
@@ -12,14 +12,17 @@ import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent } from 'react'
 
-import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { MarkdownLivePreview, MarkdownToolbar } from '../../components/MarkdownToolbar'
+import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import type { GitLabUser, Position, UsersQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { useMarkdownFormatting } from '../shared/useMarkdownFormatting'
 
 interface ReviewComposerProps {
+  attachmentTargetKey?: string
   disabled?: boolean
   enableMentions?: boolean
   pending?: boolean
@@ -31,10 +34,14 @@ interface ReviewComposerProps {
   onChange: (body: string) => void
   onSaveDraft: (body: string, position?: Position) => Promise<boolean>
   onSubmitComment: (body: string, thread: boolean, position?: Position) => Promise<boolean>
+  onUploadAttachment?: (file: File) => Promise<string | null>
+  /** Keeps a link whose upload finished after this editor was closed or retargeted. */
+  onDetachedAttachment?: (markdown: string) => void
   value: string
 }
 
 export function ReviewComposer({
+  attachmentTargetKey,
   disabled = false,
   enableMentions = false,
   onCancelReply,
@@ -42,6 +49,8 @@ export function ReviewComposer({
   onClearPosition,
   onSaveDraft,
   onSubmitComment,
+  onUploadAttachment,
+  onDetachedAttachment,
   pending = false,
   replyAuthor,
   replyDiscussionId,
@@ -49,25 +58,43 @@ export function ReviewComposer({
   value,
 }: ReviewComposerProps) {
   const [kind, setKind] = useState<'comment' | 'draft'>('comment')
-  const [editorMode, setEditorMode] = useState<'edit' | 'preview'>('edit')
   const [thread, setThread] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [previousReplyDiscussionId, setPreviousReplyDiscussionId] = useState(replyDiscussionId)
+  const [uploading, setUploading] = useState(false)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [mentionRange, setMentionRange] = useState<MentionRange | null>(null)
   const [mentionCandidates, setMentionCandidates] = useState<GitLabUser[]>([])
   const [activeMentionIndex, setActiveMentionIndex] = useState(0)
   const submittingRef = useRef(false)
+  const uploadingRef = useRef(false)
+  const mountedRef = useRef(true)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const pendingCursorRef = useRef<number | null>(null)
+  const valueRef = useRef(value)
+  const onChangeRef = useRef(onChange)
+  const fallbackTargetKey = JSON.stringify({ discussionId: replyDiscussionId ?? '', position: targetPosition ?? null })
+  const currentTargetKey: unknown = attachmentTargetKey ?? onUploadAttachment ?? fallbackTargetKey
+  const targetKeyRef = useRef(currentTargetKey)
+  const updateValue = useCallback((nextValue: string) => {
+    valueRef.current = nextValue
+    onChangeRef.current(nextValue)
+  }, [])
+  const { applyFormat, handleFormatShortcut } = useMarkdownFormatting(inputRef, value, updateValue)
 
-  if (previousReplyDiscussionId !== replyDiscussionId) {
-    setPreviousReplyDiscussionId(replyDiscussionId)
-    if (replyDiscussionId) setEditorMode('edit')
-  }
+  useLayoutEffect(() => {
+    valueRef.current = value
+    onChangeRef.current = onChange
+    targetKeyRef.current = currentTargetKey
+  }, [currentTargetKey, onChange, value])
 
   useEffect(() => {
-    if (replyDiscussionId && editorMode === 'edit') inputRef.current?.focus()
-  }, [editorMode, replyDiscussionId])
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
+  useEffect(() => {
+    if (replyDiscussionId) inputRef.current?.focus()
+  }, [replyDiscussionId])
 
   useLayoutEffect(() => {
     if (pendingCursorRef.current === null || !inputRef.current) return
@@ -82,22 +109,23 @@ export function ReviewComposer({
   }, [])
 
   const submit = async (submitKind: 'comment' | 'draft') => {
-    const trimmed = value.trim()
-    if (!trimmed || pending || disabled || submittingRef.current) return
+    const trimmed = valueRef.current.trim()
+    if (!trimmed || pending || disabled || submittingRef.current || uploadingRef.current) return
     submittingRef.current = true
     setSubmitting(true)
     try {
       const success = submitKind === 'draft'
         ? await onSaveDraft(trimmed, targetPosition)
         : await onSubmitComment(trimmed, thread || Boolean(replyDiscussionId), targetPosition)
-      if (success) onChange('')
+      if (success) updateValue('')
     } finally {
       submittingRef.current = false
       setSubmitting(false)
     }
   }
-  const controlsDisabled = disabled || pending || submitting
-  const showMentionCandidates = Boolean(enableMentions && editorMode === 'edit' && mentionRange && mentionRange.query.length >= 2)
+  const controlsDisabled = disabled || (pending && !uploading) || submitting
+  const targetControlsDisabled = controlsDisabled || uploading
+  const showMentionCandidates = Boolean(enableMentions && mentionRange && mentionRange.query.length >= 2)
   const visibleMentionCandidates = mentionCandidates.slice(0, 8)
 
   const updateMentionRange = (textarea: HTMLTextAreaElement) => {
@@ -110,15 +138,67 @@ export function ReviewComposer({
     const textarea = inputRef.current
     if (!textarea || !mentionRange) return
     const mention = `@${user.username}`
-    const tail = value.slice(mentionRange.end)
+    const currentValue = valueRef.current
+    const tail = currentValue.slice(mentionRange.end)
     const separator = tail && /^[\s.,!?)]/.test(tail) ? '' : ' '
     const insertion = `${mention}${separator}`
-    const nextValue = `${value.slice(0, mentionRange.start)}${insertion}${tail}`
+    const nextValue = `${currentValue.slice(0, mentionRange.start)}${insertion}${tail}`
     pendingCursorRef.current = mentionRange.start + insertion.length
-    onChange(nextValue)
+    updateValue(nextValue)
     setMentionRange(null)
     setMentionCandidates([])
     textarea.focus()
+  }
+
+  const uploadAttachment = async (file: File) => {
+    if (!onUploadAttachment || disabled || pending || submittingRef.current || uploadingRef.current) return
+    if (file.size > MAX_GITLAB_ATTACHMENT_BYTES) {
+      setAttachmentError('添付ファイルは10 MiB以下にしてください。')
+      return
+    }
+
+    const targetKey = targetKeyRef.current
+    const keepDetached = onDetachedAttachment
+    uploadingRef.current = true
+    setUploading(true)
+    setAttachmentError(null)
+    try {
+      const snippet = (await onUploadAttachment(file))?.trim()
+      if (!snippet) return
+      if (!mountedRef.current || targetKeyRef.current !== targetKey) {
+        // The file is already on GitLab; keep its link with the original input.
+        keepDetached?.(snippet)
+        return
+      }
+
+      const textarea = inputRef.current
+      const currentValue = valueRef.current
+      const start = textarea?.selectionStart ?? currentValue.length
+      const prefix = currentValue.slice(0, start)
+      const suffix = currentValue.slice(start)
+      const leadingNewline = prefix && !prefix.endsWith('\n') ? '\n' : ''
+      const trailingNewline = suffix && !suffix.startsWith('\n') ? '\n' : ''
+      const nextValue = `${prefix}${leadingNewline}${snippet}${trailingNewline}${suffix}`
+      pendingCursorRef.current = start + leadingNewline.length + snippet.length
+      updateValue(nextValue)
+      textarea?.focus()
+    } catch (caught) {
+      if (mountedRef.current && targetKeyRef.current === targetKey) setAttachmentError(getAttachmentErrorMessage(caught))
+    } finally {
+      uploadingRef.current = false
+      if (mountedRef.current) setUploading(false)
+    }
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (!onUploadAttachment) return
+    // Office apps put a rendered image next to the copied text; paste the text
+    // rather than uploading an image the user did not intend to send.
+    if (event.clipboardData.getData('text/plain')) return
+    const image = Array.from(event.clipboardData.items).find((item) => item.kind === 'file' && item.type.startsWith('image/'))?.getAsFile()
+    if (!image) return
+    event.preventDefault()
+    void uploadAttachment(image)
   }
 
   return (
@@ -126,74 +206,85 @@ export function ReviewComposer({
       <Stack spacing={0.75}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
           <Typography sx={{ fontWeight: 600 }} variant="body2">{replyAuthor ? `${replyAuthor}に返信` : 'コメントを追加'}</Typography>
-          {replyDiscussionId ? <Chip disabled={controlsDisabled} label="スレッド返信" onDelete={onCancelReply} size="small" sx={composerChipSx} variant="outlined" /> : null}
-          {targetPosition ? <Chip disabled={controlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={onClearPosition} size="small" sx={composerChipSx} title={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} variant="outlined" /> : null}
+          {targetPosition ? <Chip disabled={targetControlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} title={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} variant="outlined" /> : null}
         </Stack>
         <Stack spacing={0.5}>
-          <ToggleButtonGroup
-            aria-label="コメント編集モード"
-            exclusive
-            onChange={(_, next: 'edit' | 'preview' | null) => { if (next) setEditorMode(next) }}
-            size="small"
-            value={editorMode}
-          >
-            <ToggleButton aria-label="コメントを編集" value="edit"><CodeOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />編集</ToggleButton>
-            <ToggleButton aria-label="コメントをプレビュー" value="preview"><PreviewOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />プレビュー</ToggleButton>
-          </ToggleButtonGroup>
-          {editorMode === 'edit' ? (
-            <>
-              <TextField
-                disabled={controlsDisabled}
-                fullWidth
-                inputRef={inputRef}
-                label="コメント本文"
-                multiline
-                minRows={2}
-                maxRows={10}
-                onChange={(event) => {
-                  onChange(event.target.value)
-                  if (enableMentions && inputRef.current) updateMentionRange(inputRef.current)
-                }}
-                onClick={() => { if (enableMentions && inputRef.current) updateMentionRange(inputRef.current) }}
-                onKeyUp={() => { if (enableMentions && inputRef.current) updateMentionRange(inputRef.current) }}
-                onKeyDown={(event) => {
-                  if (showMentionCandidates && visibleMentionCandidates.length > 0) {
-                    if (event.key === 'ArrowDown') {
-                      event.preventDefault()
-                      setActiveMentionIndex((current) => (current + 1) % visibleMentionCandidates.length)
-                      return
-                    }
-                    if (event.key === 'ArrowUp') {
-                      event.preventDefault()
-                      setActiveMentionIndex((current) => (current - 1 + visibleMentionCandidates.length) % visibleMentionCandidates.length)
-                      return
-                    }
-                    if (event.key === 'Enter' && !event.ctrlKey && !event.shiftKey) {
-                      event.preventDefault()
-                      insertMention(visibleMentionCandidates[activeMentionIndex] ?? visibleMentionCandidates[0])
-                      return
-                    }
-                  }
-                  if (showMentionCandidates && event.key === 'Escape') {
-                    event.preventDefault()
-                    setMentionRange(null)
-                    setMentionCandidates([])
-                    return
-                  }
-                  if (event.key !== 'Enter' || !event.ctrlKey) return
+          <MarkdownToolbar disabled={controlsDisabled} onFormat={applyFormat} />
+          {onUploadAttachment ? (
+            <Stack spacing={0.25}>
+              <Button component="label" disabled={targetControlsDisabled} size="small" startIcon={<AttachFileRoundedIcon />} sx={{ alignSelf: 'flex-start' }} variant="outlined">
+                {uploading ? '添付ファイルをアップロード中…' : 'ファイルを添付'}
+                <input
+                  aria-label="添付ファイルを選択"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0]
+                    event.currentTarget.value = ''
+                    if (file) void uploadAttachment(file)
+                  }}
+                  type="file"
+                />
+              </Button>
+              <Typography color="text.secondary" variant="caption">選択したファイルはコメント投稿前にGitLabへアップロードされます（1ファイル10 MiBまで）。画像は貼り付けてもアップロードできます。</Typography>
+              {uploading ? <Typography aria-live="polite" color="text.secondary" variant="caption">アップロード中は投稿先を変更できません。本文の入力は続けられます。</Typography> : null}
+              {attachmentError ? <Alert onClose={() => setAttachmentError(null)} severity="error">{attachmentError}</Alert> : null}
+            </Stack>
+          ) : null}
+          <TextField
+            disabled={controlsDisabled}
+            fullWidth
+            inputRef={inputRef}
+            label="コメント本文"
+            multiline
+            minRows={2}
+            maxRows={10}
+            onChange={(event) => {
+              updateValue(event.target.value)
+              if (enableMentions && inputRef.current) updateMentionRange(inputRef.current)
+            }}
+            onPaste={handlePaste}
+            onClick={() => { if (enableMentions && inputRef.current) updateMentionRange(inputRef.current) }}
+            onKeyUp={() => { if (enableMentions && inputRef.current) updateMentionRange(inputRef.current) }}
+            onKeyDown={(event) => {
+              if (showMentionCandidates && visibleMentionCandidates.length > 0) {
+                if (event.key === 'ArrowDown') {
                   event.preventDefault()
-                  void submit(event.shiftKey ? 'comment' : 'draft')
-                }}
-                placeholder="Markdownでコメントを書けます。Ctrl+Enter: レビューに追加 / Ctrl+Shift+Enter: 今すぐコメント"
-                value={value}
-              />
-              {enableMentions ? <MentionSuggestions onSelect={insertMention} onUsersChange={onMentionCandidatesChange} search={controlsDisabled ? '' : mentionRange?.query ?? ''} selectedIndex={activeMentionIndex} /> : null}
-            </>
-          ) : (
-            <Paper aria-label="コメントプレビュー" sx={{ bgcolor: 'background.default', minHeight: 72, maxHeight: 240, overflow: 'auto', p: 1 }} variant="outlined">
-              {value.trim() ? <MockMarkdown body={value} /> : <Typography color="text.secondary" variant="body2">プレビューする内容がありません。</Typography>}
-            </Paper>
-          )}
+                  setActiveMentionIndex((current) => (current + 1) % visibleMentionCandidates.length)
+                  return
+                }
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  setActiveMentionIndex((current) => (current - 1 + visibleMentionCandidates.length) % visibleMentionCandidates.length)
+                  return
+                }
+                if (event.key === 'Enter' && !event.ctrlKey && !event.shiftKey) {
+                  event.preventDefault()
+                  insertMention(visibleMentionCandidates[activeMentionIndex] ?? visibleMentionCandidates[0])
+                  return
+                }
+              }
+              if (showMentionCandidates && event.key === 'Escape') {
+                event.preventDefault()
+                setMentionRange(null)
+                setMentionCandidates([])
+                return
+              }
+              if (handleFormatShortcut(event)) return
+              if (replyDiscussionId && event.key === 'Escape' && !targetControlsDisabled && !uploadingRef.current) {
+                // The reply body stays in its buffer, so closing loses nothing.
+                event.preventDefault()
+                onCancelReply()
+                return
+              }
+              if (event.key !== 'Enter' || !event.ctrlKey) return
+              event.preventDefault()
+              void submit(event.shiftKey ? 'comment' : 'draft')
+            }}
+            placeholder="Markdownでコメントを書けます。Ctrl+Enter: レビューに追加 / Ctrl+Shift+Enter: 今すぐコメント"
+            value={value}
+          />
+          {enableMentions ? <MentionSuggestions onSelect={insertMention} onUsersChange={onMentionCandidatesChange} search={controlsDisabled ? '' : mentionRange?.query ?? ''} selectedIndex={activeMentionIndex} /> : null}
+          <MarkdownLivePreview body={value} label="コメントプレビュー" />
         </Stack>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.75 }}>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
@@ -204,9 +295,9 @@ export function ReviewComposer({
             {!replyDiscussionId && kind === 'comment' ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label="解決可能なスレッドとして投稿" sx={{ mr: 0 }} /> : null}
           </Stack>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
-            {replyDiscussionId ? <Button disabled={controlsDisabled} onClick={onCancelReply} size="small">返信を取消</Button> : null}
-            <Button disabled={controlsDisabled || !value.trim()} onClick={() => void submit(kind)} startIcon={kind === 'draft' ? <AddCommentRoundedIcon /> : <SendRoundedIcon />} variant="contained">
-              {pending || submitting ? '送信中…' : kind === 'draft' ? '下書きに追加' : 'コメントを投稿'}
+            {replyDiscussionId ? <Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) onCancelReply() }} size="small" title="入力した本文は保持されます (Esc)">閉じる</Button> : null}
+            <Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit(kind)} startIcon={kind === 'draft' ? <AddCommentRoundedIcon /> : <SendRoundedIcon />} variant="contained">
+              {uploading ? '添付ファイルをアップロード中…' : pending || submitting ? '送信中…' : kind === 'draft' ? '下書きに追加' : 'コメントを投稿'}
             </Button>
           </Stack>
         </Stack>
@@ -280,4 +371,14 @@ const composerChipSx = {
   maxWidth: '100%',
   minWidth: 0,
   '& .MuiChip-label': { overflowWrap: 'anywhere', py: 0.25, whiteSpace: 'normal' },
+}
+
+function getAttachmentErrorMessage(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : ''
+  if (code === 'TOO_LARGE') return '添付ファイルは10 MiB以下にしてください。'
+  if (code === 'FORBIDDEN') return 'GitLabが添付を拒否しました。プロジェクトの権限を確認してください。'
+  if (code === 'AUTH_REQUIRED') return 'GitLabに接続してから添付してください。'
+  if (code === 'STORAGE') return '入力の保存を確認できないため、添付を停止しました。'
+  if (code === 'UNKNOWN_OUTCOME') return 'アップロード結果を確認できません。GitLabで添付の有無を確認してから再試行してください。'
+  return '添付ファイルをアップロードできませんでした。GitLabへの接続と権限を確認してください。'
 }

@@ -1,4 +1,4 @@
-use crate::dto::{Action, AppError, MergeRequestState, Position, PositionType, Query};
+use crate::dto::{Action, AppError, MergeRequestState, MrPathRef, Position, PositionType, Query};
 use reqwest::{header::HeaderMap, Client, Method, Response, StatusCode};
 use serde_json::{json, Map, Value};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,6 +13,7 @@ pub const MAX_PAGE: u32 = 1_000_000;
 pub const MAX_ACTION_BODY_BYTES: usize = 64 * 1024;
 const MAX_GET_RETRIES: usize = 2;
 const PER_PAGE: u32 = 30;
+const MAX_PEOPLE: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +50,7 @@ enum MutationPreflight<'a> {
     HeadSha(&'a str),
     Position(&'a Position),
     Draft(&'a str),
+    People(&'static str, &'a [String]),
 }
 
 type QueryUrl = (Url, ResponseKind, Vec<(String, String)>);
@@ -59,6 +61,9 @@ type QueryUrl = (Url, ResponseKind, Vec<(String, String)>);
 /// this adapter never adds credentials, changes TLS policy, or follows a
 /// redirect itself.
 pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<ApiResult, AppError> {
+    if let Query::MrApprovals { items } = query {
+        return fetch_mr_approvals(client, api_base, items).await;
+    }
     let (url, response_kind) = build_query_url(api_base, query)?;
 
     let diff_revision = match query {
@@ -370,6 +375,37 @@ pub async fn mutate(
             )?;
             (Method::POST, url, Value::Null, MutationPreflight::None)
         }
+        Action::UploadAttachment { .. } => {
+            return Err(AppError::new("INVALID_INPUT", "添付データが必要です。"));
+        }
+        Action::SetAssignees {
+            project_id,
+            iid,
+            user_ids,
+            expected_user_ids,
+        }
+        | Action::SetReviewers {
+            project_id,
+            iid,
+            user_ids,
+            expected_user_ids,
+        } => {
+            let (field, ids_field) = people_fields(action);
+            let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
+            let ids = user_ids
+                .iter()
+                .map(|id| id.parse::<u64>().map(Value::from))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| {
+                    AppError::new("INVALID_INPUT", "userIds must be decimal identifiers.")
+                })?;
+            (
+                Method::PUT,
+                url,
+                json!({ ids_field: ids }),
+                MutationPreflight::People(field, expected_user_ids),
+            )
+        }
     };
 
     let (project_id, iid) = action_project_and_iid(action);
@@ -384,13 +420,47 @@ pub async fn mutate(
         MutationPreflight::Draft(draft_id) => {
             ensure_draft_is_current(client, api_base, project_id, iid, draft_id).await?
         }
+        MutationPreflight::People(field, expected) => {
+            ensure_people(client, api_base, project_id, iid, field, expected).await?
+        }
     }
 
     let allows_empty = matches!(
         action,
         Action::DeleteNote { .. } | Action::DeleteDraft { .. } | Action::PublishDraft { .. }
     );
-    send_mutation(client, method, url, body, allows_empty).await
+    let response = send_mutation(client, method, url, body, allows_empty).await?;
+    if let Action::SetAssignees { user_ids, .. } | Action::SetReviewers { user_ids, .. } = action {
+        // GitLab silently drops users it cannot assign (no access, or a plan
+        // that allows only one), so the saved list is checked.
+        let saved = response
+            .as_ref()
+            .and_then(|value| user_id_set(value, people_fields(action).0));
+        if saved.as_ref() != Some(&user_ids.iter().cloned().collect()) {
+            return Err(AppError::new(
+                "UNSUPPORTED",
+                "GitLab saved a different set of users than selected. A user may lack access, or the plan may allow only one. Refresh to see the saved users.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The response field and the request field for an assignee or reviewer change.
+fn people_fields(action: &Action) -> (&'static str, &'static str) {
+    match action {
+        Action::SetReviewers { .. } => ("reviewers", "reviewer_ids"),
+        _ => ("assignees", "assignee_ids"),
+    }
+}
+
+fn user_id_set(value: &Value, field: &str) -> Option<std::collections::BTreeSet<String>> {
+    value
+        .get(field)?
+        .as_array()?
+        .iter()
+        .map(|user| user.get("id").and_then(scalar_to_string))
+        .collect()
 }
 
 fn action_project_and_iid(action: &Action) -> (&str, &str) {
@@ -426,6 +496,15 @@ fn action_project_and_iid(action: &Action) -> (&str, &str) {
             project_id, iid, ..
         }
         | Action::Unapprove {
+            project_id, iid, ..
+        }
+        | Action::SetAssignees {
+            project_id, iid, ..
+        }
+        | Action::SetReviewers {
+            project_id, iid, ..
+        }
+        | Action::UploadAttachment {
             project_id, iid, ..
         } => (project_id, iid),
     }
@@ -512,6 +591,10 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             search,
             state,
             project_id,
+            group_id,
+            labels,
+            source_branch,
+            target_branch,
             reviewer_id,
             assignee_id,
             author_id,
@@ -532,6 +615,18 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             }
             if let Some(project_id) = project_id {
                 validate_id(project_id, "projectId")?;
+            }
+            if project_id.is_some() && group_id.is_some() {
+                return Err(AppError::new(
+                    "INVALID_INPUT",
+                    "A group and a project cannot both scope a merge request search.",
+                ));
+            }
+            if let Some(group_id) = group_id {
+                validate_group_id(group_id)?;
+            }
+            if let Some(labels) = labels {
+                validate_labels(labels)?;
             }
             if let Some(reviewer_id) = reviewer_id {
                 validate_id(reviewer_id, "reviewerId")?;
@@ -555,9 +650,18 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             }
             let url = if let Some(project_id) = project_id {
                 endpoint(api_base, &["projects", project_id, "merge_requests"])?
+            } else if let Some(group_id) = group_id {
+                endpoint(api_base, &["groups", group_id, "merge_requests"])?
             } else {
                 endpoint(api_base, &["merge_requests"])?
             };
+            if let Some(labels) = labels {
+                if !labels.is_empty() {
+                    params.push(("labels".to_owned(), labels.join(",")));
+                }
+            }
+            add_optional_param(&mut params, "source_branch", source_branch);
+            add_optional_param(&mut params, "target_branch", target_branch);
             add_optional_param(&mut params, "reviewer_id", reviewer_id);
             add_optional_param(&mut params, "assignee_id", assignee_id);
             add_optional_param(&mut params, "author_id", author_id);
@@ -677,6 +781,12 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 Vec::new(),
             )
         }
+        Query::MrApprovals { .. } => {
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                "Merge request approvals are not a REST query.",
+            ))
+        }
     };
 
     Ok((append_query(url, params), response_kind))
@@ -726,7 +836,7 @@ fn append_query(mut url: Url, params: Vec<(String, String)>) -> Url {
 /// prefix.  `Url::join` with a leading slash would silently discard that
 /// prefix, so segments are appended through `path_segments_mut`, which also
 /// percent-encodes each untrusted segment.
-fn endpoint(api_base: &Url, segments: &[&str]) -> Result<Url, AppError> {
+pub(crate) fn endpoint(api_base: &Url, segments: &[&str]) -> Result<Url, AppError> {
     if api_base.host_str().is_none() || api_base.cannot_be_a_base() {
         return Err(AppError::new(
             "INVALID_INPUT",
@@ -802,6 +912,91 @@ async fn get_bytes(
     }
 }
 
+/// Reads who approved up to one page of merge requests with a single GraphQL
+/// query. Values travel as variables, never inside the query text. A merge
+/// request GitLab does not return (no access, deleted) gets `approvedBy: null`.
+async fn fetch_mr_approvals(
+    client: &Client,
+    api_base: &Url,
+    items: &[MrPathRef],
+) -> Result<ApiResult, AppError> {
+    if items.is_empty() || items.len() > PER_PAGE as usize {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "Request approvals for one page of merge requests at a time.",
+        ));
+    }
+    let mut declarations = Vec::new();
+    let mut fields = Vec::new();
+    let mut variables = Map::new();
+    for (index, item) in items.iter().enumerate() {
+        validate_project_path(&item.project_path)?;
+        validate_id(&item.iid, "iid")?;
+        declarations.push(format!("$p{index}: ID!, $i{index}: String!"));
+        fields.push(format!(
+            "m{index}: project(fullPath: $p{index}) {{ mergeRequest(iid: $i{index}) {{ approvedBy {{ nodes {{ id }} }} }} }}"
+        ));
+        variables.insert(format!("p{index}"), item.project_path.clone().into());
+        variables.insert(format!("i{index}"), item.iid.clone().into());
+    }
+    let body = json!({
+        "query": format!("query({}) {{ {} }}", declarations.join(", "), fields.join(" ")),
+        "variables": variables,
+    });
+    let url = api_base
+        .join("../graphql")
+        .map_err(|_| AppError::new("INVALID_INPUT", "Invalid GitLab GraphQL URL."))?;
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| transport_error(error.is_timeout()))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(status_error(status, response.headers(), false));
+    }
+    let bytes = read_limited(response, MAX_RESPONSE_BYTES).await?;
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| unsupported_response("GitLab returned an unsupported approval response."))?;
+    let data = value
+        .get("data")
+        .filter(|data| data.is_object())
+        .ok_or_else(|| unsupported_response("GitLab did not return approval data."))?;
+    let results = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let approved_by = data
+                .get(format!("m{index}"))
+                .and_then(|project| project.get("mergeRequest"))
+                .and_then(|merge_request| merge_request.get("approvedBy"))
+                .and_then(|approved_by| approved_by.get("nodes"))
+                .and_then(Value::as_array)
+                .map(|nodes| {
+                    nodes
+                        .iter()
+                        .filter_map(|node| node.get("id").and_then(Value::as_str))
+                        .filter_map(|id| id.rsplit('/').next())
+                        .filter(|id| validate_id(id, "userId").is_ok())
+                        .map(|id| Value::String(id.to_owned()))
+                        .collect::<Vec<_>>()
+                });
+            json!({
+                "projectPath": item.project_path,
+                "iid": item.iid,
+                "approvedBy": approved_by,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(ApiResult {
+        data: Value::Array(results),
+        next_page: None,
+        total_pages: None,
+        truncated: false,
+    })
+}
+
 async fn get_json_once(client: &Client, url: &Url) -> Result<Value, AppError> {
     let response = client
         .get(url.clone())
@@ -827,7 +1022,7 @@ async fn send_mutation(
     url: Url,
     body: Value,
     allows_empty: bool,
-) -> Result<(), AppError> {
+) -> Result<Option<Value>, AppError> {
     let request = client.request(method, url);
     let response = if body.is_null() {
         request.send().await
@@ -838,7 +1033,7 @@ async fn send_mutation(
         Ok(response) if response.status().is_success() => {
             let status = response.status();
             if status == StatusCode::NO_CONTENT && allows_empty {
-                return Ok(());
+                return Ok(None);
             }
             // A proxy login page, malformed/truncated body, or asynchronous
             // acceptance is not confirmation that this write completed.
@@ -856,7 +1051,7 @@ async fn send_mutation(
                         || id.as_str().is_some_and(|id| !id.is_empty())
                 });
             if identified_object {
-                Ok(())
+                Ok(Some(value))
             } else {
                 Err(unknown_mutation_result())
             }
@@ -890,7 +1085,10 @@ fn unknown_mutation_result() -> AppError {
     )
 }
 
-async fn read_limited(mut response: Response, max_bytes: usize) -> Result<Vec<u8>, AppError> {
+pub(crate) async fn read_limited(
+    mut response: Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, AppError> {
     if response
         .content_length()
         .is_some_and(|length| length > max_bytes as u64)
@@ -935,7 +1133,7 @@ async fn wait_for_get_retry(retry_number: usize) {
     tokio::time::sleep(Duration::from_millis(exponential.saturating_add(jitter))).await;
 }
 
-fn status_error(status: StatusCode, headers: &HeaderMap, mutation: bool) -> AppError {
+pub(crate) fn status_error(status: StatusCode, headers: &HeaderMap, mutation: bool) -> AppError {
     match status {
         StatusCode::UNAUTHORIZED => AppError::new(
             "AUTH_REQUIRED",
@@ -1531,6 +1729,22 @@ fn validate_action(action: &Action) -> Result<(), AppError> {
         }
         Action::Approve { sha, .. } => validate_sha(sha, "sha")?,
         Action::Unapprove { .. } => {}
+        Action::UploadAttachment { file_name, .. } => {
+            crate::attachments::validate_filename(file_name)?;
+        }
+        Action::SetAssignees {
+            user_ids,
+            expected_user_ids,
+            ..
+        }
+        | Action::SetReviewers {
+            user_ids,
+            expected_user_ids,
+            ..
+        } => {
+            validate_user_ids(user_ids)?;
+            validate_user_ids(expected_user_ids)?;
+        }
     }
     if let Action::SaveDraft {
         discussion_id: Some(discussion_id),
@@ -1566,6 +1780,22 @@ fn validate_position(position: &Position) -> Result<(), AppError> {
     Ok(())
 }
 
+fn validate_user_ids(ids: &[String]) -> Result<(), AppError> {
+    if ids.len() > MAX_PEOPLE {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "Too many users were selected.",
+        ));
+    }
+    for (index, id) in ids.iter().enumerate() {
+        validate_id(id, "userIds")?;
+        if ids[..index].contains(id) {
+            return Err(AppError::new("INVALID_INPUT", "userIds must not repeat."));
+        }
+    }
+    Ok(())
+}
+
 fn validate_user_id(user_id: &str) -> Result<(), AppError> {
     validate_id(user_id, "userId")
 }
@@ -1586,13 +1816,44 @@ fn validate_body(value: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-fn validate_id(value: &str, field: &str) -> Result<(), AppError> {
+pub(crate) fn validate_id(value: &str, field: &str) -> Result<(), AppError> {
     if value.parse::<u64>().ok().is_none_or(|id| id == 0)
         || !value.bytes().all(|byte| byte.is_ascii_digit())
     {
         return Err(AppError::new(
             "INVALID_INPUT",
             &format!("{field} must be a decimal identifier."),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_group_id(value: &str) -> Result<(), AppError> {
+    if value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return validate_id(value, "groupId");
+    }
+    if value.split('/').any(|segment| {
+        segment.is_empty()
+            || matches!(segment, "." | "..")
+            || !segment
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+    }) {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "groupId must be a decimal identifier or a group path.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_labels(labels: &[String]) -> Result<(), AppError> {
+    if labels.iter().any(|label| {
+        label.trim().is_empty() || label.contains(',') || label.chars().any(char::is_control)
+    }) {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "labels must contain non-empty label names without commas.",
         ));
     }
     Ok(())
@@ -1686,6 +1947,22 @@ async fn ensure_head_sha(
         .and_then(scalar_to_string)
         .or_else(|| value.get("sha").and_then(scalar_to_string));
     if actual.as_deref() != Some(expected) {
+        return Err(stale_merge_request());
+    }
+    Ok(())
+}
+
+async fn ensure_people(
+    client: &Client,
+    api_base: &Url,
+    project_id: &str,
+    iid: &str,
+    field: &str,
+    expected: &[String],
+) -> Result<(), AppError> {
+    let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
+    let value = get_json_once(client, &url).await?;
+    if user_id_set(&value, field) != Some(expected.iter().cloned().collect()) {
         return Err(stale_merge_request());
     }
     Ok(())
@@ -2213,6 +2490,10 @@ mod tests {
                 search: String::new(),
                 state: MergeRequestState::Opened,
                 project_id: project_id.clone(),
+                group_id: None,
+                labels: None,
+                source_branch: None,
+                target_branch: None,
                 reviewer_id: Some("8".to_owned()),
                 assignee_id: Some("9".to_owned()),
                 author_id: None,
@@ -2277,6 +2558,67 @@ mod tests {
     }
 
     #[test]
+    fn group_search_uses_encoded_path_and_passes_label_and_branch_filters() {
+        let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+        let make_query = |project_id, group_id, labels| Query::Mrs {
+            search: "cache".to_owned(),
+            state: MergeRequestState::Opened,
+            project_id,
+            group_id,
+            labels,
+            source_branch: Some("feature/search".to_owned()),
+            target_branch: Some("main".to_owned()),
+            reviewer_id: None,
+            assignee_id: None,
+            author_id: None,
+            updated_after: None,
+            updated_before: None,
+            order_by: None,
+            sort: None,
+            page: 1,
+        };
+        let query = make_query(
+            None,
+            Some("team/platform".to_owned()),
+            Some(vec!["bug".to_owned(), "ready".to_owned()]),
+        );
+        let (url, _) = build_query_url(&api, &query).unwrap();
+        let params = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(url.path(), "/api/v4/groups/team%2Fplatform/merge_requests");
+        assert_eq!(params.get("search").unwrap(), "cache");
+        assert_eq!(params.get("labels").unwrap(), "bug,ready");
+        assert_eq!(params.get("source_branch").unwrap(), "feature/search");
+        assert_eq!(params.get("target_branch").unwrap(), "main");
+
+        let invalid_scopes = [
+            make_query(
+                Some("42".to_owned()),
+                Some("team/platform".to_owned()),
+                Some(vec!["bug".to_owned()]),
+            ),
+            make_query(
+                None,
+                Some("team/../platform".to_owned()),
+                Some(vec!["bug".to_owned()]),
+            ),
+            make_query(
+                None,
+                Some("team/platform".to_owned()),
+                Some(vec!["".to_owned()]),
+            ),
+        ];
+        for invalid in invalid_scopes {
+            assert_eq!(
+                build_query_url(&api, &invalid).unwrap_err().code,
+                "INVALID_INPUT"
+            );
+        }
+    }
+
+    #[test]
     fn uses_project_scoped_mr_and_repository_commit_diff_routes() {
         let fixture = Fixture::new(vec![
             response("200 OK", "[]", ""),
@@ -2291,6 +2633,10 @@ mod tests {
             search: "demo".to_owned(),
             state: MergeRequestState::All,
             project_id: Some("42".to_owned()),
+            group_id: None,
+            labels: None,
+            source_branch: None,
+            target_branch: None,
             reviewer_id: None,
             assignee_id: None,
             author_id: None,
@@ -2577,7 +2923,8 @@ mod tests {
             let started = std::time::Instant::now();
             let list = fetch(&client, &api, &Query::Mrs {
                 search: String::new(), state: MergeRequestState::Merged,
-                project_id: Some(project_id.clone()), reviewer_id: None, assignee_id: None, author_id: None,
+                project_id: Some(project_id.clone()), group_id: None, labels: None, source_branch: None, target_branch: None,
+                reviewer_id: None, assignee_id: None, author_id: None,
                 updated_after: None, updated_before: None, order_by: None, sort: None, page: 1,
             }).await.unwrap();
             let rows = list.data.as_array().unwrap();
@@ -2613,5 +2960,140 @@ mod tests {
         assert_eq!(parse_total_pages(&headers), None);
         headers.insert("x-total-pages", "many".parse().unwrap());
         assert_eq!(parse_total_pages(&headers), None);
+    }
+
+    #[test]
+    fn people_changes_replace_the_list_only_when_gitlab_still_has_the_seen_users() {
+        let action = Action::SetReviewers {
+            project_id: "42".to_owned(),
+            iid: "9".to_owned(),
+            user_ids: vec!["7".to_owned(), "8".to_owned()],
+            expected_user_ids: vec!["7".to_owned()],
+        };
+        let fixture = Fixture::new(vec![
+            response("200 OK", r#"{"id":1,"reviewers":[{"id":7}]}"#, ""),
+            response("200 OK", r#"{"id":1,"reviewers":[{"id":8},{"id":7}]}"#, ""),
+        ]);
+        runtime()
+            .block_on(mutate(&Client::new(), &fixture.url(), &action, "7"))
+            .unwrap();
+        let requests = fixture.requests.lock().unwrap();
+        assert!(requests[1].starts_with("PUT "));
+        assert!(requests[1].contains("/projects/42/merge_requests/9 "));
+        assert!(requests[1].ends_with(r#"{"reviewer_ids":[7,8]}"#));
+        drop(requests);
+
+        // Someone else changed the reviewers: nothing is written.
+        let fixture = Fixture::new(vec![response(
+            "200 OK",
+            r#"{"id":1,"reviewers":[{"id":5}]}"#,
+            "",
+        )]);
+        let error = runtime()
+            .block_on(mutate(&Client::new(), &fixture.url(), &action, "7"))
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_INPUT");
+        assert_eq!(fixture.requests.lock().unwrap().len(), 1);
+
+        // GitLab kept only some of the users.
+        let fixture = Fixture::new(vec![
+            response("200 OK", r#"{"id":1,"reviewers":[{"id":7}]}"#, ""),
+            response("200 OK", r#"{"id":1,"reviewers":[{"id":7}]}"#, ""),
+        ]);
+        let error = runtime()
+            .block_on(mutate(&Client::new(), &fixture.url(), &action, "7"))
+            .unwrap_err();
+        assert_eq!(error.code, "UNSUPPORTED");
+    }
+
+    #[test]
+    fn people_changes_clear_with_an_empty_list_and_reject_bad_ids() {
+        let clear = Action::SetAssignees {
+            project_id: "42".to_owned(),
+            iid: "9".to_owned(),
+            user_ids: Vec::new(),
+            expected_user_ids: vec!["7".to_owned()],
+        };
+        let fixture = Fixture::new(vec![
+            response("200 OK", r#"{"id":1,"assignees":[{"id":7}]}"#, ""),
+            response("200 OK", r#"{"id":1,"assignees":[]}"#, ""),
+        ]);
+        runtime()
+            .block_on(mutate(&Client::new(), &fixture.url(), &clear, "7"))
+            .unwrap();
+        assert!(fixture.requests.lock().unwrap()[1].ends_with(r#"{"assignee_ids":[]}"#));
+
+        for user_ids in [
+            vec!["0".to_owned()],
+            vec!["x".to_owned()],
+            vec!["7".to_owned(), "7".to_owned()],
+        ] {
+            let invalid = Action::SetAssignees {
+                project_id: "42".to_owned(),
+                iid: "9".to_owned(),
+                user_ids,
+                expected_user_ids: Vec::new(),
+            };
+            assert_eq!(validate_action(&invalid).unwrap_err().code, "INVALID_INPUT");
+        }
+    }
+
+    #[test]
+    fn approvals_for_a_page_take_one_graphql_request_with_values_as_variables() {
+        let fixture = Fixture::new_at_path(
+            vec![response(
+                "200 OK",
+                r#"{"data":{"m0":{"mergeRequest":{"approvedBy":{"nodes":[{"id":"gid://gitlab/User/42"}]}}},"m1":null}}"#,
+                "",
+            )],
+            "/GitLab/api/v4/",
+        );
+        let query = Query::MrApprovals {
+            items: vec![
+                MrPathRef {
+                    project_path: "group/app".to_owned(),
+                    iid: "3".to_owned(),
+                },
+                MrPathRef {
+                    project_path: "group/\"hidden".to_owned(),
+                    iid: "4".to_owned(),
+                },
+            ],
+        };
+        let result = runtime()
+            .block_on(fetch(&Client::new(), &fixture.url(), &query))
+            .unwrap();
+        assert_eq!(
+            result.data,
+            json!([
+                {"projectPath": "group/app", "iid": "3", "approvedBy": ["42"]},
+                {"projectPath": "group/\"hidden", "iid": "4", "approvedBy": null},
+            ])
+        );
+        let requests = fixture.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].starts_with("POST /GitLab/api/graphql "));
+        let raw = &requests[0];
+        let body: Value = serde_json::from_str(&raw[raw.find("{\"query\"").unwrap()..]).unwrap();
+        // Paths travel only as variables, so a quote cannot change the query.
+        assert!(!body["query"].as_str().unwrap().contains("group/"));
+        assert_eq!(body["variables"]["p1"], "group/\"hidden");
+
+        let too_many = Query::MrApprovals {
+            items: vec![
+                MrPathRef {
+                    project_path: "group/app".to_owned(),
+                    iid: "3".to_owned(),
+                };
+                31
+            ],
+        };
+        assert_eq!(
+            runtime()
+                .block_on(fetch(&Client::new(), &fixture.url(), &too_many))
+                .unwrap_err()
+                .code,
+            "INVALID_INPUT"
+        );
     }
 }

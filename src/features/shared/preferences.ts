@@ -14,6 +14,10 @@ export interface SavedMergeRequestSearch {
   reviewer?: string
   state: 'all' | 'opened' | 'closed' | 'merged'
   projectId?: string
+  groupId?: string
+  labels?: string
+  sourceBranch?: string
+  targetBranch?: string
   updatedAfter?: string
   updatedBefore?: string
   orderBy?: 'updated_at' | 'created_at'
@@ -87,6 +91,10 @@ export function readSavedSearches(scope: PreferenceScope): SavedMergeRequestSear
       && optionalString(candidate.assignee)
       && optionalString(candidate.authorId)
       && optionalString(candidate.projectId)
+      && optionalString(candidate.groupId)
+      && optionalString(candidate.labels)
+      && optionalString(candidate.sourceBranch)
+      && optionalString(candidate.targetBranch)
       && optionalString(candidate.reviewer)
       && optionalString(candidate.updatedAfter)
       && optionalString(candidate.updatedBefore)
@@ -108,6 +116,7 @@ export function clearPreferences(scope: PreferenceScope): void {
     globalThis.localStorage?.removeItem(scopedKey(scope, 'pinned'))
     globalThis.localStorage?.removeItem(scopedKey(scope, 'recent'))
     globalThis.localStorage?.removeItem(scopedKey(scope, 'saved-searches'))
+    globalThis.localStorage?.removeItem(scopedKey(scope, 'reviewed-files'))
     globalThis.localStorage?.removeItem(scopedKey(scope, 'personal-workspace'))
     globalThis.dispatchEvent(new Event('gitlab-workspace-preferences-change'))
   } catch {

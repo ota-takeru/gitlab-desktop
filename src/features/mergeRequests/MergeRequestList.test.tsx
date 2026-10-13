@@ -78,6 +78,17 @@ describe('MergeRequestList search filters', () => {
     queryMock.mockReturnValue(emptyResult)
   })
 
+  it('keeps the status line in place while loading so results do not move when they arrive', () => {
+    queryMock.mockReturnValue({ ...emptyResult, loading: true })
+    const view = render(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
+    const loadingStatus = screen.getByText('MRを読み込み中…')
+
+    queryMock.mockReturnValue({ ...emptyResult, data: [createMergeRequest()], snapshot: { completeness: 'complete', data: [], fetchedAt: 1, nextPage: null, source: 'network' } })
+    view.rerender(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
+
+    expect(screen.getByText('1件取得')).toBe(loadingStatus)
+  })
+
   it('passes all applied filters to the typed query and maps self/date values', () => {
     const seen: unknown[] = []
     queryMock.mockImplementation((_sessionId: string, query: unknown) => {
@@ -101,6 +112,93 @@ describe('MergeRequestList search filters', () => {
       updatedAfter: '2026-01-01T00:00:00.000Z',
       updatedBefore: '2026-01-31T23:59:59.999Z',
     })
+  })
+
+  it('passes the group, label, and branch filters to GitLab and serializes them into route state', () => {
+    const onSearchStateChange = vi.fn()
+    render(<MergeRequestList initialParams={{ groupId: 'team/platform', labels: 'bug, ready', sourceBranch: 'feature/search', state: 'opened', targetBranch: 'main' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
+
+    expect(latestHookMrsQuery()).toMatchObject({
+      groupId: 'team/platform',
+      labels: ['bug', 'ready'],
+      sourceBranch: 'feature/search',
+      state: 'opened',
+      targetBranch: 'main',
+    })
+    expect(screen.getByRole('textbox', { name: 'MRのグループ' })).toHaveValue('team/platform')
+    expect(screen.getByRole('textbox', { name: 'MRのラベル' })).toHaveValue('bug, ready')
+
+    fireEvent.click(screen.getByRole('button', { name: '検索' }))
+    expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      groupId: 'team/platform',
+      labels: 'bug,ready',
+      sourceBranch: 'feature/search',
+      targetBranch: 'main',
+    }))
+  })
+
+  it('clears the project scope when a group is entered', () => {
+    const onSearchStateChange = vi.fn()
+    render(<MergeRequestList initialParams={{ projectId: '77', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRのグループ' }), { target: { value: 'team/platform' } })
+    fireEvent.click(screen.getByRole('button', { name: '検索' }))
+
+    expect(latestHookMrsQuery()).toMatchObject({ groupId: 'team/platform', state: 'opened' })
+    expect(latestHookMrsQuery()).not.toHaveProperty('projectId')
+    expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ groupId: 'team/platform' }))
+    expect(onSearchStateChange.mock.lastCall?.[0]).not.toHaveProperty('projectId')
+  })
+
+  it('rejects a route that scopes the search to both a project and a group', () => {
+    render(<MergeRequestList initialParams={{ groupId: 'team/platform', projectId: '77' }} onOpenMergeRequest={vi.fn()} />)
+
+    expect(screen.getByText('グループとプロジェクトは同時に指定できません。')).toBeInTheDocument()
+    expect(latestHookMrsQuery()).toBeNull()
+  })
+
+  it('rejects an invalid numeric group id before querying GitLab', () => {
+    render(<MergeRequestList initialParams={{ groupId: '0' }} onOpenMergeRequest={vi.fn()} />)
+
+    expect(screen.getByText('グループIDまたはグループパスを確認してください。')).toBeInTheDocument()
+    expect(latestHookMrsQuery()).toBeNull()
+  })
+
+  it('restores added filters from a saved group search and emits them into route state', () => {
+    const onSearchStateChange = vi.fn()
+    localStorage.setItem(savedSearchKey, JSON.stringify([{
+      groupId: 'team/platform',
+      id: 'group-search',
+      label: 'Platform bug fixes',
+      labels: 'bug,ready',
+      query: 'cache',
+      sourceBranch: 'feature/cache',
+      state: 'opened',
+      targetBranch: 'main',
+    }]))
+    render(<MergeRequestList onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Platform bug fixes' }))
+
+    expect(latestHookMrsQuery()).toMatchObject({ groupId: 'team/platform', labels: ['bug', 'ready'], sourceBranch: 'feature/cache', targetBranch: 'main' })
+    expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ groupId: 'team/platform', labels: 'bug,ready', sourceBranch: 'feature/cache', targetBranch: 'main' }))
+  })
+
+  it('saves group, label, and branch filters with the current search', () => {
+    render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: '詳細条件' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRのグループ' }), { target: { value: 'team/platform' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRのラベル' }), { target: { value: 'bug, ready' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRのソースブランチ' }), { target: { value: 'feature/cache' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRのターゲットブランチ' }), { target: { value: 'main' } })
+    fireEvent.click(screen.getByRole('button', { name: '検索' }))
+    fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/ }))
+    fireEvent.click(screen.getByRole('button', { name: '検索を保存' }))
+
+    expect(JSON.parse(localStorage.getItem(savedSearchKey) ?? '[]')).toEqual([
+      expect.objectContaining({ groupId: 'team/platform', labels: 'bug,ready', sourceBranch: 'feature/cache', targetBranch: 'main' }),
+    ])
   })
 
   it('stages search text until Enter/search is submitted', () => {
@@ -330,55 +428,68 @@ describe('MergeRequestList search filters', () => {
     expect(onOpenMergeRequest).not.toHaveBeenCalled()
   })
 
-  it('fetches CI details only after an explicit click and uses the current session', async () => {
+  it('shows CI only when GitLab included it, without a lookup button', async () => {
     const pipelineUrl = 'https://gitlab.example/team/desktop/-/pipelines/100'
-    const mergeRequest = createMergeRequest({ pipeline: { status: 'failed', webUrl: pipelineUrl } })
     const onOpenMergeRequest = vi.fn()
-    queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => {
-      if (query?.kind === 'mrs') return { ...emptyResult, data: [createMergeRequest()] }
-      if (query?.kind === 'mr') return { ...emptyResult, data: mergeRequest }
-      return emptyResult
-    })
+    queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'mrs'
+      ? { ...emptyResult, data: [createMergeRequest({ pipeline: { status: 'failed', webUrl: pipelineUrl } }), createMergeRequest({ id: 'mr-4', iid: '4', pipeline: null })] }
+      : emptyResult)
     render(<MergeRequestList onOpenMergeRequest={onOpenMergeRequest} />)
 
+    expect(screen.queryByRole('button', { name: 'CIを確認' })).not.toBeInTheDocument()
+    expect(screen.getAllByLabelText('CI 失敗')).toHaveLength(1)
     expect(queryMock.mock.calls.some(([, query]) => query?.kind === 'mr')).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'CIを確認' }))
-
-    await waitFor(() => expect(queryMock).toHaveBeenCalledWith('session-1', { iid: '3', kind: 'mr', projectId: '77' }))
-    expect(screen.getByLabelText('CI 失敗')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '!3のCIパイプラインを開く' }))
     await waitFor(() => expect(openGitLabUrlMock).toHaveBeenCalledWith('session-1', pipelineUrl))
     expect(onOpenMergeRequest).not.toHaveBeenCalled()
   })
 
-  it('reports when a confirmed MR has no pipeline', async () => {
+  it('splits the review queue by whether you approved, using one approvals request for the page', () => {
+    const mergeRequests = [
+      createMergeRequest({ id: 'mr-3', iid: '3', projectPath: 'team/desktop', title: 'Approved by me' }),
+      createMergeRequest({ id: 'mr-4', iid: '4', projectPath: 'team/desktop', title: 'Approved by others' }),
+      createMergeRequest({ id: 'mr-5', iid: '5', projectPath: 'team/desktop', title: 'Not approved' }),
+    ]
+    const approvalQueries: unknown[] = []
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => {
-      if (query?.kind === 'mrs') return { ...emptyResult, data: [createMergeRequest()] }
-      if (query?.kind === 'mr') return { ...emptyResult, data: createMergeRequest({ pipeline: null }) }
+      if (query?.kind === 'mrs') return { ...emptyResult, data: mergeRequests }
+      if (query?.kind === 'mrApprovals') {
+        approvalQueries.push(query)
+        return { ...emptyResult, data: [
+          { approvedBy: ['42', '9'], iid: '3', projectPath: 'team/desktop' },
+          { approvedBy: ['9'], iid: '4', projectPath: 'team/desktop' },
+          { approvedBy: [], iid: '5', projectPath: 'team/desktop' },
+        ] }
+      }
       return emptyResult
     })
-    render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
+    render(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'CIを確認' }))
-
-    expect(await screen.findByLabelText('CI情報なし')).toBeInTheDocument()
-    expect(screen.queryByLabelText('CI 成功')).not.toBeInTheDocument()
+    expect(approvalQueries.at(-1)).toEqual({ items: [{ iid: '3', projectPath: 'team/desktop' }, { iid: '4', projectPath: 'team/desktop' }, { iid: '5', projectPath: 'team/desktop' }], kind: 'mrApprovals' })
+    const waiting = screen.getByRole('list', { name: '自分の承認待ち' })
+    expect(waiting).toHaveTextContent('Approved by others')
+    expect(waiting).toHaveTextContent('Not approved')
+    const approved = screen.getByRole('list', { name: '自分が承認済み' })
+    expect(approved).toHaveTextContent('Approved by me')
+    expect(screen.getByLabelText('自分が承認済み', { selector: '[role="img"]' })).toBeInTheDocument()
+    expect(screen.getByLabelText('1人が承認済み')).toBeInTheDocument()
   })
 
-  it('shows a CI query error and keeps a retry action available', async () => {
-    const refresh = vi.fn()
-    queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => {
-      if (query?.kind === 'mrs') return { ...emptyResult, data: [createMergeRequest()] }
-      if (query?.kind === 'mr') return { ...emptyResult, error: new Error('network unavailable'), refresh }
-      return emptyResult
-    })
-    render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
+  it('waits for approvals before grouping, and falls back to a flat list when they fail', () => {
+    const mergeRequests = [createMergeRequest({ projectPath: 'team/desktop' })]
+    let approvals: object = { ...emptyResult, loading: true }
+    queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'mrs'
+      ? { ...emptyResult, data: mergeRequests }
+      : query?.kind === 'mrApprovals' ? approvals : emptyResult)
+    const view = render(<MergeRequestList initialParams={{ assignee: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'CIを確認' }))
+    expect(screen.getByRole('status', { name: 'MRを読み込み中' })).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'MR検索結果' })).not.toBeInTheDocument()
 
-    expect(await screen.findByText('CI状態を取得できませんでした: network unavailable')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '再試行' }))
-    expect(refresh).toHaveBeenCalledOnce()
+    approvals = { ...emptyResult, error: new Error('graphql disabled') }
+    view.rerender(<MergeRequestList initialParams={{ assignee: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
+    expect(screen.getByRole('list', { name: 'MR検索結果' })).toBeInTheDocument()
+    expect(screen.getByText('承認状態を取得できませんでした: graphql disabled')).toBeInTheDocument()
   })
 
   it('moves focus through MR rows with j/k and arrow keys without handling search input keys', () => {
@@ -420,10 +531,29 @@ describe('MergeRequestList search filters', () => {
 
 describe('buildQuery', () => {
   it('keeps the default state explicit for project history', () => {
-    expect(buildQuery({ assignee: '', authorId: '', orderBy: 'updated_at', page: 1, projectId: '12', reviewer: '', search: '', sort: 'desc', state: 'all', updatedAfter: '', updatedBefore: '' }, '42')).toEqual({ kind: 'mrs', orderBy: 'updated_at', page: 1, projectId: '12', search: '', sort: 'desc', state: 'all' })
+    expect(buildQuery({ assignee: '', authorId: '', groupId: '', labels: '', orderBy: 'updated_at', page: 1, projectId: '12', reviewer: '', search: '', sourceBranch: '', sort: 'desc', state: 'all', targetBranch: '', updatedAfter: '', updatedBefore: '' }, '42')).toEqual({ kind: 'mrs', orderBy: 'updated_at', page: 1, projectId: '12', search: '', sort: 'desc', state: 'all' })
   })
 
   it('does not drop a self-assignee filter without the user id', () => {
-    expect(() => buildQuery({ assignee: 'self', authorId: '', orderBy: 'updated_at', page: 1, projectId: '', reviewer: '', search: '', sort: 'desc', state: 'opened', updatedAfter: '', updatedBefore: '' })).toThrow('自分の担当MRを検索できません')
+    expect(() => buildQuery({ assignee: 'self', authorId: '', groupId: '', labels: '', orderBy: 'updated_at', page: 1, projectId: '', reviewer: '', search: '', sourceBranch: '', sort: 'desc', state: 'opened', targetBranch: '', updatedAfter: '', updatedBefore: '' })).toThrow('自分の担当MRを検索できません')
+  })
+
+  it('matches all comma-separated labels and includes exact branch filters', () => {
+    expect(buildQuery({ assignee: '', authorId: '', groupId: 'team/platform', labels: 'bug, ready,bug', orderBy: 'updated_at', page: 1, projectId: '', reviewer: '', search: '', sourceBranch: 'feature/search', sort: 'desc', state: 'opened', targetBranch: 'main', updatedAfter: '', updatedBefore: '' }, '42')).toEqual({
+      groupId: 'team/platform',
+      kind: 'mrs',
+      labels: ['bug', 'ready'],
+      orderBy: 'updated_at',
+      page: 1,
+      search: '',
+      sort: 'desc',
+      sourceBranch: 'feature/search',
+      state: 'opened',
+      targetBranch: 'main',
+    })
+  })
+
+  it('rejects a query that scopes to both a group and a project', () => {
+    expect(() => buildQuery({ assignee: '', authorId: '', groupId: 'team/platform', labels: '', orderBy: 'updated_at', page: 1, projectId: '12', reviewer: '', search: '', sourceBranch: '', sort: 'desc', state: 'all', targetBranch: '', updatedAfter: '', updatedBefore: '' }, '42')).toThrow('グループとプロジェクトは同時に指定できません。')
   })
 })

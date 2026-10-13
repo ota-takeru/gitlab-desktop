@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -73,10 +73,12 @@ it('retains the installation guard when authentication expiry resets the private
   invokeMock.mockImplementation((command: string) => {
     if (command === 'check_app_update') return Promise.resolve({ configured: true, version: '0.2.0', notes: null })
     if (command === 'install_app_update') return new Promise((_, reject) => { rejectInstall = reject })
+    if (command === 'runtime_info') return Promise.resolve({ appVersion: '9.9.9', arch: 'x86_64', os: 'windows' })
     throw new Error(`Unexpected command: ${command}`)
   })
   const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>
   const view = render(app())
+  expect(await screen.findByLabelText('アプリのバージョン 9.9.9')).toHaveTextContent('v9.9.9')
   fireEvent.click(await screen.findByRole('button', { name: '更新をインストール' }))
   expect(await screen.findByRole('dialog')).toBeInTheDocument()
 
@@ -109,7 +111,7 @@ it('waits for session restoration before choosing the default route', async () =
   view.rerender(app())
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('button', { name: 'レビュー待ち' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('button', { name: 'レビュー依頼' })).toHaveAttribute('aria-current', 'page')
   expect(screen.queryByRole('button', { name: /UI catalog/u })).not.toBeInTheDocument()
   expect(screen.queryByText('GitLab workspace')).not.toBeInTheDocument()
   expect(screen.queryByText('自分の GitLab 作業を、軽く始める')).not.toBeInTheDocument()
@@ -121,7 +123,7 @@ it('maps a legacy home URL to the authenticated review queue', async () => {
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('button', { name: 'レビュー待ち' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('button', { name: 'レビュー依頼' })).toHaveAttribute('aria-current', 'page')
   expect(screen.queryByRole('button', { name: /ホーム/u })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /UI catalog/u })).not.toBeInTheDocument()
 })
@@ -136,7 +138,7 @@ it('opens a legacy full-page MR link beside the review queue', async () => {
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
   expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'レビュー待ち' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('button', { name: 'レビュー依頼' })).toHaveAttribute('aria-current', 'page')
 })
 
 it('keeps the list mounted and only toggles the selection parameter when opening an MR', async () => {
@@ -177,12 +179,12 @@ it('preserves MR search filters when returning from an opened request', async ()
 
   await waitFor(() => expect(window.location.hash).toContain('reviewer=self&state=opened&search=needle'))
   expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })).toHaveValue('needle')
-  expect(screen.getByRole('button', { name: 'レビュー待ち' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('button', { name: 'レビュー依頼' })).toHaveAttribute('aria-current', 'page')
 })
 
 it.each([
-  ['自分の担当MR', 'assignee=self&state=opened', 'assigneeId'],
-  ['自分が作成', 'authorId=1&state=opened', 'authorId'],
+  ['担当しているMR', 'assignee=self&state=opened', 'assigneeId'],
+  ['作成したMR', 'authorId=1&state=opened', 'authorId'],
 ] as const)('opens and returns to the %s queue without highlighting MR search', async (label, queryString, queryKey) => {
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string; assigneeId?: string; authorId?: string } | null) => {
@@ -218,7 +220,21 @@ it('keeps the collapsed navigation controls accessible', () => {
   fireEvent.click(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' }))
 
   expect(screen.getByRole('button', { name: 'ナビゲーションを展開' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'レビュー待ち' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'レビュー依頼' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'MR検索' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'MR URLから開く' })).toBeInTheDocument()
+})
+
+it('groups the navigation into places and keeps opening by URL beside the search', () => {
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+
+  const mine = screen.getByRole('list', { name: '自分のMR' })
+  expect(within(mine).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['To-Do', 'レビュー依頼', '担当しているMR', '作成したMR'])
+  expect(within(screen.getByRole('list', { name: 'よく見るMR' })).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['固定したMR', '最近開いたMR'])
+
+  fireEvent.click(screen.getByRole('button', { name: 'MR URLから開く' }))
+  expect(screen.getByRole('dialog', { name: 'MR URLから開く' })).toBeInTheDocument()
 })
 
 it('clears in-memory composer buffers after an explicit logout event', () => {
@@ -228,6 +244,7 @@ it('clears in-memory composer buffers after an explicit logout event', () => {
 
   invokeMock.mockImplementation((command: string) => {
     if (command === 'check_app_update') return Promise.resolve({ configured: false, version: null, notes: null })
+    if (command === 'runtime_info') return Promise.resolve({ appVersion: '9.9.9', arch: 'x86_64', os: 'windows' })
     throw new Error(`Unexpected command: ${command}`)
   })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
@@ -248,6 +265,7 @@ it('clears in-memory composer buffers after an account replacement event', () =>
 
   invokeMock.mockImplementation((command: string) => {
     if (command === 'check_app_update') return Promise.resolve({ configured: false, version: null, notes: null })
+    if (command === 'runtime_info') return Promise.resolve({ appVersion: '9.9.9', arch: 'x86_64', os: 'windows' })
     throw new Error(`Unexpected command: ${command}`)
   })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)

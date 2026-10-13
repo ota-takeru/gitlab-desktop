@@ -295,7 +295,7 @@ export function useGitLabMutation(
     }
   }, [onUnsafeChange, ownerId, resourceKey, sessionId])
 
-  const runDetailed = useCallback(async (action: GitLabAction, localDraftKey?: string): Promise<MutationResult> => {
+  const runDetailed = useCallback(async (action: GitLabAction, localDraftKey?: string, execute?: () => Promise<void>): Promise<MutationResult> => {
     const current = getEntry(sessionId, resourceKey)
     let hydrated = true
     if (current.durable && current.hydration !== 'ready') hydrated = await ensureHydrated(current)
@@ -316,7 +316,11 @@ export function useGitLabMutation(
 
     publish(current, { action, error: null, status: 'pending' })
     try {
-      await mutateGitLab(localDraftKey === undefined ? { action, sessionId } : { action, localDraftKey, sessionId })
+      if (execute) {
+        await execute()
+      } else {
+        await mutateGitLab(localDraftKey === undefined ? { action, sessionId } : { action, localDraftKey, sessionId })
+      }
       if (!isActive(current)) {
         const error = new GitLabCommandError({ code: 'CANCELLED', message: '画面が閉じられたため投稿結果を適用できません。' })
         return { error, ok: false, status: 'error' }

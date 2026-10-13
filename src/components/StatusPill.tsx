@@ -1,6 +1,6 @@
 import Chip from '@mui/material/Chip'
 
-export type StatusTone = 'default' | 'success' | 'warning' | 'error' | 'info'
+export type StatusTone = 'default' | 'success' | 'warning' | 'error' | 'info' | 'secondary'
 
 interface StatusPillProps {
   label: string
@@ -13,7 +13,8 @@ export function StatusPill({
   label,
   tone = 'default',
   size = 'small',
-  subtle = false,
+  // Outlined by default: a solid status fill outshines the primary action.
+  subtle = true,
 }: StatusPillProps) {
   return (
     <Chip

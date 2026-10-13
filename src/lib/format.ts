@@ -46,7 +46,8 @@ export function shortSha(value: string): string {
 
 export function mergeRequestStateTone(state: string): StatusTone {
   if (state === 'opened' || state === 'open') return 'success'
-  if (state === 'merged') return 'info'
+  // Merged is purple as in GitLab, apart from the blue used for actions.
+  if (state === 'merged') return 'secondary'
   if (state === 'closed') return 'default'
   return 'warning'
 }

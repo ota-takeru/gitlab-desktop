@@ -24,10 +24,9 @@ export function TodoView({ onOpen, selected = null }: { onOpen: (ref: MrRef) => 
   const result = useGitLabQuery(session?.id ?? null, query)
   return <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
     <PaneHeader actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={!session || result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} subtitle="GitLabの未完了To-DoにあるMRへのメンション・承認依頼など" title="To-Do" />
-    {result.data ? <PaneStatus>{result.data.length}件{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{result.stale ? ' · 保存済みのTo-Doを表示中' : result.refreshing ? ' · 更新中…' : ''}</PaneStatus> : null}
+    <PaneStatus>{result.data ? <>{result.data.length}件{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{result.stale ? ' · 保存済みのTo-Doを表示中' : result.refreshing ? ' · 更新中…' : ''}</> : result.loading ? 'To-Doを読み込み中…' : null}</PaneStatus>
     <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       {!session ? <Alert severity="info" sx={{ m: 1.5 }}>接続設定でGitLabに接続してください。</Alert> : null}
-      {result.loading ? <Typography color="text.secondary" role="status" sx={{ display: 'block', p: 1.5 }} variant="caption">To-Doを読み込み中…</Typography> : null}
       {result.error ? <Alert severity={result.data ? 'warning' : 'error'} sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
       {result.data && result.data.length === 0 ? <PaneEmpty description="このページに未完了のMR To-Doはありません。" icon={<InboxOutlinedIcon fontSize="inherit" />} title="To-Doはありません" /> : null}
       {result.data?.length ? <Box component="ul" sx={{ m: 0, p: 0 }}>{result.data.map((todo) => <ListRow key={todo.id} onOpen={() => onOpen(todo)} selected={selected?.projectId === todo.projectId && selected.iid === todo.iid}>

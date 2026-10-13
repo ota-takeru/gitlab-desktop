@@ -14,6 +14,7 @@
     "allow-disconnect-gitlab",
     "allow-query-gitlab",
     "allow-mutate-gitlab",
+    "allow-upload-gitlab-attachment",
     "allow-clear-gitlab-cache",
     "allow-cancel-gitlab-request",
     "allow-open-gitlab-url",

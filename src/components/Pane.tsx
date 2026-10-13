@@ -19,9 +19,13 @@ export function PaneHeader({ title, subtitle, actions, children }: { title: Reac
   )
 }
 
-/** A one-line status strip under the pane header (count, freshness, errors). */
-export function PaneStatus({ children }: { children: ReactNode }) {
-  return <Typography color="text.secondary" component="div" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 0.5 }} variant="caption">{children}</Typography>
+/**
+ * A one-line status strip under the pane header (count, freshness, loading).
+ * Render it from the first frame with whatever is known: its height is fixed,
+ * so loading and freshness changes never move the list below.
+ */
+export function PaneStatus({ children }: { children?: ReactNode }) {
+  return <Typography aria-live="polite" color="text.secondary" component="div" noWrap sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, height: 26, lineHeight: '25px', px: 1.5 }} variant="caption">{children}</Typography>
 }
 
 /** Centered placeholder for an empty pane. */

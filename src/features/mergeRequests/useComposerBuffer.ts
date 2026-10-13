@@ -159,37 +159,7 @@ export function useComposerBuffer(bufferKey: string, sessionId: string | null = 
     }
   }, [bufferKey, forceUpdate, sessionId, setUnsafe])
 
-  const change = useCallback((nextBody: string): boolean => {
-    const currentEntry = getOrCreateEntry(bufferKey)
-    if (new TextEncoder().encode(nextBody).byteLength > MAX_COMPOSER_BODY_LENGTH) {
-      currentEntry.error = 'コメントは64 KiB以内で入力してください。超過した内容は保存されていません。'
-      notify(currentEntry)
-      return false
-    }
-    if (!nextBody && !currentEntry.body && currentEntry.status === 'memory') {
-      currentEntry.error = null
-      notify(currentEntry)
-      return true
-    }
-    if (nextBody && !currentEntry.body && countNonEmptyBuffers() >= MAX_COMPOSER_BUFFERS) {
-      currentEntry.error = '未送信コメントは100件まで保持できます。既存の入力を送信または破棄してください。'
-      notify(currentEntry)
-      return false
-    }
-
-    currentEntry.body = nextBody
-    currentEntry.error = null
-    currentEntry.persistFailed = false
-    currentEntry.revision += 1
-    if (canPersist(currentEntry)) {
-      currentEntry.status = 'saving'
-      scheduleEntrySave(currentEntry)
-    } else {
-      currentEntry.status = 'memory'
-    }
-    notify(currentEntry)
-    return true
-  }, [bufferKey])
+  const change = useCallback((nextBody: string): boolean => setComposerBody(bufferKey, nextBody), [bufferKey])
 
   const discard = useCallback(() => {
     change('')
@@ -202,6 +172,48 @@ export function useComposerBuffer(bufferKey: string, sessionId: string | null = 
     error: entry.error,
     persistenceStatus: entry.status,
   }
+}
+
+/**
+ * Append text to a retained buffer whose editor may have been unmounted, such
+ * as an attachment link that finished uploading after the user moved away.
+ */
+export function appendComposerBuffer(bufferKey: string, text: string): boolean {
+  const current = composerBuffers.get(bufferKey)?.body ?? ''
+  const separator = current && !current.endsWith('\n') ? '\n' : ''
+  return setComposerBody(bufferKey, `${current}${separator}${text}`)
+}
+
+function setComposerBody(bufferKey: string, nextBody: string): boolean {
+  const currentEntry = getOrCreateEntry(bufferKey)
+  if (new TextEncoder().encode(nextBody).byteLength > MAX_COMPOSER_BODY_LENGTH) {
+    currentEntry.error = 'コメントは64 KiB以内で入力してください。超過した内容は保存されていません。'
+    notify(currentEntry)
+    return false
+  }
+  if (!nextBody && !currentEntry.body && currentEntry.status === 'memory') {
+    currentEntry.error = null
+    notify(currentEntry)
+    return true
+  }
+  if (nextBody && !currentEntry.body && countNonEmptyBuffers() >= MAX_COMPOSER_BUFFERS) {
+    currentEntry.error = '未送信コメントは100件まで保持できます。既存の入力を送信または破棄してください。'
+    notify(currentEntry)
+    return false
+  }
+
+  currentEntry.body = nextBody
+  currentEntry.error = null
+  currentEntry.persistFailed = false
+  currentEntry.revision += 1
+  if (canPersist(currentEntry)) {
+    currentEntry.status = 'saving'
+    scheduleEntrySave(currentEntry)
+  } else {
+    currentEntry.status = 'memory'
+  }
+  notify(currentEntry)
+  return true
 }
 
 function getOrCreateEntry(bufferKey: string): BufferEntry {

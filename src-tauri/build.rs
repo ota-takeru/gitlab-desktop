@@ -9,6 +9,7 @@ fn main() {
             "disconnect_gitlab",
             "query_gitlab",
             "mutate_gitlab",
+            "upload_gitlab_attachment",
             "clear_gitlab_cache",
             "cancel_gitlab_request",
             "open_gitlab_url",

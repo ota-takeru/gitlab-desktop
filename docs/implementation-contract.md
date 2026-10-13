@@ -32,6 +32,7 @@ discussions/commits/drafts: {kind,projectId,iid,page:number}
 commitDiff: {kind:'commitDiff',projectId,iid,sha:string,page:number}
 file: {kind:'file',projectId,path:string,sha:string} -> {content:string} (bounded UTF8 text only)
 approvals: {kind:'approvals',projectId,iid} -> {approved:boolean,approvedBy:User[]}
+mrApprovals: {kind:'mrApprovals',items:{projectPath,iid}[] (1-30)} -> {projectPath,iid,approvedBy:string[]|null}[]; one read-only GraphQL POST per list page, paths/iids sent as variables only
 
 QueryData is Project[] | MergeRequest[] | MergeRequest | Diff[] | Discussion[] | Commit[] | Draft[] | {content:string} | Approvals
 Project={id,name,pathWithNamespace,description:string,webUrl,archived:boolean}
@@ -56,6 +57,7 @@ All actions contain projectId,iid. No automatic retries for writes. Check headSh
 - editDraft: {kind,draftId,body}
 - deleteDraft/publishDraft: {kind,draftId}; publish each selected draft separately, never bulk publish unseen web drafts
 - approve: {kind,sha:string}; unapprove: {kind}
+- setAssignees/setReviewers: {kind,userIds:string[],expectedUserIds:string[]}; Rust refuses when the MR no longer has expectedUserIds and reports UNSUPPORTED when GitLab saved a different set than userIds
 
 Unsupported server API => UNSUPPORTED/NOT_FOUND, no synthetic success. Mutations clear account read cache after successful HTTP response; UI refreshes visible resource. UNKNOWN_OUTCOME locks repeat submission until explicit verification.
 

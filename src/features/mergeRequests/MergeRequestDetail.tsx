@@ -2,14 +2,15 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import PublishRoundedIcon from '@mui/icons-material/PublishRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined'
 import WidthFullOutlinedIcon from '@mui/icons-material/WidthFullOutlined'
-import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
-import StarRoundedIcon from '@mui/icons-material/StarRounded'
+import PushPinIcon from '@mui/icons-material/PushPin'
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -34,6 +35,7 @@ import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StatusPill } from '../../components/StatusPill'
 import { formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
+import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import type {
   Approvals,
@@ -64,8 +66,10 @@ import { clearGitLabMutationStates, useGitLabMutation } from '../shared/useGitLa
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { DiscussionList, type OlderDiscussions } from './DiscussionList'
 import { DiffViewer } from './DiffViewer'
+import type { ReviewedFileContext } from './useReviewedFiles'
+import { MergeRequestPeopleDialog } from './MergeRequestPeopleDialog'
 import { ReviewComposer } from './ReviewComposer'
-import { clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
+import { appendComposerBuffer, clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
 
 type ReviewTab = 'discussion' | 'changes' | 'overview'
 type CommitsQuery = ReviewResourceQuery & { kind: 'commits' }
@@ -112,6 +116,7 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
   const [verificationError, setVerificationError] = useState<string | null>(null)
   const [verificationReady, setVerificationReady] = useState(false)
   const [verifyingUnknown, setVerifyingUnknown] = useState(false)
+  const [peopleEditor, setPeopleEditor] = useState<'assignees' | 'reviewers' | null>(null)
   const resourceId = initialMergeRequest.projectId
   const iid = initialMergeRequest.iid
   const mutationInstanceId = useId()
@@ -125,6 +130,21 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
   useEffect(() => {
     setDraftEditUnsafe(Boolean(draftEdit))
   }, [draftEdit, setDraftEditUnsafe])
+
+  const uploadAttachment = async (file: File): Promise<string | null> => {
+    if (!session) return null
+    const flushed = await flushComposerBuffers().catch(() => false)
+    if (!flushed) throw normalizeGitLabError({ code: 'STORAGE', message: '入力の保存を確認できないため、添付を停止しました。' })
+    let markdown: string | null = null
+    const result = await mutation.runDetailed({ kind: 'uploadAttachment', projectId: resourceId, iid, fileName: file.name }, undefined, async () => {
+      markdown = await uploadGitLabAttachment({ file, iid, projectId: resourceId, sessionId: session.id })
+    })
+    if (!result.ok) {
+      if (result.error) throw result.error
+      return null
+    }
+    return markdown
+  }
 
   const currentQuery = useMemo(() => ({ iid, kind: 'mr' as const, projectId: resourceId }), [iid, resourceId])
   const currentResult = useGitLabQuery<MergeRequestQuery>(session?.id ?? null, currentQuery)
@@ -238,13 +258,7 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
       return false
     }
     setPositionError(null)
-    const localDraftKey = createComposerBackendKey(createComposerBufferKey(session, resourceId, iid, replyDiscussion?.id ?? 'new', commentPosition))
-    if (replyDiscussion) {
-      const repliedDiscussionId = replyDiscussion.id
-      const success = await runAction({ body, discussionId: repliedDiscussionId, iid, kind: 'reply', projectId: resourceId }, () => discussionWindow.refreshDiscussion(repliedDiscussionId), localDraftKey)
-      if (success) setReplyDiscussion(null)
-      return success
-    }
+    const localDraftKey = createComposerBackendKey(createComposerBufferKey(session, resourceId, iid, 'new', commentPosition))
     return runAction({ body, iid, kind: 'comment', position: targetPosition, projectId: resourceId, thread: thread || Boolean(targetPosition) }, discussionWindow.refreshLatest, localDraftKey)
   }
   const saveDraft = async (body: string, targetPosition?: Position) => {
@@ -253,9 +267,20 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
       return false
     }
     setPositionError(null)
-    const localDraftKey = createComposerBackendKey(createComposerBufferKey(session, resourceId, iid, replyDiscussion?.id ?? 'new', commentPosition))
-    const action = { body, discussionId: replyDiscussion?.id, iid, kind: 'saveDraft' as const, position: targetPosition, projectId: resourceId }
-    const success = await runAction(action, draftsResult.refresh, localDraftKey)
+    const localDraftKey = createComposerBackendKey(createComposerBufferKey(session, resourceId, iid, 'new', commentPosition))
+    return runAction({ body, iid, kind: 'saveDraft', position: targetPosition, projectId: resourceId }, draftsResult.refresh, localDraftKey)
+  }
+  // Replies are written in the thread itself, apart from the new-comment composer.
+  const replyComposerKey = (discussion: Discussion) => createComposerBufferKey(session, resourceId, iid, discussion.id)
+  const submitReply = async (discussion: Discussion, body: string) => {
+    const localDraftKey = createComposerBackendKey(replyComposerKey(discussion))
+    const success = await runAction({ body, discussionId: discussion.id, iid, kind: 'reply', projectId: resourceId }, () => discussionWindow.refreshDiscussion(discussion.id), localDraftKey)
+    if (success) setReplyDiscussion(null)
+    return success
+  }
+  const saveReplyDraft = async (discussion: Discussion, body: string) => {
+    const localDraftKey = createComposerBackendKey(replyComposerKey(discussion))
+    const success = await runAction({ body, discussionId: discussion.id, iid, kind: 'saveDraft', projectId: resourceId }, draftsResult.refresh, localDraftKey)
     if (success) setReplyDiscussion(null)
     return success
   }
@@ -343,6 +368,18 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
       case 'unapprove':
         queries.push({ iid, kind: 'approvals', projectId: resourceId })
         break
+      case 'uploadAttachment':
+        // Project uploads do not appear in MR discussions until commented.
+        // Require the user to inspect the project on GitLab before unlocking.
+        if (!globalThis.confirm('GitLabのプロジェクト側で添付の送信結果を確認しましたか？')) {
+          setVerifyingUnknown(false)
+          return
+        }
+        break
+      case 'setAssignees':
+      case 'setReviewers':
+        // The merge request query above shows the saved people.
+        break
     }
     try {
       const keys = queries.map((query) => ['gitlab', session.id, JSON.stringify(query)] as const)
@@ -371,7 +408,19 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
   const approvedBy = approvals && Array.isArray(approvals.approvedBy) ? approvals.approvedBy : []
   const myApproved = approvedBy.some((user) => user.id === session?.user.id)
   const approvalDisabled = mutation.isLocked || mutation.isPending || !mergeRequest.headSha || approvalsResult.loading || !approvals || Boolean(approvalsResult.error)
-  const toggleApproval = () => mergeRequest.headSha ? runAction({ iid, kind: myApproved ? 'unapprove' : 'approve', projectId: resourceId, ...(myApproved ? {} : { sha: mergeRequest.headSha }) } as GitLabAction, approvalsResult.refresh) : Promise.resolve(false)
+  const peopleDisabled = mutation.isLocked || mutation.isPending
+  const setPeople = (field: 'assignees' | 'reviewers', users: GitLabUser[]) => runAction({
+    expectedUserIds: (mergeRequest[field] ?? []).map((user) => user.id),
+    iid,
+    kind: field === 'assignees' ? 'setAssignees' : 'setReviewers',
+    projectId: resourceId,
+    userIds: users.map((user) => user.id),
+  }, currentResult.refresh)
+  const toggleApproval = () => mergeRequest.headSha ? runAction({ iid, kind: myApproved ? 'unapprove' : 'approve', projectId: resourceId, ...(myApproved ? {} : { sha: mergeRequest.headSha }) } as GitLabAction, () => {
+    approvalsResult.refresh()
+    // List pages group by approval; let them pick up the change.
+    void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') })
+  }) : Promise.resolve(false)
   const unresolvedCount = discussions.filter((discussion) => {
     const resolvable = discussion.notes.filter((note) => note.resolvable && !note.system)
     return resolvable.length > 0 && !resolvable.every((note) => note.resolved)
@@ -386,20 +435,21 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
             <Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, overflow: 'hidden', px: 0.75, textOverflow: 'ellipsis' }}>{mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`}</Button>
             <Typography color="text.secondary" sx={{ flexShrink: 0 }} variant="body2">!{mergeRequest.iid}</Typography>
+            {currentResult.stale ? <Tooltip title="保存済みのMR概要を表示中です。最新の状態を取得しています。"><Typography color="text.secondary" noWrap sx={{ flexShrink: 0, pl: 0.5 }} variant="caption">保存済み · {formatFetchedAt(currentResult.snapshot?.fetchedAt)}</Typography></Tooltip> : null}
           </Stack>
-          <Tooltip title={pinnedNow ? 'MRの固定を解除' : 'MRを固定'}><IconButton aria-label={pinnedNow ? 'MRの固定を解除' : 'MRを固定'} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid })}>{pinnedNow ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}</IconButton></Tooltip>
+          <Tooltip title={pinnedNow ? 'MRの固定を解除' : 'MRを固定'}><IconButton aria-label={pinnedNow ? 'MRの固定を解除' : 'MRを固定'} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid })}>{pinnedNow ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
           <Tooltip title={currentResult.refreshing ? '更新中…' : '最新の状態を取得'}><span><IconButton aria-label="更新" disabled={currentResult.refreshing} onClick={() => currentResult.refresh()}><RefreshRoundedIcon /></IconButton></span></Tooltip>
           <Tooltip title="GitLabで開く"><IconButton aria-label="GitLabで開く" onClick={() => void openInGitLab()}><LaunchRoundedIcon /></IconButton></Tooltip>
           <Box sx={{ pl: 0.75 }}>
             {approvalsResult.error ? <Tooltip title={`承認状態を取得できませんでした: ${approvalsResult.error.message}`}><span><Button disabled variant="outlined">承認不可</Button></span></Tooltip>
-              : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalsResult.loading && !approvals ? '承認状態を確認中…' : myApproved ? '自分の承認を取り消す' : '承認する'}</Button>}
+              : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalsResult.loading && !approvals ? '確認中…' : myApproved ? '自分の承認を取り消す' : '承認する'}</Button>}
           </Box>
         </Stack>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: 0.75 }}>
           <Typography component="h1" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }} variant="h1">{mergeRequest.title}</Typography>
         </Stack>
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.25, flexWrap: 'wrap', mt: 0.75, rowGap: 0.5 }}>
-          <StatusPill label={formatMergeRequestState(mergeRequest.state)} size="small" tone={mergeRequestStateTone(mergeRequest.state)} />
+          <StatusPill label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
           {mergeRequest.draft ? <Chip label="Draft" size="small" variant="outlined" /> : null}
           <Typography color="text.secondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}>{mergeRequest.author.name}</Box></Typography>
           <RelativeTime prefix="更新" value={mergeRequest.updatedAt} />
@@ -408,10 +458,15 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
           {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
           {approvedBy.length ? <Tooltip title={approvedBy.map((user) => user.name).join('、')}><Typography color="success.main" variant="caption">{approvedBy.length}人が承認済み</Typography></Tooltip> : null}
         </Stack>
-        {mergeRequest.assignees?.length || mergeRequest.reviewers?.length ? <Typography color="text.secondary" component="div" sx={{ mt: 0.5 }} variant="caption">
-          {mergeRequest.assignees?.length ? `担当: ${mergeRequest.assignees.map((user) => user.name).join('、')}` : ''}{mergeRequest.assignees?.length && mergeRequest.reviewers?.length ? '　' : ''}{mergeRequest.reviewers?.length ? `レビュー: ${mergeRequest.reviewers.map((user) => user.name).join('、')}` : ''}
-        </Typography> : null}
-        {currentResult.stale ? <Typography color="text.secondary" component="div" variant="caption">保存済みのMR概要を表示中 · {formatFetchedAt(currentResult.snapshot?.fetchedAt)}</Typography> : null}
+        <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 0.25, rowGap: 0 }}>
+          {([['assignees', '担当'], ['reviewers', 'レビュー']] as const).map(([field, label]) => (
+            <Stack direction="row" key={field} sx={{ alignItems: 'center', minWidth: 0 }}>
+              <Typography color="text.secondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">{label}: {mergeRequest[field]?.length ? mergeRequest[field].map((user) => user.name).join('、') : 'なし'}</Typography>
+              <Tooltip title={field === 'assignees' ? '担当者を変更' : 'レビュアーを変更'}><span><IconButton aria-label={field === 'assignees' ? '担当者を変更' : 'レビュアーを変更'} disabled={peopleDisabled} onClick={() => setPeopleEditor(field)} size="small"><EditOutlinedIcon fontSize="inherit" /></IconButton></span></Tooltip>
+            </Stack>
+          ))}
+        </Stack>
+        {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? '担当者' : 'レビュアー'} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open /> : null}
         <Tabs aria-label="MR詳細" onChange={(_, value: ReviewTab) => { setActiveTab(value); setReplyDiscussion(null) }} sx={{ mb: '-1px', mt: 0.5 }} value={activeTab}>
           <Tab label={<Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><span>議論</span>{unresolvedCount > 0 ? <Chip aria-label={`未解決${unresolvedCount}件`} color="warning" label={unresolvedCount} size="small" sx={{ height: 18, minWidth: 18 }} variant="outlined" /> : null}</Stack>} value="discussion" />
           <Tab label="変更" value="changes" />
@@ -423,38 +478,60 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
         {positionError ? <Alert severity="warning">{positionError}</Alert> : null}
         {mutation.error ? <Alert action={mutation.status === 'unknown' ? <Button color="inherit" disabled={verifyingUnknown} onClick={() => { if (!mutation.unknownAction) void retryUnknownReceipt(); else if (verificationReady) void acknowledgeVerifiedOutcome(); else void verifyUnknownOutcome() }}>{verifyingUnknown ? '確認中…' : !mutation.unknownAction ? '確認記録を再取得' : verificationReady ? '再取得結果を確認した' : 'サーバーから再取得'}</Button> : undefined} severity={mutation.status === 'unknown' ? 'warning' : 'error'}>{mutation.status === 'unknown' ? verificationReady ? '最新状態を再取得しました。結果を画面で確認してから再送停止を解除してください。' : '投稿結果を確認できないため、このMRへの再送を停止しています。' : mutation.error.message}</Alert> : null}
         {verificationError ? <Alert severity="error">確認用の再取得に失敗しました: {verificationError}</Alert> : null}
-        {activeTab === 'discussion' ? <Box sx={{ maxWidth: 960, width: '100%' }}><DiscussionTab composerKey={createComposerBufferKey(session, resourceId, iid, replyDiscussion?.id ?? 'new', commentPosition)} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEdit={draftEdit} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftStatuses={draftStatuses} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEdit} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} onClearPosition={() => setPosition(undefined)} position={commentPosition} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
+        {activeTab === 'discussion' ? <Box sx={{ maxWidth: 960, width: '100%' }}><DiscussionTab onUploadAttachment={uploadAttachment} attachmentTargetKey={JSON.stringify([session?.id, resourceId, iid])} composerKey={createComposerBufferKey(session, resourceId, iid, 'new', commentPosition)} replyComposerKey={replyDiscussion ? replyComposerKey(replyDiscussion) : null} onSaveReplyDraft={saveReplyDraft} onSubmitReply={submitReply} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEdit={draftEdit} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftStatuses={draftStatuses} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEdit} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} onClearPosition={() => setPosition(undefined)} position={commentPosition} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {discussionWindow.observers}
-        {activeTab === 'changes' ? <ChangesTab allowComments={!selectedCommit} changeNextPage={selectedCommit ? commitDiffResult.snapshot?.nextPage ?? null : diffsResult.snapshot?.nextPage ?? null} changePage={changePage} changesError={selectedCommit ? commitDiffResult.error : diffsResult.error} changesLoading={Boolean(pendingFileTarget) || (selectedCommit ? commitDiffResult.loading : diffsResult.loading)} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={fileView} onComment={(nextPosition) => { setViewPosition(undefined); setPosition(normalizePosition(nextPosition, mergeRequest)); setPositionError(null); setActiveTab('discussion') }} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onSelectCommit={(sha) => { setSelectedCommit(sha); setSelectedFile(null); setFileView('diff'); setChangePage(1); setCommitPage(1) }} onSelectFile={setSelectedFile} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} /> : null}
+        {activeTab === 'changes' ? <ChangesTab reviewContext={session && !selectedCommit && mergeRequestHeadSha ? { instanceUrl: session.instanceUrl, userId: session.user.id, projectId: resourceId, mergeRequestIid: iid, revision: mergeRequestHeadSha } : undefined} allowComments={!selectedCommit} changeNextPage={selectedCommit ? commitDiffResult.snapshot?.nextPage ?? null : diffsResult.snapshot?.nextPage ?? null} changePage={changePage} changesError={selectedCommit ? commitDiffResult.error : diffsResult.error} changesLoading={Boolean(pendingFileTarget) || (selectedCommit ? commitDiffResult.loading : diffsResult.loading)} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={fileView} onComment={(nextPosition) => { setViewPosition(undefined); setPosition(normalizePosition(nextPosition, mergeRequest)); setPositionError(null); setActiveTab('discussion') }} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onSelectCommit={(sha) => { setSelectedCommit(sha); setSelectedFile(null); setFileView('diff'); setChangePage(1); setCommitPage(1) }} onSelectFile={setSelectedFile} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} /> : null}
         {activeTab === 'overview' ? <OverviewTab approvedBy={approvedBy} approvalsError={approvalsResult.error} approvalsLoading={approvalsResult.loading} description={mergeRequest.description} mergeRequest={mergeRequest} /> : null}
       </Stack>
     </Box>
   )
 }
 
-function DiscussionTab({ composerKey, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEdit, draftError, draftLoading, draftNextPage, draftStatuses, drafts, loading, mutationLocked, mutationPending, onCancelReply, onClearPosition, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onNextDraftPage, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, position, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
+function DiscussionTab({ onUploadAttachment, attachmentTargetKey, composerKey, replyComposerKey, onSaveReplyDraft, onSubmitReply, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEdit, draftError, draftLoading, draftNextPage, draftStatuses, drafts, loading, mutationLocked, mutationPending, onCancelReply, onClearPosition, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onNextDraftPage, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, position, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
+  const replyComposer = replyDiscussion && replyComposerKey ? (
+    <BufferedReviewComposer
+      onUploadAttachment={onUploadAttachment}
+      attachmentTargetKey={`${attachmentTargetKey}:${replyComposerKey}`}
+      bufferKey={replyComposerKey}
+      disabled={mutationLocked}
+      enableMentions={Boolean(currentUserId)}
+      key={replyComposerKey}
+      onCancelReply={onCancelReply}
+      onClearPosition={() => undefined}
+      onSaveDraft={(body) => onSaveReplyDraft(replyDiscussion, body)}
+      onSubmitComment={(body) => onSubmitReply(replyDiscussion, body)}
+      pending={mutationPending}
+      replyAuthor={replyDiscussion.notes.find((note) => !note.system)?.author.name}
+      replyDiscussionId={replyDiscussion.id}
+    />
+  ) : null
   return (
     <Stack spacing={0.75}>
       {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
       {discussionError && discussions.length ? <Alert severity="warning">保存済みの議論を表示中です。更新に失敗しました: {discussionError.message}</Alert> : null}
       {loading && !discussions.length ? <LoadingPanel label="議論を読み込み中…" /> : null}
-      {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList older={older} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} /> : null}
+      {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList older={older} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} /> : null}
       {draftError && !drafts.length ? <Alert severity="error">下書きを取得できませんでした: {draftError.message}</Alert> : null}
       {draftError && drafts.length ? <Alert severity="warning">保存済みの下書きを表示中です。更新に失敗しました: {draftError.message}</Alert> : null}
-      {draftLoading && !drafts.length ? <LoadingPanel label="下書きを読み込み中…" /> : null}
       {(!draftLoading || drafts.length) && (!draftError || drafts.length) ? <DraftList disabled={mutationDisabled} draftEdit={draftEdit} drafts={drafts} nextPage={draftNextPage} statuses={draftStatuses} selected={selectedDrafts} onDelete={onDeleteDraft} onEdit={onEditDraft} onNextPage={onNextDraftPage} onPublish={onPublishDraft} onPublishSelected={onPublishSelectedDrafts} onSelect={onSelectDraft} onSetEdit={onSetDraftEdit} /> : null}
-      <BufferedReviewComposer enableMentions={Boolean(currentUserId)} key={composerKey} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={onClearPosition} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={mutationPending} replyAuthor={replyDiscussion?.notes.find((note) => !note.system)?.author.name} replyDiscussionId={replyDiscussion?.id} targetPosition={position} />
+      <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={onClearPosition} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={mutationPending} targetPosition={position} />
     </Stack>
   )
 }
 
 interface DiscussionTabProps {
+  onUploadAttachment: (file: File) => Promise<string | null>
+  attachmentTargetKey: string
   unreadNoteIds: string[]
   onMarkRead: (notes: Note[]) => void
   onOpenPosition: (position: Position) => void
   composerKey: string
+  /** Buffer key of the reply being written in a thread, if any. */
+  replyComposerKey: string | null
+  onSaveReplyDraft: (discussion: Discussion, body: string) => Promise<boolean>
+  onSubmitReply: (discussion: Discussion, body: string) => Promise<boolean>
   currentUserId: string
   discussionError: Error | null
   older: OlderDiscussions
@@ -514,7 +591,7 @@ export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof R
   }
   const onSubmitComment = (nextBody: string, thread: boolean, position?: Position) => flushBeforeSubmit(() => props.onSubmitComment(nextBody, thread, position))
   const onSaveDraft = (nextBody: string, position?: Position) => flushBeforeSubmit(() => props.onSaveDraft(nextBody, position))
-  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discard} size="small" sx={{ alignSelf: 'flex-end' }}>入力を破棄</Button> : null}{persistenceLabel ? <Typography color="text.secondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
+  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discard} size="small" sx={{ alignSelf: 'flex-end' }}>入力を破棄</Button> : null}{persistenceLabel ? <Typography color="text.secondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
 function DraftList({ disabled, drafts, draftEdit, nextPage, onDelete, onEdit, onNextPage, onPublish, onPublishSelected, onSelect, onSetEdit, selected, statuses }: { disabled: boolean; drafts: Draft[]; draftEdit: { id: string; body: string } | null; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (value: { id: string; body: string } | null) => void; selected: string[]; statuses: Record<string, DraftStatus> }) {
@@ -539,7 +616,7 @@ function DraftList({ disabled, drafts, draftEdit, nextPage, onDelete, onEdit, on
 
 type DraftStatus = 'idle' | 'pending' | 'success' | 'error' | 'unknown'
 
-function ChangesTab({ allowComments, changeNextPage, changePage, changesError, changesLoading, commitNextPage, commits, commitsError, commitsLoading, diffs, fileResult, fileView, onComment, onNextChangePage, onNextCommitPage, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition }: { allowComments: boolean; changeNextPage: number | null; changePage: number; changesError: Error | null; changesLoading: boolean; commitNextPage: number | null; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; onComment: (position: Position) => void; onNextChangePage: () => void; onNextCommitPage: () => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position }) {
+function ChangesTab({ reviewContext, allowComments, changeNextPage, changePage, changesError, changesLoading, commitNextPage, commits, commitsError, commitsLoading, diffs, fileResult, fileView, onComment, onNextChangePage, onNextCommitPage, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition }: { reviewContext?: ReviewedFileContext; allowComments: boolean; changeNextPage: number | null; changePage: number; changesError: Error | null; changesLoading: boolean; commitNextPage: number | null; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; onComment: (position: Position) => void; onNextChangePage: () => void; onNextCommitPage: () => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position }) {
   return (
     <Stack spacing={1.25}>
       {commitsError && !commits.length ? <Alert severity="error">コミットを取得できませんでした: {commitsError.message}</Alert> : null}
@@ -548,7 +625,7 @@ function ChangesTab({ allowComments, changeNextPage, changePage, changesError, c
       {changesError && !diffs.length ? <Alert severity="error">差分を取得できませんでした: {changesError.message}</Alert> : null}
       {changesError && diffs.length ? <Alert severity="warning">保存済みの差分を表示中です。更新に失敗しました: {changesError.message}</Alert> : null}
       {changesLoading && !diffs.length ? <LoadingPanel label="変更を読み込み中…" /> : null}
-      {(!changesLoading || diffs.length) && (!changesError || diffs.length) ? <DiffViewer key={`${selectedCommit ?? 'mr'}:${selectedFile ?? ''}`} allowComments={allowComments} diffs={diffs} fileContent={fileResult.data?.content} fileLoading={fileResult.loading} onComment={onComment} onSelectFile={onSelectFile} onViewChange={onViewChange} selectedFile={selectedFile} selectedPosition={selectedPosition} view={fileView} /> : null}
+      {(!changesLoading || diffs.length) && (!changesError || diffs.length) ? <DiffViewer reviewContext={!changesLoading && !changesError ? reviewContext : undefined} key={selectedCommit ?? 'mr'} allowComments={allowComments} diffs={diffs} fileContent={fileResult.data?.content} fileLoading={fileResult.loading} onComment={onComment} onSelectFile={onSelectFile} onViewChange={onViewChange} selectedFile={selectedFile} selectedPosition={selectedPosition} view={fileView} /> : null}
       {fileResult.error ? <Alert severity="error">ファイル全体を取得できませんでした: {fileResult.error.message}</Alert> : null}
       {changeNextPage !== null || changePage > 1 ? <Stack direction="row" sx={{ justifyContent: 'flex-end' }}><Button disabled={changeNextPage === null} onClick={onNextChangePage} size="small">差分の次ページ</Button><Typography color="text.secondary" sx={{ alignSelf: 'center', ml: 1 }} variant="caption">ページ {changePage}</Typography></Stack> : null}
     </Stack>

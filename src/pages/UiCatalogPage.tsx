@@ -166,8 +166,8 @@ export function UiCatalogPage() {
       <Stack spacing={1.5}>
         <Typography component="h2" variant="h2">レビュー入力と差分</Typography>
         <Typography color="text.secondary" variant="caption">表示サンプルです。GitLabへの取得・投稿は行いません。</Typography>
-        <ReviewComposer disabled value="変更の意図を確認するコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} />
-        <DiffViewer allowComments={false} diffs={[{ oldPath: 'example.ts', newPath: 'example.ts', diff: '@@ -1 +1 @@\n-export const enabled = false\n+export const enabled = true', newFile: false, deletedFile: false, renamedFile: false, tooLarge: false, collapsed: false }]} selectedFile="example.ts" selectedPosition={undefined} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
+        <ReviewComposer disabled value="変更の意図を確認するコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
+        <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments={false} diffs={[{ oldPath: 'example.ts', newPath: 'example.ts', diff: '@@ -1 +1 @@\n-export const enabled = false\n+export const enabled = true', newFile: false, deletedFile: false, renamedFile: false, tooLarge: false, collapsed: false }]} selectedFile="example.ts" selectedPosition={undefined} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
       </Stack>
 
       <Stack spacing={1.5}>

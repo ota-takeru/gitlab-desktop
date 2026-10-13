@@ -94,6 +94,9 @@ pub enum MergeRequestState {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+// Query dispatch admits at most four concurrent requests per session; keeping
+// this short-lived IPC DTO flat avoids allocating a box for each MR query.
+#[allow(clippy::large_enum_variant)]
 pub enum Query {
     Users {
         search: String,
@@ -121,6 +124,14 @@ pub enum Query {
         state: MergeRequestState,
         #[serde(skip_serializing_if = "Option::is_none")]
         project_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        group_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        labels: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source_branch: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target_branch: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reviewer_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -177,6 +188,19 @@ pub enum Query {
         project_id: String,
         iid: String,
     },
+    /// Who approved each listed merge request, in one GraphQL request so a
+    /// list page costs one call instead of one per row.
+    MrApprovals {
+        items: Vec<MrPathRef>,
+    },
+}
+
+/// A merge request addressed by its project's full path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MrPathRef {
+    pub project_path: String,
+    pub iid: String,
 }
 
 /// Write operations supported by the GitLab REST adapter.
@@ -252,6 +276,26 @@ pub enum Action {
         project_id: String,
         iid: String,
     },
+    /// Replaces the assignees. `expected_user_ids` are the assignees the user
+    /// saw; the change is refused when GitLab no longer has them.
+    SetAssignees {
+        project_id: String,
+        iid: String,
+        user_ids: Vec<String>,
+        expected_user_ids: Vec<String>,
+    },
+    /// Replaces the reviewers, guarded like `SetAssignees`.
+    SetReviewers {
+        project_id: String,
+        iid: String,
+        user_ids: Vec<String>,
+        expected_user_ids: Vec<String>,
+    },
+    UploadAttachment {
+        project_id: String,
+        iid: String,
+        file_name: String,
+    },
 }
 
 #[cfg(test)]
@@ -283,6 +327,10 @@ mod tests {
             "search": "cache",
             "state": "all",
             "projectId": "7",
+            "groupId": null,
+            "labels": ["bug", "ready"],
+            "sourceBranch": "feature/search",
+            "targetBranch": "main",
             "reviewerId": "8",
             "assigneeId": "9",
             "authorId": null,
@@ -306,6 +354,9 @@ mod tests {
         let wire = serde_json::to_value(&parsed).unwrap();
         assert_eq!(wire["orderBy"], "created_at");
         assert_eq!(wire["sort"], "asc");
+        assert_eq!(wire["labels"], serde_json::json!(["bug", "ready"]));
+        assert_eq!(wire["sourceBranch"], "feature/search");
+        assert_eq!(wire["targetBranch"], "main");
         for value in [
             serde_json::json!({"kind": "users", "search": "alice", "page": 1}),
             serde_json::json!({"kind": "project", "path": "group/project"}),

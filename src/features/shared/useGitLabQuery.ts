@@ -43,7 +43,7 @@ export function useGitLabQuery<Q extends GitLabQuery>(
   const queryKey = useMemo(() => ['gitlab', sessionId ?? '', queryJson] as const, [queryJson, sessionId])
   const loaded = useQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
     enabled: Boolean(sessionId && query),
-    refetchInterval: (current) => autoRefresh && document.visibilityState === 'visible' && query && ['mrs', 'mr', 'notes', 'discussions', 'drafts', 'todos', 'approvals'].includes(query.kind) && !current.state.error && !current.state.data?.error ? 60_000 : false,
+    refetchInterval: (current) => autoRefresh && document.visibilityState === 'visible' && query && ['mrs', 'mr', 'notes', 'discussions', 'drafts', 'todos', 'approvals', 'mrApprovals'].includes(query.kind) && !current.state.error && !current.state.data?.error ? 60_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: (current) => autoRefresh && !current.state.error && !current.state.data?.error && Date.now() - current.state.dataUpdatedAt > 60_000,
     queryFn: ({ signal }) => {

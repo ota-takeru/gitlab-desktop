@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -29,6 +29,11 @@ const detailMocks = vi.hoisted(() => {
     markReadMock: vi.fn(),
     mergeRequest,
     mutationRunMock: vi.fn(async () => false),
+    uploadMock: vi.fn(async () => '[test.txt](https://gitlab.com/-/project/7/uploads/abc/test.txt)'),
+    mutationDetailedMock: vi.fn(async (_action: unknown, _key?: string, execute?: () => Promise<void>) => {
+      await execute?.()
+      return { ok: true, status: 'success' }
+    }),
     notifyWorkspaceMock: vi.fn(async () => undefined),
     position,
     queryCalls: [] as unknown[],
@@ -59,6 +64,10 @@ vi.mock('../shared/personalWorkspace', () => ({
 }))
 
 vi.mock('../../lib/notifications', () => ({ notifyWorkspace: detailMocks.notifyWorkspaceMock }))
+vi.mock('../../lib/attachments', async () => ({
+  ...await vi.importActual<typeof import('../../lib/attachments')>('../../lib/attachments'),
+  uploadGitLabAttachment: detailMocks.uploadMock,
+}))
 
 vi.mock('../shared/useGitLabQuery', () => ({
   useGitLabQuery: (_sessionId: string | null, query: { kind: string; page?: number; search?: string } | null) => {
@@ -90,7 +99,7 @@ vi.mock('../shared/useGitLabMutation', () => ({
     reset: vi.fn(async () => true),
     retryLookup: vi.fn(async () => false),
     run: detailMocks.mutationRunMock,
-    runDetailed: vi.fn(async () => ({ ok: false, status: 'error' })),
+    runDetailed: detailMocks.mutationDetailedMock,
     status: 'idle',
     unknownAction: null,
   }),
@@ -119,6 +128,8 @@ describe('BufferedReviewComposer', () => {
     })
     detailMocks.markReadMock.mockReset()
     detailMocks.mutationRunMock.mockReset().mockResolvedValue(false)
+    detailMocks.uploadMock.mockClear()
+    detailMocks.mutationDetailedMock.mockClear()
     detailMocks.notifyWorkspaceMock.mockReset()
     detailMocks.queryCalls.length = 0
     detailMocks.recordRecentMock.mockReset()
@@ -166,9 +177,7 @@ describe('BufferedReviewComposer', () => {
     expect(detailMocks.markReadMock.mock.calls[0][1]).toHaveLength(2)
     expect(detailMocks.markReadMock.mock.calls[0][1].some((note: Note) => note.system)).toBe(false)
 
-    fireEvent.click(screen.getByRole('button', { name: 'コメントをプレビュー' }))
-    expect(screen.getByText('保持する本文').tagName).toBe('STRONG')
-    fireEvent.click(screen.getByRole('button', { name: 'コメントを編集' }))
+    await waitFor(() => expect(within(screen.getByLabelText('コメントプレビュー')).getByText('保持する本文').tagName).toBe('STRONG'))
     const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
     textbox.setSelectionRange(textbox.value.length, textbox.value.length)
     fireEvent.click(textbox)
@@ -183,5 +192,80 @@ describe('BufferedReviewComposer', () => {
     expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'diffs', iid: '120', projectId: '7' }))
     expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
     expect(detailMocks.notifyWorkspaceMock).not.toHaveBeenCalled()
+  })
+
+  it('replaces the reviewers with the selected users and the reviewers it last saw', async () => {
+    detailMocks.useComposerBufferMock.mockReturnValue({ body: '', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    detailMocks.mutationRunMock.mockResolvedValue(true)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+          <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'レビュアーを変更' }))
+    const dialog = await screen.findByRole('dialog', { name: 'レビュアーを変更' })
+    expect(within(dialog).getByRole('button', { name: '変更する' })).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: '自分を追加' }))
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'レビュアー' }), { target: { value: 'al' } })
+    fireEvent.click(await screen.findByRole('option', { name: /Alice Example/u }, { timeout: 2_000 }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '変更する' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ expectedUserIds: [], iid: '120', kind: 'setReviewers', projectId: '7', userIds: ['42', '50'] }, undefined)
+  })
+
+  it.each([true, false])('uploads to the current MR only after input is saved (flush=%s)', async (saved) => {
+    detailMocks.useComposerBufferMock.mockImplementation(() => {
+      const [body, change] = useState('keep text')
+      return { body, change, discard: vi.fn(), error: null, persistenceStatus: 'saved' }
+    })
+    detailMocks.flushComposerBuffersMock.mockResolvedValue(saved)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} /></ThemeProvider></QueryClientProvider>)
+    const input = await screen.findByLabelText('添付ファイルを選択')
+    const file = new File(['test'], 'test.txt', { type: 'text/plain' })
+    fireEvent.change(input, { target: { files: [file] } })
+    if (saved) {
+      await waitFor(() => expect(detailMocks.uploadMock).toHaveBeenCalledWith({ file, iid: '120', projectId: '7', sessionId: 'session-42' }))
+      expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ kind: 'uploadAttachment', projectId: '7', iid: '120', fileName: 'test.txt' }, undefined, expect.any(Function))
+      await waitFor(() => expect((screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement).value).toContain('[test.txt]'))
+      expect((screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement).value).toContain('keep text')
+    } else {
+      await screen.findByText('入力の保存を確認できないため、添付を停止しました。')
+      expect(detailMocks.uploadMock).not.toHaveBeenCalled()
+      expect(detailMocks.mutationDetailedMock).not.toHaveBeenCalled()
+    }
+  })
+
+  it('opens the reply editor inside the thread and sends a reply to that thread', async () => {
+    detailMocks.useComposerBufferMock.mockImplementation((key: string) => {
+      const [body, setBody] = useState(key.includes('discussion-120') ? '返信本文' : '新規コメント本文')
+      return { body, change: setBody, discard: vi.fn(), error: null, persistenceStatus: 'saved' }
+    })
+    detailMocks.flushComposerBuffersMock.mockResolvedValue(true)
+    detailMocks.mutationRunMock.mockResolvedValue(true)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+          <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '返信' }))
+    const thread = screen.getByText('位置コメント').closest('article') as HTMLElement
+    const reply = within(thread).getByRole('textbox', { name: 'コメント本文' })
+    expect(reply).toHaveValue('返信本文')
+    await waitFor(() => expect(reply).toHaveFocus())
+    expect(screen.getAllByRole('textbox', { name: 'コメント本文' }).find((box) => !thread.contains(box))).toHaveValue('新規コメント本文')
+
+    fireEvent.click(within(thread).getByRole('button', { name: 'コメントを投稿' }))
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ body: '返信本文', discussionId: 'discussion-120', iid: '120', kind: 'reply', projectId: '7' }, expect.any(String)))
+    await waitFor(() => expect(within(thread).queryByRole('textbox', { name: 'コメント本文' })).not.toBeInTheDocument())
   })
 })

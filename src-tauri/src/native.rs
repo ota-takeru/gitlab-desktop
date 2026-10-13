@@ -33,12 +33,15 @@ pub struct LiveSession {
     requests: Mutex<HashMap<String, CancellationToken>>,
     query_locks: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     slots: Arc<Semaphore>,
+    /// Gravatar fetches use their own slots so an unreachable external host
+    /// (common on internal networks) cannot delay GitLab queries and writes.
+    external_avatar_slots: Arc<Semaphore>,
     pending: Arc<Semaphore>,
     mutation_lock: AsyncMutex<()>,
     revision: AtomicU64,
     retry_at: AtomicU64,
     /// Avatar images already fetched for this session, as data URLs. `None`
-    /// records an avatar that is not an instance-hosted image.
+    /// records an avatar URL that did not yield a small image.
     avatars: Mutex<HashMap<String, Option<String>>>,
 }
 
@@ -309,6 +312,7 @@ fn make_session(
         requests: Mutex::new(HashMap::new()),
         query_locks: Mutex::new(HashMap::new()),
         slots: Arc::new(Semaphore::new(4)),
+        external_avatar_slots: Arc::new(Semaphore::new(2)),
         pending: Arc::new(Semaphore::new(16)),
         mutation_lock: AsyncMutex::new(()),
         revision: AtomicU64::new(0),
@@ -805,7 +809,43 @@ impl NativeState {
     }
 
     pub async fn mutate(&self, input: MutationInput) -> Result<(), AppError> {
+        self.execute_mutation(input, None).await.map(|_| ())
+    }
+
+    pub async fn upload_attachment(&self, input: UploadInput) -> Result<String, AppError> {
+        self.active(&input.session_id)?;
+        gitlab_api::validate_id(&input.project_id, "projectId")?;
+        gitlab_api::validate_id(&input.iid, "iid")?;
+        let bytes = crate::attachments::decode_upload(&input.file_name, &input.data_base64)?;
+        self.execute_mutation(
+            MutationInput {
+                session_id: input.session_id,
+                request_id: input.request_id,
+                local_draft_key: None,
+                action: Action::UploadAttachment {
+                    project_id: input.project_id,
+                    iid: input.iid,
+                    file_name: input.file_name,
+                },
+            },
+            Some(bytes),
+        )
+        .await?
+        .ok_or_else(unknown_write)
+    }
+
+    async fn execute_mutation(
+        &self,
+        input: MutationInput,
+        upload: Option<Vec<u8>>,
+    ) -> Result<Option<String>, AppError> {
         let session = self.active(&input.session_id)?;
+        if matches!(input.action, Action::UploadAttachment { .. }) != upload.is_some() {
+            return Err(AppError::new("INVALID_INPUT", "添付データが必要です。"));
+        }
+        // An upload adds no MR, discussion or diff data, so it keeps the cache
+        // and in-flight queries; the receipt still guards against a resend.
+        let changes_cached_data = upload.is_none();
         let submitted_draft = match (&input.local_draft_key, &input.action) {
             (
                 Some(key),
@@ -878,20 +918,55 @@ impl NativeState {
                     .begin_operation(&marker_session.account, &marker_resource, &record)
             })
             .await?;
-            session.revision.fetch_add(1, Ordering::SeqCst);
+            if changes_cached_data {
+                session.revision.fetch_add(1, Ordering::SeqCst);
+            }
+            let send = async {
+                if let (
+                    Action::UploadAttachment {
+                        project_id,
+                        file_name,
+                        ..
+                    },
+                    Some(data),
+                ) = (&input.action, upload)
+                {
+                    crate::attachments::upload(
+                        &session.client,
+                        &session.api_base,
+                        project_id,
+                        file_name,
+                        data,
+                    )
+                    .await
+                    .map(Some)
+                } else {
+                    gitlab_api::mutate(
+                        &session.client,
+                        &session.api_base,
+                        &input.action,
+                        &session.public.user.id,
+                    )
+                    .await
+                    .map(|_| None)
+                }
+            };
             let result = tokio::select! {
-                result = gitlab_api::mutate(&session.client, &session.api_base, &input.action, &session.public.user.id) => result,
+                result = send => result,
                 _ = session.cancelled.cancelled() => Err(unknown_write()),
                 _ = registration.token.cancelled() => Err(unknown_write()),
             };
-            session.revision.fetch_add(1, Ordering::SeqCst);
+            if changes_cached_data {
+                session.revision.fetch_add(1, Ordering::SeqCst);
+            }
             if let Err(error) = &result {
                 self.record_error(&session, error, None).await?;
             }
-            if result.is_ok()
-                || result
-                    .as_ref()
-                    .is_err_and(|error| error.code == "UNKNOWN_OUTCOME")
+            if changes_cached_data
+                && (result.is_ok()
+                    || result
+                        .as_ref()
+                        .is_err_and(|error| error.code == "UNKNOWN_OUTCOME"))
             {
                 let cache_session = session.clone();
                 if self
@@ -937,9 +1012,10 @@ impl NativeState {
             result
         };
         let outcome = work.await;
-        if outcome
-            .as_ref()
-            .is_err_and(|error| error.code == "UNKNOWN_OUTCOME")
+        if changes_cached_data
+            && outcome
+                .as_ref()
+                .is_err_and(|error| error.code == "UNKNOWN_OUTCOME")
         {
             session.revision.fetch_add(1, Ordering::SeqCst);
             let cache_session = session.clone();
@@ -960,14 +1036,24 @@ impl NativeState {
     }
 
     /// Returns an avatar as a `data:` URL so the webview keeps its strict
-    /// `img-src`. Only images uploaded to the connected instance are fetched;
-    /// external avatars (for example Gravatar) and failures yield `None` and
-    /// the UI falls back to initials.
+    /// `img-src`. Images uploaded to the connected instance are fetched with
+    /// the session's credentials and Gravatar images, which GitLab shows for
+    /// users without an upload, without any; other hosts and failures yield
+    /// `None` and the UI falls back to initials.
     pub async fn avatar(&self, id: String, input: String) -> Result<Option<String>, AppError> {
         let session = self.active(&id)?;
-        let Some(url) = instance_avatar_url(&session.public.instance_url, &input) else {
-            return Ok(None);
-        };
+        let (url, client, slots) =
+            if let Some(url) = instance_avatar_url(&session.public.instance_url, &input) {
+                (url, session.client.clone(), session.slots.clone())
+            } else if let Some(url) = gravatar_url(&input) {
+                (
+                    url,
+                    anonymous_client()?,
+                    session.external_avatar_slots.clone(),
+                )
+            } else {
+                return Ok(None);
+            };
         let key = url.to_string();
         if let Some(hit) = session
             .avatars
@@ -982,8 +1068,8 @@ impl NativeState {
         }
         let fetched = tokio::select! {
             fetched = async {
-                let _slot = session.slots.clone().acquire_owned().await.ok()?;
-                fetch_avatar(&session.client, url).await
+                let _slot = slots.acquire_owned().await.ok()?;
+                fetch_avatar(&client, url).await
             } => fetched,
             _ = session.cancelled.cancelled() => return Err(cancelled()),
         };
@@ -1033,6 +1119,40 @@ fn instance_avatar_url(instance_url: &str, input: &str) -> Option<Url> {
         && url.path().starts_with(&uploads)
         && !url.path().contains("/../"))
     .then_some(url)
+}
+
+/// Accepts Gravatar images, which GitLab returns as `avatar_url` for users
+/// without an uploaded avatar.
+fn gravatar_url(input: &str) -> Option<Url> {
+    let url = Url::parse(input.trim()).ok()?;
+    (url.scheme() == "https"
+        && matches!(
+            url.host_str(),
+            Some("secure.gravatar.com" | "www.gravatar.com" | "gravatar.com")
+        )
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+        && url.path().starts_with("/avatar/"))
+    .then_some(url)
+}
+
+/// A client without credentials for avatars hosted outside the instance.
+fn anonymous_client() -> Result<reqwest::Client, AppError> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .https_only(true)
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(20))
+        .user_agent(concat!("gitlab-desktop/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|_| AppError::new("NETWORK", "HTTPSクライアントを初期化できませんでした。"))?;
+    Ok(CLIENT.get_or_init(|| client).clone())
 }
 
 /// `Some(None)`: the server answered with something that is not a small
@@ -1175,6 +1295,17 @@ pub struct MutationInput {
     pub action: Action,
     #[serde(default)]
     pub local_draft_key: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadInput {
+    pub session_id: String,
+    pub request_id: String,
+    pub project_id: String,
+    pub iid: String,
+    pub file_name: String,
+    pub data_base64: String,
 }
 
 #[cfg(test)]
@@ -1340,6 +1471,91 @@ mod tests {
             started_rx,
             server,
         )
+    }
+
+    fn upload_input(session: &LiveSession) -> UploadInput {
+        UploadInput {
+            session_id: session.public.id.clone(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            project_id: "7".into(),
+            iid: "1".into(),
+            file_name: "test.txt".into(),
+            data_base64: "YWJj".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn upload_uses_durable_receipt_and_preserves_local_input() {
+        let (api, started, release, server) = spawn_http_response(
+            "201 Created",
+            r#"{"url":"/uploads/abc/test.txt","full_path":"/-/project/7/uploads/abc/test.txt","markdown":"[test](/uploads/abc/test.txt)"}"#,
+        );
+        let (state, session) = test_state(api);
+        state
+            .save_local_draft(
+                session.public.id.clone(),
+                "composer".into(),
+                "keep input".into(),
+            )
+            .await
+            .unwrap();
+        let worker = state.clone();
+        let input = upload_input(&session);
+        let pending = tokio::spawn(async move { worker.upload_attachment(input).await });
+        started.await.unwrap();
+        let receipt = state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(receipt.action, Action::UploadAttachment { .. }));
+        let wire = serde_json::to_value(receipt).unwrap();
+        assert!(wire["action"].get("dataBase64").is_none());
+        release.send(()).unwrap();
+        let markdown = pending.await.unwrap().unwrap();
+        assert!(markdown.contains("/-/project/7/uploads/abc/test.txt"));
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            state
+                .local_draft(session.public.id.clone(), "composer".into())
+                .await
+                .unwrap()
+                .unwrap()
+                .body,
+            "keep input"
+        );
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn ambiguous_upload_keeps_receipt_and_blocks_resend() {
+        let (api, started, release, server) =
+            spawn_http_response("500 Internal Server Error", "{}");
+        let (state, session) = test_state(api);
+        let worker = state.clone();
+        let input = upload_input(&session);
+        let pending = tokio::spawn(async move { worker.upload_attachment(input).await });
+        started.await.unwrap();
+        release.send(()).unwrap();
+        assert_eq!(pending.await.unwrap().unwrap_err().code, "UNKNOWN_OUTCOME");
+        assert!(state
+            .pending_operation(session.public.id.clone(), "7".into(), "1".into())
+            .await
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            state
+                .upload_attachment(upload_input(&session))
+                .await
+                .unwrap_err()
+                .code,
+            "UNKNOWN_OUTCOME"
+        );
+        server.join().unwrap();
     }
 
     fn comment_action() -> Action {
@@ -1902,7 +2118,6 @@ mod tests {
             instance_avatar_url(instance, "/GitLab/uploads/-/system/user/avatar/7/a.png").is_some()
         );
         for rejected in [
-            "https://secure.gravatar.com/avatar/abc?s=80",
             "http://gitlab.example/GitLab/uploads/-/system/user/avatar/7/a.png",
             "https://gitlab.example/GitLab/api/v4/user",
             "https://gitlab.example/other/uploads/a.png",
@@ -1913,6 +2128,25 @@ mod tests {
                 instance_avatar_url(instance, rejected).is_none(),
                 "{rejected}"
             );
+        }
+        assert!(
+            instance_avatar_url(instance, "https://secure.gravatar.com/avatar/abc?s=80").is_none()
+        );
+    }
+
+    #[test]
+    fn gravatar_urls_are_accepted_only_over_https_from_gravatar() {
+        assert!(gravatar_url("https://secure.gravatar.com/avatar/abc?s=80&d=identicon").is_some());
+        assert!(gravatar_url("https://www.gravatar.com/avatar/abc?s=80&d=identicon").is_some());
+        for rejected in [
+            "http://www.gravatar.com/avatar/abc?s=80",
+            "https://secure.gravatar.com/profile/abc",
+            "https://secure.gravatar.com:8443/avatar/abc",
+            "https://user@secure.gravatar.com/avatar/abc",
+            "https://secure.gravatar.com.evil/avatar/abc",
+            "/avatar/abc",
+        ] {
+            assert!(gravatar_url(rejected).is_none(), "{rejected}");
         }
     }
 }

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { clearPreferences, readPinnedProjectIds, readRecentProjectIds, readSavedSearches, writePinnedProjectIds, writeRecentProjectIds, writeSavedSearches } from '../shared/preferences'
+import { readPinnedProjectIds, readRecentProjectIds, readSavedSearches, scopedKey, writePinnedProjectIds, writeRecentProjectIds, writeSavedSearches } from '../shared/preferences'
 import { ConnectionProvider, useConnection } from './ConnectionProvider'
 import { ConnectionView } from './ConnectionView'
 import type { GitLabSession } from '../../types/gitlab'
@@ -452,6 +452,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     writePinnedProjectIds(scope, ['1', '2'])
     writeRecentProjectIds(scope, ['3'])
     writeSavedSearches(scope, [{ id: 'search-1', label: 'Mine', query: 'is:opened', state: 'opened' }])
+    localStorage.setItem(scopedKey(scope, 'reviewed-files'), JSON.stringify({ '77:3': { 'src/lib.rs': 'fingerprint' } }))
 
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
@@ -468,7 +469,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     expect(readPinnedProjectIds(scope)).toEqual([])
     expect(readRecentProjectIds(scope)).toEqual([])
     expect(readSavedSearches(scope)).toEqual([])
-    clearPreferences(scope)
+    expect(localStorage.getItem(scopedKey(scope, 'reviewed-files'))).toBeNull()
   })
 
   it('requires explicit confirmation before deleting connection data', async () => {

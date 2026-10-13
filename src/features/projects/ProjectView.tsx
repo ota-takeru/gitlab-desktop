@@ -1,5 +1,5 @@
-import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded'
-import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded'
+import PushPinIcon from '@mui/icons-material/PushPin'
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
@@ -109,12 +109,11 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
       </PaneHeader>
 
       {pinned.length > 0 || recent.length > 0 ? <ProjectShortcuts ids={pinned} label="固定" onOpen={openProjectId} projectById={projectById} secondaryIds={recent} secondaryLabel="最近" /> : null}
-      {result.data ? <PaneStatus>{projects.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</PaneStatus> : null}
+      <PaneStatus>{result.data ? <>{projects.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</> : result.loading ? 'プロジェクトを読み込み中…' : null}</PaneStatus>
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
-        {result.loading && !result.data ? <Typography aria-label="プロジェクトを読み込み中" color="text.secondary" role="status" sx={{ display: 'block', p: 1.5 }} variant="caption">プロジェクトを読み込み中…</Typography> : null}
         {!result.loading && !result.data && !result.error ? <PaneEmpty description="検索条件を変えるか、別のページを取得してください。" title="プロジェクトがありません" /> : null}
         {result.data && projects.length === 0 ? <PaneEmpty description="検索条件を変えてください。" title="条件に一致するプロジェクトがありません。" /> : null}
         {projects.length ? <Box component="ul" sx={{ m: 0, p: 0 }}>
@@ -122,7 +121,7 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
             const isPinned = pinned.includes(project.id)
             return (
               <ListRow
-                actions={<Tooltip title={isPinned ? '固定を解除' : 'プロジェクトを固定'}><IconButton aria-label={isPinned ? `${project.name}の固定を解除` : `${project.name}を固定`} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project.id)}>{isPinned ? <BookmarkRoundedIcon /> : <BookmarkBorderRoundedIcon />}</IconButton></Tooltip>}
+                actions={<Tooltip title={isPinned ? '固定を解除' : 'プロジェクトを固定'}><IconButton aria-label={isPinned ? `${project.name}の固定を解除` : `${project.name}を固定`} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project.id)}>{isPinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>}
                 ariaLabel={project.name}
                 key={project.id}
                 leading={<FolderOpenRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />}

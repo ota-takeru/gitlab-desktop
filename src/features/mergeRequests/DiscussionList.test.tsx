@@ -213,6 +213,22 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.getByText('resolved-note の本文')).toBeInTheDocument()
   })
 
+  it('folds and reopens any thread, but not a single plain comment', () => {
+    const thread = createDiscussion([createNote('thread-root', otherUser, { resolvable: true }), createNote('thread-reply', currentUser, { resolvable: true })], 'thread')
+    const plain = createDiscussion([createNote('plain-note', otherUser)], 'plain')
+
+    renderList([thread, plain])
+
+    expect(screen.getByText('thread-reply の本文')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '折り畳む' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '折り畳む' }))
+    expect(screen.queryByText('thread-reply の本文')).not.toBeInTheDocument()
+    expect(screen.getByText('plain-note の本文')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '内容を表示 · 2件' }))
+    expect(screen.getByText('thread-reply の本文')).toBeInTheDocument()
+  })
+
   it('jumps to the chronologically earliest unread and latest notes across loaded pages', () => {
     const discussions = Array.from({ length: 21 }, (_, index) => createDiscussion([
       createNote(`dated-${index + 1}`, otherUser, {

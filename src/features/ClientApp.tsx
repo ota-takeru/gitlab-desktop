@@ -1,18 +1,19 @@
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined'
-import AssignmentIndOutlinedIcon from '@mui/icons-material/AssignmentIndOutlined'
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
-import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
-import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
-import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
@@ -35,7 +36,7 @@ import { Kbd, PaneEmpty } from '../components/Pane'
 import { SettingsSection } from '../components/SettingsSection'
 import { UpdatePanel } from '../components/UpdatePanel'
 import { clearLocalDrafts } from '../lib/localDrafts'
-import { isTauri } from '../lib/runtime'
+import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { MergeRequest, Project } from '../types/gitlab'
 import { ConnectionProvider, useConnection } from './connections/ConnectionProvider'
 import { ConnectionView } from './connections/ConnectionView'
@@ -223,19 +224,28 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
   const showList = route !== 'settings' && (isWide ? !listHidden || !selected : !selected)
   const showDetail = route !== 'settings' && (isWide || Boolean(selected))
 
-  const navItems: Array<{ key: string; label: string; icon: React.ReactNode; selected: boolean; onClick: () => void } | 'divider'> = [
-    { icon: <RateReviewOutlinedIcon />, key: 'waiting', label: 'レビュー待ち', onClick: () => navigate('mrs', { reviewer: 'self', state: 'opened' }), selected: navSelected.waiting },
-    { icon: <AssignmentIndOutlinedIcon />, key: 'assigned', label: '自分の担当MR', onClick: () => navigate('mrs', { assignee: 'self', state: 'opened' }), selected: navSelected.assigned },
-    { icon: <PersonOutlineOutlinedIcon />, key: 'created', label: '自分が作成', onClick: () => session ? navigate('mrs', { authorId: session.user.id, state: 'opened' }) : navigate('settings'), selected: navSelected.created },
-    { icon: <InboxOutlinedIcon />, key: 'todos', label: 'To-Do', onClick: () => navigate('todos'), selected: route === 'todos' },
-    'divider',
-    { icon: <FolderOpenRoundedIcon />, key: 'projects', label: 'プロジェクト', onClick: () => navigate('projects'), selected: navSelected.projects },
-    { icon: <SearchRoundedIcon />, key: 'search', label: 'MR検索', onClick: () => navigate('mrs'), selected: navSelected.search },
-    { icon: <LinkRoundedIcon />, key: 'url', label: 'MR URLから開く', onClick: () => setOpenUrlDialog(true), selected: false },
-    'divider',
-    { icon: <BookmarkBorderRoundedIcon />, key: 'pinned', label: '固定したMR', onClick: () => navigate('pinned'), selected: route === 'pinned' },
-    { icon: <HistoryRoundedIcon />, key: 'recent', label: '最近開いたMR', onClick: () => navigate('recent'), selected: route === 'recent' },
+  // Places only; one-off actions such as opening a URL sit beside the search box.
+  // `title` is the full name (tooltip, accessible name and list heading); `label`
+  // is the short text under its section heading.
+  const navSections: Array<{ heading?: string; items: Array<{ key: string; label: string; title: string; icon: React.ReactNode; selected: boolean; onClick: () => void }> }> = [
+    { items: [
+      { icon: <FolderOutlinedIcon />, key: 'projects', label: 'プロジェクト', onClick: () => navigate('projects'), selected: navSelected.projects, title: 'プロジェクト' },
+    ] },
+    { heading: '自分のMR', items: [
+      { icon: <TaskAltRoundedIcon />, key: 'todos', label: 'To-Do', onClick: () => navigate('todos'), selected: route === 'todos', title: 'To-Do' },
+      { icon: <FactCheckOutlinedIcon />, key: 'waiting', label: 'レビュー依頼', onClick: () => navigate('mrs', { reviewer: 'self', state: 'opened' }), selected: navSelected.waiting, title: 'レビュー依頼' },
+      { icon: <PersonOutlineRoundedIcon />, key: 'assigned', label: '担当', onClick: () => navigate('mrs', { assignee: 'self', state: 'opened' }), selected: navSelected.assigned, title: '担当しているMR' },
+      { icon: <EditOutlinedIcon />, key: 'created', label: '作成', onClick: () => session ? navigate('mrs', { authorId: session.user.id, state: 'opened' }) : navigate('settings'), selected: navSelected.created, title: '作成したMR' },
+    ] },
+    { heading: 'よく見るMR', items: [
+      { icon: <PushPinOutlinedIcon />, key: 'pinned', label: '固定', onClick: () => navigate('pinned'), selected: route === 'pinned', title: '固定したMR' },
+      { icon: <HistoryRoundedIcon />, key: 'recent', label: '最近開いた', onClick: () => navigate('recent'), selected: route === 'recent', title: '最近開いたMR' },
+    ] },
   ]
+  const openSearch = () => {
+    navigate('mrs')
+    globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0)
+  }
 
   return (
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
@@ -252,14 +262,15 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
               </IconButton>
             </Tooltip>
           </Stack>
+          <NavSearch collapsed={sidebarIsCollapsed} onOpenUrl={() => setOpenUrlDialog(true)} onSearch={openSearch} selected={navSelected.search} />
           <Box component="nav" aria-label="GitLab client navigation" sx={{ display: 'flex', flex: 1, flexDirection: 'column' }}>
-            <List disablePadding>
-              {navItems.map((item, index) => item === 'divider'
-                ? <Divider component="li" key={`divider-${index}`} sx={{ my: 1 }} />
-                : <ClientNavItem collapsed={sidebarIsCollapsed} icon={item.icon} key={item.key} label={item.label} onClick={item.onClick} selected={item.selected} />)}
-            </List>
+            {navSections.map((section) => (
+              <List aria-label={section.heading} disablePadding key={section.heading ?? 'top'} subheader={section.heading ? sidebarIsCollapsed ? <Divider component="li" sx={{ my: 1 }} /> : <Typography color="text.secondary" component="li" sx={{ display: 'block', fontSize: 11, fontWeight: 600, pb: 0.25, pl: 1, pt: 1.5 }}>{section.heading}</Typography> : undefined}>
+                {section.items.map((item) => <ClientNavItem collapsed={sidebarIsCollapsed} icon={item.icon} key={item.key} label={item.label} onClick={item.onClick} selected={item.selected} title={item.title} />)}
+              </List>
+            ))}
             <List disablePadding sx={{ mt: 'auto', pt: 1 }}>
-              <ClientNavItem collapsed={sidebarIsCollapsed} icon={<SettingsOutlinedIcon />} label="接続設定" onClick={() => navigate('settings')} selected={route === 'settings'} />
+              <ClientNavItem collapsed={sidebarIsCollapsed} icon={<SettingsOutlinedIcon />} label="接続設定" onClick={() => navigate('settings')} selected={route === 'settings'} title="接続設定" />
             </List>
           </Box>
           <Stack direction={sidebarIsCollapsed ? 'column' : 'row'} spacing={0.5} sx={{ alignItems: 'center', borderTop: 1, borderColor: 'divider', mt: 1, pt: 1 }}>
@@ -275,7 +286,11 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
           <UpdatePanel autoInstallAllowed={autoInstallAllowed} compact notificationOnly />
           <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestRef} />
           <Box key={sessionKey} sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            {waitingForSessionRestore ? <Box component="main" sx={{ flex: 1 }}><RestoreSessionPanel /></Box> : null}
+            {waitingForSessionRestore ? <>
+              {/* The same panes as the restored screen, so nothing moves when it arrives. */}
+              <Box aria-label="一覧" component="section" sx={{ bgcolor: 'surface.list', borderRight: isWide ? 1 : 0, borderColor: 'divider', flex: isWide ? '0 0 auto' : 1, minWidth: 0, width: isWide ? { lg: 400, xs: 360 } : 'auto' }}><RestoreSessionPanel /></Box>
+              {isWide ? <Box component="main" sx={{ flex: 1, minWidth: 0 }} /> : null}
+            </> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
               <Box component="main" sx={{ flex: 1, overflow: 'auto' }}>
                 <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 5, xs: 2.5 }, py: 3.5 }}><SettingsView /></Box>
@@ -308,9 +323,23 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
         <Typography color="text.secondary" noWrap sx={{ fontSize: 11 }} variant="caption">
           {session ? `接続済み · ${session.instanceUrl} · @${session.user.username}` : '未接続 · データは表示していません'}{!isTauri() ? ' · ブラウザプレビュー' : ''}
         </Typography>
+        <AppVersionLabel />
       </Box>
     </Box>
   )
+}
+
+/** The version of the running desktop app; nothing in the browser preview, which has no native side. */
+function AppVersionLabel() {
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => {
+    if (!isTauri()) return
+    let active = true
+    getRuntimeInfo().then((info) => { if (active) setVersion(info.appVersion) }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
+  if (!version) return null
+  return <Typography aria-label={`アプリのバージョン ${version}`} color="text.secondary" noWrap sx={{ flexShrink: 0, fontSize: 11, ml: 'auto' }} variant="caption">v{version}</Typography>
 }
 
 function DetailPlaceholder({ hasSession }: { hasSession: boolean }) {
@@ -387,15 +416,55 @@ function MergeRequestRoute({ initialMergeRequest, listHidden, onBack, onOpenProj
   const mergeRequest = accessDenied ? null : lookup.data ?? (initialMatchesRoute ? initialMergeRequest : null)
   if (!mergeRequest) {
     return lookup.loading
-      ? <Box aria-live="polite" role="status"><PaneEmpty title="MRを読み込み中…" /></Box>
+      ? <MergeRequestSkeleton />
       : <PaneEmpty description="検索から開き直してください。" title="このMRを復元できませんでした。">{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />}>一覧に戻る</Button> : null}</PaneEmpty>
   }
   return <MergeRequestDetail initialMergeRequest={mergeRequest} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} listHidden={listHidden} onBack={onBack} onOpenProject={onOpenProject} onToggleList={onToggleList} />
 }
 
-function ClientNavItem({ collapsed, icon, label, onClick, selected }: { collapsed: boolean; icon: React.ReactNode; label: string; onClick: () => void; selected: boolean }) {
-  return <Tooltip placement="right" title={collapsed ? label : ''}>
-    <ListItemButton aria-current={selected ? 'page' : undefined} aria-label={label} onClick={onClick} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', justifyContent: collapsed ? 'center' : 'initial', minHeight: 32, px: collapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' }, '&.Mui-selected .MuiListItemIcon-root': { color: 'primary.main' } }}>
+/** Placeholder with the shape of the MR detail header, so the detail does not jump in. */
+function MergeRequestSkeleton() {
+  const bar = (width: number | string, height = 12) => <Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height, width }} />
+  return <Box aria-live="polite" role="status" sx={{ borderBottom: 1, borderColor: 'divider', px: { md: 3, xs: 2 }, pb: 1.5, pt: 1.25 }}>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
+      <Typography color="text.secondary" variant="caption">MRを読み込み中…</Typography>
+    </Stack>
+    <Stack spacing={1.25} sx={{ mt: 0.75 }}>
+      {bar('60%', 22)}
+      {bar('45%')}
+      {bar('30%')}
+    </Stack>
+  </Box>
+}
+
+/** The search entry at the top of the navigation, with opening by URL beside it. */
+function NavSearch({ collapsed, onOpenUrl, onSearch, selected }: { collapsed: boolean; onOpenUrl: () => void; onSearch: () => void; selected: boolean }) {
+  const openUrl = <Tooltip placement="right" title="MR URLから開く (Ctrl+O)"><IconButton aria-label="MR URLから開く" onClick={onOpenUrl}><LinkRoundedIcon /></IconButton></Tooltip>
+  if (collapsed) {
+    return <Stack sx={{ alignItems: 'center', mb: 0.5 }}>
+      <ClientNavItem collapsed icon={<SearchRoundedIcon />} label="MRを検索" onClick={onSearch} selected={selected} title="MR検索" />
+      {openUrl}
+    </Stack>
+  }
+  return <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', mb: 0.5 }}>
+    <ListItemButton
+      aria-current={selected ? 'page' : undefined}
+      aria-label="MR検索"
+      onClick={onSearch}
+      selected={selected}
+      sx={{ border: 1, borderColor: selected ? 'primary.main' : 'divider', borderRadius: 1, color: 'text.secondary', flex: 1, gap: 0.75, minHeight: 30, minWidth: 0, px: 1, py: 0.25, '&:hover': { borderColor: 'text.secondary', color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}
+    >
+      <SearchRoundedIcon sx={{ fontSize: 16 }} />
+      <Typography noWrap sx={{ flex: 1, fontSize: 12 }}>MRを検索</Typography>
+      <Kbd>Ctrl K</Kbd>
+    </ListItemButton>
+    {openUrl}
+  </Stack>
+}
+
+function ClientNavItem({ collapsed, icon, label, onClick, selected, title }: { collapsed: boolean; icon: React.ReactNode; label: string; onClick: () => void; selected: boolean; title: string }) {
+  return <Tooltip placement="right" title={collapsed || title !== label ? title : ''}>
+    <ListItemButton aria-current={selected ? 'page' : undefined} aria-label={title} onClick={onClick} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', justifyContent: collapsed ? 'center' : 'initial', minHeight: 32, px: collapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' }, '&.Mui-selected .MuiListItemIcon-root': { color: 'primary.main' } }}>
       <ListItemIcon sx={{ justifyContent: 'center', minWidth: collapsed ? 0 : 30, '& .MuiSvgIcon-root': { fontSize: 18 } }}>{icon}</ListItemIcon>
       {collapsed ? null : <ListItemText primary={label} slotProps={{ primary: { noWrap: true, sx: { fontSize: 13, fontWeight: selected ? 600 : 500 } } }} sx={{ m: 0 }} />}
     </ListItemButton>

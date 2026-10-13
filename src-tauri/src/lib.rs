@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Manager};
 
+mod attachments;
 mod dto;
 mod gitlab_api;
 mod glab;
@@ -10,7 +11,7 @@ mod storage;
 mod updates;
 
 use dto::{AppError, Session};
-use native::{ConnectInput, MutationInput, NativeState, PendingOperation, QueryInput};
+use native::{ConnectInput, MutationInput, NativeState, PendingOperation, QueryInput, UploadInput};
 use storage::{LocalDraft, Snapshot};
 
 // A damaged/newer database must leave a usable error screen instead of
@@ -82,6 +83,13 @@ async fn clear_gitlab_cache(
     session_id: String,
 ) -> Result<(), AppError> {
     state.native()?.clear_cache(session_id).await
+}
+#[tauri::command]
+async fn upload_gitlab_attachment(
+    state: tauri::State<'_, ApplicationState>,
+    input: UploadInput,
+) -> Result<String, AppError> {
+    state.native()?.upload_attachment(input).await
 }
 #[tauri::command]
 fn cancel_gitlab_request(
@@ -243,6 +251,7 @@ pub fn run() {
             disconnect_gitlab,
             query_gitlab,
             mutate_gitlab,
+            upload_gitlab_attachment,
             clear_gitlab_cache,
             cancel_gitlab_request,
             open_gitlab_url,

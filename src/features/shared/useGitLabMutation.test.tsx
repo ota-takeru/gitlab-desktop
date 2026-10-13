@@ -62,6 +62,53 @@ describe('useGitLabMutation', () => {
     expect(mutateGitLabMock).toHaveBeenCalledWith({ action, localDraftKey: 'project-1:draft-key', sessionId: 'session-1' })
   })
 
+  it('runs a custom executor through the shared pending registry', async () => {
+    const execute = vi.fn(async () => undefined)
+    const view = renderHook(() => useGitLabMutation('session-1', 'project-1:1'))
+
+    await act(async () => {
+      const result = await view.result.current.runDetailed(action, undefined, execute)
+      expect(result).toEqual({ error: null, ok: true, status: 'success' })
+    })
+
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(mutateGitLabMock).not.toHaveBeenCalled()
+    expect(view.result.current.status).toBe('success')
+  })
+
+  it('keeps an unknown custom execution locked against automatic retry', async () => {
+    isTauriMock.mockReturnValue(true)
+    const uploadAction = { fileName: 'screen.png', iid: '1', kind: 'uploadAttachment' as const, projectId: 'project-1' }
+    const receipt = { action: uploadAction, id: 'upload-receipt-1', startedAt: 1_700_000_000_010 }
+    getPendingOperationMock.mockResolvedValueOnce(null).mockResolvedValueOnce(receipt).mockResolvedValueOnce(receipt)
+    const execute = vi.fn(async () => {
+      throw new GitLabCommandError({ code: 'UNKNOWN_OUTCOME', message: 'upload result unknown' })
+    })
+    const view = renderHook(() => useGitLabMutation('session-1', nativeResource))
+    await waitFor(() => expect(getPendingOperationMock).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      const result = await view.result.current.runDetailed(uploadAction, undefined, execute)
+      expect(result.ok).toBe(false)
+      expect(result.status).toBe('unknown')
+    })
+
+    expect(view.result.current.status).toBe('unknown')
+    expect(view.result.current.unknownAction).toEqual(uploadAction)
+    expect(await view.result.current.runDetailed(uploadAction, undefined, execute)).toMatchObject({ ok: false, status: 'unknown' })
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(mutateGitLabMock).not.toHaveBeenCalled()
+
+    view.unmount()
+    act(() => clearGitLabMutationStates('session-1'))
+    const restored = renderHook(() => useGitLabMutation('session-1', nativeResource))
+    await waitFor(() => expect(restored.result.current.unknownAction).toEqual(uploadAction))
+    expect(getPendingOperationMock).toHaveBeenCalledTimes(3)
+    expect(await restored.result.current.runDetailed(uploadAction, undefined, execute)).toMatchObject({ ok: false, status: 'unknown' })
+    expect(execute).toHaveBeenCalledTimes(1)
+    restored.unmount()
+  })
+
   it('keeps UNKNOWN_OUTCOME sticky across remount until explicit reset', async () => {
     mutateGitLabMock.mockRejectedValue(new GitLabCommandError({ code: 'UNKNOWN_OUTCOME', message: 'unknown' }))
     const first = renderHook(() => useGitLabMutation('session-1', 'project-1:1'))

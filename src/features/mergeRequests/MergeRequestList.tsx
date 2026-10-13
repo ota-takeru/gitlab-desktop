@@ -7,8 +7,9 @@ import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
-import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
-import StarRoundedIcon from '@mui/icons-material/StarRounded'
+import PushPinIcon from '@mui/icons-material/PushPin'
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -36,7 +37,7 @@ import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { Pager } from '../../components/Pager'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
-import type { MergeRequest, MergeRequestQuery, MergeRequestState, MergeRequestsQuery } from '../../types/gitlab'
+import type { MergeRequest, MergeRequestState, MergeRequestsQuery, MrApprovalsQuery } from '../../types/gitlab'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, writeSavedSearches } from '../shared/preferences'
@@ -68,6 +69,10 @@ interface SearchDraft {
   updatedAfter: string
   updatedBefore: string
   projectId: string
+  groupId: string
+  labels: string
+  sourceBranch: string
+  targetBranch: string
   orderBy: OrderBy
   sort: SortDirection
 }
@@ -125,14 +130,18 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
     const nextSearch: StoredSearch = {
       assignee: cleanOptional(draft.assignee),
       authorId: cleanOptional(draft.authorId),
+      groupId: cleanOptional(draft.groupId),
       id: `search-${Date.now()}`,
+      labels: canonicalLabels(draft.labels),
       label: cleanOptional(saveLabel) ?? defaultSearchLabel(draft),
       orderBy: draft.orderBy,
       projectId: cleanOptional(draft.projectId),
       query: draft.search.trim(),
       reviewer: cleanOptional(draft.reviewer),
       sort: draft.sort,
+      sourceBranch: cleanOptional(draft.sourceBranch),
       state: draft.state,
+      targetBranch: cleanOptional(draft.targetBranch),
       updatedAfter: cleanOptional(draft.updatedAfter),
       updatedBefore: cleanOptional(draft.updatedBefore),
     }
@@ -148,10 +157,14 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
     const nextDraft: SearchDraft = {
       assignee: saved.assignee ?? '',
       authorId: saved.authorId ?? '',
-      projectId: saved.projectId ?? '',
+      groupId: saved.groupId ?? '',
+      labels: saved.labels ?? '',
+      projectId: saved.projectId ?? (saved.groupId ? '' : projectId ?? ''),
       reviewer: saved.reviewer ?? '',
       search: saved.query,
+      sourceBranch: saved.sourceBranch ?? '',
       state: saved.state,
+      targetBranch: saved.targetBranch ?? '',
       updatedAfter: saved.updatedAfter ?? '',
       updatedBefore: saved.updatedBefore ?? '',
       orderBy: validOrderBy(saved.orderBy) ? saved.orderBy : 'updated_at',
@@ -208,7 +221,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
   }
 
   const personalQueue = personalQueueFor(initialParams, session.user.id)
-  const title = projectName ?? (personalQueue === 'assigned' ? '自分の担当MR' : personalQueue === 'created' ? '自分が作成' : personalQueue === 'waiting' ? 'レビュー待ち' : 'MR検索')
+  const title = projectName ?? (personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
   const advancedActive = hasAdvancedFilters(draft, projectName ? projectId : undefined)
   const page = applied?.page ?? 1
   const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
@@ -272,7 +285,11 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
               <Box sx={{ gridColumn: '1 / -1' }}><UserSearchPicker ariaLabel="MRの作者" label="作者" onChange={(id) => setDraft((current) => ({ ...current, authorId: id }))} value={draft.authorId} /></Box>
               <TextField label="更新日（開始）" onChange={(event) => setDraft((current) => ({ ...current, updatedAfter: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（開始）' }, inputLabel: { shrink: true } }} type="date" value={toDateInputValue(draft.updatedAfter)} />
               <TextField label="更新日（終了）" onChange={(event) => setDraft((current) => ({ ...current, updatedBefore: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（終了）' }, inputLabel: { shrink: true } }} type="date" value={toDateInputValue(draft.updatedBefore)} />
-              <Box sx={{ gridColumn: '1 / -1' }}><ProjectSearchPicker ariaLabel="MRのプロジェクト" label="プロジェクト" onChange={(id) => setDraft((current) => ({ ...current, projectId: id }))} value={draft.projectId} /></Box>
+              <TextField label="ラベル" onChange={(event) => setDraft((current) => ({ ...current, labels: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRのラベル' } }} helperText="複数指定する場合はカンマで区切ります。" value={draft.labels} />
+              <TextField helperText="ブランチ名の完全一致" label="ソースブランチ" onChange={(event) => setDraft((current) => ({ ...current, sourceBranch: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRのソースブランチ' } }} value={draft.sourceBranch} />
+              <TextField helperText="ブランチ名の完全一致" label="ターゲットブランチ" onChange={(event) => setDraft((current) => ({ ...current, targetBranch: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRのターゲットブランチ' } }} value={draft.targetBranch} />
+              <Box sx={{ gridColumn: '1 / -1' }}><ProjectSearchPicker ariaLabel="MRのプロジェクト" label="プロジェクト" onChange={(id) => setDraft((current) => ({ ...current, groupId: '', projectId: id }))} value={draft.projectId} /></Box>
+              <TextField helperText="グループIDまたはパス（例: 12345 / team/platform）" label="グループ" onChange={(event) => setDraft((current) => ({ ...current, groupId: event.target.value, projectId: '' }))} slotProps={{ htmlInput: { 'aria-label': 'MRのグループ' } }} value={draft.groupId} />
             </Box>
           </Collapse>
           {filterError ? <Alert severity="error" sx={{ mt: 1 }}>{filterError}</Alert> : null}
@@ -316,14 +333,14 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
         <DialogActions><Button onClick={() => setSavedSearchesOpen(false)}>閉じる</Button></DialogActions>
       </Dialog>
 
-      {result.data ? <PaneStatus>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{freshness ? ` · ${freshness}` : ''}</PaneStatus> : null}
+      <PaneStatus>{result.data ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{freshness ? ` · ${freshness}` : ''}</> : result.loading ? 'MRを読み込み中…' : null}</PaneStatus>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert severity="warning" sx={{ m: 1.5 }}>保存済みの結果を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
         {pipelineOpenError ? <Alert onClose={() => setPipelineOpenError(null)} severity="error" sx={{ m: 1.5 }}>CIパイプラインを開けませんでした: {pipelineOpenError}</Alert> : null}
         {result.loading && !result.data ? <LoadingRows /> : null}
         {!result.loading && !result.data && !result.error && !filterError ? <PaneEmpty description="検索語や状態を変えてください。検索対象はタイトルと説明です。" title="MRがありません" /> : null}
-        {result.data ? <MergeRequestResults mergeRequests={result.data} onOpenMergeRequest={onOpenMergeRequest} onOpenPipeline={openPipeline} personalWorkspace={personalWorkspace} selected={selected ?? null} sessionId={session.id} /> : null}
+        {result.data ? <MergeRequestResults currentUserId={session.user.id} grouping={personalQueue === 'waiting' ? 'mine' : personalQueue ? 'any' : null} mergeRequests={result.data} onOpenMergeRequest={onOpenMergeRequest} onOpenPipeline={openPipeline} personalWorkspace={personalWorkspace} selected={selected ?? null} sessionId={session.id} /> : null}
       </Box>
       {result.data && (page > 1 || result.snapshot?.nextPage) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={(result.snapshot?.nextPage ?? null) !== null} hasPrevious={page > 1} onNext={() => updatePage(page + 1)} onPrevious={() => updatePage(Math.max(1, page - 1))} page={page} /></Box> : null}
     </Box>
@@ -339,7 +356,7 @@ const pillSelectSx = {
 } as const
 
 function hasAdvancedFilters(draft: SearchDraft, projectId?: string) {
-  return Boolean(draft.authorId || draft.updatedAfter || draft.updatedBefore || (draft.projectId && draft.projectId !== projectId))
+  return Boolean(draft.authorId || draft.groupId || draft.labels || draft.sourceBranch || draft.targetBranch || draft.updatedAfter || draft.updatedBefore || (draft.projectId && draft.projectId !== projectId))
 }
 
 function personalQueueFor(params: Record<string, string>, currentUserId: string): 'assigned' | 'created' | 'waiting' | null {
@@ -349,35 +366,68 @@ function personalQueueFor(params: Record<string, string>, currentUserId: string)
   return null
 }
 
-function MergeRequestResults({ mergeRequests, onOpenMergeRequest, onOpenPipeline, personalWorkspace, selected, sessionId }: { mergeRequests: MergeRequest[]; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; selected: MrRef | null; sessionId: string }) {
+/** Approval of one row: who approved, or null while unknown. */
+interface RowApproval { byMe: boolean; count: number }
+
+/**
+ * Personal queues are split by approval like GitLab's dashboard: the review
+ * queue by whether you approved, your own MRs by whether anyone has. Approvals
+ * of the whole page come from one request; until they arrive the grouped queues
+ * show placeholders instead of a flat list that would then reorder.
+ */
+function MergeRequestResults({ currentUserId, grouping, mergeRequests, onOpenMergeRequest, onOpenPipeline, personalWorkspace, selected, sessionId }: { currentUserId: string; grouping: 'mine' | 'any' | null; mergeRequests: MergeRequest[]; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; selected: MrRef | null; sessionId: string }) {
+  const itemsKey = mergeRequests.filter((mergeRequest) => mergeRequest.projectPath).map((mergeRequest) => `${mergeRequest.projectPath}!${mergeRequest.iid}`).join(' ')
+  const approvalsQuery = useMemo<MrApprovalsQuery | null>(() => itemsKey
+    ? { items: itemsKey.split(' ').map((key) => { const at = key.lastIndexOf('!'); return { iid: key.slice(at + 1), projectPath: key.slice(0, at) } }), kind: 'mrApprovals' }
+    : null, [itemsKey])
+  const approvals = useGitLabQuery<MrApprovalsQuery>(sessionId, approvalsQuery)
+  const approvalOf = (mergeRequest: MergeRequest): RowApproval | null => {
+    const approvedBy = approvals.data?.find((item) => item.projectPath === mergeRequest.projectPath && item.iid === mergeRequest.iid)?.approvedBy
+    return approvedBy ? { byMe: approvedBy.includes(currentUserId), count: approvedBy.length } : null
+  }
+
   if (mergeRequests.length === 0) return <PaneEmpty description="検索語や条件を変えてください。" title="条件に一致するMRがありません。" />
+  const row = (mergeRequest: MergeRequest) => <MergeRequestResultRow
+    approval={approvalOf(mergeRequest)}
+    key={`${mergeRequest.projectId}:${mergeRequest.iid}`}
+    mergeRequest={mergeRequest}
+    onOpenMergeRequest={onOpenMergeRequest}
+    onOpenPipeline={onOpenPipeline}
+    personalWorkspace={personalWorkspace}
+    selected={selected?.projectId === mergeRequest.projectId && selected.iid === mergeRequest.iid}
+  />
+  if (grouping && approvalsQuery && !approvals.data && approvals.loading) return <LoadingRows />
+  if (!grouping || !approvals.data) {
+    return <>
+      {approvals.error && !approvals.data ? <Typography color="text.secondary" component="div" sx={{ px: 1.5, py: 0.75 }} variant="caption">承認状態を取得できませんでした: {approvals.error.message}</Typography> : null}
+      <Box aria-label="MR検索結果" component="ul" onKeyDown={focusMergeRequestRow} role="list" sx={{ m: 0, p: 0 }}>{mergeRequests.map(row)}</Box>
+    </>
+  }
+  const [waitingLabel, doneLabel] = grouping === 'mine' ? ['自分の承認待ち', '自分が承認済み'] : ['承認待ち', '承認あり']
+  const sections: Array<[string, MergeRequest[]]> = [[waitingLabel, []], [doneLabel, []], ['承認状態を確認できないMR', []]]
+  for (const mergeRequest of mergeRequests) {
+    const approval = approvalOf(mergeRequest)
+    const done = approval && (grouping === 'mine' ? approval.byMe : approval.count > 0)
+    sections[approval ? done ? 1 : 0 : 2][1].push(mergeRequest)
+  }
   return (
-    <Box aria-label="MR検索結果" component="ul" onKeyDown={focusMergeRequestRow} role="list" sx={{ m: 0, p: 0 }}>
-      {mergeRequests.map((mergeRequest) => <MergeRequestResultRow
-        key={`${mergeRequest.projectId}:${mergeRequest.iid}`}
-        mergeRequest={mergeRequest}
-        onOpenMergeRequest={onOpenMergeRequest}
-        onOpenPipeline={onOpenPipeline}
-        personalWorkspace={personalWorkspace}
-        selected={selected?.projectId === mergeRequest.projectId && selected.iid === mergeRequest.iid}
-        sessionId={sessionId}
-      />)}
+    <Box aria-label="MR検索結果" onKeyDown={focusMergeRequestRow} role="group">
+      {sections.filter(([label, items]) => items.length > 0 || label !== '承認状態を確認できないMR').map(([label, items]) => (
+        <Box aria-label={label} component="section" key={label}>
+          <Typography color="text.secondary" component="h2" sx={{ bgcolor: 'surface.nav', borderBottom: 1, borderColor: 'divider', fontSize: 11, fontWeight: 600, px: 1.5, py: 0.5 }}>{label} · {items.length}件</Typography>
+          {items.length ? <Box aria-label={label} component="ul" role="list" sx={{ m: 0, p: 0 }}>{items.map(row)}</Box> : null}
+        </Box>
+      ))}
     </Box>
   )
 }
 
-function MergeRequestResultRow({ mergeRequest, onOpenMergeRequest, onOpenPipeline, personalWorkspace, selected, sessionId }: { mergeRequest: MergeRequest; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; selected: boolean; sessionId: string }) {
+function MergeRequestResultRow({ approval, mergeRequest, onOpenMergeRequest, onOpenPipeline, personalWorkspace, selected }: { approval: RowApproval | null; mergeRequest: MergeRequest; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; selected: boolean }) {
   const ref = { iid: mergeRequest.iid, projectId: mergeRequest.projectId }
   const pinned = personalWorkspace.isPinned(ref)
   const unread = personalWorkspace.unreadCount(ref)
-  const [pipelineRequested, setPipelineRequested] = useState(false)
-  const pipelineQuery = useMemo<MergeRequestQuery | null>(() => pipelineRequested
-    ? { iid: mergeRequest.iid, kind: 'mr', projectId: mergeRequest.projectId }
-    : null, [mergeRequest.iid, mergeRequest.projectId, pipelineRequested])
-  const pipelineResult = useGitLabQuery<MergeRequestQuery>(sessionId, pipelineQuery)
-  const pipeline = mergeRequest.pipeline ?? (pipelineRequested ? pipelineResult.data?.pipeline : undefined)
-  const pipelineConfirmedEmpty = pipelineRequested && !pipelineResult.loading && !pipelineResult.error && pipelineResult.data !== null && !pipeline
-  const pipelineConfirmationMissing = pipelineRequested && !pipelineResult.loading && !pipelineResult.error && pipelineResult.data === null
+  // CI is shown only when GitLab included it; the row does not offer a lookup.
+  const pipeline = mergeRequest.pipeline
   const people = [
     mergeRequest.assignees?.length ? `担当 ${mergeRequest.assignees.map((person) => person.name).join('、')}` : null,
     mergeRequest.reviewers?.length ? `レビュー ${mergeRequest.reviewers.map((person) => person.name).join('、')}` : null,
@@ -387,13 +437,10 @@ function MergeRequestResultRow({ mergeRequest, onOpenMergeRequest, onOpenPipelin
   return (
     <ListRow
       actions={<>
-        {!pipelineRequested && !pipeline ? <Button onClick={() => setPipelineRequested(true)} sx={{ fontSize: 12, minHeight: 26, minWidth: 0, px: 0.75 }}>CIを確認</Button> : null}
-        {pipelineRequested && pipelineResult.loading ? <Button disabled sx={{ fontSize: 12, minHeight: 26, minWidth: 0, px: 0.75 }}>確認中…</Button> : null}
-        {pipelineRequested && (pipelineResult.error || pipelineConfirmationMissing) ? <Button onClick={() => pipelineResult.refresh()} sx={{ fontSize: 12, minHeight: 26, minWidth: 0, px: 0.75 }}>再試行</Button> : null}
         {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
         <Tooltip title={pinned ? '固定を解除' : 'MRを固定'}>
           <IconButton aria-label={`!${mergeRequest.iid}を${pinned ? '固定解除' : '固定'}`} color={pinned ? 'primary' : 'default'} onClick={() => personalWorkspace.togglePinned(ref)}>
-            {pinned ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}
+            {pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}
           </IconButton>
         </Tooltip>
       </>}
@@ -403,28 +450,25 @@ function MergeRequestResultRow({ mergeRequest, onOpenMergeRequest, onOpenPipelin
     >
       <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
         <Typography color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`} !{mergeRequest.iid}</Typography>
+        {approval && approval.count > 0 ? <Tooltip title={approval.byMe ? `自分を含む${approval.count}人が承認済み` : `${approval.count}人が承認済み`}><Stack aria-label={approval.byMe ? '自分が承認済み' : `${approval.count}人が承認済み`} direction="row" role="img" spacing={0.25} sx={{ alignItems: 'center', color: approval.byMe ? 'success.main' : 'text.secondary', flexShrink: 0 }}><TaskAltRoundedIcon sx={{ fontSize: 13 }} /><Typography color="inherit" variant="caption">{approval.byMe ? '承認済み' : approval.count}</Typography></Stack></Tooltip> : null}
         <RelativeTime value={mergeRequest.updatedAt} />
       </Stack>
       <Typography sx={{ display: '-webkit-box', fontWeight: hasUnread || selected ? 600 : 500, lineHeight: 1.45, mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{mergeRequest.title}</Typography>
       <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, rowGap: 0.25 }}>
         <Typography color="text.secondary" variant="caption">{mergeRequest.author.name}</Typography>
-        {pinned ? <StarRoundedIcon aria-label="固定済み" color="primary" sx={{ fontSize: 14 }} /> : null}
+        {pinned ? <PushPinIcon aria-label="固定済み" color="primary" sx={{ fontSize: 14 }} /> : null}
         {mergeRequest.draft ? <Chip label="Draft" size="small" variant="outlined" /> : null}
         {pipeline ? <PipelineStatus status={pipeline.status} /> : null}
         {hasUnread ? <Tooltip title="既知のコメントの未読数です。未取得のコメントは含みません。"><Chip color="primary" label={`未読 ${unread}`} size="small" /></Tooltip> : null}
         {(mergeRequest.labels ?? []).map((label) => <Chip key={label} label={label} size="small" sx={{ maxWidth: '100%' }} variant="outlined" />)}
       </Stack>
       {people ? <Typography color="text.secondary" component="div" noWrap sx={{ mt: 0.25 }} variant="caption">{people}</Typography> : null}
-      {pipelineConfirmedEmpty ? <Typography aria-label="CI情報なし" color="text.secondary" component="div" variant="caption">CI情報なし</Typography> : null}
-      {pipelineRequested && pipelineResult.loading ? <Typography color="text.secondary" component="div" variant="caption">CI情報を確認中…</Typography> : null}
-      {pipelineResult.error ? <Typography color="error.main" component="div" role="alert" variant="caption">CI状態を取得できませんでした: {pipelineResult.error.message}</Typography> : null}
-      {pipelineConfirmationMissing ? <Typography color="error.main" component="div" role="alert" variant="caption">MR詳細の応答を確認できませんでした。</Typography> : null}
     </ListRow>
   )
 }
 
 function LoadingRows() {
-  return <Box aria-label="MRを読み込み中" role="status" sx={{ p: 1.5 }}><Stack spacing={1.25}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 10, width: '60%' }} /></Stack>)}<Typography color="text.secondary" variant="caption">MRを読み込み中…</Typography></Stack></Box>
+  return <Box aria-label="MRを読み込み中" role="status" sx={{ p: 1.5 }}><Stack spacing={1.25}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 0.5, height: 10, width: '60%' }} /></Stack>)}</Stack></Box>
 }
 
 function focusMergeRequestRow(event: KeyboardEvent<HTMLElement>): void {
@@ -445,6 +489,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export function buildQuery(filters: AppliedSearch, currentUserId?: string): MergeRequestsQuery {
   if (filters.assignee === 'self' && !isPositiveDecimalId(currentUserId ?? '')) throw new Error('接続ユーザーIDが不明なため、自分の担当MRを検索できません。')
+  const projectId = cleanOptional(filters.projectId)
+  const groupId = cleanOptional(filters.groupId)
+  if (projectId && groupId) throw new Error('グループとプロジェクトは同時に指定できません。')
+  if (groupId && !isValidGroupId(groupId)) throw new Error('グループIDまたはグループパスを確認してください。')
   const query: MergeRequestsQuery = {
     kind: 'mrs',
     orderBy: filters.orderBy,
@@ -453,13 +501,19 @@ export function buildQuery(filters: AppliedSearch, currentUserId?: string): Merg
     sort: filters.sort,
     state: filters.state,
   }
-  const projectId = cleanOptional(filters.projectId)
+  const labels = parseLabels(filters.labels)
+  const sourceBranch = cleanOptional(filters.sourceBranch)
+  const targetBranch = cleanOptional(filters.targetBranch)
   const authorId = cleanOptional(filters.authorId)
   const reviewerId = filters.reviewer === 'self' ? cleanOptional(currentUserId) : cleanOptional(filters.reviewer)
   const assigneeId = filters.assignee === 'self' ? cleanOptional(currentUserId) : cleanOptional(filters.assignee)
   const updatedAfter = cleanOptional(filters.updatedAfter)
   const updatedBefore = cleanOptional(filters.updatedBefore)
   if (projectId) query.projectId = projectId
+  if (groupId) query.groupId = groupId
+  if (labels.length) query.labels = labels
+  if (sourceBranch) query.sourceBranch = sourceBranch
+  if (targetBranch) query.targetBranch = targetBranch
   if (authorId) query.authorId = authorId
   if (reviewerId) query.reviewerId = reviewerId
   if (assigneeId) query.assigneeId = assigneeId
@@ -477,6 +531,10 @@ export function serializeSearch(filters: AppliedSearch): Record<string, string> 
   addParam(params, 'updatedAfter', filters.updatedAfter)
   addParam(params, 'updatedBefore', filters.updatedBefore)
   addParam(params, 'projectId', filters.projectId)
+  addParam(params, 'groupId', filters.groupId)
+  addParam(params, 'labels', canonicalLabels(filters.labels))
+  addParam(params, 'sourceBranch', filters.sourceBranch)
+  addParam(params, 'targetBranch', filters.targetBranch)
   addParam(params, 'orderBy', filters.orderBy)
   addParam(params, 'sort', filters.sort)
   return params
@@ -484,13 +542,18 @@ export function serializeSearch(filters: AppliedSearch): Record<string, string> 
 
 function makeInitialState(params: Record<string, string>, initialQuery: string, projectId: string | undefined, currentUserId: string | undefined): { applied: AppliedSearch; draft: SearchDraft; error: string | null } {
   const state = isState(params.state) ? params.state : 'all'
+  const groupId = params.groupId ?? params.group ?? ''
   const draft: SearchDraft = {
     assignee: params.assignee ?? params.assigneeId ?? '',
     authorId: params.authorId ?? params.author ?? '',
-    projectId: params.projectId ?? params.project ?? projectId ?? '',
+    groupId,
+    labels: params.labels ?? '',
+    projectId: params.projectId ?? params.project ?? (groupId ? '' : projectId ?? ''),
     reviewer: params.reviewer ?? params.reviewerId ?? '',
     search: params.search ?? initialQuery,
+    sourceBranch: params.sourceBranch ?? '',
     state,
+    targetBranch: params.targetBranch ?? '',
     updatedAfter: params.updatedAfter ?? '',
     updatedBefore: params.updatedBefore ?? '',
     orderBy: validOrderBy(params.orderBy) ? params.orderBy : 'updated_at',
@@ -503,7 +566,9 @@ function makeInitialState(params: Record<string, string>, initialQuery: string, 
 
 function validateDraft(draft: SearchDraft, currentUserId?: string): string | null {
   if (!isState(draft.state)) return 'MRの状態が不正です。'
+  if (draft.projectId.trim() && draft.groupId.trim()) return 'グループとプロジェクトは同時に指定できません。'
   if (draft.projectId.trim() && !isPositiveDecimalId(draft.projectId)) return 'プロジェクトIDは1以上の数字で入力してください。'
+  if (draft.groupId.trim() && !isValidGroupId(draft.groupId.trim())) return 'グループIDまたはグループパスを確認してください。'
   if (draft.authorId.trim() && !isPositiveDecimalId(draft.authorId)) return '作者IDは1以上の数字で入力してください。'
   if (draft.reviewer.trim() && draft.reviewer !== 'self' && !isPositiveDecimalId(draft.reviewer)) return 'レビュー担当者IDは1以上の数字で入力してください。'
   if (draft.reviewer === 'self' && currentUserId && !isPositiveDecimalId(currentUserId)) return '接続ユーザーIDを確認できないため、レビュー待ちを検索できません。'
@@ -517,6 +582,21 @@ function validateDraft(draft: SearchDraft, currentUserId?: string): string | nul
 
 function isPositiveDecimalId(value: string): boolean {
   return /^[1-9]\d*$/u.test(value.trim())
+}
+
+function isValidGroupId(value: string): boolean {
+  const normalized = value.trim()
+  if (/^\d+$/u.test(normalized)) return isPositiveDecimalId(normalized)
+  return normalized.split('/').every((segment) => /^[A-Za-z0-9_.-]+$/u.test(segment) && segment !== '.' && segment !== '..')
+}
+
+function parseLabels(value: string): string[] {
+  return [...new Set(value.split(',').map((label) => label.trim()).filter(Boolean))]
+}
+
+function canonicalLabels(value: string | undefined): string | undefined {
+  const labels = parseLabels(value ?? '')
+  return labels.length ? labels.join(',') : undefined
 }
 
 function isIsoDateValue(value: string): boolean {
@@ -571,6 +651,10 @@ function sameSavedSearch(left: SavedMergeRequestSearch, right: SavedMergeRequest
   return left.query === right.query
     && left.state === right.state
     && left.projectId === right.projectId
+    && left.groupId === right.groupId
+    && canonicalLabels(left.labels) === canonicalLabels(right.labels)
+    && left.sourceBranch === right.sourceBranch
+    && left.targetBranch === right.targetBranch
     && left.authorId === right.authorId
     && left.assignee === right.assignee
     && left.reviewer === right.reviewer
@@ -581,7 +665,7 @@ function sameSavedSearch(left: SavedMergeRequestSearch, right: SavedMergeRequest
 }
 
 function defaultSearchLabel(draft: SearchDraft): string {
-  return draft.search.trim() || `${draft.state} MR`
+  return draft.search.trim() || cleanOptional(draft.groupId) || `${draft.state} MR`
 }
 
 function validOrderBy(value: string | undefined): value is OrderBy {

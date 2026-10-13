@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 
+import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import { ReviewComposer } from './ReviewComposer'
 
 const mentionFixtures = vi.hoisted(() => ({
@@ -49,29 +50,55 @@ describe('ReviewComposer', () => {
     expect(onChange).toHaveBeenCalledWith('')
   })
 
-  it('keeps the Markdown text while switching between edit and preview', () => {
+  it('previews the Markdown below the editor while typing', async () => {
     function StatefulComposer() {
-      const [value, setValue] = useState('**太字の本文**')
+      const [value, setValue] = useState('')
       return <ReviewComposer onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} value={value} />
     }
 
     render(<StatefulComposer />)
-    fireEvent.click(screen.getByRole('button', { name: 'コメントをプレビュー' }))
-    expect(screen.getByText('太字の本文').tagName).toBe('STRONG')
-    expect(screen.queryByRole('textbox', { name: 'コメント本文' })).not.toBeInTheDocument()
+    const textbox = screen.getByRole('textbox', { name: 'コメント本文' })
+    fireEvent.change(textbox, { target: { value: '**太字の本文**' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'コメントを編集' }))
-    expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('**太字の本文**')
+    expect(textbox).toHaveValue('**太字の本文**')
+    await waitFor(() => expect(within(screen.getByLabelText('コメントプレビュー')).getByText('太字の本文').tagName).toBe('STRONG'))
   })
 
-  it('returns to the editor and focuses it when a reply target changes during preview', async () => {
+  it('formats the selection from the toolbar and the keyboard', () => {
+    function StatefulComposer() {
+      const [value, setValue] = useState('確認 item')
+      return <ReviewComposer onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} value={value} />
+    }
+
+    render(<StatefulComposer />)
+    const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
+    textbox.setSelectionRange(0, 2)
+    fireEvent.click(screen.getByRole('button', { name: '太字を挿入' }))
+    expect(textbox).toHaveValue('**確認** item')
+    expect([textbox.selectionStart, textbox.selectionEnd]).toEqual([2, 4])
+
+    fireEvent.keyDown(textbox, { ctrlKey: true, key: 'b' })
+    expect(textbox).toHaveValue('確認 item')
+
+    fireEvent.click(screen.getByRole('button', { name: '箇条書きを挿入' }))
+    expect(textbox).toHaveValue('- 確認 item')
+  })
+
+  it('focuses the editor when a reply target is chosen', async () => {
     const props = { onCancelReply: () => undefined, onChange: () => undefined, onClearPosition: () => undefined, onSaveDraft: async () => true, onSubmitComment: async () => true, value: '本文' }
     const view = render(<ReviewComposer {...props} />)
-    fireEvent.click(screen.getByRole('button', { name: 'コメントをプレビュー' }))
 
     view.rerender(<ReviewComposer {...props} replyAuthor="Colleague" replyDiscussionId="discussion-1" />)
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveFocus())
+  })
+
+  it('closes the reply with Esc', () => {
+    const onCancelReply = vi.fn()
+    render(<ReviewComposer onCancelReply={onCancelReply} onChange={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} replyAuthor="Colleague" replyDiscussionId="discussion-1" value="途中の返信" />)
+
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'コメント本文' }), { key: 'Escape' })
+    expect(onCancelReply).toHaveBeenCalledTimes(1)
   })
 
   it('searches mentions after two characters and inserts at the caret without losing the tail', async () => {
@@ -108,5 +135,117 @@ describe('ReviewComposer', () => {
     fireEvent.keyDown(textbox, { key: 'Enter' })
 
     expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('@alicia ')
+  })
+
+  it('preserves text typed during upload and selected text at the current caret', async () => {
+    let resolveUpload!: (markdown: string) => void
+    const onUploadAttachment = vi.fn<(file: File) => Promise<string>>(() => new Promise<string>((resolve) => { resolveUpload = resolve }))
+    function StatefulComposer() {
+      const [value, setValue] = useState('元の本文')
+      const [pending, setPending] = useState(false)
+      const upload = (file: File) => {
+        setPending(true)
+        return onUploadAttachment(file)
+      }
+      return <ReviewComposer attachmentTargetKey="project-1:42" pending={pending} onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} onUploadAttachment={upload} value={value} />
+    }
+
+    render(<StatefulComposer />)
+    const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
+    const file = new File(['image'], 'screen.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('添付ファイルを選択'), { target: { files: [file] } })
+
+    expect(screen.getAllByRole('button', { name: '添付ファイルをアップロード中…' }).at(-1)).toBeDisabled()
+    expect(textbox).toBeEnabled()
+    fireEvent.change(textbox, { target: { value: 'アップロード中に追記' } })
+    textbox.setSelectionRange(4, 6)
+
+    await act(async () => resolveUpload('![screen.png](/uploads/screen.png)'))
+
+    const markdown = '![screen.png](/uploads/screen.png)'
+    expect(textbox).toHaveValue(`アップロ\n${markdown}\nード中に追記`)
+    expect(textbox.selectionStart).toBe(4 + 1 + markdown.length)
+  })
+
+  it('uploads a pasted image and appends its Markdown', async () => {
+    const file = new File(['image'], 'clipboard.png', { type: 'image/png' })
+    const onUploadAttachment = vi.fn(async () => '![clipboard.png](/uploads/clipboard.png)')
+    function StatefulComposer() {
+      const [value, setValue] = useState('')
+      return <ReviewComposer onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} onUploadAttachment={onUploadAttachment} value={value} />
+    }
+
+    render(<StatefulComposer />)
+    fireEvent.paste(screen.getByRole('textbox', { name: 'コメント本文' }), {
+      clipboardData: { getData: () => '', items: [{ getAsFile: () => file, kind: 'file', type: 'image/png' }] },
+    })
+
+    await waitFor(() => expect(onUploadAttachment).toHaveBeenCalledWith(file))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('![clipboard.png](/uploads/clipboard.png)'))
+  })
+
+  it('pastes text instead of uploading the image that Office apps copy alongside it', () => {
+    const file = new File(['image'], 'cells.png', { type: 'image/png' })
+    const onUploadAttachment = vi.fn(async () => '![cells.png](/uploads/cells.png)')
+    render(<ReviewComposer onCancelReply={() => undefined} onChange={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} onUploadAttachment={onUploadAttachment} value="" />)
+
+    const notCancelled = fireEvent.paste(screen.getByRole('textbox', { name: 'コメント本文' }), {
+      clipboardData: { getData: (type: string) => type === 'text/plain' ? 'A1 B1' : '', items: [{ getAsFile: () => file, kind: 'file', type: 'image/png' }] },
+    })
+
+    expect(notCancelled).toBe(true)
+    expect(onUploadAttachment).not.toHaveBeenCalled()
+  })
+
+  it('rejects an oversized file locally and reports upload errors without paths', async () => {
+    const onUploadAttachment = vi.fn(async () => { throw new Error('C:\\private\\token.txt') })
+    const oversized = new File(['x'], 'large.bin')
+    Object.defineProperty(oversized, 'size', { value: MAX_GITLAB_ATTACHMENT_BYTES + 1 })
+    const view = render(<ReviewComposer onCancelReply={() => undefined} onChange={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} onUploadAttachment={onUploadAttachment} value="本文" />)
+
+    fireEvent.change(screen.getByLabelText('添付ファイルを選択'), { target: { files: [oversized] } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('10 MiB以下')
+    expect(onUploadAttachment).not.toHaveBeenCalled()
+
+    const validFile = new File(['x'], 'screen.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('添付ファイルを選択'), { target: { files: [validFile] } })
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('アップロードできませんでした')
+    expect(alert).not.toHaveTextContent('private')
+    expect(view.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('本文')
+  })
+
+  it('hands an upload result to the original input after the attachment target changes', async () => {
+    let resolveUpload!: (markdown: string) => void
+    const onUploadAttachment = vi.fn(() => new Promise<string>((resolve) => { resolveUpload = resolve }))
+    const onChange = vi.fn()
+    const keepFirst = vi.fn()
+    const keepSecond = vi.fn()
+    const props = { onCancelReply: () => undefined, onChange, onClearPosition: () => undefined, onSaveDraft: async () => true, onSubmitComment: async () => true, onUploadAttachment, value: '本文' }
+    const view = render(<ReviewComposer {...props} attachmentTargetKey="project-1:42" onDetachedAttachment={keepFirst} />)
+
+    fireEvent.change(screen.getByLabelText('添付ファイルを選択'), { target: { files: [new File(['image'], 'screen.png')] } })
+    view.rerender(<ReviewComposer {...props} attachmentTargetKey="project-1:43" onDetachedAttachment={keepSecond} />)
+    await act(async () => resolveUpload('![screen.png](/uploads/screen.png)'))
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(keepFirst).toHaveBeenCalledWith('![screen.png](/uploads/screen.png)')
+    expect(keepSecond).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('本文')
+  })
+
+  it('does not update an unmounted composer after an upload completes', async () => {
+    let resolveUpload!: (markdown: string) => void
+    const onUploadAttachment = vi.fn(() => new Promise<string>((resolve) => { resolveUpload = resolve }))
+    const onChange = vi.fn()
+    const onDetachedAttachment = vi.fn()
+    const view = render(<ReviewComposer attachmentTargetKey="project-1:42" onCancelReply={() => undefined} onChange={onChange} onClearPosition={() => undefined} onDetachedAttachment={onDetachedAttachment} onSaveDraft={async () => true} onSubmitComment={async () => true} onUploadAttachment={onUploadAttachment} value="本文" />)
+
+    fireEvent.change(screen.getByLabelText('添付ファイルを選択'), { target: { files: [new File(['image'], 'screen.png')] } })
+    view.unmount()
+    await act(async () => resolveUpload('![screen.png](/uploads/screen.png)'))
+
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onDetachedAttachment).toHaveBeenCalledWith('![screen.png](/uploads/screen.png)')
   })
 })

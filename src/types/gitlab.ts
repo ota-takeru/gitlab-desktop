@@ -72,6 +72,10 @@ export interface MergeRequestsQuery {
   search: string
   state: MergeRequestState
   projectId?: string
+  groupId?: string
+  labels?: string[]
+  sourceBranch?: string
+  targetBranch?: string
   reviewerId?: string
   assigneeId?: string
   authorId?: string
@@ -142,6 +146,19 @@ export interface ApprovalsQuery {
   iid: string
 }
 
+/** Who approved each MR of one list page, fetched in a single request. */
+export interface MrApprovalsQuery {
+  kind: 'mrApprovals'
+  items: { projectPath: string; iid: string }[]
+}
+
+/** `approvedBy` holds user ids; null when GitLab did not return the MR. */
+export interface MrApproval {
+  projectPath: string
+  iid: string
+  approvedBy: string[] | null
+}
+
 export type GitLabQuery =
   | ProjectQuery
   | UsersQuery
@@ -155,6 +172,7 @@ export type GitLabQuery =
   | CommitDiffQuery
   | FileQuery
   | ApprovalsQuery
+  | MrApprovalsQuery
 
 export interface Project {
   id: string
@@ -364,6 +382,24 @@ export type UnapproveAction = {
   iid: string
 }
 
+/** Replaces the assignees; refused when GitLab no longer has `expectedUserIds`. */
+export type SetAssigneesAction = {
+  kind: 'setAssignees'
+  projectId: string
+  iid: string
+  userIds: string[]
+  expectedUserIds: string[]
+}
+
+/** Replaces the reviewers; refused when GitLab no longer has `expectedUserIds`. */
+export type SetReviewersAction = {
+  kind: 'setReviewers'
+  projectId: string
+  iid: string
+  userIds: string[]
+  expectedUserIds: string[]
+}
+
 export type GitLabAction =
   | CommentAction
   | ReplyAction
@@ -376,6 +412,16 @@ export type GitLabAction =
   | PublishDraftAction
   | ApproveAction
   | UnapproveAction
+  | SetAssigneesAction
+  | SetReviewersAction
+  | UploadAttachmentAction
+
+export type UploadAttachmentAction = {
+  kind: 'uploadAttachment'
+  projectId: string
+  iid: string
+  fileName: string
+}
 
 export type GitLabQueryData<Q extends GitLabQuery> =
   Q extends ProjectQuery ? Project[]
@@ -393,6 +439,7 @@ export type GitLabQueryData<Q extends GitLabQuery> =
           : Q extends CommitDiffQuery ? Diff[]
             : Q extends FileQuery ? FileContent
               : Q extends ApprovalsQuery ? Approvals
+                : Q extends MrApprovalsQuery ? MrApproval[]
                 : QueryData
 
 export function isGitLabErrorShape(value: unknown): value is GitLabErrorShape {

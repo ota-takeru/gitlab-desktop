@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 
 import type { GitLabSession, Position } from '../../types/gitlab'
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed, useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
-import { clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, useComposerBuffer, useRetainedComposerUnsafe } from './useComposerBuffer'
+import { appendComposerBuffer, clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, useComposerBuffer, useRetainedComposerUnsafe } from './useComposerBuffer'
 
 const { getLocalDraftMock, isDesktopRuntimeMock, setLocalDraftMock } = vi.hoisted(() => ({
   getLocalDraftMock: vi.fn(),
@@ -183,6 +183,26 @@ afterEach(() => {
 
     expect(setLocalDraftMock).toHaveBeenCalledWith(sessionA.id, createComposerBackendKey(key), '画面遷移前の本文')
     vi.useRealTimers()
+  })
+
+  it('appends a late attachment link to an unmounted buffer and saves it', async () => {
+    vi.useFakeTimers()
+    isDesktopRuntimeMock.mockReturnValue(true)
+    const key = createComposerBufferKey(sessionA, 'project-1', '7', 'new', position)
+    const view = render(<AutoUpdateSafetyProvider><Composer bufferKey={key} sessionId={sessionA.id} /></AutoUpdateSafetyProvider>)
+    fireEvent.change(screen.getByRole('textbox', { name: 'body' }), { target: { value: '本文' } })
+    view.unmount()
+
+    expect(appendComposerBuffer(key, '![a.png](https://gitlab.example.com/uploads/a.png)')).toBe(true)
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+    })
+
+    expect(setLocalDraftMock).toHaveBeenLastCalledWith(sessionA.id, createComposerBackendKey(key), '本文\n![a.png](https://gitlab.example.com/uploads/a.png)')
+    vi.useRealTimers()
+    render(<AutoUpdateSafetyProvider><Composer bufferKey={key} sessionId={sessionA.id} /></AutoUpdateSafetyProvider>)
+    expect(screen.getByRole('textbox', { name: 'body' })).toHaveValue('本文\n![a.png](https://gitlab.example.com/uploads/a.png)')
   })
 
   it('does not let late hydration overwrite text entered by the user', async () => {

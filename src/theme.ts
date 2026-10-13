@@ -63,6 +63,8 @@ interface Tokens {
   borderStrong: string
   primary: string
   primaryStrong: string
+  /** Background of filled primary controls; white text must stay readable on it. */
+  primaryFill: string
   accent: string
   success: string
   warning: string
@@ -78,14 +80,14 @@ const tokens: Record<ThemeAppearance, Record<PaletteMode, Tokens>> = {
     light: {
       canvas: '#f5f6f8', nav: '#ffffff', list: '#ffffff', surface: '#ffffff', raised: '#ffffff',
       ink: '#171a1f', inkMuted: '#626b78', border: '#dfe3e8', borderStrong: '#c9ced6',
-      primary: '#d24365', primaryStrong: '#ae2548', accent: '#f1b54c',
+      primary: '#d24365', primaryStrong: '#ae2548', primaryFill: '#d24365', accent: '#f1b54c',
       success: '#2d8b67', warning: '#ae6d12', error: '#bd3f49', info: '#4c6f9d', tooltip: '#2a2f37',
       diff: { addedBackground: '#e7f3ee', deletedBackground: '#fae9ea', addedText: '#17634f', deletedText: '#9b3038' },
     },
     dark: {
       canvas: '#101317', nav: '#171b21', list: '#171b21', surface: '#171b21', raised: '#1d232b',
       ink: '#f5f7fa', inkMuted: '#a6afbb', border: '#303844', borderStrong: '#3d4653',
-      primary: '#ed6b86', primaryStrong: '#ff9bad', accent: '#f2bf63',
+      primary: '#ed6b86', primaryStrong: '#ff9bad', primaryFill: '#ed6b86', accent: '#f2bf63',
       success: '#6bd0a4', warning: '#f2bf63', error: '#ff858d', info: '#91b6e8', tooltip: '#2a2f37',
       diff: { addedBackground: '#19352f', deletedBackground: '#3b282d', addedText: '#9fe2cb', deletedText: '#ffb0b5' },
     },
@@ -95,16 +97,16 @@ const tokens: Record<ThemeAppearance, Record<PaletteMode, Tokens>> = {
     light: {
       canvas: '#ffffff', nav: '#f1f3f5', list: '#f8f9fb', surface: '#ffffff', raised: '#ffffff',
       ink: '#1b1f24', inkMuted: '#5d6672', border: '#e3e6ea', borderStrong: '#cfd4da',
-      primary: '#2f6fde', primaryStrong: '#1f56b8', accent: '#8a5cf5',
+      primary: '#2f6fde', primaryStrong: '#1f56b8', primaryFill: '#2f6fde', accent: '#8a5cf5',
       success: '#1f8a4c', warning: '#9a6200', error: '#c93c37', info: '#2f6fde', tooltip: '#24292f',
       diff: { addedBackground: '#e6f4ea', deletedBackground: '#fbe9eb', addedText: '#1a6b34', deletedText: '#a3242f' },
     },
     dark: {
-      canvas: '#16191e', nav: '#0e1013', list: '#121418', surface: '#16191e', raised: '#1c2026',
-      ink: '#e6e9ee', inkMuted: '#98a1ad', border: '#262b33', borderStrong: '#343a44',
-      primary: '#5b95ff', primaryStrong: '#8db5ff', accent: '#b49cff',
-      success: '#4cc38a', warning: '#e5a84b', error: '#ff6b6b', info: '#6ea8ff', tooltip: '#2b3038',
-      diff: { addedBackground: '#15291e', deletedBackground: '#331c20', addedText: '#9be3b0', deletedText: '#ffb1b1' },
+      canvas: '#212327', nav: '#121316', list: '#1a1b1f', surface: '#212327', raised: '#2a2c31',
+      ink: '#e3e6ea', inkMuted: '#9ca3ad', border: '#34373e', borderStrong: '#464a52',
+      primary: '#7aa7ee', primaryStrong: '#a3c2f5', primaryFill: '#2e66c8', accent: '#a990ea',
+      success: '#5cbf8e', warning: '#dca54f', error: '#ef7272', info: '#5bb8d4', tooltip: '#2e3036',
+      diff: { addedBackground: '#1d3527', deletedBackground: '#3c2428', addedText: '#e3e6ea', deletedText: '#e3e6ea' },
     },
   },
 }
@@ -121,7 +123,7 @@ export function createAppTheme(
       mode,
       primary: {
         main: palette.primary,
-        ...(workbench ? { dark: palette.primaryStrong } : {}),
+        ...(workbench ? { dark: palette.primaryFill, light: palette.primaryStrong } : {}),
         contrastText: workbench || mode === 'light' ? '#ffffff' : '#171a1f',
       },
       secondary: {
@@ -139,7 +141,7 @@ export function createAppTheme(
       divider: palette.border,
       action: workbench ? {
         hover: alpha(palette.ink, mode === 'dark' ? 0.05 : 0.04),
-        selected: alpha(palette.primary, mode === 'dark' ? 0.16 : 0.1),
+        selected: mode === 'dark' ? alpha(palette.ink, 0.09) : alpha(palette.primary, 0.1),
         focus: alpha(palette.primary, 0.2),
       } : {},
       success: { main: palette.success },
@@ -151,7 +153,7 @@ export function createAppTheme(
         nav: palette.nav,
         list: palette.list,
         raised: palette.raised,
-        selected: alpha(palette.primary, mode === 'dark' ? 0.16 : 0.1),
+        selected: mode === 'dark' ? alpha(palette.ink, 0.09) : alpha(palette.primary, 0.1),
         borderStrong: palette.borderStrong,
       },
     },
@@ -233,6 +235,7 @@ export function createAppTheme(
             ...(workbench ? { minHeight: 30, padding: '4px 12px', fontSize: '0.8125rem' } : {}),
             '&.MuiButton-sizeSmall': workbench ? { minHeight: 28, padding: '3px 10px', fontSize: '0.8125rem' } : {},
           },
+          contained: workbench ? { '&.MuiButton-colorPrimary': { backgroundColor: palette.primaryFill, color: '#ffffff', '&:hover': { backgroundColor: alpha(palette.primaryFill, 0.88) } } } : {},
           outlined: workbench ? { '&.MuiButton-colorPrimary': { borderColor: palette.borderStrong, color: palette.ink, '&:hover': { borderColor: palette.borderStrong, backgroundColor: alpha(palette.ink, 0.05) } } } : {},
           text: workbench ? { '&.MuiButton-colorPrimary': { color: mode === 'dark' ? palette.primaryStrong : palette.primary } } : {},
           startIcon: workbench ? { marginRight: 6, '& > *:nth-of-type(1)': { fontSize: 16 } } : {},
@@ -279,6 +282,7 @@ export function createAppTheme(
             ...(workbench ? { paddingLeft: 6, paddingRight: 6 } : {}),
           },
           outlined: workbench ? { borderColor: palette.borderStrong } : {},
+          filled: workbench ? { '&.MuiChip-colorPrimary': { backgroundColor: palette.primaryFill, color: '#ffffff' } } : {},
           icon: workbench ? { fontSize: 14, marginLeft: 5 } : {},
         },
       },
@@ -290,8 +294,8 @@ export function createAppTheme(
             ...(workbench ? {
               padding: '6px 10px',
               '&.Mui-selected': {
-                backgroundColor: alpha(palette.primary, mode === 'dark' ? 0.16 : 0.1),
-                '&:hover': { backgroundColor: alpha(palette.primary, mode === 'dark' ? 0.2 : 0.14) },
+                backgroundColor: mode === 'dark' ? alpha(palette.ink, 0.09) : alpha(palette.primary, 0.1),
+                '&:hover': { backgroundColor: mode === 'dark' ? alpha(palette.ink, 0.12) : alpha(palette.primary, 0.14) },
               },
             } : {}),
           },

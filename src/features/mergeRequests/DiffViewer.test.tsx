@@ -1,10 +1,13 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
 import type { Diff, Position } from '../../types/gitlab'
+import { scopedKey } from '../shared/preferences'
 import { DIFF_PAGE_SIZE, FILE_PAGE_SIZE, DiffViewer } from './DiffViewer'
+import { setFileReviewed, type ReviewedFileContext } from './useReviewedFiles'
 
 function renderViewer(diff: Diff, options: { fileContent?: string | null; selectedPosition?: Position; view?: 'diff' | 'file' } = {}) {
   return render(
@@ -27,8 +30,17 @@ function makeDiff(diff: string, oldPath = 'src/example.ts', newPath = oldPath): 
   return { oldPath, newPath, diff, newFile: oldPath === '/dev/null', deletedFile: newPath === '/dev/null', renamedFile: oldPath !== newPath, tooLarge: false, collapsed: false }
 }
 
+function renderMany(diffList: Diff[], options: { context?: ReviewedFileContext; initialFile?: string } = {}) {
+  function Harness() {
+    const [selectedFile, setSelectedFile] = useState(options.initialFile ?? diffList[0]?.newPath ?? null)
+    const [view, setView] = useState<'diff' | 'file'>('diff')
+    return <ThemeProvider theme={createAppTheme('dark', 'workbench')}><DiffViewer diffs={diffList} onComment={vi.fn()} onSelectFile={setSelectedFile} onViewChange={setView} reviewContext={options.context} selectedFile={selectedFile} selectedPosition={undefined} view={view} /></ThemeProvider>
+  }
+  return render(<Harness />)
+}
+
 describe('DiffViewer', () => {
-  beforeEach(() => localStorage.removeItem('gitlab-desktop:diff-layout'))
+  beforeEach(() => localStorage.clear())
 
   it('identifies the first displayed file before an explicit selection', () => {
     const diff = makeDiff('@@ -1 +1 @@\n-old\n+new\n')
@@ -78,6 +90,17 @@ describe('DiffViewer', () => {
     expect(screen.getByText('1/2')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '次のファイル' }))
     expect(onSelectFile).toHaveBeenCalledWith('src/b.ts')
+  })
+
+  it('starts each newly selected file in a fresh scroll area while keeping the search text', () => {
+    const view = renderMany([makeDiff('@@ -1 +1 @@\n-a\n+b\n', 'src/a.ts'), makeDiff('@@ -1 +1 @@\n-c\n+d\n', 'src/b.ts')])
+    fireEvent.change(screen.getByLabelText('差分内を検索'), { target: { value: 'zzz' } })
+    const firstRows = view.container.querySelector('.diff-rows')
+
+    fireEvent.click(screen.getByRole('button', { name: '次のファイル' }))
+
+    expect(view.container.querySelector('.diff-rows')).not.toBe(firstRows)
+    expect(screen.getByLabelText('差分内を検索')).toHaveValue('zzz')
   })
 
   it('marks unchanged lines omitted between hunks and hides paging for short diffs', () => {
@@ -164,5 +187,113 @@ describe('DiffViewer', () => {
     expect(screen.getByRole('status')).toHaveTextContent('コメント位置を無効化')
     expect(screen.queryByRole('button', { name: /行にコメント/u })).not.toBeInTheDocument()
     expect(screen.getAllByTestId('diff-line')).toHaveLength(2)
+  })
+
+  it('searches every loaded diff line beyond the rendered page and navigates results in order', () => {
+    const lines = Array.from({ length: 610 }, (_, index) => ` line ${index + 1}${index === 600 || index === 608 ? ' needle' : ''}`).join('\n')
+    const diff = makeDiff(`@@ -1,610 +1,610 @@\n${lines}\n`)
+    renderMany([diff])
+
+    fireEvent.change(screen.getByRole('textbox', { name: '差分内を検索' }), { target: { value: 'needle' } })
+    fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
+
+    expect(screen.getByText(/表示 601.*610.*610行/u)).toBeInTheDocument()
+    expect(screen.getByText('1/2')).toBeInTheDocument()
+    expect(screen.getAllByTestId('diff-line').find((line) => line.dataset.searchActive === 'true')).toHaveTextContent('line 601 needle')
+
+    fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
+    expect(screen.getByText('2/2')).toBeInTheDocument()
+    expect(screen.getAllByTestId('diff-line').find((line) => line.dataset.searchActive === 'true')).toHaveTextContent('line 609 needle')
+    fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
+    expect(screen.getByText('1/2')).toBeInTheDocument()
+    expect(screen.getAllByTestId('diff-line').find((line) => line.dataset.searchActive === 'true')).toHaveTextContent('line 601 needle')
+  }, 15000)
+
+  it('searches across fetched files and marks the active split row', () => {
+    const first = makeDiff('@@ -1 +1 @@\n-old\n+new\n', 'src/a.ts')
+    const second = makeDiff('@@ -1 +1 @@\n-old needle\n+new needle\n', 'src/b.ts')
+    renderMany([first, second])
+
+    fireEvent.click(screen.getByRole('button', { name: '左右に並べて比較' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '差分内を検索' }), { target: { value: 'needle' } })
+    fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
+
+    expect(screen.getByText('src/b.ts')).toBeInTheDocument()
+    const activeRow = screen.getAllByTestId('diff-split-row').find((row) => row.dataset.searchActive === 'true')
+    expect(activeRow).toHaveTextContent('old needle')
+    expect(activeRow).toHaveTextContent('new needle')
+  })
+
+  it('filters filenames, navigates matching paths, and reports an empty result truthfully', () => {
+    const first = makeDiff('@@ -1 +1 @@\n-old\n+new\n', 'src/feature/a.ts')
+    const second = makeDiff('@@ -1 +1 @@\n-old\n+new\n', 'src/feature/b.ts')
+    const third = makeDiff('@@ -1 +1 @@\n-old\n+new\n', 'src/other.ts')
+    renderMany([first, second, third])
+
+    const navigation = screen.getByRole('navigation', { hidden: true })
+    fireEvent.change(screen.getByRole('textbox', { name: 'ファイル名を検索' }), { target: { value: 'src/feature/' } })
+    expect(within(navigation).getByRole('button', { name: 'src/feature/a.ts', hidden: true })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: 'src/feature/b.ts', hidden: true })).toBeInTheDocument()
+    expect(within(navigation).queryByRole('button', { name: 'src/other.ts', hidden: true })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '次の一致ファイル' }))
+    expect(screen.getByText('src/feature/b.ts')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'ファイル名を検索' }), { target: { value: 'does-not-exist' } })
+    expect(within(navigation).getByText('一致するファイルはありません。')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '次の一致ファイル' })).toBeDisabled()
+  })
+
+  it('persists per-file review marks by account and invalidates them when the diff or head changes', () => {
+    const diff = makeDiff('@@ -1 +1 @@\n-old\n+new\n')
+    const context: ReviewedFileContext = { instanceUrl: 'https://gitlab.example', userId: '7', projectId: '15', mergeRequestIid: '42', revision: 'head-a' }
+    const otherAccount = { ...context, userId: '8' }
+
+    const first = renderMany([diff], { context })
+    fireEvent.click(screen.getByRole('button', { name: '確認済みにする' }))
+    expect(screen.getByRole('button', { name: '確認済み' })).toHaveAttribute('aria-pressed', 'true')
+    first.unmount()
+
+    const second = renderMany([diff], { context })
+    expect(screen.getByRole('button', { name: '確認済み' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('確認済み')).toBeInTheDocument()
+    second.unmount()
+
+    const changedDiff = makeDiff('@@ -1 +1 @@\n-old\n+changed\n')
+    const changed = renderMany([changedDiff], { context: { ...context, revision: 'head-a' } })
+    expect(screen.getByRole('button', { name: '確認済みにする' })).toBeInTheDocument()
+    changed.unmount()
+
+    const changedHead = renderMany([diff], { context: { ...context, revision: 'head-b' } })
+    expect(screen.getByRole('button', { name: '確認済みにする' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('確認済み')).not.toBeInTheDocument()
+    changedHead.unmount()
+
+    renderMany([diff], { context: otherAccount })
+    expect(screen.getByRole('button', { name: '確認済みにする' })).toBeInTheDocument()
+  })
+
+  it('does not offer review marks for incomplete or invalid diffs', () => {
+    const context: ReviewedFileContext = { instanceUrl: 'https://gitlab.example', userId: '7', projectId: '15', mergeRequestIid: '42', revision: 'head-a' }
+    const incomplete = { ...makeDiff('@@ -1 +1 @@\n-old\n+new\n'), tooLarge: true }
+    const collapsed = { ...makeDiff('@@ -1 +1 @@\n-old\n+new\n'), collapsed: true }
+    const malformed = makeDiff('@@ -1,2 +1,2 @@\n-old\n+new\n')
+
+    for (const diff of [incomplete, collapsed, malformed]) {
+      const rendered = renderMany([diff], { context })
+      expect(screen.queryByRole('button', { name: '確認済みにする' })).not.toBeInTheDocument()
+      rendered.unmount()
+    }
+  })
+
+  it('bounds persisted review marks to 500 files per merge request', () => {
+    const context: ReviewedFileContext = { instanceUrl: 'https://gitlab.example', userId: '7', projectId: '15', mergeRequestIid: '42', revision: 'head-a' }
+    const diffText = '@@ -1 +1 @@\n-old\n+new\n'
+    for (let index = 0; index < 505; index += 1) setFileReviewed(context, makeDiff(diffText, `src/${index}.ts`), true)
+
+    const saved = JSON.parse(localStorage.getItem(scopedKey(context, 'reviewed-files')) ?? '{}') as Record<string, Record<string, string>>
+    const files = saved['15:42']
+    expect(Object.keys(files)).toHaveLength(500)
+    expect(files['src/0.ts']).toBeUndefined()
+    expect(files['src/504.ts']).toBeDefined()
   })
 })
