@@ -6,7 +6,7 @@ import DevelopmentApp from './pages/DevelopmentApp'
 import { createAppTheme } from './theme'
 
 function App() {
-  return <ThemeProvider theme={createAppTheme('dark', 'workbench')}><DevelopmentApp mode="dark" onModeChange={() => undefined} route="foundation" /></ThemeProvider>
+  return <ThemeProvider theme={createAppTheme('dark')}><DevelopmentApp mode="dark" onModeChange={() => undefined} route="foundation" /></ThemeProvider>
 }
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))

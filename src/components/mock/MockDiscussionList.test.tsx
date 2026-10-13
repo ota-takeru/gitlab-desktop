@@ -25,7 +25,7 @@ function discussion(overrides: Partial<MockDiscussion> = {}): MockDiscussion {
 
 function renderList(items: MockDiscussion[], options: { onEditNote?: (discussionId: string, body: string, replyId?: string) => void; onDeleteNote?: (discussionId: string, replyId?: string) => void } = {}) {
   return render(
-    <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+    <ThemeProvider theme={createAppTheme('dark')}>
       <MockDiscussionList
         discussions={items}
         onDeleteNote={options.onDeleteNote}
@@ -95,7 +95,7 @@ describe('MockDiscussionList note controls', () => {
   it('shows ordinary comments without thread resolution controls while retaining reply', () => {
     const onReply = vi.fn()
     render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <MockDiscussionList
           discussions={[discussion({ kind: 'comment', state: 'resolved' })]}
           onReply={onReply}

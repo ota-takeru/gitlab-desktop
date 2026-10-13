@@ -9,7 +9,7 @@ import { MockDiffView, type MockDiffDisplayMode } from './MockDiffView'
 
 function renderView(file: MockChangedFile, displayMode: MockDiffDisplayMode = 'full', contentVersionLabel = 'b7c2e81', onAddComment?: (position: MockCommentPosition) => void, commentScope: 'overall' | 'commit' = 'overall', discussions: MockDiscussion[] = []) {
   return render(
-    <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+    <ThemeProvider theme={createAppTheme('dark')}>
       <MockDiffView
         displayMode={displayMode}
         files={[file]}
@@ -72,7 +72,7 @@ describe('MockDiffView', () => {
     const onDisplayModeChange = vi.fn()
     const file = fileWith([{ kind: 'context', oldLine: 1, newLine: 1, code: 'const value = 1' }], 'const value = 1')
     render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <MockDiffView
           displayMode="full"
           files={[file]}

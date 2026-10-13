@@ -53,7 +53,7 @@ export default function App() {
   const developmentRoute = DevelopmentApp && (route.startsWith('mock') || route.startsWith('foundation'))
   // `?fixture=<state>` keeps the client's own hash routes working.
   const fixtureMode = FixtureApp && new URLSearchParams(window.location.search).has('fixture')
-  const theme = useMemo(() => createAppTheme(mode, 'workbench'), [mode])
+  const theme = useMemo(() => createAppTheme(mode), [mode])
   const onModeChange = () => {
     const next = mode === 'dark' ? 'light' : 'dark'
     saveMode(next)

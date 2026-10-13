@@ -7,7 +7,7 @@ import { MockApp } from './MockApp'
 
 function renderMock() {
   return render(
-    <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+    <ThemeProvider theme={createAppTheme('dark')}>
       <MockApp mode="dark" onBackToFoundation={vi.fn()} onModeChange={vi.fn()} />
     </ThemeProvider>,
   )

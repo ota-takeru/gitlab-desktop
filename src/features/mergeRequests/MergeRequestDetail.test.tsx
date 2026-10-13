@@ -159,7 +159,7 @@ describe('BufferedReviewComposer', () => {
 
     render(
       <QueryClientProvider client={client}>
-        <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <ThemeProvider theme={createAppTheme('dark')}>
           <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} />
         </ThemeProvider>
       </QueryClientProvider>,
@@ -209,7 +209,7 @@ describe('BufferedReviewComposer', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <ThemeProvider theme={createAppTheme('dark')}>
           <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} />
         </ThemeProvider>
       </QueryClientProvider>,
@@ -234,7 +234,7 @@ describe('BufferedReviewComposer', () => {
     })
     detailMocks.flushComposerBuffersMock.mockResolvedValue(saved)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} /></ThemeProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} /></ThemeProvider></QueryClientProvider>)
     const input = await screen.findByLabelText('添付ファイルを選択')
     const file = new File(['test'], 'test.txt', { type: 'text/plain' })
     fireEvent.change(input, { target: { files: [file] } })
@@ -260,7 +260,7 @@ describe('BufferedReviewComposer', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+        <ThemeProvider theme={createAppTheme('dark')}>
           <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} />
         </ThemeProvider>
       </QueryClientProvider>,
@@ -291,7 +291,7 @@ describe('MergeRequestDetail tabs and description', () => {
       return <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={(next) => { onTabChange(next); setTab(next) }} tab={tab} />
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><Harness /></ThemeProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><Harness /></ThemeProvider></QueryClientProvider>)
     return onTabChange
   }
 
@@ -342,7 +342,7 @@ describe('line comments from the diff', () => {
     ['レビューに追加', 'saveDraft'],
   ] as const)('sends the line comment with %s and then closes the editor so the next comment is not on that line', async (button, kind) => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab="changes" onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab="changes" onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
 
     fireEvent.click(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' }))
     const editor = await screen.findByRole('region', { name: 'レビューコメント入力' })
@@ -369,7 +369,7 @@ describe('replying and resolving in the diff', () => {
 
   function renderChanges() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab="changes" onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab="changes" onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
   }
 
   it('opens the reply editor inside the diff thread and sends the reply to that thread', async () => {

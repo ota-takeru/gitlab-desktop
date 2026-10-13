@@ -27,7 +27,7 @@ function renderComposer(overrides: Partial<ComponentProps<typeof MockReviewCompo
   }
   return {
     ...render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <MockReviewComposer {...props} />
       </ThemeProvider>,
     ),

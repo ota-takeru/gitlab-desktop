@@ -11,7 +11,7 @@ function renderPane(activeTab: 'overview' | 'changes' | 'discussion' = 'discussi
   const mergeRequest = mockMergeRequests[0]
   const onSelectTab = vi.fn()
   const view = render(
-    <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+    <ThemeProvider theme={createAppTheme('dark')}>
       <MockReviewPane
         activeTab={activeTab}
         approved={false}
@@ -94,7 +94,7 @@ describe('MockReviewPane', () => {
   it('focuses the composer when a discussion reply is selected', () => {
     const mergeRequest = mockMergeRequests[0]
     render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <MockReviewPane
           activeTab="discussion"
           approved={false}

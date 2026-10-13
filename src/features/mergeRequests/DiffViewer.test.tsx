@@ -11,7 +11,7 @@ import { setFileReviewed, type ReviewedFileContext } from './useReviewedFiles'
 
 function renderViewer(diff: Diff, options: { fileContent?: string | null; selectedPosition?: Position; view?: 'diff' | 'file' } = {}) {
   return render(
-    <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+    <ThemeProvider theme={createAppTheme('dark')}>
       <DiffViewer
         diffs={[diff]}
         fileContent={options.fileContent}
@@ -34,7 +34,7 @@ function renderMany(diffList: Diff[], options: { context?: ReviewedFileContext; 
   function Harness() {
     const [selectedFile, setSelectedFile] = useState(options.initialFile ?? diffList[0]?.newPath ?? null)
     const [view, setView] = useState<'diff' | 'file'>('diff')
-    return <ThemeProvider theme={createAppTheme('dark', 'workbench')}><DiffViewer diffs={diffList} onComment={vi.fn()} onSelectFile={setSelectedFile} onViewChange={setView} reviewContext={options.context} selectedFile={selectedFile} selectedPosition={undefined} view={view} /></ThemeProvider>
+    return <ThemeProvider theme={createAppTheme('dark')}><DiffViewer diffs={diffList} onComment={vi.fn()} onSelectFile={setSelectedFile} onViewChange={setView} reviewContext={options.context} selectedFile={selectedFile} selectedPosition={undefined} view={view} /></ThemeProvider>
   }
   return render(<Harness />)
 }
@@ -56,7 +56,7 @@ describe('DiffViewer', () => {
     localStorage.removeItem('gitlab-desktop:diff-layout')
     const onComment = vi.fn()
     const diff = makeDiff('@@ -1,4 +1,3 @@\n a\n-b\n-c\n+d\n e\n')
-    const view = render(<ThemeProvider theme={createAppTheme('dark', 'workbench')}><DiffViewer diffs={[diff]} onComment={onComment} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile={diff.newPath} selectedPosition={undefined} view="diff" /></ThemeProvider>)
+    const view = render(<ThemeProvider theme={createAppTheme('dark')}><DiffViewer diffs={[diff]} onComment={onComment} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile={diff.newPath} selectedPosition={undefined} view="diff" /></ThemeProvider>)
 
     expect(screen.getAllByTestId('diff-line')).toHaveLength(5)
     fireEvent.click(screen.getByRole('button', { name: '左右に並べて比較' }))
@@ -76,7 +76,7 @@ describe('DiffViewer', () => {
 
     // The choice is remembered for the next file or session.
     view.unmount()
-    render(<ThemeProvider theme={createAppTheme('dark', 'workbench')}><DiffViewer diffs={[diff]} onComment={vi.fn()} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile={diff.newPath} selectedPosition={undefined} view="diff" /></ThemeProvider>)
+    render(<ThemeProvider theme={createAppTheme('dark')}><DiffViewer diffs={[diff]} onComment={vi.fn()} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile={diff.newPath} selectedPosition={undefined} view="diff" /></ThemeProvider>)
     expect(screen.getAllByTestId('diff-split-row')).toHaveLength(4)
     localStorage.removeItem('gitlab-desktop:diff-layout')
   })
@@ -85,7 +85,7 @@ describe('DiffViewer', () => {
     const onSelectFile = vi.fn()
     const first = makeDiff('@@ -1 +1 @@\n-a\n+b\n', 'src/a.ts')
     const second = makeDiff('@@ -1 +1 @@\n-c\n+d\n', 'src/b.ts')
-    render(<ThemeProvider theme={createAppTheme('dark', 'workbench')}><DiffViewer diffs={[first, second]} onComment={vi.fn()} onSelectFile={onSelectFile} onViewChange={vi.fn()} selectedFile="src/a.ts" selectedPosition={undefined} view="diff" /></ThemeProvider>)
+    render(<ThemeProvider theme={createAppTheme('dark')}><DiffViewer diffs={[first, second]} onComment={vi.fn()} onSelectFile={onSelectFile} onViewChange={vi.fn()} selectedFile="src/a.ts" selectedPosition={undefined} view="diff" /></ThemeProvider>)
     expect(screen.getByRole('button', { name: '前のファイル' })).toBeDisabled()
     expect(screen.getByText('1/2')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '次のファイル' }))
@@ -166,7 +166,7 @@ describe('DiffViewer', () => {
     const position: Position = { baseSha: 'base', headSha: 'head', newLine: 1201, newPath: diff.newPath, oldPath: diff.oldPath, positionType: 'text', startSha: 'start' }
 
     render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <DiffViewer diffs={[diff]} onComment={onComment} onSelectFile={vi.fn()} selectedFile={diff.newPath} selectedPosition={position} view="diff" onViewChange={vi.fn()} />
       </ThemeProvider>,
     )
@@ -316,7 +316,7 @@ describe('DiffViewer line comments', () => {
 
   it('places current threads under their lines, folds resolved ones and counts outdated ones', () => {
     const diff = makeDiff('@@ -1,2 +1,2 @@\n-old\n+new\n same\n')
-    render(<ThemeProvider theme={createAppTheme('dark', 'workbench')}><DiffViewer discussionHeadSha="head" discussions={[
+    render(<ThemeProvider theme={createAppTheme('dark')}><DiffViewer discussionHeadSha="head" discussions={[
       thread('removed', at('head', { oldLine: 1 }), '削除行へのコメント'),
       thread('resolved', at('head', { newLine: 2, oldLine: 2 }), '解決済みの本文', true),
       thread('outdated', at('older', { newLine: 1 }), '古い版へのコメント'),

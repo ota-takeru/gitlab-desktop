@@ -25,7 +25,7 @@ createRoot(rootElement, {
   onUncaughtError: ignoreReactError,
 }).render(
   <StrictMode>
-    <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+    <ThemeProvider theme={createAppTheme('dark')}>
       <CssBaseline />
       <AppErrorBoundary>
         <App />

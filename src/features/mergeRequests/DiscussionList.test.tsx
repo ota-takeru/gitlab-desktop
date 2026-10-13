@@ -42,7 +42,7 @@ function renderList(
   } = {},
 ) {
   return render(
-    <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+    <ThemeProvider theme={createAppTheme('dark')}>
       <DiscussionList
         currentUserId={currentUser.id}
         discussions={discussions}
@@ -111,7 +111,7 @@ describe('DiscussionList note ownership and resolution', () => {
       systemNote,
     ])
     view.rerender(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <DiscussionList
           currentUserId={currentUser.id}
           discussions={[allResolved]}
@@ -298,12 +298,12 @@ describe('DiscussionList note ownership and resolution', () => {
     const onRetry = vi.fn()
     const older: OlderDiscussions = { error: null, hasOlder: true, limitReached: false, loading: false, onLoad, onRetry }
     const view = render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <DiscussionList currentUserId={currentUser.id} discussions={discussions} older={older} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} />
       </ThemeProvider>,
     )
     const rerender = (next: typeof older) => view.rerender(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <DiscussionList currentUserId={currentUser.id} discussions={discussions} older={next} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} />
       </ThemeProvider>,
     )
@@ -380,7 +380,7 @@ describe('DiscussionList note ownership and resolution', () => {
 
     const shrunkDiscussions = discussions.slice(0, 3)
     view.rerender(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <DiscussionList
           currentUserId={currentUser.id}
           discussions={shrunkDiscussions}
@@ -404,7 +404,7 @@ describe('DiscussionList note ownership and resolution', () => {
     fireEvent.click(noteNextPage)
 
     notesView.rerender(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <DiscussionList
           currentUserId={currentUser.id}
           discussions={[createDiscussion([manyNotes[0]])]}
@@ -429,7 +429,7 @@ describe('DiscussionList code beside line comments', () => {
     const general = createDiscussion([createNote('general-note', otherUser)], 'general')
     const renderCodeContext = vi.fn((position: Position) => <div>code at {position.newLine}</div>)
     render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <DiscussionList currentUserId={currentUser.id} discussions={[open, folded, general]} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} renderCodeContext={renderCodeContext} />
       </ThemeProvider>,
     )

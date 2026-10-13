@@ -35,7 +35,7 @@ function renderReview(overrides: Partial<ComponentProps<typeof MockPendingReview
   }
   return {
     ...render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <MockPendingReview {...props} />
       </ThemeProvider>,
     ),
@@ -93,7 +93,7 @@ describe('MockPendingReview', () => {
     }
 
     render(
-      <ThemeProvider theme={createAppTheme('dark', 'workbench')}>
+      <ThemeProvider theme={createAppTheme('dark')}>
         <ReviewWithRemoval />
       </ThemeProvider>,
     )
