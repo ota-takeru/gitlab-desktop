@@ -3,13 +3,19 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
 
-/** Heading of the list pane: title, short context and icon actions on one line. */
-export function PaneHeader({ title, subtitle, actions, children }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
+/**
+ * Heading of the list pane: title, short context and icon actions on one line.
+ * With `navigation` (tabs between sibling lists) the tabs take the title's
+ * place and the title stays only as the heading for assistive technology.
+ */
+export function PaneHeader({ title, subtitle, actions, children, navigation }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode; navigation?: ReactNode }) {
   return (
-    <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, pb: 1.25, pt: 1.5 }}>
+    <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, pb: 1.25, pt: navigation ? 0.5 : 1.5 }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 30, minWidth: 0 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography component="h1" noWrap variant="h1">{title}</Typography>
+          {navigation
+            ? <><Typography component="h1" sx={{ clip: 'rect(0 0 0 0)', height: 1, overflow: 'hidden', position: 'absolute', whiteSpace: 'nowrap', width: 1 }}>{title}</Typography>{navigation}</>
+            : <Typography component="h1" noWrap variant="h1">{title}</Typography>}
         </Box>
         {actions ? <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, mr: -0.5 }}>{actions}</Stack> : null}
       </Stack>

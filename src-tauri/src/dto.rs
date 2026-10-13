@@ -108,6 +108,11 @@ pub enum Query {
     Todos {
         page: u32,
     },
+    Branches {
+        project_id: String,
+        search: String,
+        page: u32,
+    },
     Notes {
         project_id: String,
         iid: String,
@@ -369,6 +374,7 @@ mod tests {
             serde_json::json!({"kind": "users", "search": "alice", "page": 1}),
             serde_json::json!({"kind": "project", "path": "group/project"}),
             serde_json::json!({"kind": "todos", "page": 2}),
+            serde_json::json!({"kind": "branches", "projectId": "7", "search": "feat", "page": 1}),
             serde_json::json!({"kind": "notes", "projectId": "7", "iid": "3", "page": 1}),
         ] {
             let query: Query = serde_json::from_value(value.clone()).unwrap();

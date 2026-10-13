@@ -13,6 +13,8 @@ import CardContent from '@mui/material/CardContent'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useEffect, useState } from 'react'
@@ -150,6 +152,10 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
                   <Typography variant="subtitle1">通常の行（サンプル）</Typography>
                 </ListRow>
               </Box>
+            </Box>
+            <Box sx={{ bgcolor: 'surface.list', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+              <PaneHeader actions={<IconButton aria-label="更新（タブ付きサンプル）" disabled><RefreshRoundedIcon /></IconButton>} navigation={<Tabs aria-label="並列の一覧（サンプル）" value="first"><Tab label="一覧A" value="first" /><Tab label="一覧B" value="second" /></Tabs>} title="タブで切り替える一覧（サンプル）" />
+              <PaneStatus>並列の一覧はタブを見出しの位置に置く</PaneStatus>
             </Box>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Kbd>J</Kbd><Kbd>K</Kbd><Typography color="text.secondary" variant="caption">キーボード操作の表示</Typography></Stack>
             <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>

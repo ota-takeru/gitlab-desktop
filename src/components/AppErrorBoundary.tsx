@@ -123,7 +123,7 @@ export function AppErrorFallback({
               再表示
             </Button>
             <Button onClick={onGoToConnectionSettings} variant="outlined">
-              接続設定へ移動
+              設定へ移動
             </Button>
           </Stack>
         </Stack>

@@ -35,7 +35,7 @@ describe('AppErrorBoundary', () => {
 
     expect(screen.getByRole('heading', { name: '画面を表示できません' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '再表示' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '接続設定へ移動' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '設定へ移動' })).toBeInTheDocument()
     expect(screen.queryByText('復旧した画面')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '再表示' }))
@@ -71,7 +71,7 @@ describe('AppErrorBoundary', () => {
       { onCaughtError: () => undefined },
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '接続設定へ移動' }))
+    fireEvent.click(screen.getByRole('button', { name: '設定へ移動' }))
 
     expect(window.location.hash).toBe('#client/settings')
     expect(screen.queryByText('private token=super-secret')).not.toBeInTheDocument()

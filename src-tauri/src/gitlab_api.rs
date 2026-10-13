@@ -34,6 +34,7 @@ enum ResponseKind {
     Users,
     Project,
     Todos,
+    Branches,
     Notes,
     Projects,
     Mrs,
@@ -567,6 +568,32 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                     ("page".to_owned(), page.to_string()),
                     ("per_page".to_owned(), PER_PAGE.to_string()),
                 ],
+            )
+        }
+        Query::Branches {
+            project_id,
+            search,
+            page,
+        } => {
+            validate_id(project_id, "projectId")?;
+            validate_page(*page)?;
+            // Recently updated branches first; GitLab versions without this
+            // sort ignore it and list by name.
+            let mut params = vec![
+                ("sort".to_owned(), "updated_desc".to_owned()),
+                ("page".to_owned(), page.to_string()),
+                ("per_page".to_owned(), PER_PAGE.to_string()),
+            ];
+            if !search.is_empty() {
+                params.push(("search".to_owned(), search.clone()));
+            }
+            (
+                endpoint(
+                    api_base,
+                    &["projects", project_id, "repository", "branches"],
+                )?,
+                ResponseKind::Branches,
+                params,
             )
         }
         Query::Notes {
@@ -1265,6 +1292,7 @@ fn normalize_response(kind: ResponseKind, value: Value) -> Result<Value, AppErro
         ResponseKind::Users => normalize_array(value, None, normalize_user),
         ResponseKind::Project => normalize_project(&value),
         ResponseKind::Todos => normalize_todos(value),
+        ResponseKind::Branches => normalize_array(value, None, normalize_branch),
         ResponseKind::Notes => normalize_array(value, None, normalize_note),
         ResponseKind::Projects => normalize_array(value, None, normalize_project),
         ResponseKind::Mrs => normalize_array(value, None, normalize_merge_request),
@@ -1335,6 +1363,26 @@ fn normalize_project(value: &Value) -> Result<Value, AppError> {
         "description": string_field(value, "description"),
         "webUrl": string_field(value, "web_url"),
         "archived": bool_field(value, "archived"),
+    }))
+}
+
+fn normalize_branch(value: &Value) -> Result<Value, AppError> {
+    require_object(value, "GitLab returned an invalid branch.")?;
+    let name = required_string_field(value, "name", "branch")?;
+    let commit = value.get("commit").filter(|commit| commit.is_object());
+    Ok(json!({
+        "name": name,
+        "default": bool_field(value, "default"),
+        "merged": bool_field(value, "merged"),
+        "protected": bool_field(value, "protected"),
+        "webUrl": string_field(value, "web_url"),
+        "commit": commit.map(|commit| json!({
+            "id": string_field(commit, "id"),
+            "shortId": string_field(commit, "short_id"),
+            "title": string_field(commit, "title"),
+            "authorName": string_field(commit, "author_name"),
+            "committedDate": string_field(commit, "committed_date"),
+        })),
     }))
 }
 
@@ -2786,6 +2834,53 @@ mod tests {
         assert_eq!(params.get("state").unwrap(), "pending");
         assert_eq!(params.get("per_page").unwrap(), "30");
         assert!(build_query_url(&api, &Query::Todos { page: 0 }).is_err());
+    }
+
+    #[test]
+    fn branches_query_is_project_scoped_recent_first_and_validated() {
+        let api = Url::parse("https://gitlab.example/prefix/api/v4/").unwrap();
+        let query = |project_id: &str, search: &str, page| Query::Branches {
+            project_id: project_id.to_owned(),
+            search: search.to_owned(),
+            page,
+        };
+        let (url, _) = build_query_url(&api, &query("7", "feat/x", 2)).unwrap();
+        assert_eq!(url.path(), "/prefix/api/v4/projects/7/repository/branches");
+        let params = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(params.get("sort").unwrap(), "updated_desc");
+        assert_eq!(params.get("search").unwrap(), "feat/x");
+        assert_eq!(params.get("page").unwrap(), "2");
+        assert_eq!(params.get("per_page").unwrap(), "30");
+        let (url, _) = build_query_url(&api, &query("7", "", 1)).unwrap();
+        assert!(!url.query_pairs().any(|(key, _)| key == "search"));
+        assert!(build_query_url(&api, &query("../7", "", 1)).is_err());
+        assert!(build_query_url(&api, &query("7", "", 0)).is_err());
+    }
+
+    #[test]
+    fn branches_keep_state_flags_and_latest_commit() {
+        let branch = json!({
+            "name": "feature/search", "merged": false, "protected": true, "default": false,
+            "web_url": "https://gitlab.example/group/project/-/tree/feature/search",
+            "commit": {"id": "abc123", "short_id": "abc1", "title": "Add search", "author_name": "Alice", "committed_date": "2026-10-09T00:00:00Z"}
+        });
+        let normalized = normalize_response(
+            ResponseKind::Branches,
+            json!([branch, {"name": "main", "default": true}]),
+        )
+        .unwrap();
+        assert_eq!(normalized[0]["name"], "feature/search");
+        assert_eq!(normalized[0]["protected"], true);
+        assert_eq!(normalized[0]["commit"]["shortId"], "abc1");
+        assert_eq!(
+            normalized[0]["commit"]["committedDate"],
+            "2026-10-09T00:00:00Z"
+        );
+        assert_eq!(normalized[1]["default"], true);
+        assert!(normalized[1]["commit"].is_null());
+        assert!(normalize_response(ResponseKind::Branches, json!([{"merged": true}])).is_err());
     }
 
     #[test]

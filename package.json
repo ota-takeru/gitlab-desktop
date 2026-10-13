@@ -1,7 +1,7 @@
 {
   "name": "gitlab-desktop",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "engines": {
     "node": ">=24 <25",
@@ -42,6 +42,7 @@
     "@tiptap/pm": "3.31.4",
     "@tiptap/react": "3.31.4",
     "@tiptap/starter-kit": "3.31.4",
+    "highlight.js": "11.11.2",
     "lowlight": "3.3.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

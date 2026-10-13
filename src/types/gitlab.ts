@@ -89,6 +89,17 @@ export interface MergeRequestsQuery {
 export interface UsersQuery { kind: 'users'; search: string; page: number }
 export interface ProjectLookupQuery { kind: 'project'; path: string }
 export interface TodosQuery { kind: 'todos'; page: number }
+export interface BranchesQuery { kind: 'branches'; projectId: string; search: string; page: number }
+
+export interface GitLabBranch {
+  name: string
+  default: boolean
+  merged: boolean
+  protected: boolean
+  webUrl: string
+  /** The latest commit; null when GitLab omitted it. */
+  commit: { id: string; shortId: string; title: string; authorName: string; committedDate: string } | null
+}
 export interface NotesQuery { kind: 'notes'; projectId: string; iid: string; page: number }
 
 export interface GitLabTodo {
@@ -164,6 +175,7 @@ export type GitLabQuery =
   | UsersQuery
   | ProjectLookupQuery
   | TodosQuery
+  | BranchesQuery
   | NotesQuery
   | MergeRequestsQuery
   | MergeRequestQuery
@@ -278,6 +290,7 @@ export type QueryData =
   | Project
   | GitLabUser[]
   | GitLabTodo[]
+  | GitLabBranch[]
   | Note[]
   | MergeRequest[]
   | MergeRequest
@@ -438,6 +451,7 @@ export type GitLabQueryData<Q extends GitLabQuery> =
     : Q extends UsersQuery ? GitLabUser[]
       : Q extends ProjectLookupQuery ? Project
         : Q extends TodosQuery ? GitLabTodo[]
+        : Q extends BranchesQuery ? GitLabBranch[]
           : Q extends NotesQuery ? Note[]
     : Q extends MergeRequestsQuery ? MergeRequest[]
       : Q extends MergeRequestQuery ? MergeRequest

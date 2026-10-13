@@ -108,6 +108,15 @@ export function installFixtureIpc(state: FixtureState): void {
         title: mergeRequest.title,
         webUrl: mergeRequest.webUrl,
       }))
+      case 'branches': {
+        // The default branch and each fixture MR's source branch, newest first.
+        const items = data.mergeRequests.map((item) => item.mergeRequest).filter((mergeRequest) => mergeRequest.projectId === request.projectId)
+        const branches = [
+          ...items.map((mergeRequest) => ({ commit: { authorName: mergeRequest.author.name, committedDate: mergeRequest.updatedAt, id: mergeRequest.headSha ?? '', shortId: (mergeRequest.headSha ?? '').slice(0, 8), title: mergeRequest.title }, default: false, merged: mergeRequest.state === 'merged', name: mergeRequest.sourceBranch, protected: false, webUrl: '' })),
+          ...(items[0] ? [{ commit: null, default: true, merged: false, name: items[0].targetBranch, protected: true, webUrl: '' }] : []),
+        ]
+        return branches.filter((branch, index) => branches.findIndex((other) => other.name === branch.name) === index && matches(branch.name, request.search))
+      }
       case 'mrs': return data.mergeRequests.map((item) => item.mergeRequest).filter((mergeRequest) =>
         (request.state === 'all' || mergeRequest.state === request.state)
         && (!request.projectId || mergeRequest.projectId === request.projectId)
@@ -115,6 +124,7 @@ export function installFixtureIpc(state: FixtureState): void {
         && (!request.reviewerId || Boolean(mergeRequest.reviewers?.some((user) => user.id === request.reviewerId)))
         && (!request.assigneeId || Boolean(mergeRequest.assignees?.some((user) => user.id === request.assigneeId)))
         && (!request.labels?.length || request.labels.every((label) => mergeRequest.labels?.includes(label)))
+        && (!request.sourceBranch || mergeRequest.sourceBranch === request.sourceBranch)
         && matches(`${mergeRequest.title} ${mergeRequest.description}`, request.search))
       case 'mr': return find(request).mergeRequest
       case 'discussions': return find(request).discussions

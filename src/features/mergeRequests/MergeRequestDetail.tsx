@@ -7,8 +7,6 @@ import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import PublishRoundedIcon from '@mui/icons-material/PublishRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
-import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined'
-import WidthFullOutlinedIcon from '@mui/icons-material/WidthFullOutlined'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import Alert from '@mui/material/Alert'
@@ -90,18 +88,17 @@ export function clearComposerBuffers(): void {
 
 export interface MergeRequestDetailProps {
   initialMergeRequest: MergeRequest
-  /** Shown only when the list is hidden (narrow windows). */
+  /** Returns to the list the MR was opened from. */
   onBack?: () => void
+  /** Where onBack returns to, such as 「レビュー依頼に戻る」. */
+  backLabel?: string
   onOpenProject?: () => void
-  /** Wide windows: hide or show the list pane to give the review more room. */
-  onToggleList?: () => void
-  listHidden?: boolean
   /** The tab, when the caller keeps it (in the window location, so Back returns to the previous tab). */
   tab?: ReviewTab
   onTabChange?: (tab: ReviewTab) => void
 }
 
-export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, onOpenProject, onTabChange, onToggleList, tab }: MergeRequestDetailProps) {
+export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMergeRequest, onBack, onOpenProject, onTabChange, tab }: MergeRequestDetailProps) {
   const { session } = useConnection()
   const workspace = usePersonalWorkspace(session)
   const sectionRef = useRef<HTMLElement | null>(null)
@@ -278,7 +275,7 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
   }, [activeTab, diffsResult.data, diffsResult.loading, diffsResult.refreshing, diffsResult.snapshot?.nextPage, pendingFileTarget])
 
   if (!mergeRequest) {
-    return <Stack spacing={1.5} sx={{ p: 3 }}>{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />} sx={{ alignSelf: 'flex-start' }}>一覧に戻る</Button> : null}<Alert severity="error">このMRは現在の接続先または権限では表示できません。保存済みの内容は表示しません。</Alert></Stack>
+    return <Stack spacing={1.5} sx={{ p: 3 }}>{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />} sx={{ alignSelf: 'flex-start' }}>{backLabel}</Button> : null}<Alert severity="error">このMRは現在の接続先または権限では表示できません。保存済みの内容は表示しません。</Alert></Stack>
   }
 
   const runAction = async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
@@ -517,8 +514,7 @@ export function MergeRequestDetail({ initialMergeRequest, listHidden, onBack, on
     <Box component="section" ref={sectionRef} sx={{ minHeight: '100%', width: '100%' }}>
       <Box component="header" data-sticky-header="true" ref={headerRef} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', position: 'sticky', px: 2, pt: 1.25, top: 0, zIndex: 2 }}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32 }}>
-          {onBack ? <Tooltip title="一覧に戻る (Esc)"><IconButton aria-label="一覧に戻る" onClick={onBack} sx={{ ml: -0.75 }}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
-          {onToggleList ? <Tooltip title={listHidden ? '一覧を表示（Ctrl+\\）' : '一覧を隠して広く表示（Ctrl+\\）'}><IconButton aria-label={listHidden ? '一覧を表示' : '一覧を隠す'} aria-pressed={Boolean(listHidden)} onClick={onToggleList} sx={{ ml: -0.75 }}>{listHidden ? <ViewSidebarOutlinedIcon /> : <WidthFullOutlinedIcon />}</IconButton></Tooltip> : null}
+          {onBack ? <Tooltip title={`${backLabel} (Esc)`}><IconButton aria-label={backLabel} onClick={onBack} sx={{ ml: -0.75 }}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
             <Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, overflow: 'hidden', px: 0.75, textOverflow: 'ellipsis' }}>{mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`}</Button>
             <Typography color="text.secondary" sx={{ flexShrink: 0 }} variant="body2">!{mergeRequest.iid}</Typography>

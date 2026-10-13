@@ -1,5 +1,5 @@
-import PushPinIcon from '@mui/icons-material/PushPin'
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
+import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
+import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
@@ -70,17 +70,16 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
     const nextRecent = [projectId, ...recent.filter((id) => id !== projectId)].slice(0, 20)
     setRecent(nextRecent)
     writeRecentProjectIds(scope, nextRecent)
-    if (onOpenProjectId) onOpenProjectId(projectId)
-    else {
-      const project = projectById.get(projectId)
-      if (project) onOpenProject(project)
-    }
+    // A shortcut to a project outside the current page still opens its screen, by id.
+    const project = projectById.get(projectId)
+    if (project) onOpenProject(project)
+    else onOpenProjectId?.(projectId)
   }
 
   const projectById = new Map(projects.map((project) => [project.id, project]))
 
   if (!session) {
-    return <PaneEmpty description="GitLabに接続すると、参加しているプロジェクトを検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">接続設定を開く</Button></PaneEmpty>
+    return <PaneEmpty description="GitLabに接続すると、参加しているプロジェクトを検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
   }
 
   return (
@@ -108,7 +107,7 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
         </Box>
       </PaneHeader>
 
-      {pinned.length > 0 || recent.length > 0 ? <ProjectShortcuts ids={pinned} label="固定" onOpen={openProjectId} projectById={projectById} secondaryIds={recent} secondaryLabel="最近" /> : null}
+      {pinned.length > 0 || recent.length > 0 ? <ProjectShortcuts ids={pinned} label="お気に入り" onOpen={openProjectId} projectById={projectById} secondaryIds={recent} secondaryLabel="最近" /> : null}
       <PaneStatus>{result.data ? <>{projects.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</> : result.loading ? 'プロジェクトを読み込み中…' : null}</PaneStatus>
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -121,7 +120,7 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
             const isPinned = pinned.includes(project.id)
             return (
               <ListRow
-                actions={<Tooltip title={isPinned ? '固定を解除' : 'プロジェクトを固定'}><IconButton aria-label={isPinned ? `${project.name}の固定を解除` : `${project.name}を固定`} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project.id)}>{isPinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>}
+                actions={<Tooltip title={isPinned ? 'お気に入りから外す' : 'お気に入りに追加'}><IconButton aria-label={isPinned ? `${project.name}をお気に入りから外す` : `${project.name}をお気に入りに追加`} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project.id)}>{isPinned ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}</IconButton></Tooltip>}
                 ariaLabel={project.name}
                 key={project.id}
                 leading={<FolderOpenRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />}
@@ -149,7 +148,7 @@ function ProjectShortcuts({ ids, label, onOpen, projectById, secondaryIds, secon
 
 function ShortcutGroup({ ids, label, onOpen, projectById }: { ids: string[]; label: string; onOpen: (projectId: string) => void; projectById: Map<string, Project> }) {
   if (ids.length === 0) return null
-  return <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}><Typography color="text.secondary" sx={{ flex: '0 0 32px' }} variant="caption">{label}</Typography><Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => { const project = projectById.get(id); return <Chip clickable key={`${label}:${id}`} label={project?.name ?? `Project ${id}`} onClick={() => onOpen(id)} size="small" variant="outlined" /> })}</Stack></Stack>
+  return <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}><Typography color="text.secondary" sx={{ flex: '0 0 auto', minWidth: 32 }} variant="caption">{label}</Typography><Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => { const project = projectById.get(id); return <Chip clickable key={`${label}:${id}`} label={project?.name ?? `Project ${id}`} onClick={() => onOpen(id)} size="small" variant="outlined" /> })}</Stack></Stack>
 }
 
 function formatFetchedAt(timestamp?: number): string {

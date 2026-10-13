@@ -8,7 +8,6 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import PushPinIcon from '@mui/icons-material/PushPin'
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -29,7 +28,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 import { ListRow } from '../../components/ListRow'
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
@@ -44,6 +43,7 @@ import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, write
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
 import { listTitle } from './listTitle'
+import { personalQueueFor } from './personalQueue'
 import { ProjectSearchPicker, UserSearchPicker } from './SearchPickers'
 
 type OrderBy = NonNullable<MergeRequestsQuery['orderBy']>
@@ -59,6 +59,8 @@ export interface MergeRequestListProps {
   initialParams?: Record<string, string>
   onOpenMergeRequest: (mergeRequest: MergeRequest) => void
   onSearchStateChange?: (params: Record<string, string>) => void
+  /** Tabs to the sibling lists, shown in place of the title. */
+  navigation?: ReactNode
 }
 
 interface SearchDraft {
@@ -82,7 +84,7 @@ interface AppliedSearch extends SearchDraft {
   page: number
 }
 
-export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpenMergeRequest, onSearchStateChange, projectId, projectName, selected }: MergeRequestListProps) {
+export function MergeRequestList({ initialQuery = '', initialParams = {}, navigation, onOpenMergeRequest, onSearchStateChange, projectId, projectName, selected }: MergeRequestListProps) {
   const { session } = useConnection()
   const personalWorkspace = usePersonalWorkspace(session)
   const scope = useMemo(() => preferenceScope(session?.instanceUrl ?? 'anonymous', session?.user.id ?? 'anonymous'), [session?.instanceUrl, session?.user.id])
@@ -218,10 +220,13 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
   }
 
   if (!session) {
-    return <PaneEmpty description="GitLabに接続すると、レビュー対象を検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">接続設定を開く</Button></PaneEmpty>
+    return <PaneEmpty description="GitLabに接続すると、レビュー対象を検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
   }
 
   const personalQueue = personalQueueFor(initialParams, session.user.id)
+  // A personal queue keeps its people condition; changing who is involved
+  // belongs to MR search, so the queue's tab never changes under the reader.
+  const fixedQueue = personalQueue !== null
   const title = projectName ?? (personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
   const advancedActive = hasAdvancedFilters(draft, projectName ? projectId : undefined)
   const page = applied?.page ?? 1
@@ -231,9 +236,10 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader
         actions={<>
-          <Tooltip title="保存済み検索"><IconButton aria-label={`保存済み検索を管理（${savedSearches.length}）`} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>
+          {fixedQueue ? null : <Tooltip title="保存済み検索"><IconButton aria-label={`保存済み検索を管理（${savedSearches.length}）`} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>}
           <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         </>}
+        navigation={navigation}
         subtitle={projectName ? 'プロジェクトのマージリクエスト' : undefined}
         title={title}
       >
@@ -259,6 +265,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
               <MenuItem value="merged">Merged</MenuItem>
               <MenuItem value="closed">Closed</MenuItem>
             </Select>
+            {fixedQueue ? null : <>
             <Select aria-label="レビュー担当" displayEmpty onChange={(event) => setDraft((current) => ({ ...current, reviewer: event.target.value }))} sx={pillSelectSx} value={personSelectValue(draft.reviewer)}>
               <MenuItem value="">レビュアー: すべて</MenuItem>
               <MenuItem value="self">自分がレビュアー</MenuItem>
@@ -269,6 +276,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
               <MenuItem value="self">自分が担当</MenuItem>
               <MenuItem value="id">担当者を指定</MenuItem>
             </Select>
+            </>}
             <Select aria-label="MRの並び順" displayEmpty onChange={(event) => setDraft((current) => ({ ...current, orderBy: event.target.value as OrderBy }))} sx={pillSelectSx} value={draft.orderBy}>
               <MenuItem value="updated_at">更新日時</MenuItem>
               <MenuItem value="created_at">作成日時</MenuItem>
@@ -277,11 +285,11 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, onOpen
               <MenuItem value="desc">新しい順</MenuItem>
               <MenuItem value="asc">古い順</MenuItem>
             </Select>
-            <Button aria-controls="mr-advanced-filters" aria-expanded={showAdvanced} color={advancedActive ? 'primary' : 'inherit'} onClick={() => setShowAdvanced((current) => !current)} startIcon={<TuneRoundedIcon />} sx={{ color: advancedActive ? undefined : 'text.secondary', minHeight: 26, px: 1 }}>詳細条件{advancedActive ? ' · 設定あり' : ''}</Button>
+            {fixedQueue ? null : <Button aria-controls="mr-advanced-filters" aria-expanded={showAdvanced} color={advancedActive ? 'primary' : 'inherit'} onClick={() => setShowAdvanced((current) => !current)} startIcon={<TuneRoundedIcon />} sx={{ color: advancedActive ? undefined : 'text.secondary', minHeight: 26, px: 1 }}>詳細条件{advancedActive ? ' · 設定あり' : ''}</Button>}
           </Stack>
-          {draft.reviewer !== '' && draft.reviewer !== 'self' ? <Box sx={{ mt: 1 }}><UserSearchPicker ariaLabel="MRのレビュアー" label="レビュアーを選択" onChange={(id) => setDraft((current) => ({ ...current, reviewer: id }))} value={draft.reviewer} /></Box> : null}
-          {draft.assignee !== '' && draft.assignee !== 'self' ? <Box sx={{ mt: 1 }}><UserSearchPicker ariaLabel="MRの担当者" label="担当者を選択" onChange={(id) => setDraft((current) => ({ ...current, assignee: id }))} value={draft.assignee} /></Box> : null}
-          <Collapse in={showAdvanced}>
+          {!fixedQueue && draft.reviewer !== '' && draft.reviewer !== 'self' ? <Box sx={{ mt: 1 }}><UserSearchPicker ariaLabel="MRのレビュアー" label="レビュアーを選択" onChange={(id) => setDraft((current) => ({ ...current, reviewer: id }))} value={draft.reviewer} /></Box> : null}
+          {!fixedQueue && draft.assignee !== '' && draft.assignee !== 'self' ? <Box sx={{ mt: 1 }}><UserSearchPicker ariaLabel="MRの担当者" label="担当者を選択" onChange={(id) => setDraft((current) => ({ ...current, assignee: id }))} value={draft.assignee} /></Box> : null}
+          <Collapse in={showAdvanced && !fixedQueue}>
             <Box id="mr-advanced-filters" sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', pt: 1.25 }}>
               <Box sx={{ gridColumn: '1 / -1' }}><UserSearchPicker ariaLabel="MRの作者" label="作者" onChange={(id) => setDraft((current) => ({ ...current, authorId: id }))} value={draft.authorId} /></Box>
               <TextField label="更新日（開始）" onChange={(event) => setDraft((current) => ({ ...current, updatedAfter: event.target.value }))} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（開始）' }, inputLabel: { shrink: true } }} type="date" value={toDateInputValue(draft.updatedAfter)} />
@@ -360,13 +368,6 @@ function hasAdvancedFilters(draft: SearchDraft, projectId?: string) {
   return Boolean(draft.authorId || draft.groupId || draft.labels || draft.sourceBranch || draft.targetBranch || draft.updatedAfter || draft.updatedBefore || (draft.projectId && draft.projectId !== projectId))
 }
 
-function personalQueueFor(params: Record<string, string>, currentUserId: string): 'assigned' | 'created' | 'waiting' | null {
-  if (params.assignee === 'self') return 'assigned'
-  if (params.reviewer === 'self') return 'waiting'
-  if (params.authorId === currentUserId) return 'created'
-  return null
-}
-
 /** Approval of one row: who approved, or null while unknown. */
 interface RowApproval { byMe: boolean; count: number }
 
@@ -437,14 +438,7 @@ function MergeRequestResultRow({ approval, mergeRequest, onOpenMergeRequest, onO
 
   return (
     <ListRow
-      actions={<>
-        {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
-        <Tooltip title={pinned ? '固定を解除' : 'MRを固定'}>
-          <IconButton aria-label={`!${mergeRequest.iid}を${pinned ? '固定解除' : '固定'}`} color={pinned ? 'primary' : 'default'} onClick={() => personalWorkspace.togglePinned(ref, { projectPath: mergeRequest.projectPath ?? '', state: mergeRequest.state, title: mergeRequest.title })}>
-            {pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}
-          </IconButton>
-        </Tooltip>
-      </>}
+      actions={pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : undefined}
       leading={<MergeRequestStateIcon state={mergeRequest.state} />}
       onOpen={() => onOpenMergeRequest(mergeRequest)}
       selected={selected}

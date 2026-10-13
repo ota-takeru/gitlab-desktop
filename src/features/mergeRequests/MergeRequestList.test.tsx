@@ -89,6 +89,23 @@ describe('MergeRequestList search filters', () => {
     expect(screen.getByText('1件取得')).toBe(loadingStatus)
   })
 
+  it('keeps the people condition of a personal queue and offers it only in MR search', () => {
+    const view = render(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
+
+    expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'MRの状態' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'レビュー担当' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'MR担当者' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '詳細条件' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /保存済み検索を管理/u })).not.toBeInTheDocument()
+    expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42', state: 'opened' })
+
+    view.unmount()
+    render(<MergeRequestList initialParams={{ state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
+    expect(screen.getByRole('combobox', { name: 'レビュー担当' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '詳細条件' })).toBeInTheDocument()
+  })
+
   it('passes all applied filters to the typed query and maps self/date values', () => {
     const seen: unknown[] = []
     queryMock.mockImplementation((_sessionId: string, query: unknown) => {
@@ -272,7 +289,8 @@ describe('MergeRequestList search filters', () => {
   it('saves and reapplies the self-assignee filter', async () => {
     const onSearchStateChange = vi.fn()
     localStorage.setItem(savedSearchKey, JSON.stringify([{ assignee: '17', id: 'owner-17', label: 'Other assignee', query: '', state: 'opened' }]))
-    render(<MergeRequestList initialParams={{ assignee: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
+    // With a further condition it is an MR search rather than the fixed assigned queue.
+    render(<MergeRequestList initialParams={{ assignee: 'self', labels: 'bug', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
 
     fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/ }))
     fireEvent.click(screen.getByRole('button', { name: '検索を保存' }))
@@ -392,7 +410,7 @@ describe('MergeRequestList search filters', () => {
     expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ orderBy: 'created_at', search: 'release', sort: 'asc' }))
   })
 
-  it('shows available MR metadata and keeps pin/pipeline controls outside the open button', async () => {
+  it('shows available MR metadata and keeps the pipeline control outside the open button', async () => {
     const mergeRequest = createMergeRequest({
       assignees: [{ id: '10', name: '担当者', username: 'assignee' }],
       draft: true,
@@ -419,9 +437,8 @@ describe('MergeRequestList search filters', () => {
     expect(screen.getByLabelText('CI 成功')).toBeInTheDocument()
     expect(screen.getByText('未読 1')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '!3を固定' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '!3を固定解除' })).toBeInTheDocument())
-    expect(onOpenMergeRequest).not.toHaveBeenCalled()
+    // Pinning happens on the MR and its sidebar tab, not on list rows.
+    expect(screen.queryByRole('button', { name: /!3を固定/u })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '!3のCIパイプラインを開く' }))
     await waitFor(() => expect(openGitLabUrlMock).toHaveBeenCalledWith('session-1', 'https://gitlab.example/team/desktop/-/pipelines/100'))

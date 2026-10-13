@@ -110,6 +110,7 @@ v0.1では、通常のProjects/Merge requests APIの検索パラメーターを�
 | --- | --- | --- |
 | プロジェクト検索 | `GET /projects?search=...`。参加中は`membership=true`、閲覧可能はこの制限を外す | 参加中/閲覧可能、アーカイブを含むか |
 | プロジェクト内の過去MR | `GET /projects/:id/merge_requests`に検索語と状態等を付与 | 選択プロジェクト、初期状態は全状態 |
+| プロジェクトのブランチ | `GET /projects/:id/repository/branches?sort=updated_desc`。名前の検索語を付与。並べ替えに未対応のGitLabでは名前順 | 選択プロジェクト |
 | 接続先を横断する過去MR | `GET /merge_requests?scope=all&state=all&search=...` | 現在の接続先で閲覧可能なMR |
 | グループ内の検索 | 対応するグループMR一覧を利用、対応確認後に公開 | 選択グループ、子グループの扱い |
 | レビュー待ち | reviewer条件＋openedを指定、サーバー対応を確認 | 自分へのレビュー依頼 |

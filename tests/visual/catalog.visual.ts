@@ -51,6 +51,14 @@ for (const theme of themes) {
         await page.getByRole('tab', { name: '変更' }).click()
         await expect(page.getByText('src/lib/review-cache.ts').first()).toBeVisible()
         await expect.soft(page).toHaveScreenshot(`client-mr-changes-${suffix}.png`)
+
+        await open(page, `/?fixture=ready&theme=${theme}#client/branches?projectId=101&projectName=platform%2Fdesktop-client`)
+        await expect(page.getByText('feat/reuse-mr-cache').first()).toBeVisible()
+        await expect.soft(page).toHaveScreenshot(`client-project-branches-${suffix}.png`)
+
+        await open(page, `/?fixture=ready&theme=${theme}#client/settings`)
+        await expect(page.getByRole('heading', { name: '設定' })).toBeVisible()
+        await expect.soft(page).toHaveScreenshot(`client-settings-${suffix}.png`)
       })
     })
   }
@@ -71,7 +79,8 @@ for (const theme of themes) {
     for (const { state, url, text } of states) {
       test(`client ${state}`, async ({ page }) => {
         await open(page, `/?fixture=${state}&theme=${theme}${url}`)
-        await expect(page.getByText(text, { exact: false }).first()).toBeVisible()
+        // The list kept under an open MR is hidden; look only at what is shown.
+        await expect(page.getByText(text, { exact: false }).filter({ visible: true }).first()).toBeVisible()
         await expect(page).toHaveScreenshot(`client-${state}-${theme}-1280x840.png`)
       })
     }
