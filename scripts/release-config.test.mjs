@@ -1,5 +1,5 @@
 import { deepEqual, strictEqual, throws } from 'node:assert'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import { createReleaseConfig, UPDATER_ENDPOINT } from './release-config.mjs'
 import { readProjectVersions, validateReleaseTag } from './release-guard.mjs'
 import { decideRelease, isDocumentationOnly } from './release-main.mjs'
+import { createUpdaterManifest, writeReleaseAssets } from './updater-manifest.mjs'
 import { nextVersion, writeProjectVersion } from './version-bump.mjs'
 
 test('project versions stay in lockstep', () => {
@@ -96,6 +97,34 @@ test('a version bump updates every version file and keeps them in lockstep', () 
     const before = readFileSync('package-lock.json', 'utf8').split('\n')
     const after = readFileSync(join(root, 'package-lock.json'), 'utf8').split('\n')
     strictEqual(before.filter((line, index) => line !== after[index]).length, 2)
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
+})
+
+test('the updater manifest points both Windows keys at the uploaded installer', () => {
+  const manifest = createUpdaterManifest({ version: '0.7.0', assetName: 'GitLab.Desktop_0.7.0_x64-setup.exe', signature: 'c2lnbmF0dXJl\n', pubDate: '2026-10-13T08:55:37.051Z' })
+  const platform = { signature: 'c2lnbmF0dXJl', url: 'https://github.com/ota-takeru/gitlab-desktop/releases/download/v0.7.0/GitLab.Desktop_0.7.0_x64-setup.exe' }
+  deepEqual(manifest, {
+    version: '0.7.0',
+    notes: '署名済み Windows NSIS インストーラーと自動更新メタデータです。',
+    pub_date: '2026-10-13T08:55:37.051Z',
+    platforms: { 'windows-x86_64': platform, 'windows-x86_64-nsis': platform },
+  })
+  throws(() => createUpdaterManifest({ version: '0.7.0', assetName: 'a.exe', signature: ' ', pubDate: '' }), /signature is empty/)
+})
+
+test('release assets use the names GitHub gives uploaded files', () => {
+  const root = mkdtempSync(join(tmpdir(), 'release-assets-'))
+  try {
+    const installer = join(root, 'GitLab Desktop_0.7.0_x64-setup.exe')
+    writeFileSync(installer, 'installer')
+    writeFileSync(`${installer}.sig`, 'c2lnbmF0dXJl')
+    const output = join(root, 'out')
+    strictEqual(writeReleaseAssets(installer, output, '0.7.0', 'now'), 'GitLab.Desktop_0.7.0_x64-setup.exe')
+    deepEqual(readdirSync(output).sort(), ['GitLab.Desktop_0.7.0_x64-setup.exe', 'GitLab.Desktop_0.7.0_x64-setup.exe.sig', 'latest.json'])
+    const manifest = JSON.parse(readFileSync(join(output, 'latest.json'), 'utf8'))
+    strictEqual(manifest.platforms['windows-x86_64'].url.endsWith('/v0.7.0/GitLab.Desktop_0.7.0_x64-setup.exe'), true)
   } finally {
     rmSync(root, { force: true, recursive: true })
   }

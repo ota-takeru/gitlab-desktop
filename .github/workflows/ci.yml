@@ -1,11 +1,17 @@
 name: CI
 
+# Pushes to main and release tags run these checks from release.yml, beside the release build.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Commit or tag to check; empty checks the triggering commit'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -19,6 +25,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - name: Set up Node.js
@@ -32,6 +39,13 @@ jobs:
         with:
           toolchain: '1.98.0'
           components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri -> target
+          # Pull requests restore main's cache without filling the repository quota with their own.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install frontend dependencies
         run: npm ci

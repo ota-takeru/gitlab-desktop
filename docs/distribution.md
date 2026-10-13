@@ -29,11 +29,11 @@ git tag "v$version"
 git push origin "v$version"
 ```
 
-リリースワークフローはタグを検証し、3 つのバージョンが一致しない場合や、タグがチェックアウトされたコミットを指していない場合は停止します。main への push では、push 前のコミットと比べてバージョンが変わっていればそのバージョンを、変わっていなければ自動で上げたパッチ版を、同じ実行で検査・タグ作成・公開します。既存のタグは再利用しません。自動で上げたパッチ版のタグが既にある場合と、検査中に別の push で main が進んだ場合は公開せずに停止します。Actions が `GITHUB_TOKEN` で push したバージョンコミットは新しいワークフローを起動しないため、公開が連鎖しません。`scripts/release-config.mjs` は Actions の repository variable から公開鍵だけを読み、固定した次の URL と NSIS 設定を含む一時的な Tauri 設定を生成します。
+リリースワークフローはタグを検証し、3 つのバージョンが一致しない場合や、タグがチェックアウトされたコミットを指していない場合は停止します。main への push では、push 前のコミットと比べてバージョンが変わっていればそのバージョンを、変わっていなければ自動で上げたパッチ版を、同じ実行で公開します。`ci.yml` の検査と署名付きビルドは並行して走り、両方が成功した後の公開ジョブだけがバージョンコミットとタグをpushします。公開ジョブは、タグを付けるコミットがビルドしたソースと同じツリーであることを確かめてから進みます。既存のタグは再利用しません。自動で上げたパッチ版のタグが既にある場合と、検査中に別の push で main が進んだ場合は公開せずに停止します。Actions が `GITHUB_TOKEN` で push したバージョンコミットは新しいワークフローを起動しないため、公開が連鎖しません。`scripts/release-config.mjs` は Actions の repository variable から公開鍵だけを読み、固定した次の URL と NSIS 設定を含む一時的な Tauri 設定を生成します。
 
 `https://github.com/ota-takeru/gitlab-desktop/releases/latest/download/latest.json`
 
-ワークフローは `tauri-apps/tauri-action` で `latest.json`、NSIS セットアップファイル、署名ファイルを同じ公開 GitHub Release にアップロードします。既存の `v<version>` タグを GitHub の Actions 画面から `workflow_dispatch` で選んで再実行することもできます。その場合もタグとバージョンの一致、およびタグがチェックアウトされたコミットを指すことを検証します。
+ビルドジョブが NSIS セットアップファイルと署名ファイルを作り、`scripts/updater-manifest.mjs` で `latest.json` を生成します。公開ジョブはこの3つを同じ公開 GitHub Release にアップロードします。Rust のビルド結果は `Swatinem/rust-cache` で main のキャッシュとして保存し、次回の依存クレートの再コンパイルを省きます。既存の `v<version>` タグを GitHub の Actions 画面から `workflow_dispatch` で選んで再実行することもできます。その場合もタグとバージョンの一致、およびタグがチェックアウトされたコミットを指すことを検証します。
 
 ドキュメントだけを変えた main への push は CI の Windows 検査だけを実行します。それ以外の main への push と merge は上記の自動リリース対象になります。`v*` タグの push と `workflow_dispatch` による既存タグの再実行も利用できます。
 
