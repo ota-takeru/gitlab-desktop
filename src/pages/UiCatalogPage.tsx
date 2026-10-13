@@ -15,7 +15,7 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { EmptyState } from '../components/EmptyState'
 import { AppErrorFallback } from '../components/AppErrorBoundary'
@@ -32,7 +32,11 @@ import { UnresolvedThreadNav } from '../features/mergeRequests/UnresolvedThreadN
 import { ReviewComposer } from '../features/mergeRequests/ReviewComposer'
 import { DiffSnippet, DiffViewer } from '../features/mergeRequests/DiffViewer'
 
-export function UiCatalogPage() {
+/** `section` is the suffix of a `catalog-*` id, e.g. `#foundation/catalog?section=review`. */
+export function UiCatalogPage({ section }: { section?: string } = {}) {
+  useEffect(() => {
+    if (section) document.getElementById(`catalog-${section}`)?.scrollIntoView()
+  }, [section])
   return (
     <Stack spacing={3.5} sx={{ maxWidth: 1120, mx: 'auto' }}>
       <Stack spacing={1}>
@@ -54,7 +58,7 @@ export function UiCatalogPage() {
           gridTemplateColumns: { md: 'repeat(2, 1fr)', xs: '1fr' },
         }}
       >
-        <Card component="section">
+        <Card component="section" id="catalog-status-pills">
           <CardContent sx={{ p: 2.5 }}>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -75,7 +79,7 @@ export function UiCatalogPage() {
           </CardContent>
         </Card>
 
-        <Card component="section">
+        <Card component="section" id="catalog-feedback">
           <CardContent sx={{ p: 2.5 }}>
             <Stack spacing={2}>
               <Typography component="h2" variant="h2">
@@ -98,7 +102,7 @@ export function UiCatalogPage() {
         </Card>
       </Box>
 
-      <Card component="section">
+      <Card component="section" id="catalog-controls">
         <CardContent sx={{ p: 2.5 }}>
           <Stack spacing={2}>
             <Typography component="h2" variant="h2">
@@ -123,7 +127,7 @@ export function UiCatalogPage() {
         </CardContent>
       </Card>
 
-      <Card component="section">
+      <Card component="section" id="catalog-page-parts">
         <CardContent sx={{ p: 2.5 }}>
           <Stack spacing={2}>
             <Typography component="h2" variant="h2">
@@ -161,13 +165,13 @@ export function UiCatalogPage() {
         </CardContent>
       </Card>
 
-      <Card component="section">
+      <Card component="section" id="catalog-error-recovery">
         <CardContent>
           <Typography component="h2" variant="h2">画面エラーからの復旧</Typography>
           <AppErrorFallback compact onGoToConnectionSettings={() => undefined} onRetry={() => undefined} retryCount={1} />
         </CardContent>
       </Card>
-      <Stack spacing={1.5}>
+      <Stack id="catalog-review" spacing={1.5}>
         <Typography component="h2" variant="h2">レビュー入力と差分</Typography>
         <Typography color="text.secondary" variant="caption">表示サンプルです。GitLabへの取得・投稿は行いません。</Typography>
         <ReviewComposer disabled targetCode={<DiffSnippet diff={catalogDiff} position={catalogPosition} />} targetPosition={catalogPosition} value="変更の意図を確認するコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
@@ -175,7 +179,7 @@ export function UiCatalogPage() {
         <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments={false} diffs={[catalogDiff]} selectedFile="example.ts" selectedPosition={undefined} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
       </Stack>
 
-      <Stack spacing={1.5}>
+      <Stack id="catalog-empty-state" spacing={1.5}>
         <Typography component="h2" variant="h2">
           Empty state
         </Typography>

@@ -64,6 +64,10 @@ npm run dev
 
 UI方針を検討する操作モックは[UIモック](http://localhost:1420/#mock)から開きます。レビュー一覧・差分・議論、プロジェクト探索、過去MR検索、明暗テーマを確認できます。常時「UIモック / サンプルデータ / 未接続」と表示し、コメントや承認はメモリ内のシミュレーションです。リロードすると操作内容は消えます。実際のAPI接続・キャッシュ保存とは別のプレビューです。
 
+実際のクライアント画面を固定データで確認する場合は `http://localhost:1420/?fixture=ready` を開きます（開発サーバーのみ。本番ビルドには含まれません）。Rustの代わりに `src/mock/fixtureIpc.ts` がIPCに応答し、GitLabへは何も送りません。`fixture` を `loading` / `error` / `empty` / `stale` に変えると取得中・失敗・空・古いキャッシュの表示になり、MR詳細は `#client/mrs?reviewer=self&state=opened&mr=101-42` のようにハッシュで直接開けます。投稿や承認はページ内のメモリだけに反映され、リロードで消えます。右下に「固定データ · GitLab未接続」と表示します。
+
+開発用の画面はハッシュの後ろ（固定データではクエリ）に `theme=light|dark` を付けると、保存済みのテーマを変えずにその配色で開きます。UIカタログは `#foundation/catalog?section=review&theme=dark` のように `section` を付けると、その節までスクロールします（`section` は `UiCatalogPage.tsx` の `catalog-*` id の後半）。
+
 以下の操作説明は `#mock` のサンプル画面に関するものです。実接続画面の対応範囲は冒頭の機能一覧を参照してください。
 
 プロジェクト一覧から専用画面を開き、プロジェクト内の現在/過去のMRを検索できます。MRの「変更」ではタイムラインからMR全体または各コミットを選び、「差分 / ファイル全体」で選択した版の変更内容と全文を切り替えます。MRを開くと左端の「議論」を表示し、コメントと返信を中心に確認できます。「概要」は説明文や付帯情報を必要なときに見る参照画面です。
@@ -91,6 +95,8 @@ release実行ファイル: `src-tauri/target/release/gitlab-desktop.exe`。配�
 | `npm run design:guard` | テーマ外の生の色、フロントエンドの直接HTTP呼び出しを検出 |
 | `npm test` | フロントエンドの動作テスト |
 | `npm run build` | TypeScriptとViteビルド |
+| `npm run ui:snap` | UIカタログの各節と、固定データで表示した実際のMR一覧・議論・差分を明暗 × 960×640 / 1280×840 で、取得中・失敗・空・古いキャッシュの状態を明暗 × 1280×840 で撮影し、`tests/visual/screenshots` の基準画像と比較。差分は `output/ui-snap/report` で確認 |
+| `npm run ui:snap:update` | 意図した見た目の変更後に基準画像を撮り直す |
 | `npm run native:check` | Rustの書式・静的検査・テスト |
 | `npm run tauri -- info` | Tauri開発環境の診断 |
 
