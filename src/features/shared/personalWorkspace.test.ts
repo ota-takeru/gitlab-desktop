@@ -86,15 +86,37 @@ describe('personal workspace reading markers', () => {
     expect(workspaceUnreadCount(scope, ref)).toBe(1)
   })
 
-  it('treats a comment as unread again when its updatedAt changes', () => {
+  it('keeps a read comment read when its updatedAt changes', () => {
     const original = makeNote('31', { updatedAt: '2026-10-08T10:00:00.000Z' })
     observeComments(scope, ref, [original], session.user.id, true)
     expect(workspaceUnreadCount(scope, ref)).toBe(0)
 
-    const edited = { ...original, updatedAt: '2026-10-08T11:00:00.000Z' }
+    const resolved = { ...original, resolved: true, updatedAt: '2026-10-08T11:00:00.000Z' }
+    observeComments(scope, ref, [resolved], session.user.id)
+
+    expect(unreadComments(scope, ref, [resolved], session.user.id)).toEqual([])
+    expect(workspaceUnreadCount(scope, ref)).toBe(0)
+  })
+
+  it('keeps read markers stored from updatedAt before comments were read once', () => {
+    const edited = makeNote('32', { updatedAt: '2026-10-08T11:00:00.000Z' })
+    localStorage.setItem(scopedKey(scope, 'personal-workspace'), JSON.stringify({ reading: { [`${ref.projectId}:${ref.iid}`]: { known: { 32: edited.updatedAt }, read: { 32: edited.updatedAt } } } }))
+
     observeComments(scope, ref, [edited], session.user.id)
 
-    expect(unreadComments(scope, ref, [edited], session.user.id)).toEqual(['31'])
+    expect(unreadComments(scope, ref, [edited], session.user.id)).toEqual([])
+    expect(workspaceUnreadCount(scope, ref)).toBe(0)
+  })
+
+  it('stops counting known comments missing from a complete view', () => {
+    const kept = makeNote('33')
+    const deleted = makeNote('34')
+    observeComments(scope, ref, [kept, deleted], session.user.id)
+    observeComments(scope, ref, [kept], session.user.id)
+    expect(workspaceUnreadCount(scope, ref)).toBe(2)
+
+    observeComments(scope, ref, [kept], session.user.id, false, true)
+
     expect(workspaceUnreadCount(scope, ref)).toBe(1)
   })
 

@@ -211,6 +211,8 @@ export function createAppTheme(
         ...(workbench ? { fontSize: '0.8125rem' } : {}),
         lineHeight: workbench ? 1.55 : 1.65,
       },
+      // Titles of list rows, so they stand out from the metadata around them.
+      subtitle1: { fontSize: workbench ? '0.9375rem' : '1.0625rem', fontWeight: workbench ? 600 : 700, lineHeight: 1.45 },
       caption: {
         ...(workbench ? { fontSize: '0.75rem', lineHeight: 1.45 } : {}),
         letterSpacing: workbench ? 0 : '0.02em',

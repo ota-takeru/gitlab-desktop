@@ -1,0 +1,38 @@
+import type { Diff, Discussion, Draft } from '../../types/gitlab'
+import type { ParsedLine } from './diffParser'
+
+/** Places line comments of a diff file by line, for the threads shown under diff lines. */
+
+export function pendingDraftsByLine(drafts: Draft[] | undefined, diff: Diff | undefined, headSha: string | undefined): Map<string, Draft[]> {
+  const byLine = new Map<string, Draft[]>()
+  if (!drafts || !diff || !headSha) return byLine
+  for (const draft of drafts) {
+    const position = draft.position
+    if (!position || position.positionType !== 'text' || position.headSha !== headSha || (position.newPath !== diff.newPath && position.oldPath !== diff.oldPath)) continue
+    const key = lineKey(position)
+    if (key) byLine.set(key, [...byLine.get(key) ?? [], draft])
+  }
+  return byLine
+}
+
+/** Lines are matched like positions: by the new line number, or the old one for removed lines. */
+export function lineKey(line: Pick<ParsedLine, 'newLine' | 'oldLine'>): string | null {
+  if (line.newLine != null) return `n:${line.newLine}`
+  return line.oldLine != null ? `o:${line.oldLine}` : null
+}
+
+/** Threads of the file placed by line, and how many belong to another version of it. */
+export function threadsByLine(discussions: Discussion[] | undefined, diff: Diff | undefined, headSha: string | undefined): { byLine: Map<string, Discussion[]>; outdated: number } {
+  const byLine = new Map<string, Discussion[]>()
+  let outdated = 0
+  if (!discussions || !diff) return { byLine, outdated }
+  for (const discussion of discussions) {
+    const position = discussion.notes.find((note) => !note.system && note.position)?.position
+    if (!position || position.positionType !== 'text' || (position.newPath !== diff.newPath && position.oldPath !== diff.oldPath)) continue
+    const key = lineKey(position)
+    if (!key) continue
+    if (!headSha || position.headSha !== headSha) { outdated += 1; continue }
+    byLine.set(key, [...byLine.get(key) ?? [], discussion])
+  }
+  return { byLine, outdated }
+}

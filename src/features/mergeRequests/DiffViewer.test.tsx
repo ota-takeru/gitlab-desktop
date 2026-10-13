@@ -308,3 +308,26 @@ describe('DiffViewer', () => {
     expect(files['src/504.ts']).toBeDefined()
   })
 })
+
+describe('DiffViewer line comments', () => {
+  const author = { id: '9', name: 'Colleague', username: 'colleague' }
+  const at = (headSha: string, line: { newLine?: number; oldLine?: number }): Position => ({ baseSha: 'base', headSha, newPath: 'src/example.ts', oldPath: 'src/example.ts', positionType: 'text', startSha: 'start', ...line })
+  const thread = (id: string, position: Position, body: string, resolved = false) => ({ id, individualNote: false, notes: [{ author, body, createdAt: '2026-01-01T00:00:00.000Z', id: `${id}-note`, position, resolvable: true, resolved, system: false }] })
+
+  it('places current threads under their lines, folds resolved ones and counts outdated ones', () => {
+    const diff = makeDiff('@@ -1,2 +1,2 @@\n-old\n+new\n same\n')
+    render(<ThemeProvider theme={createAppTheme('dark', 'workbench')}><DiffViewer discussionHeadSha="head" discussions={[
+      thread('removed', at('head', { oldLine: 1 }), '削除行へのコメント'),
+      thread('resolved', at('head', { newLine: 2, oldLine: 2 }), '解決済みの本文', true),
+      thread('outdated', at('older', { newLine: 1 }), '古い版へのコメント'),
+    ]} diffs={[diff]} onComment={vi.fn()} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile="src/example.ts" selectedPosition={undefined} view="diff" /></ThemeProvider>)
+
+    const removed = screen.getByText('削除行へのコメント').closest('.diff-threads')
+    expect(removed?.previousElementSibling?.textContent).toContain('old')
+    expect(screen.queryByText('解決済みの本文')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '表示' }))
+    expect(screen.getByText('解決済みの本文').closest('.diff-threads')?.previousElementSibling?.textContent).toContain('same')
+    expect(screen.queryByText('古い版へのコメント')).not.toBeInTheDocument()
+    expect(screen.getByText(/古い版へのコメント1件/u)).toBeInTheDocument()
+  })
+})

@@ -296,6 +296,14 @@ pub enum Action {
         iid: String,
         file_name: String,
     },
+    /// Replaces the description. `expected_description` is the description the
+    /// user edited; the change is refused when GitLab no longer has it.
+    SetDescription {
+        project_id: String,
+        iid: String,
+        description: String,
+        expected_description: String,
+    },
 }
 
 #[cfg(test)]

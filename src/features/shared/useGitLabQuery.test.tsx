@@ -38,6 +38,20 @@ describe('useGitLabQuery', () => {
     cancelMock.mockReset()
   })
 
+  it('does not run or report anything for a hook without a query, even when refreshed', async () => {
+    function IdleProbes() {
+      const refreshed = useGitLabQuery('session-1', null)
+      const other = useGitLabQuery('session-1', null)
+      return <><button onClick={refreshed.refresh} type="button">refresh</button><output data-testid="other">{other.error?.code ?? 'ok'}</output></>
+    }
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><IdleProbes /></QueryClientProvider>)
+
+    act(() => screen.getByRole('button', { name: 'refresh' }).click())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.getByTestId('other')).toHaveTextContent('ok')
+    expect(queryGitLabMock).not.toHaveBeenCalled()
+  })
+
   it('hydrates a cache snapshot while the network refresh is in flight', async () => {
     let resolveNetwork: (value: GitLabSnapshot<Project[]>) => void = () => undefined
     const network = new Promise<GitLabSnapshot<Project[]>>((resolve) => { resolveNetwork = resolve })

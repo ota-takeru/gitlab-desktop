@@ -9,8 +9,13 @@ export interface WorkspaceSettings {
   notifyTodos: boolean
 }
 interface Reading { known: Record<string, string>; read: Record<string, string> }
+/** What a sidebar tab shows, as of the last time the MR was seen; kept so tabs need no requests. */
+export interface TabMeta { title: string; state: string; projectPath: string }
 interface WorkspaceData {
   pinned: MrRef[]
+  /** MRs open as sidebar tabs (not pinned), newest first. */
+  open: MrRef[]
+  tabs: Record<string, TabMeta>
   recent: MrRef[]
   reading: Record<string, Reading>
   settings: WorkspaceSettings
@@ -18,7 +23,8 @@ interface WorkspaceData {
 export const defaultWorkspaceSettings: WorkspaceSettings = { autoRefresh: true, notifyComments: false, notifyTodos: false }
 const changedEvent = 'gitlab-workspace-preferences-change'
 export function mrRefKey(ref: MrRef): string { return `${ref.projectId}:${ref.iid}` }
-const emptyData = (): WorkspaceData => ({ pinned: [], recent: [], reading: {}, settings: { ...defaultWorkspaceSettings } })
+const emptyData = (): WorkspaceData => ({ pinned: [], open: [], tabs: {}, recent: [], reading: {}, settings: { ...defaultWorkspaceSettings } })
+const MAX_OPEN_TABS = 20
 const validRef = (ref: unknown): ref is MrRef => Boolean(ref && typeof ref === 'object' && /^[1-9]\d*$/u.test((ref as MrRef).projectId) && /^[1-9]\d*$/u.test((ref as MrRef).iid))
 function refs(value: unknown, max: number): MrRef[] {
   return Array.isArray(value) ? value.filter(validRef).filter((ref, index, all) => all.findIndex((other) => mrRefKey(other) === mrRefKey(ref)) === index).slice(0, max) : []
@@ -26,6 +32,12 @@ function refs(value: unknown, max: number): MrRef[] {
 function timestamps(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object') return {}
   return Object.fromEntries(Object.entries(value).filter(([id, date]) => /^[1-9]\d*$/u.test(id) && typeof date === 'string' && Number.isFinite(Date.parse(date))).slice(-2000))
+}
+function tabMeta(value: unknown): Record<string, TabMeta> {
+  if (!value || typeof value !== 'object') return {}
+  return Object.fromEntries(Object.entries(value as Record<string, Partial<TabMeta> | null>)
+    .filter((entry): entry is [string, TabMeta] => /^[1-9]\d*:[1-9]\d*$/u.test(entry[0]) && typeof entry[1]?.title === 'string' && typeof entry[1].state === 'string' && typeof entry[1].projectPath === 'string')
+    .map(([ref, meta]) => [ref, { projectPath: meta.projectPath.slice(0, 500), state: meta.state.slice(0, 40), title: meta.title.slice(0, 500) }]))
 }
 function key(scope: PreferenceScope) { return scopedKey(scope, 'personal-workspace') }
 function storedWorkspace(scope: PreferenceScope): string {
@@ -56,7 +68,9 @@ function parseWorkspace(raw: string): WorkspaceData {
         if (/^[1-9]\d*:[1-9]\d*$/u.test(ref) && record && typeof record === 'object') reading[ref] = { known: timestamps(record.known), read: timestamps(record.read) }
       }
     }
-    return { pinned: refs(value.pinned, 100), recent: refs(value.recent, 30), reading, settings: {
+    const pinned = refs(value.pinned, 100)
+    const open = refs(value.open, MAX_OPEN_TABS).filter((ref) => !pinned.some((item) => mrRefKey(item) === mrRefKey(ref)))
+    return { pinned, open, tabs: tabMeta(value.tabs), recent: refs(value.recent, 30), reading, settings: {
       autoRefresh: value.settings?.autoRefresh !== false,
       notifyComments: value.settings?.notifyComments === true,
       notifyTodos: value.settings?.notifyTodos === true,
@@ -64,6 +78,9 @@ function parseWorkspace(raw: string): WorkspaceData {
   } catch { return emptyData() }
 }
 function save(scope: PreferenceScope, data: WorkspaceData) {
+  // Titles are kept only for MRs the sidebar or the history can show.
+  const kept = new Set([...data.pinned, ...data.open, ...data.recent].map(mrRefKey))
+  data.tabs = Object.fromEntries(Object.entries(data.tabs).filter(([ref]) => kept.has(ref)))
   const text = JSON.stringify(data)
   try {
     if (localStorage.getItem(key(scope)) === text) return
@@ -71,18 +88,25 @@ function save(scope: PreferenceScope, data: WorkspaceData) {
     globalThis.dispatchEvent(new Event(changedEvent))
   } catch { /* Reading markers and shortcuts remain optional. */ }
 }
-function stamp(note: Note) { return note.updatedAt || note.createdAt }
-export function observeComments(scope: PreferenceScope, ref: MrRef, notes: Note[], currentUserId: string, markRead = false) {
+// Once read, a comment stays read even when GitLab later moves its updatedAt.
+function stamp(note: Note) { return note.createdAt }
+/** With `complete`, notes are the whole loaded view, so known comments missing from it (deleted ones) stop counting as unread. */
+export function observeComments(scope: PreferenceScope, ref: MrRef, notes: Note[], currentUserId: string, markRead = false, complete = false) {
   if (!validRef(ref)) return
   const data = readWorkspace(scope)
   const refKey = mrRefKey(ref)
   const record = data.reading[refKey] ?? { known: {}, read: {} }
+  const observed = new Set<string>()
   let changed = false
   for (const note of notes) {
     if (note.system || !/^[1-9]\d*$/u.test(note.id) || !Number.isFinite(Date.parse(stamp(note)))) continue
     const date = stamp(note)
+    observed.add(note.id)
     if (record.known[note.id] !== date) { record.known[note.id] = date; changed = true }
-    if ((markRead || note.author.id === currentUserId) && record.read[note.id] !== date) { record.read[note.id] = date; changed = true }
+    if ((markRead || note.author.id === currentUserId) && record.read[note.id] === undefined) { record.read[note.id] = date; changed = true }
+  }
+  if (complete) {
+    for (const id of Object.keys(record.known)) if (!observed.has(id)) { delete record.known[id]; changed = true }
   }
   if (!changed) return
   record.known = timestamps(record.known)
@@ -103,14 +127,22 @@ export function unreadComments(scope: PreferenceScope, ref: MrRef, notes: Note[]
 }
 function unreadIn(data: WorkspaceData, ref: MrRef, notes: Note[], currentUserId: string): string[] {
   const record = data.reading[mrRefKey(ref)]
-  return notes.filter((note) => !note.system && note.author.id !== currentUserId && record?.read[note.id] !== stamp(note)).map((note) => note.id)
+  return notes.filter((note) => !note.system && note.author.id !== currentUserId && record?.read[note.id] === undefined).map((note) => note.id)
 }
 export function workspaceUnreadCount(scope: PreferenceScope, ref: MrRef): number | undefined {
   return unreadCountIn(readWorkspaceSnapshot(scope), ref)
 }
 function unreadCountIn(data: WorkspaceData, ref: MrRef): number | undefined {
   const record = data.reading[mrRefKey(ref)]
-  return record ? Object.entries(record.known).filter(([id, date]) => record.read[id] !== date).length : undefined
+  return record ? Object.keys(record.known).filter((id) => record.read[id] === undefined).length : undefined
+}
+/** Adds the MR as the newest open tab unless it already has a tab; existing tabs keep their place. */
+export function openWorkspaceTab(scope: PreferenceScope, ref: MrRef) {
+  if (!validRef(ref)) return
+  const current = readWorkspace(scope)
+  if ([...current.pinned, ...current.open].some((item) => mrRefKey(item) === mrRefKey(ref))) return
+  current.open = [{ iid: ref.iid, projectId: ref.projectId }, ...current.open].slice(0, MAX_OPEN_TABS)
+  save(scope, current)
 }
 function subscribe(listener: () => void) {
   globalThis.addEventListener(changedEvent, listener)
@@ -130,16 +162,48 @@ export function usePersonalWorkspace(session: GitLabSession | null) {
 
 function workspaceApi(scope: PreferenceScope, connected: boolean, data: WorkspaceData, version: string) {
   return {
-    version, pinned: data.pinned, recent: data.recent, settings: data.settings,
+    version, pinned: data.pinned, open: data.open, tabs: data.tabs, recent: data.recent, settings: data.settings,
     unreadIds: (ref: MrRef, notes: Note[]) => unreadIn(data, ref, notes, scope.userId),
     unreadCount: (ref: MrRef) => unreadCountIn(data, ref),
-    observe: (ref: MrRef, notes: Note[]) => { if (connected) observeComments(scope, ref, notes, scope.userId) },
+    observe: (ref: MrRef, notes: Note[], complete = false) => { if (connected) observeComments(scope, ref, notes, scope.userId, false, complete) },
     markRead: (ref: MrRef, notes: Note[]) => { if (connected) observeComments(scope, ref, notes, scope.userId, true) },
     isPinned: (ref: MrRef) => data.pinned.some((item) => mrRefKey(item) === mrRefKey(ref)),
-    togglePinned: (ref: MrRef) => {
+    /** Pinning moves an open tab into the pinned tabs. `meta` names the tab when the MR has not been opened. */
+    togglePinned: (ref: MrRef, meta?: TabMeta) => {
       if (!connected || !validRef(ref)) return
       const current = readWorkspace(scope)
-      current.pinned = current.pinned.some((item) => mrRefKey(item) === mrRefKey(ref)) ? current.pinned.filter((item) => mrRefKey(item) !== mrRefKey(ref)) : [ref, ...current.pinned].slice(0, 100)
+      const pinned = current.pinned.some((item) => mrRefKey(item) === mrRefKey(ref))
+      current.pinned = pinned ? current.pinned.filter((item) => mrRefKey(item) !== mrRefKey(ref)) : [{ iid: ref.iid, projectId: ref.projectId }, ...current.pinned].slice(0, 100)
+      if (!pinned) current.open = current.open.filter((item) => mrRefKey(item) !== mrRefKey(ref))
+      if (meta) current.tabs[mrRefKey(ref)] = meta
+      save(scope, current)
+    },
+    /** Unpins from the sidebar: the MR stays as the newest open tab, as in Arc. */
+    unpinToOpen: (ref: MrRef) => {
+      if (!connected || !validRef(ref)) return
+      const current = readWorkspace(scope)
+      current.pinned = current.pinned.filter((item) => mrRefKey(item) !== mrRefKey(ref))
+      current.open = [{ iid: ref.iid, projectId: ref.projectId }, ...current.open.filter((item) => mrRefKey(item) !== mrRefKey(ref))].slice(0, MAX_OPEN_TABS)
+      save(scope, current)
+    },
+    closeTab: (ref: MrRef) => {
+      if (!connected) return
+      const current = readWorkspace(scope)
+      current.open = current.open.filter((item) => mrRefKey(item) !== mrRefKey(ref))
+      save(scope, current)
+    },
+    closeAllTabs: () => {
+      if (!connected) return
+      const current = readWorkspace(scope)
+      current.open = []
+      save(scope, current)
+    },
+    rememberTab: (ref: MrRef, meta: TabMeta) => {
+      if (!connected || !validRef(ref)) return
+      const current = readWorkspace(scope)
+      const previous = current.tabs[mrRefKey(ref)]
+      if (previous && previous.title === meta.title && previous.state === meta.state && previous.projectPath === meta.projectPath) return
+      current.tabs[mrRefKey(ref)] = meta
       save(scope, current)
     },
     recordRecent: (ref: MrRef) => {

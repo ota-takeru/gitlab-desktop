@@ -189,6 +189,10 @@ export function installFixtureIpc(state: FixtureState): void {
         target.mergeRequest = { ...target.mergeRequest, [action.kind === 'setAssignees' ? 'assignees' : 'reviewers']: users }
         break
       }
+      case 'setDescription':
+        if ((target.mergeRequest.description ?? '') !== action.expectedDescription) throw { code: 'INVALID_INPUT', message: 'The merge request changed. Refresh it and try again.' } satisfies GitLabErrorShape
+        target.mergeRequest = { ...target.mergeRequest, description: action.description }
+        break
       case 'uploadAttachment':
         break
     }

@@ -20,7 +20,9 @@ import InputAdornment from '@mui/material/InputAdornment'
 import { alpha, type Theme } from '@mui/material/styles'
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { Diff, Position } from '../../types/gitlab'
+import type { Diff, Discussion, Draft, Position } from '../../types/gitlab'
+import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
+import { lineKey, pendingDraftsByLine, threadsByLine } from './diffLineThreads'
 import { highlightLines, languageForPath, type SyntaxToken } from '../../lib/syntaxHighlight'
 import { parseDiff, splitFileLines, type ParsedLine } from './diffParser'
 import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
@@ -43,9 +45,21 @@ interface DiffViewerProps {
   view: 'diff' | 'file'
   onViewChange: (view: 'diff' | 'file') => void
   reviewContext?: ReviewedFileContext
+  /** Line comments to show under their lines, as on GitLab. Only threads on `discussionHeadSha` are placed. */
+  discussions?: Discussion[]
+  discussionHeadSha?: string
+  /** Older discussions exist that are not loaded, so some line comments may be missing. */
+  discussionsIncomplete?: boolean
+  onOpenDiscussion?: (discussionId: string) => void
+  /** Unpublished line comments of the pending review, shown under their lines. */
+  pendingDrafts?: Draft[]
+  /** A comment editor shown right under the line it comments on, as on GitLab. */
+  lineComposer?: { position: Position; node: React.ReactNode }
+  /** Replying to and resolving the threads shown in the diff. */
+  threadActions?: ThreadActions
 }
 
-export function DiffViewer({ allowComments = true, diffs, fileContent, fileLoading = false, onComment, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, view }: DiffViewerProps) {
+export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, view }: DiffViewerProps) {
   const selectedDiffIndex = diffs.findIndex((diff) => (diff.newPath || diff.oldPath) === selectedFile)
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
@@ -113,6 +127,10 @@ export function DiffViewer({ allowComments = true, diffs, fileContent, fileLoadi
   const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
   const lineCounts = useMemo(() => ({ added: parsed.lines.filter((line) => line.kind === 'add').length, removed: parsed.lines.filter((line) => line.kind === 'remove').length }), [parsed])
   const commentsEnabled = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
+  const lineThreads = useMemo(() => threadsByLine(discussions, selectedDiff, discussionHeadSha), [discussionHeadSha, discussions, selectedDiff])
+  const composer = commentsEnabled && lineComposer ? { key: lineKey(lineComposer.position), node: lineComposer.node, position: lineComposer.position } : undefined
+  const draftsByLine = useMemo(() => pendingDraftsByLine(pendingDrafts, selectedDiff, discussionHeadSha), [discussionHeadSha, pendingDrafts, selectedDiff])
+  const threadView = (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, threads: lineThreads.byLine } : undefined
 
   const navigateSearch = (direction: -1 | 1) => {
     if (searchMatches.length === 0) return
@@ -133,15 +151,17 @@ export function DiffViewer({ allowComments = true, diffs, fileContent, fileLoadi
     onSelectFile(fileSearchMatches[nextIndex].path)
   }
 
+  const composerOpen = Boolean(lineComposer)
   useLayoutEffect(() => {
     if (!selectedPosition || view !== 'diff' || selectedLineIndex < 0) return
     const wantedLineId = positionLineId(selectedPosition)
     const target = Array.from(diffScrollRef.current?.querySelectorAll<HTMLElement>('[data-line-id]') ?? [])
       .find((line) => line.dataset.lineId === wantedLineId)
     if (!target) return
-    target.focus({ preventScroll: true })
+    // A line comment editor under the line takes the focus itself.
+    if (!composerOpen) target.focus({ preventScroll: true })
     target.scrollIntoView?.({ behavior: 'auto', block: 'center' })
-  }, [diffOffset, layout, positionKey, selectedLineIndex, selectedPosition, view])
+  }, [composerOpen, diffOffset, layout, positionKey, selectedLineIndex, selectedPosition, view])
 
   useLayoutEffect(() => {
     if (currentSearchMatch < 0 || view !== 'diff') return
@@ -214,34 +234,16 @@ export function DiffViewer({ allowComments = true, diffs, fileContent, fileLoadi
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="text.secondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
           {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} /> : <>
             {parsed.status !== 'valid' ? <Typography color="warning.main" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
+            {threadView && lineThreads.outdated > 0 ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">このファイルの古い版へのコメント{lineThreads.outdated}件は差分に表示していません。議論タブで確認できます。</Typography> : null}
+            {threadView && discussionsIncomplete ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">古い議論は未取得のため、読み込み済みのコメントだけを表示しています。</Typography> : null}
             {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">取得済みの差分に一致する行はありません。</Typography> : null}
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={parsed.lines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, parsed.lines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {layout === 'split'
-              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} tokens={rowTokens} />
-              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} tokens={rowTokens} />}
+              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} />
+              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} />}
           </>}
         </Box>
       </Stack>
-    </Box>
-  )
-}
-
-const SNIPPET_LINES_BEFORE = 3
-const NO_SEARCH_MATCHES = new Set<number>()
-
-/** The commented diff line with the lines just above it, as shown while writing a line comment. */
-export function DiffSnippet({ diff, position }: { diff: Diff; position: Position }) {
-  const parsed = useMemo(() => parseDiff(diff.diff, diff.oldPath, diff.newPath), [diff])
-  const target = parsed.lines.findIndex((line) => matchesPosition(line, position))
-  const start = Math.max(0, target - SNIPPET_LINES_BEFORE)
-  const lines = useMemo(() => target < 0 ? [] : parsed.lines.slice(start, target + 1), [parsed, start, target])
-  const language = languageForPath(diff.newPath || diff.oldPath)
-  const tokens = useMemo(() => highlightDiffLines(lines, language), [language, lines])
-  const scrollRef = useRef<HTMLDivElement | null>(null)
-  if (lines.length === 0) return null
-  return (
-    <Box aria-label="コメント対象のコード" component="figure" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, m: 0, overflow: 'hidden' }}>
-      <UnifiedDiff activeSearchMatch={-1} allowComments={false} lines={lines} onComment={() => undefined} scrollRef={scrollRef} searchMatchIndices={NO_SEARCH_MATCHES} searchTerm="" selectedPosition={position} startIndex={start} tokens={tokens} />
     </Box>
   )
 }
@@ -265,12 +267,15 @@ function PageControls({ offset, pageSize, total, onNext, onPrevious }: { offset:
   </Stack>
 }
 
-function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; tokens: SyntaxToken[][] }) {
+function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const skipped = skippedLines(lines, startIndex)
   // Rows are plain elements styled from this one block: a page holds up to
   // DIFF_PAGE_SIZE rows, and per-row styled components dominate render time.
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
+      // Threads take the visible width while long code lines scroll sideways.
+      containerType: 'inline-size',
+      '& .diff-threads': { left: 0, position: 'sticky', width: '100cqw' },
       '& .diff-rows': { minWidth: '100%', width: 'max-content' },
       '& .diff-row': { '--row-bg': theme.palette.background.paper, backgroundColor: 'var(--row-bg)', color: theme.palette.text.primary, display: 'flex', minHeight: 22 },
       '& .diff-row[data-kind="add"]': { '--row-bg': theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
@@ -302,6 +307,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrol
               </span>
               <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(tokens[index] ?? [{ text: line.text }], searchTerm)}</span>
             </div>
+            <LineThreads line={line} view={threadView} />
           </Fragment>
         })}
       </div>
@@ -375,7 +381,7 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
   return rows
 }
 
-function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; tokens: SyntaxToken[][] }) {
+function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
   const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
     // Context rows offer one comment action, on the new side, with both line numbers.
@@ -423,6 +429,8 @@ function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollR
             {cell(row.left, 'old', row.leftIndex)}
             {cell(row.right, 'new', row.rightIndex)}
           </div>
+          <LineThreads line={row.left} view={threadView} />
+          {row.right !== row.left ? <LineThreads line={row.right} view={threadView} /> : null}
         </Fragment>
       })}
     </Box>

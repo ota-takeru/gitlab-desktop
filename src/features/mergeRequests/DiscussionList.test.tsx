@@ -252,16 +252,19 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(document.activeElement).toHaveAttribute('data-note-id', 'chronologically-latest')
   })
 
-  it('marks only visible, uncollapsed page notes through the explicit read action', () => {
+  it('marks every loaded note read, including other note pages and collapsed resolved threads', () => {
     const notes = Array.from({ length: 61 }, (_, index) => createNote(`read-${index + 1}`, otherUser))
+    const resolvedNotes = [
+      createNote('resolved-1', otherUser, { resolvable: true, resolved: true }),
+      createNote('resolved-2', otherUser, { resolvable: true, resolved: true }),
+    ]
     const onMarkRead = vi.fn()
-    renderList([createDiscussion(notes)], { onMarkRead, unreadNoteIds: notes.map((note) => note.id) })
+    renderList([createDiscussion(notes), createDiscussion(resolvedNotes, 'resolved-discussion')], { onMarkRead, unreadNoteIds: ['resolved-2'] })
 
-    fireEvent.click(screen.getByRole('button', { name: '表示中を既読' }))
+    fireEvent.click(screen.getByRole('button', { name: '読み込み済みを既読' }))
 
     expect(onMarkRead).toHaveBeenCalledTimes(1)
-    expect(onMarkRead.mock.calls[0][0]).toHaveLength(50)
-    expect(onMarkRead.mock.calls[0][0].map((note: Note) => note.id)).toEqual(notes.slice(0, 50).map((note) => note.id))
+    expect(onMarkRead.mock.calls[0][0].map((note: Note) => note.id)).toEqual([...notes, ...resolvedNotes].map((note) => note.id))
   })
 
   it('sends a positioned comment location to the diff navigation callback', () => {

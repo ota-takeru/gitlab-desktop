@@ -35,7 +35,7 @@ export function TodoView({ onOpen, selected = null }: { onOpen: (ref: MrRef) => 
           <Typography color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{todo.projectName} !{todo.iid} · @{todo.author.username}</Typography>
           <RelativeTime value={todo.createdAt} />
         </Stack>
-        <Typography sx={{ display: '-webkit-box', fontWeight: 500, mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{todo.title}</Typography>
+        <Typography sx={{ display: '-webkit-box', mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{todo.title}</Typography>
       </ListRow>)}</Box> : null}
     </Box>
     {session && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setPage(result.snapshot!.nextPage!)} onPrevious={() => setPage((value) => value - 1)} page={page} /></Box> : null}

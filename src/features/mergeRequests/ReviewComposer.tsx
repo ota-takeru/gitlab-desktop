@@ -9,11 +9,9 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
@@ -29,8 +27,8 @@ interface ReviewComposerProps {
   replyAuthor?: string
   replyDiscussionId?: string
   targetPosition?: Position
-  /** The code the target position points at, shown above the editor. */
-  targetCode?: ReactNode
+  /** Opened under a diff line: it closes (keeping the text) instead of only dropping the line. */
+  inlineTarget?: boolean
   onCancelReply: () => void
   onClearPosition: () => void
   onChange: (body: string) => void
@@ -46,6 +44,7 @@ export function ReviewComposer({
   attachmentTargetKey,
   disabled = false,
   enableMentions = false,
+  inlineTarget = false,
   onCancelReply,
   onChange,
   onClearPosition,
@@ -56,11 +55,9 @@ export function ReviewComposer({
   pending = false,
   replyAuthor,
   replyDiscussionId,
-  targetCode,
   targetPosition,
   value,
 }: ReviewComposerProps) {
-  const [kind, setKind] = useState<'comment' | 'draft'>('comment')
   const [thread, setThread] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -94,8 +91,8 @@ export function ReviewComposer({
   }, [])
 
   useEffect(() => {
-    if (replyDiscussionId) editorRef.current?.focus()
-  }, [replyDiscussionId])
+    if (replyDiscussionId || inlineTarget) editorRef.current?.focus()
+  }, [inlineTarget, replyDiscussionId])
 
   const onMentionCandidatesChange = useCallback((users: GitLabUser[]) => {
     setMentionCandidates(users)
@@ -182,10 +179,10 @@ export function ReviewComposer({
       setMentionCandidates([])
       return true
     }
-    if (replyDiscussionId && event.key === 'Escape' && !targetControlsDisabled && !uploadingRef.current) {
-      // The reply body stays in its buffer, so closing loses nothing.
+    if ((replyDiscussionId || inlineTarget) && event.key === 'Escape' && !targetControlsDisabled && !uploadingRef.current) {
+      // The body stays in its buffer, so closing loses nothing.
       event.preventDefault()
-      onCancelReply()
+      close()
       return true
     }
     if (event.key !== 'Enter' || !event.ctrlKey) return false
@@ -194,23 +191,25 @@ export function ReviewComposer({
     return true
   }
 
+  const close = replyDiscussionId ? onCancelReply : onClearPosition
+  const targetLabel = targetPosition ? `${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}` : ''
   return (
     // A reply opens in place of the thread's reply field, so it has no frame or heading of its own.
     <Paper component="section" aria-label="レビューコメント入力" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.25 }} variant="outlined">
       <Stack spacing={0.75}>
         {replyDiscussionId ? null : <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
-          <Typography sx={{ fontWeight: 600 }} variant="body2">コメントを追加</Typography>
-          {targetPosition ? <Chip disabled={targetControlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} title={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} variant="outlined" /> : null}
+          <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? `${targetLabel} にコメント` : 'コメントを追加'}</Typography>
+          {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} title={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} variant="outlined" /> : null}
         </Stack>}
-        {targetPosition ? targetCode : null}
         <MarkdownEditor
+          autoFocus={Boolean(replyDiscussionId) || inlineTarget}
           disabled={controlsDisabled}
           label="コメント本文"
           onChange={updateValue}
           onKeyDown={handleKeyDown}
           onMentionQueryChange={enableMentions ? (query) => { setMentionQuery(query); setActiveMentionIndex(0) } : undefined}
           onPasteImage={onUploadAttachment ? (file) => { void uploadAttachment(file) } : undefined}
-          placeholder={`${replyAuthor ? `${replyAuthor}に返信。` : 'Markdownでコメントを書けます。'}Ctrl+Enter: レビューに追加 / Ctrl+Shift+Enter: 今すぐコメント`}
+          placeholder={replyAuthor ? `${replyAuthor}に返信` : 'Markdownでコメントを書けます'}
           ref={editorRef}
           toolbarEnd={onUploadAttachment ? (
             <Tooltip title="ファイルを添付（コメント投稿前にGitLabへアップロード・10 MiBまで。画像は貼り付けでも可）">
@@ -238,17 +237,17 @@ export function ReviewComposer({
         {enableMentions ? <MentionSuggestions onSelect={insertMention} onUsersChange={onMentionCandidatesChange} search={controlsDisabled ? '' : mentionQuery ?? ''} selectedIndex={activeMentionIndex} /> : null}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.75 }}>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
-            <ToggleButtonGroup disabled={controlsDisabled} exclusive onChange={(_, value: 'comment' | 'draft' | null) => { if (value) setKind(value) }} size="small" value={kind}>
-              <ToggleButton value="comment">今すぐコメント</ToggleButton>
-              <ToggleButton value="draft">レビューに追加</ToggleButton>
-            </ToggleButtonGroup>
-            {!replyDiscussionId && kind === 'comment' ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label="解決可能なスレッドとして投稿" sx={{ mr: 0 }} /> : null}
+            {/* Line comments always start a resolvable thread. */}
+            {!replyDiscussionId && !targetPosition ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label="解決可能なスレッドとして投稿" sx={{ mr: 0 }} /> : null}
+            {uploading ? null : <Typography color="text.secondary" sx={{ fontSize: 11 }} variant="caption">Ctrl+Enter: レビューに追加 · Ctrl+Shift+Enter: 今すぐ投稿</Typography>}
           </Stack>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
-            {replyDiscussionId ? <Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) onCancelReply() }} size="small" title="入力した本文は保持されます (Esc)">閉じる</Button> : null}
-            <Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit(kind)} startIcon={kind === 'draft' ? <AddCommentRoundedIcon /> : <SendRoundedIcon />} variant="contained">
-              {uploading ? '添付ファイルをアップロード中…' : pending || submitting ? '送信中…' : kind === 'draft' ? '下書きに追加' : 'コメントを投稿'}
-            </Button>
+            {replyDiscussionId || inlineTarget ? <Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) close() }} size="small" title="入力した本文は保持されます (Esc)">閉じる</Button> : null}
+            {/* GitLab's two actions: keep it in the pending review, or publish it now. */}
+            <Tooltip title="未公開レビューに追加し、あとでまとめて公開します (Ctrl+Enter)"><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('draft')} startIcon={<AddCommentRoundedIcon />} variant="outlined">レビューに追加</Button></span></Tooltip>
+            <Tooltip title="すぐにMRへ投稿します (Ctrl+Shift+Enter)"><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('comment')} startIcon={<SendRoundedIcon />} variant="contained">
+              {uploading ? '添付ファイルをアップロード中…' : pending || submitting ? '送信中…' : 'コメントを投稿'}
+            </Button></span></Tooltip>
           </Stack>
         </Stack>
       </Stack>

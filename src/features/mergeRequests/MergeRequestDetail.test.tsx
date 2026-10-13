@@ -57,6 +57,7 @@ vi.mock('../shared/personalWorkspace', () => ({
     markRead: detailMocks.markReadMock,
     observe: detailMocks.workspaceObserveMock,
     recordRecent: detailMocks.recordRecentMock,
+    rememberTab: vi.fn(),
     settings: { autoRefresh: false, notifyComments: false, notifyTodos: false },
     togglePinned: detailMocks.togglePinnedMock,
     unreadIds: () => detailMocks.unreadIds,
@@ -169,7 +170,7 @@ describe('BufferedReviewComposer', () => {
     expect(screen.getByText('未読')).toBeInTheDocument()
     expect(screen.getByText(/!120/u)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '表示中を既読' }))
+    fireEvent.click(screen.getByRole('button', { name: '読み込み済みを既読' }))
     expect(detailMocks.markReadMock).toHaveBeenCalledWith({ projectId: '7', iid: '120' }, [
       expect.objectContaining({ id: '1001' }),
       expect.objectContaining({ id: '1002' }),
@@ -190,10 +191,14 @@ describe('BufferedReviewComposer', () => {
     await waitFor(() => expect(diffComment.closest('[data-testid="diff-line"]')).toHaveFocus())
     expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'diffs', iid: '120', projectId: '7' }))
 
+    // The line comment editor opens right under the line, staying on the changes tab.
     fireEvent.click(diffComment)
-    const code = await screen.findByRole('figure', { name: 'コメント対象のコード' })
-    expect(within(code).getAllByTestId('diff-line').map((line) => line.textContent)).toEqual([expect.stringContaining('line one'), expect.stringContaining('line two')])
-    expect(within(code).getAllByTestId('diff-line')[1]).toHaveAttribute('data-selected', 'true')
+    const editor = await screen.findByRole('region', { name: 'レビューコメント入力' })
+    expect(within(editor).getByText('src/example.ts:2 にコメント')).toBeInTheDocument()
+    expect(editor.closest('.diff-threads')?.previousElementSibling?.textContent).toContain('line two')
+    expect(screen.getByRole('tab', { name: '変更' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(within(editor).getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('region', { name: 'レビューコメント入力' })).not.toBeInTheDocument()
     expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
     expect(detailMocks.notifyWorkspaceMock).not.toHaveBeenCalled()
   })
@@ -271,5 +276,117 @@ describe('BufferedReviewComposer', () => {
     fireEvent.click(within(thread).getByRole('button', { name: 'コメントを投稿' }))
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ body: '返信本文', discussionId: 'discussion-120', iid: '120', kind: 'reply', projectId: '7' }, expect.any(String)))
     await waitFor(() => expect(within(thread).queryByRole('textbox', { name: 'コメント本文' })).not.toBeInTheDocument())
+  })
+})
+
+describe('MergeRequestDetail tabs and description', () => {
+  beforeEach(() => {
+    detailMocks.useComposerBufferMock.mockReset().mockReturnValue({ body: '', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    detailMocks.mutationRunMock.mockReset().mockResolvedValue(true)
+  })
+
+  function renderDetail(initialTab: 'discussion' | 'changes' | 'overview', onTabChange = vi.fn()) {
+    function Harness() {
+      const [tab, setTab] = useState(initialTab)
+      return <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={(next) => { onTabChange(next); setTab(next) }} tab={tab} />
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><Harness /></ThemeProvider></QueryClientProvider>)
+    return onTabChange
+  }
+
+  it('shows line comments under their diff line and opens the thread in the discussion tab', async () => {
+    const onTabChange = renderDetail('changes')
+
+    const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+    expect(within(thread).getByText('位置コメント')).toBeInTheDocument()
+    // The thread sits right after the commented line (line two).
+    expect(thread.closest('.diff-threads')?.previousElementSibling?.textContent).toContain('line two')
+
+    fireEvent.click(within(thread).getByRole('button', { name: '議論タブで表示' }))
+    expect(onTabChange).toHaveBeenCalledWith('discussion')
+    expect(await screen.findByRole('textbox', { name: 'コメント本文' })).toBeInTheDocument()
+  })
+
+  it('reports tab changes to the caller so they can be kept in history', async () => {
+    const onTabChange = renderDetail('discussion')
+    fireEvent.click(await screen.findByRole('tab', { name: '変更' }))
+    expect(onTabChange).toHaveBeenLastCalledWith('changes')
+    expect(screen.getByRole('tab', { name: '変更' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('saves the edited description together with the description it replaced', async () => {
+    renderDetail('overview')
+    fireEvent.click(await screen.findByRole('button', { name: '説明を編集' }))
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: '説明を編集' }), { target: { value: '## 変更点\n\n説明を追加' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ description: '## 変更点\n\n説明を追加', expectedDescription: '', iid: '120', kind: 'setDescription', projectId: '7' }, undefined))
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '説明を編集' })).not.toBeInTheDocument())
+  })
+})
+
+describe('line comments from the diff', () => {
+  beforeEach(() => {
+    detailMocks.useComposerBufferMock.mockReset().mockImplementation(() => {
+      const [body, change] = useState('行への指摘')
+      return { body, change, discard: vi.fn(), error: null, persistenceStatus: 'saved' }
+    })
+    detailMocks.flushComposerBuffersMock.mockReset().mockResolvedValue(true)
+    detailMocks.mutationRunMock.mockReset().mockResolvedValue(true)
+  })
+
+  it.each([
+    ['コメントを投稿', 'comment'],
+    ['レビューに追加', 'saveDraft'],
+  ] as const)('sends the line comment with %s and then closes the editor so the next comment is not on that line', async (button, kind) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab="changes" onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' }))
+    const editor = await screen.findByRole('region', { name: 'レビューコメント入力' })
+    fireEvent.click(within(editor).getByRole('button', { name: button }))
+
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith(expect.objectContaining({ body: '行への指摘', kind, position: expect.objectContaining({ newLine: 2, newPath: 'src/example.ts', headSha: 'head-abc' }) }), expect.any(String)))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'レビューコメント入力' })).not.toBeInTheDocument())
+  })
+})
+
+describe('replying and resolving in the diff', () => {
+  const original = detailMocks.discussions[1]
+  beforeEach(() => {
+    detailMocks.useComposerBufferMock.mockReset().mockImplementation((key: string) => {
+      const [body, change] = useState(key.includes('discussion-120') ? '差分からの返信' : '')
+      return { body, change, discard: vi.fn(), error: null, persistenceStatus: 'saved' }
+    })
+    detailMocks.flushComposerBuffersMock.mockReset().mockResolvedValue(true)
+    detailMocks.mutationRunMock.mockReset().mockResolvedValue(true)
+    // The line thread can be resolved.
+    detailMocks.discussions[1] = [{ ...detailMocks.discussion, notes: detailMocks.discussion.notes.map((note) => note.position ? { ...note, resolvable: true } : note) }]
+    return () => { detailMocks.discussions[1] = original }
+  })
+
+  function renderChanges() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark', 'workbench')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab="changes" onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
+  }
+
+  it('opens the reply editor inside the diff thread and sends the reply to that thread', async () => {
+    renderChanges()
+    const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+    fireEvent.click(within(thread).getByRole('button', { name: '返信' }))
+
+    const editor = within(thread).getByRole('region', { name: 'レビューコメント入力' })
+    fireEvent.click(within(editor).getByRole('button', { name: 'コメントを投稿' }))
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ body: '差分からの返信', discussionId: 'discussion-120', iid: '120', kind: 'reply', projectId: '7' }, expect.any(String)))
+    await waitFor(() => expect(within(thread).queryByRole('region', { name: 'レビューコメント入力' })).not.toBeInTheDocument())
+  })
+
+  it('resolves the diff thread', async () => {
+    renderChanges()
+    const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+    fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ discussionId: 'discussion-120', iid: '120', kind: 'resolve', projectId: '7', resolved: true }, undefined))
   })
 })

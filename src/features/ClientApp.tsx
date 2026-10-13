@@ -6,7 +6,6 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -40,7 +39,7 @@ import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { MergeRequest, Project } from '../types/gitlab'
 import { ConnectionProvider, useConnection } from './connections/ConnectionProvider'
 import { ConnectionView } from './connections/ConnectionView'
-import { clearComposerBuffers, MergeRequestDetail } from './mergeRequests/MergeRequestDetail'
+import { clearComposerBuffers, MergeRequestDetail, type ReviewTab } from './mergeRequests/MergeRequestDetail'
 import { clearGitLabCache } from '../lib/gitlab'
 import { clearComposerBufferStore, flushComposerBuffers } from './mergeRequests/useComposerBuffer'
 import { WindowCloseProtection } from '../components/WindowCloseProtection'
@@ -49,8 +48,9 @@ import { ProjectView } from './projects/ProjectView'
 import { WorkspaceSettings } from './connections/WorkspaceSettings'
 import { TodoView } from './mergeRequests/TodoView'
 import { MergeRequestShortcuts } from './mergeRequests/MergeRequestShortcuts'
+import { MergeRequestTabs } from './mergeRequests/MergeRequestTabs'
 import { OpenMergeRequestDialog } from './mergeRequests/OpenMergeRequestDialog'
-import { usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
+import { openWorkspaceTab, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
 import { QueryRefreshPolicy } from './shared/QueryRefreshPolicy'
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed } from './shared/AutoUpdateSafety'
@@ -127,6 +127,7 @@ function SessionWorkspaceContents({ mode, onModeChange, sessionKey, status }: { 
 
 function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, status }: { mode: 'light' | 'dark'; onModeChange: () => void; autoInstallAllowed: boolean; sessionKey: string; status: string }) {
   const { session } = useConnection()
+  const workspace = usePersonalWorkspace(session)
   const locationHash = useSyncExternalStore(subscribeToClientLocation, getClientLocationHash, getClientLocationHash)
   const location = readClientLocation(Boolean(session), locationHash)
   const [openedMergeRequest, setOpenedMergeRequest] = useState<{ sessionKey: string; mergeRequest: MergeRequest } | null>(null)
@@ -167,7 +168,8 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
   const select = useCallback((ref: MrRef | null) => {
     const current = readClientLocation(Boolean(session))
     const targetRoute = current.route === 'settings' ? 'recent' : current.route
-    const base = targetRoute === current.route ? withoutSelection(current.params) : {}
+    const base: Record<string, string> = targetRoute === current.route ? withoutSelection(current.params) : {}
+    if (ref && current.params.mr === `${ref.projectId}-${ref.iid}` && current.params.tab) base.tab = current.params.tab
     navigate(targetRoute, ref ? { ...base, mr: `${ref.projectId}-${ref.iid}` } : base)
   }, [navigate, session])
 
@@ -260,6 +262,7 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
     const merged: Record<string, string> = { ...nextParams }
     if (current.params.projectName && nextParams.projectId === current.params.projectId) merged.projectName = current.params.projectName
     if (current.params.mr) merged.mr = current.params.mr
+    if (current.params.tab) merged.tab = current.params.tab
     const hash = locationToHash('mrs', merged)
     window.history.replaceState(window.history.state, '', hash)
     globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
@@ -270,10 +273,21 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
     select({ iid: nextMergeRequest.iid, projectId: nextMergeRequest.projectId })
   }
 
-  const openMergeRequestRef = (ref: MrRef) => {
+  const openMergeRequestRef = (ref: MrRef | null) => {
     setOpenedMergeRequest(null)
     select(ref)
   }
+
+  // The shown MR always has a sidebar tab, also when reached by Back or a link,
+  // or when it is unpinned while shown.
+  const selectedProjectId = selected?.projectId
+  const selectedIid = selected?.iid
+  const selectedPinned = workspace.pinned.some((item) => item.projectId === selectedProjectId && item.iid === selectedIid)
+  const instanceUrl = session?.instanceUrl
+  const userId = session?.user.id
+  useEffect(() => {
+    if (selectedProjectId && selectedIid && !selectedPinned && instanceUrl && userId) openWorkspaceTab({ instanceUrl, userId }, { iid: selectedIid, projectId: selectedProjectId })
+  }, [instanceUrl, selectedIid, selectedPinned, selectedProjectId, userId])
 
   const personal = personalNavigationFor(params, session?.user.id)
   const navSelected = {
@@ -302,7 +316,6 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
       { icon: <EditOutlinedIcon />, key: 'created', label: '作成', onClick: () => session ? navigate('mrs', { authorId: session.user.id, state: 'opened' }) : navigate('settings'), selected: navSelected.created, title: '作成したMR' },
     ] },
     { heading: 'よく見るMR', items: [
-      { icon: <PushPinOutlinedIcon />, key: 'pinned', label: '固定', onClick: () => navigate('pinned'), selected: route === 'pinned', title: '固定したMR' },
       { icon: <HistoryRoundedIcon />, key: 'recent', label: '最近開いた', onClick: () => navigate('recent'), selected: route === 'recent', title: '最近開いたMR' },
     ] },
   ]
@@ -333,6 +346,7 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
                 {section.items.map((item) => <ClientNavItem collapsed={sidebarIsCollapsed} icon={item.icon} key={item.key} label={item.label} onClick={item.onClick} selected={item.selected} title={item.title} />)}
               </List>
             ))}
+            <MergeRequestTabs collapsed={sidebarIsCollapsed} onOpen={openMergeRequestRef} selected={selected} />
             <List disablePadding sx={{ mt: 'auto', pt: 1 }}>
               <ClientNavItem collapsed={sidebarIsCollapsed} icon={<SettingsOutlinedIcon />} label="接続設定" onClick={() => navigate('settings')} selected={route === 'settings'} title="接続設定" />
             </List>
@@ -374,8 +388,16 @@ function ClientWorkspace({ mode, onModeChange, autoInstallAllowed, sessionKey, s
                   listHidden={isWide ? listHidden : undefined}
                   onBack={isWide ? undefined : () => select(null)}
                   onOpenProject={() => navigate('mrs', { projectId: selected.projectId })}
+                  onTabChange={(tab) => {
+                    // Each tab is a history entry, so Back returns to the previous tab.
+                    const next = { ...params }
+                    if (tab === 'discussion') delete next.tab
+                    else next.tab = tab
+                    navigate(route, next)
+                  }}
                   onToggleList={isWide ? toggleList : undefined}
                   selected={selected}
+                  tab={parseTab(params.tab)}
                 /> : <DetailPlaceholder hasSession={Boolean(session)} />}
               </Box>
             </> : null}
@@ -471,7 +493,7 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
   </Stack>
 }
 
-function MergeRequestRoute({ initialMergeRequest, listHidden, onBack, onOpenProject, onToggleList, selected }: { initialMergeRequest: MergeRequest | null; listHidden?: boolean; onBack?: () => void; onOpenProject: () => void; onToggleList?: () => void; selected: MrRef }) {
+function MergeRequestRoute({ initialMergeRequest, listHidden, onBack, onOpenProject, onTabChange, onToggleList, selected, tab }: { initialMergeRequest: MergeRequest | null; listHidden?: boolean; onBack?: () => void; onOpenProject: () => void; onTabChange: (tab: ReviewTab) => void; onToggleList?: () => void; selected: MrRef; tab: ReviewTab }) {
   const { session } = useConnection()
   const query = useMemo(() => ({ iid: selected.iid, kind: 'mr' as const, projectId: selected.projectId }), [selected.iid, selected.projectId])
   const lookup = useGitLabQuery(session?.id ?? null, query)
@@ -483,7 +505,7 @@ function MergeRequestRoute({ initialMergeRequest, listHidden, onBack, onOpenProj
       ? <MergeRequestSkeleton />
       : <PaneEmpty description="検索から開き直してください。" title="このMRを復元できませんでした。">{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />}>一覧に戻る</Button> : null}</PaneEmpty>
   }
-  return <MergeRequestDetail initialMergeRequest={mergeRequest} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} listHidden={listHidden} onBack={onBack} onOpenProject={onOpenProject} onToggleList={onToggleList} />
+  return <MergeRequestDetail initialMergeRequest={mergeRequest} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} listHidden={listHidden} onBack={onBack} onOpenProject={onOpenProject} onTabChange={onTabChange} onToggleList={onToggleList} tab={tab} />
 }
 
 /** Placeholder with the shape of the MR detail header, so the detail does not jump in. */
@@ -587,10 +609,15 @@ function parseSelection(value: string | undefined): MrRef | null {
 }
 
 function withoutSelection(params: Record<string, string>): Record<string, string> {
-  if (!('mr' in params)) return params
+  if (!('mr' in params) && !('tab' in params)) return params
   const next = { ...params }
   delete next.mr
+  delete next.tab
   return next
+}
+
+function parseTab(value: string | undefined): ReviewTab {
+  return value === 'changes' || value === 'overview' ? value : 'discussion'
 }
 
 function personalNavigationFor(params: Record<string, string>, userId: string | undefined): 'waiting' | 'assigned' | 'created' | null {

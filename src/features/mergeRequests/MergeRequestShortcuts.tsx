@@ -1,8 +1,11 @@
+import PushPinIcon from '@mui/icons-material/PushPin'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState } from 'react'
 import { ListRow } from '../../components/ListRow'
@@ -26,23 +29,24 @@ export function MergeRequestShortcuts({ kind, onOpen, selected = null }: { kind:
     <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       {!session ? <Alert severity="info" sx={{ m: 1.5 }}>接続設定でGitLabに接続してください。</Alert> : null}
       {refs.length === 0 ? <PaneEmpty description={kind === 'pinned' ? 'MR一覧や詳細のピンのボタンで固定できます。' : 'MRを開くと、ここに履歴を表示します。'} icon={kind === 'pinned' ? <PushPinOutlinedIcon fontSize="inherit" /> : <HistoryRoundedIcon fontSize="inherit" />} title={kind === 'pinned' ? '固定したMRはありません' : '履歴はありません'} />
-        : <Box component="ul" sx={{ m: 0, p: 0 }}>{visible.map((ref) => <ShortcutRow key={`${ref.projectId}:${ref.iid}`} mrRef={ref} onOpen={onOpen} selected={selected?.projectId === ref.projectId && selected.iid === ref.iid} />)}</Box>}
+        : <Box component="ul" sx={{ m: 0, p: 0 }}>{visible.map((ref) => <ShortcutRow key={`${ref.projectId}:${ref.iid}`} mrRef={ref} onOpen={onOpen} onUnpin={kind === 'pinned' ? () => workspace.togglePinned(ref) : undefined} selected={selected?.projectId === ref.projectId && selected.iid === ref.iid} />)}</Box>}
     </Box>
     {refs.length > 10 ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={page * 10 < refs.length} hasPrevious={page > 1} onNext={() => setPage(page + 1)} onPrevious={() => setPage(page - 1)} page={page} /></Box> : null}
   </Box>
 }
 
-function ShortcutRow({ mrRef, onOpen, selected }: { mrRef: MrRef; onOpen: (ref: MrRef) => void; selected: boolean }) {
+function ShortcutRow({ mrRef, onOpen, onUnpin, selected }: { mrRef: MrRef; onOpen: (ref: MrRef) => void; onUnpin?: () => void; selected: boolean }) {
   const { session } = useConnection()
   const query = useMemo(() => session ? ({ kind: 'mr' as const, ...mrRef }) : null, [mrRef, session])
   const result = useGitLabQuery(session?.id ?? null, query)
   const mergeRequest = result.data
-  return <ListRow disabled={!session || Boolean(result.error && !mergeRequest)} leading={mergeRequest ? <MergeRequestStateIcon state={mergeRequest.state} /> : undefined} onOpen={() => onOpen(mrRef)} selected={selected}>
+  const actions = onUnpin ? <Tooltip title="固定を解除"><IconButton aria-label={`!${mrRef.iid}を固定解除`} color="primary" onClick={onUnpin}><PushPinIcon /></IconButton></Tooltip> : undefined
+  return <ListRow actions={actions} disabled={!session || Boolean(result.error && !mergeRequest)} leading={mergeRequest ? <MergeRequestStateIcon state={mergeRequest.state} /> : undefined} onOpen={() => onOpen(mrRef)} selected={selected}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
       <Typography color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{mergeRequest?.projectPath ?? `プロジェクト ${mrRef.projectId}`} !{mrRef.iid}</Typography>
       {mergeRequest ? <RelativeTime value={mergeRequest.updatedAt} /> : null}
     </Stack>
-    <Typography sx={{ display: '-webkit-box', fontWeight: 500, mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{mergeRequest?.title ?? (result.loading ? '読み込み中…' : `プロジェクト ${mrRef.projectId} !${mrRef.iid}`)}</Typography>
+    <Typography sx={{ display: '-webkit-box', mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{mergeRequest?.title ?? (result.loading ? '読み込み中…' : `プロジェクト ${mrRef.projectId} !${mrRef.iid}`)}</Typography>
     {result.error ? <Typography color="error.main" component="div" variant="caption">{result.error.message}</Typography> : mergeRequest ? <Typography color="text.secondary" component="div" variant="caption">{mergeRequest.author.name}</Typography> : null}
   </ListRow>
 }

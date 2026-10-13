@@ -193,7 +193,7 @@ it('keeps the list mounted and only toggles the selection parameter when opening
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
 
   fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' }), { target: { value: 'unsent draft' } })
-  fireEvent.click(await screen.findByText('Add searchable list'))
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
   fireEvent.click(await screen.findByRole('button', { name: '一覧に戻る' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
@@ -215,7 +215,7 @@ it('preserves MR search filters when returning from an opened request', async ()
   const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>
   render(app())
 
-  fireEvent.click(await screen.findByText('Add searchable list'))
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   fireEvent.click(await screen.findByRole('button', { name: '一覧に戻る' }))
 
   await waitFor(() => expect(window.location.hash).toContain('reviewer=self&state=opened&search=needle'))
@@ -244,7 +244,7 @@ it.each([
   expect(screen.getByRole('heading', { name: label })).toBeInTheDocument()
   expect(gitlabQueryMock.mock.calls.some(([, query]) => query?.[queryKey] === '1')).toBe(true)
 
-  fireEvent.click(await screen.findByText('Add searchable list'))
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-current', 'page')
   expect(screen.getByRole('button', { name: 'MR検索' })).not.toHaveAttribute('aria-current', 'page')
 
@@ -290,7 +290,7 @@ it('groups the navigation into places and keeps opening by URL beside the search
 
   const mine = screen.getByRole('list', { name: '自分のMR' })
   expect(within(mine).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['To-Do', 'レビュー依頼', '担当しているMR', '作成したMR'])
-  expect(within(screen.getByRole('list', { name: 'よく見るMR' })).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['固定したMR', '最近開いたMR'])
+  expect(within(screen.getByRole('list', { name: 'よく見るMR' })).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['最近開いたMR'])
 
   fireEvent.click(screen.getByRole('button', { name: 'MR URLから開く' }))
   expect(screen.getByRole('dialog', { name: 'MR URLから開く' })).toBeInTheDocument()

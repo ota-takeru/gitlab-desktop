@@ -43,6 +43,7 @@ import { useConnection } from '../connections/ConnectionProvider'
 import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, writeSavedSearches } from '../shared/preferences'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
+import { listTitle } from './listTitle'
 import { ProjectSearchPicker, UserSearchPicker } from './SearchPickers'
 
 type OrderBy = NonNullable<MergeRequestsQuery['orderBy']>
@@ -439,7 +440,7 @@ function MergeRequestResultRow({ approval, mergeRequest, onOpenMergeRequest, onO
       actions={<>
         {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
         <Tooltip title={pinned ? '固定を解除' : 'MRを固定'}>
-          <IconButton aria-label={`!${mergeRequest.iid}を${pinned ? '固定解除' : '固定'}`} color={pinned ? 'primary' : 'default'} onClick={() => personalWorkspace.togglePinned(ref)}>
+          <IconButton aria-label={`!${mergeRequest.iid}を${pinned ? '固定解除' : '固定'}`} color={pinned ? 'primary' : 'default'} onClick={() => personalWorkspace.togglePinned(ref, { projectPath: mergeRequest.projectPath ?? '', state: mergeRequest.state, title: mergeRequest.title })}>
             {pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}
           </IconButton>
         </Tooltip>
@@ -453,7 +454,7 @@ function MergeRequestResultRow({ approval, mergeRequest, onOpenMergeRequest, onO
         {approval && approval.count > 0 ? <Tooltip title={approval.byMe ? `自分を含む${approval.count}人が承認済み` : `${approval.count}人が承認済み`}><Stack aria-label={approval.byMe ? '自分が承認済み' : `${approval.count}人が承認済み`} direction="row" role="img" spacing={0.25} sx={{ alignItems: 'center', color: approval.byMe ? 'success.main' : 'text.secondary', flexShrink: 0 }}><TaskAltRoundedIcon sx={{ fontSize: 13 }} /><Typography color="inherit" variant="caption">{approval.byMe ? '承認済み' : approval.count}</Typography></Stack></Tooltip> : null}
         <RelativeTime value={mergeRequest.updatedAt} />
       </Stack>
-      <Typography sx={{ display: '-webkit-box', fontWeight: hasUnread || selected ? 600 : 500, lineHeight: 1.45, mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{mergeRequest.title}</Typography>
+      <Typography sx={{ display: '-webkit-box', mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{listTitle(mergeRequest)}</Typography>
       <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, rowGap: 0.25 }}>
         <Typography color="text.secondary" variant="caption">{mergeRequest.author.name}</Typography>
         {pinned ? <PushPinIcon aria-label="固定済み" color="primary" sx={{ fontSize: 14 }} /> : null}

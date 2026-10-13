@@ -61,7 +61,8 @@ export function useGitLabQuery<Q extends GitLabQuery>(
     queryKey,
   })
 
-  const queryError = loaded.error ?? loaded.data?.error ?? null
+  // Every hook without a query shares one disabled key, so nothing stored there belongs to the caller.
+  const queryError = query ? loaded.error ?? loaded.data?.error ?? null : null
   const accessDenied = isAccessDenied(queryError)
 
   useEffect(() => {
@@ -74,11 +75,13 @@ export function useGitLabQuery<Q extends GitLabQuery>(
     }
   }, [accessDenied, query, queryError, sessionId])
 
-  const snapshot = accessDenied ? null : loaded.data?.snapshot ?? null
+  const snapshot = accessDenied || !query ? null : loaded.data?.snapshot ?? null
   const refetch = loaded.refetch
+  const hasQuery = Boolean(sessionId && query)
   const refresh = useCallback(() => {
-    void refetch()
-  }, [refetch])
+    // Refetching a disabled key would run the query function and store its error under that shared key.
+    if (hasQuery) void refetch()
+  }, [hasQuery, refetch])
 
   return {
     data: snapshot?.data ?? null,

@@ -165,16 +165,6 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
     setPendingJumpNoteId(note.id)
   }
 
-  const visiblePageNotes = visibleDiscussions.flatMap(({ discussion, notes }) => {
-    const canResolve = notes.some((note) => note.resolvable)
-    const resolved = canResolve && notes.filter((note) => note.resolvable).every((note) => note.resolved)
-    if (isThreadCollapsible(notes) && (collapsedThreads[discussion.id] ?? resolved)) return []
-    const notePage = clampPage(notePages[discussion.id] ?? 1, pageCount(notes.length, NOTES_PER_PAGE))
-    const noteStart = (notePage - 1) * NOTES_PER_PAGE
-    return notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
-  })
-  const visibleUnreadCount = visiblePageNotes.filter((note) => unreadIds.has(note.id)).length
-
   return (
     <Stack ref={listRef} spacing={1.5} sx={{ overflowAnchor: 'none' }}>
       <Stack direction={{ sm: 'row', xs: 'column' }} spacing={0.75} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5 }}>
@@ -195,7 +185,7 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           {latestNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(latestNote)} size="small">最新へ</Button> : null}
           {earliestUnreadNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(earliestUnreadNote)} size="small">未読へ <Chip color="primary" label={unreadNotes.length} size="small" sx={{ ml: 0.5 }} /></Button> : null}
-          {onMarkRead ? <Button disabled={disabled || visibleUnreadCount === 0} onClick={() => onMarkRead(visiblePageNotes)} size="small">表示中を既読</Button> : null}
+          {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">読み込み済みを既読</Button> : null}
         </Stack>
       </Stack>
       {older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (

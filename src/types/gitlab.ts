@@ -415,6 +415,16 @@ export type GitLabAction =
   | SetAssigneesAction
   | SetReviewersAction
   | UploadAttachmentAction
+  | SetDescriptionAction
+
+/** Replaces the description; refused when GitLab no longer has `expectedDescription`. */
+export type SetDescriptionAction = {
+  kind: 'setDescription'
+  projectId: string
+  iid: string
+  description: string
+  expectedDescription: string
+}
 
 export type UploadAttachmentAction = {
   kind: 'uploadAttachment'

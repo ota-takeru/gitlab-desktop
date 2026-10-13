@@ -14,6 +14,8 @@ pub const MAX_ACTION_BODY_BYTES: usize = 64 * 1024;
 const MAX_GET_RETRIES: usize = 2;
 const PER_PAGE: u32 = 30;
 const MAX_PEOPLE: usize = 100;
+/// The description and the one it replaces are both kept in the send record, which holds 256 KiB.
+const MAX_DESCRIPTION_BYTES: usize = 96 * 1024;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +53,7 @@ enum MutationPreflight<'a> {
     Position(&'a Position),
     Draft(&'a str),
     People(&'static str, &'a [String]),
+    Description(&'a str),
 }
 
 type QueryUrl = (Url, ResponseKind, Vec<(String, String)>);
@@ -406,6 +409,20 @@ pub async fn mutate(
                 MutationPreflight::People(field, expected_user_ids),
             )
         }
+        Action::SetDescription {
+            project_id,
+            iid,
+            description,
+            expected_description,
+        } => {
+            let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
+            (
+                Method::PUT,
+                url,
+                json!({ "description": description }),
+                MutationPreflight::Description(expected_description),
+            )
+        }
     };
 
     let (project_id, iid) = action_project_and_iid(action);
@@ -422,6 +439,9 @@ pub async fn mutate(
         }
         MutationPreflight::People(field, expected) => {
             ensure_people(client, api_base, project_id, iid, field, expected).await?
+        }
+        MutationPreflight::Description(expected) => {
+            ensure_description(client, api_base, project_id, iid, expected).await?
         }
     }
 
@@ -505,6 +525,9 @@ fn action_project_and_iid(action: &Action) -> (&str, &str) {
             project_id, iid, ..
         }
         | Action::UploadAttachment {
+            project_id, iid, ..
+        }
+        | Action::SetDescription {
             project_id, iid, ..
         } => (project_id, iid),
     }
@@ -1745,6 +1768,14 @@ fn validate_action(action: &Action) -> Result<(), AppError> {
             validate_user_ids(user_ids)?;
             validate_user_ids(expected_user_ids)?;
         }
+        Action::SetDescription {
+            description,
+            expected_description,
+            ..
+        } => {
+            validate_description(description)?;
+            validate_description(expected_description)?;
+        }
     }
     if let Action::SaveDraft {
         discussion_id: Some(discussion_id),
@@ -1775,6 +1806,16 @@ fn validate_position(position: &Position) -> Result<(), AppError> {
         return Err(AppError::new(
             "INVALID_INPUT",
             "A line position must include an oldLine or newLine.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_description(value: &str) -> Result<(), AppError> {
+    if value.len() > MAX_DESCRIPTION_BYTES {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "The description is larger than the supported limit.",
         ));
     }
     Ok(())
@@ -1963,6 +2004,27 @@ async fn ensure_people(
     let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
     let value = get_json_once(client, &url).await?;
     if user_id_set(&value, field) != Some(expected.iter().cloned().collect()) {
+        return Err(stale_merge_request());
+    }
+    Ok(())
+}
+
+async fn ensure_description(
+    client: &Client,
+    api_base: &Url,
+    project_id: &str,
+    iid: &str,
+    expected: &str,
+) -> Result<(), AppError> {
+    let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
+    let value = get_json_once(client, &url).await?;
+    // GitLab returns null for an MR without a description.
+    let current = match value.get("description") {
+        Some(Value::String(text)) => text.as_str(),
+        Some(Value::Null) | None => "",
+        Some(_) => return Err(stale_merge_request()),
+    };
+    if current != expected {
         return Err(stale_merge_request());
     }
     Ok(())
@@ -2960,6 +3022,51 @@ mod tests {
         assert_eq!(parse_total_pages(&headers), None);
         headers.insert("x-total-pages", "many".parse().unwrap());
         assert_eq!(parse_total_pages(&headers), None);
+    }
+
+    #[test]
+    fn description_changes_only_when_gitlab_still_has_the_edited_description() {
+        let action = Action::SetDescription {
+            project_id: "42".to_owned(),
+            iid: "9".to_owned(),
+            description: "新しい説明".to_owned(),
+            expected_description: String::new(),
+        };
+        let fixture = Fixture::new(vec![
+            response("200 OK", r#"{"id":1,"description":null}"#, ""),
+            response("200 OK", r#"{"id":1,"description":"新しい説明"}"#, ""),
+        ]);
+        runtime()
+            .block_on(mutate(&Client::new(), &fixture.url(), &action, "7"))
+            .unwrap();
+        let requests = fixture.requests.lock().unwrap();
+        assert!(requests[1].starts_with("PUT "));
+        assert!(requests[1].contains("/projects/42/merge_requests/9 "));
+        assert!(requests[1].ends_with(r#"{"description":"新しい説明"}"#));
+        drop(requests);
+
+        // Someone else changed the description: nothing is written.
+        let fixture = Fixture::new(vec![response(
+            "200 OK",
+            r#"{"id":1,"description":"別の人の編集"}"#,
+            "",
+        )]);
+        let error = runtime()
+            .block_on(mutate(&Client::new(), &fixture.url(), &action, "7"))
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_INPUT");
+        assert_eq!(fixture.requests.lock().unwrap().len(), 1);
+
+        let too_large = Action::SetDescription {
+            project_id: "42".to_owned(),
+            iid: "9".to_owned(),
+            description: "x".repeat(MAX_DESCRIPTION_BYTES + 1),
+            expected_description: String::new(),
+        };
+        assert_eq!(
+            validate_action(&too_large).unwrap_err().code,
+            "INVALID_INPUT"
+        );
     }
 
     #[test]

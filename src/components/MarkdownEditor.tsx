@@ -189,7 +189,8 @@ function RichInput({ autoFocus, disabled = false, editorRef, handleRef, label, o
   }, [editor, onUnsupported, value])
 
   useImperativeHandle(handleRef, () => ({
-    focus: () => { editor.commands.focus('end') },
+    // Effects can run again after the editor is destroyed (StrictMode, remounts); there is nothing to focus then.
+    focus: () => { if (!editor.isDestroyed) editor.commands.focus('end') },
     insertBlock: (markdown) => { editor.chain().focus().insertContent(markdown, { contentType: 'markdown' }).run() },
     insertMention: (text) => {
       const range = mentionRef.current

@@ -30,7 +30,7 @@ import { DiscussionLayout } from '../features/mergeRequests/DiscussionLayout'
 import { DiscussionList } from '../features/mergeRequests/DiscussionList'
 import { UnresolvedThreadNav } from '../features/mergeRequests/UnresolvedThreadNav'
 import { ReviewComposer } from '../features/mergeRequests/ReviewComposer'
-import { DiffSnippet, DiffViewer } from '../features/mergeRequests/DiffViewer'
+import { DiffViewer } from '../features/mergeRequests/DiffViewer'
 
 /** `section` is the suffix of a `catalog-*` id, e.g. `#foundation/catalog?section=review`. */
 export function UiCatalogPage({ section }: { section?: string } = {}) {
@@ -143,11 +143,11 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
               <Box component="ul" sx={{ m: 0, p: 0 }}>
                 <ListRow leading={<MergeRequestStateIcon state="opened" />} onOpen={() => undefined} selected>
                   <Typography color="text.secondary" variant="caption">group/project !12</Typography>
-                  <Typography sx={{ fontWeight: 600 }} variant="body2">選択中の行（サンプル）</Typography>
+                  <Typography variant="subtitle1">選択中の行（サンプル）</Typography>
                 </ListRow>
                 <ListRow leading={<MergeRequestStateIcon state="merged" />} onOpen={() => undefined}>
                   <Typography color="text.secondary" variant="caption">group/project !11</Typography>
-                  <Typography sx={{ fontWeight: 500 }} variant="body2">通常の行（サンプル）</Typography>
+                  <Typography variant="subtitle1">通常の行（サンプル）</Typography>
                 </ListRow>
               </Box>
             </Box>
@@ -174,9 +174,9 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
       <Stack id="catalog-review" spacing={1.5}>
         <Typography component="h2" variant="h2">レビュー入力と差分</Typography>
         <Typography color="text.secondary" variant="caption">表示サンプルです。GitLabへの取得・投稿は行いません。</Typography>
-        <ReviewComposer disabled targetCode={<DiffSnippet diff={catalogDiff} position={catalogPosition} />} targetPosition={catalogPosition} value="変更の意図を確認するコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
+        <ReviewComposer disabled value="MR全体へのコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
         <DiscussionLayout composer={null} navigator={<UnresolvedThreadNav discussions={[catalogDiscussion]} olderNotLoaded={false} onSelect={() => undefined} />} side={null} threads={<CatalogReplyThread />} />
-        <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments={false} diffs={[catalogDiff]} selectedFile="example.ts" selectedPosition={undefined} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
+        <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments diffs={[catalogDiff]} lineComposer={{ position: catalogPosition, node: <ReviewComposer disabled inlineTarget targetPosition={catalogPosition} value="変更の意図を確認する行コメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} /> }} selectedFile="example.ts" selectedPosition={catalogPosition} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
       </Stack>
 
       <Stack id="catalog-empty-state" spacing={1.5}>
