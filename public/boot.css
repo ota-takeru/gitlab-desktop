@@ -1,0 +1,7 @@
+/*
+ * Canvas colours of src/theme.ts, painted before the app mounts so a dark start does not flash white.
+ * Kept out of index.html: an inline <style> makes Tauri add its hash to the CSP, which then
+ * disables 'unsafe-inline' and blocks the styles Emotion injects at runtime.
+ */
+html { background: #ffffff; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { html { background: #232529; } }

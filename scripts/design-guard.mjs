@@ -58,6 +58,13 @@ function visit(directory) {
 
 visit(sourceRoot)
 
+// Tauri hashes inline <style>/<script> of index.html into the CSP; a hash disables 'unsafe-inline',
+// which blocks every style Emotion injects and leaves the app unstyled.
+const indexHtml = readFileSync(join(projectRoot, 'index.html'), 'utf8')
+for (const match of indexHtml.matchAll(/<style\b|<script\b(?![^>]*\bsrc=)/giu)) {
+  violations.push(`index.html:${lineOf(indexHtml, match.index)}: inline ${match[0]}; load it from a file instead`)
+}
+
 if (violations.length > 0) {
   console.error('Design guard failed:')
   for (const violation of violations) console.error(`- ${violation}`)
