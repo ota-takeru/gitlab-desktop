@@ -67,8 +67,8 @@ for (const theme of themes) {
 // Fetch states are layout-independent enough to capture at the normal size only.
 const states = [
   { state: 'loading', url: detail, text: 'MRを読み込み中…' },
-  { state: 'error', url: detail, text: 'このMRを復元できませんでした。' },
-  { state: 'empty', url: queue, text: '条件に一致するMRがありません。' },
+  { state: 'error', url: detail, text: '接続を確認してから再試行してください。' },
+  { state: 'empty', url: queue, text: '条件に一致するMRがありません' },
   { state: 'stale', url: detail, text: '保存済みの議論を表示中です。' },
 ] as const
 

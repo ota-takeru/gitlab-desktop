@@ -1,10 +1,16 @@
-import { render, waitFor } from '@testing-library/react'
+import { ThemeProvider } from '@mui/material/styles'
+import { render as baseRender, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { avatarMock } = vi.hoisted(() => ({ avatarMock: vi.fn() }))
 vi.mock('../../lib/gitlab', () => ({ getGitLabAvatar: avatarMock }))
 
 import { GitLabUserAvatar } from './GitLabUserAvatar'
+import { createAppTheme } from '../../theme'
+
+// Initial avatars take their tones from the app theme.
+const render = (ui: ReactElement) => baseRender(<ThemeProvider theme={createAppTheme('light')}>{ui}</ThemeProvider>)
 
 const user = { id: '7', name: 'Alice Example', username: 'alice', avatarUrl: 'https://gitlab.example/uploads/-/system/user/avatar/7/a.png' }
 

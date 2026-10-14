@@ -1,10 +1,8 @@
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined'
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
-import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
 import ReplyRoundedIcon from '@mui/icons-material/ReplyRounded'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -18,13 +16,17 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { useConfirm } from '../../components/Feedback'
 import { MarkdownEditor } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { RelativeTime } from '../../components/RelativeTime'
+import { ResolveToggle } from '../../components/ResolveToggle'
 import type { Discussion, Note, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
+import { plainExcerpt } from './discussionText'
+import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
 
 const NOTES_PER_PAGE = 50
 /** Thread width from which a line comment's code sits beside its comments. */
@@ -50,6 +52,11 @@ interface DiscussionListProps {
   older?: OlderDiscussions
   /** The code a line comment refers to, shown beside the thread's comments. */
   renderCodeContext?: (position: Position) => React.ReactNode
+  /** The own comment being edited, when the caller keeps it (so it stays open across tab changes). */
+  editingNoteId?: string | null
+  onEditingNoteChange?: (noteId: string | null) => void
+  /** Where an edit's text is kept, like new comments, so it survives leaving the tab. */
+  noteEditBufferKey?: (note: Note) => string
 }
 
 export interface OlderDiscussions {
@@ -64,8 +71,11 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, older, onDelete, onEdit, onMarkRead, onOpenPosition, onReply, onResolve, renderCodeContext, replyComposer, replyDiscussionId, unreadNoteIds = [] }: DiscussionListProps) {
-  const [editing, setEditing] = useState<{ note: Note; body: string } | null>(null)
+export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, renderCodeContext, replyComposer, replyDiscussionId, unreadNoteIds = [] }: DiscussionListProps) {
+  const [localEditingId, setLocalEditingId] = useState<string | null>(null)
+  const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
+  const setEditing = onEditingNoteChange ?? setLocalEditingId
+  const confirm = useConfirm()
   const [notePages, setNotePages] = useState<Record<string, number>>({})
   const [filter, setFilter] = useState<'all' | 'unresolved'>('all')
   const [collapsedThreads, setCollapsedThreads] = useState<Record<string, boolean>>({})
@@ -171,7 +181,7 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
 
   return (
     <Stack ref={listRef} spacing={1.5} sx={{ overflowAnchor: 'none' }}>
-      <Stack direction={{ sm: 'row', xs: 'column' }} spacing={0.75} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5 }}>
+      <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5 }}>
         <ToggleButtonGroup
           aria-label="議論の絞り込み"
           disabled={paginationDisabled}
@@ -194,62 +204,58 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
       </Stack>
       {older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'center', minHeight: 32 }}>
-          {older.loading ? <Typography color="text.secondary" role="status" variant="caption">以前の議論を読み込み中…</Typography>
+          {older.loading ? <Typography color="textSecondary" role="status" variant="caption">以前の議論を読み込み中…</Typography>
             : older.error ? <><Typography color="error" variant="caption">以前の議論を読み込めませんでした: {older.error}</Typography><Button onClick={older.onRetry}>再試行</Button></>
               : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>以前の議論を読み込む</Button>
-                : <Typography color="text.secondary" variant="caption">読み込み上限に達しました。これより前の議論はGitLabで確認してください。</Typography>}
+                : <Typography color="textSecondary" variant="caption">読み込み上限に達しました。これより前の議論はGitLabで確認してください。</Typography>}
         </Stack>
       ) : null}
       {visibleDiscussions.map(({ discussion, notes }) => {
         const canResolve = notes.some((note) => note.resolvable)
         const resolved = canResolve && notes.filter((note) => note.resolvable).every((note) => note.resolved)
         const notePageCount = pageCount(notes.length, NOTES_PER_PAGE)
-        const editingNoteIndex = editing?.note.id ? notes.findIndex((note) => note.id === editing.note.id) : -1
+        const editingNoteIndex = editing ? notes.findIndex((note) => note.id === editing) : -1
         const requestedNotePage = notePages[discussion.id] ?? 1
         const notePage = editingNoteIndex >= 0
           ? Math.floor(editingNoteIndex / NOTES_PER_PAGE) + 1
           : clampPage(requestedNotePage, notePageCount)
         const noteStart = (notePage - 1) * NOTES_PER_PAGE
         const visibleNotes = notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
-        const containsEditingNote = Boolean(editing?.note && notes.some((note) => note.id === editing.note.id))
+        const containsEditingNote = editingNoteIndex >= 0
         // Resolved threads start collapsed; any thread can be folded or opened.
         const replying = discussion.id === replyDiscussionId && Boolean(replyComposer)
         const isCollapsed = isThreadCollapsible(notes) && (collapsedThreads[discussion.id] ?? resolved) && !containsEditingNote && !replying
         const position = notes.find((note) => note.position)?.position ?? null
         const positionLabel = position ? `${position.newPath}:${position.newLine ?? position.oldLine ?? 'file'}` : null
         const firstNote = notes[0]
+        const threadLabel = positionLabel ?? `${firstNote?.author.name ?? ''}のスレッド`
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
         return (
-          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 2, minWidth: 0, overflow: 'clip' }}>
+          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
             {isThreadCollapsible(notes) ? (
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: isCollapsed ? 0 : 1, borderColor: 'divider', justifyContent: 'space-between', minHeight: 36, pl: 1.5, pr: 1, py: 0.5 }}>
-                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
-                  {position ? <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} /> : <ForumOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />}
-                  {position && positionLabel ? onOpenPosition ? (
-                    <Button
-                      aria-label={`差分へ移動: ${positionLabel}`}
-                      disabled={disabled || Boolean(editing || replyDiscussionId)}
-                      onClick={() => onOpenPosition(position)}
-                      sx={{ flexShrink: isCollapsed ? 0 : 1, fontFamily: 'typography.code.fontFamily', fontSize: 12, fontWeight: 500, justifyContent: 'flex-start', minHeight: 24, minWidth: 0, overflowWrap: 'anywhere', px: 0.5, py: 0, textAlign: 'left', whiteSpace: 'normal' }}
-                    >{positionLabel}</Button>
-                  ) : <Typography color="text.secondary" sx={{ fontFamily: 'typography.code.fontFamily', minWidth: 0, overflowWrap: 'anywhere' }} variant="caption">{positionLabel}</Typography> : <Typography color="text.secondary" variant="caption">MR全体へのスレッド</Typography>}
-                  {isCollapsed && firstNote ? <Typography color="text.secondary" noWrap sx={{ minWidth: 0, pl: 0.5 }} variant="caption">— {firstNote.author.name}: {firstNote.body.replace(/\s+/gu, ' ').slice(0, 80)}</Typography> : null}
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', minWidth: 0 }}>
+                  {position ? <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} /> : <ForumOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} />}
+                  {/* A long path gives way with an ellipsis (full path in the tooltip) rather than run under the controls. */}
+                  {position && positionLabel ? <Tooltip describeChild title={positionLabel}>{onOpenPosition ? (
+                    <Box component="span" sx={{ display: 'flex', flex: '0 1 auto', minWidth: 0 }}>
+                      <Button
+                        aria-label={`差分へ移動: ${positionLabel}`}
+                        disabled={disabled || Boolean(editing || replyDiscussionId)}
+                        onClick={() => onOpenPosition(position)}
+                        sx={{ display: 'block', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', fontWeight: 500, minHeight: 24, minWidth: 0, overflow: 'hidden', px: 0.5, py: 0, textAlign: 'left', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >{positionLabel}</Button>
+                    </Box>
+                  ) : <Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', fontFamily: 'code.fontFamily', minWidth: 0 }} variant="caption">{positionLabel}</Typography>}</Tooltip> : <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">MR全体へのスレッド</Typography>}
+                  {isCollapsed && firstNote ? <Tooltip describeChild title={plainExcerpt(firstNote.body, 300)}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 0', minWidth: 0 }} variant="caption">— {firstNote.author.name}: {plainExcerpt(firstNote.body, 80)}</Typography></Tooltip> : null}
                 </Stack>
-                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexShrink: 0 }}>
-                  {canResolve ? <Tooltip title={resolved ? 'クリックで未解決に戻す' : 'クリックで解決済みにする'}><span><Button
-                    aria-label={resolved ? '解決済み（未解決に戻す）' : '未解決（解決済みにする）'}
-                    color={resolved ? 'success' : 'warning'}
-                    disabled={disabled}
-                    onClick={() => void onResolve(discussion, !resolved)}
-                    startIcon={resolved ? <CheckCircleRoundedIcon /> : <RadioButtonUncheckedRoundedIcon />}
-                    sx={{ minHeight: 26, px: 1, py: 0 }}
-                    variant="outlined"
-                  >{resolved ? `解決済み${isCollapsed ? ` · ${notes.length}件` : ''}` : '未解決'}</Button></span></Tooltip> : null}
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
+                  {canResolve ? <ResolveToggle disabled={disabled} onToggle={(resolve) => void onResolve(discussion, resolve)} resolved={resolved} /> : null}
                   <Button
                     aria-expanded={!isCollapsed}
                     disabled={containsEditingNote || replying}
                     onClick={() => updatePreservingScroll(() => setCollapsedThreads((current) => ({ ...current, [discussion.id]: !isCollapsed })))}
-                  >{isCollapsed ? resolved ? '内容を表示' : `内容を表示 · ${notes.length}件` : '折り畳む'}</Button>
+                  >{isCollapsed ? `表示 · ${notes.length}件` : '折りたたむ'}</Button>
                 </Stack>
               </Stack>
             ) : null}
@@ -286,29 +292,23 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                     <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
                     <Box sx={{ minWidth: 0 }}>
                       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 26, minWidth: 0 }}>
-                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
                           <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
-                          <Typography color="text.secondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
-                          {own ? <Typography color="text.secondary" variant="caption">（自分）</Typography> : null}
+                          <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
+                          {own ? <Typography color="textSecondary" variant="caption">（自分）</Typography> : null}
                           <RelativeTime value={note.createdAt} />
-                          {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="text.secondary" variant="caption">編集済み</Typography> : null}
+                          {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">編集済み</Typography> : null}
                           {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">未読</Typography> : null}
                         </Stack>
                         {own && !note.system ? (
-                          <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, mr: -0.75, opacity: editing?.note.id === note.id ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
-                            <Tooltip title="コメントを編集"><IconButton aria-label={`${note.id}を編集`} disabled={disabled} onClick={() => setEditing({ body: note.body, note })}><EditOutlinedIcon /></IconButton></Tooltip>
-                            <Tooltip title="コメントを削除"><IconButton aria-label={`${note.id}を削除`} disabled={disabled} onClick={() => { if (globalThis.confirm('このコメントを削除しますか？')) void onDelete(note) }}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
+                          <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, mr: -1, opacity: editing === note.id ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
+                            <Tooltip title="コメントを編集"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を編集`} disabled={disabled} onClick={() => setEditing(note.id)}><EditOutlinedIcon /></IconButton></Tooltip>
+                            <Tooltip title="コメントを削除"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を削除`} disabled={disabled} onClick={() => void confirm({ cancelLabel: '残す', confirmLabel: '削除する', destructive: true, message: plainExcerpt(note.body, 120), title: 'このコメントを削除しますか？' }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
                           </Stack>
                         ) : null}
                       </Stack>
-                      {editing?.note.id === note.id ? (
-                        <Stack spacing={0.75} sx={{ mt: 0.75 }}>
-                          <MarkdownEditor autoFocus disabled={disabled} label="コメントを編集" onChange={(body) => setEditing({ body, note })} value={editing.body} />
-                          <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end' }}>
-                            <Button onClick={() => setEditing(null)}>取消</Button>
-                            <Button disabled={!editing.body.trim() || disabled} onClick={() => void onEdit(note, editing.body.trim()).then((success) => { if (success) setEditing(null) }).catch(() => undefined)} variant="contained">保存</Button>
-                          </Stack>
-                        </Stack>
+                      {editing === note.id ? (
+                        <NoteEditor bufferKey={noteEditBufferKey?.(note) ?? JSON.stringify({ noteEdit: note.id })} disabled={disabled} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
                       ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><MockMarkdown body={note.body} size="body1" /></Box>}
                     </Box>
                   </Box>
@@ -316,30 +316,88 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
               })}
             </Box>
             </Box></Box> : null}
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: 1, borderColor: 'divider', flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.25 }}>
+            {/* A folded thread shows only its header; replying starts from the open thread. */}
+            {!isCollapsed ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: 1, borderColor: 'divider', flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.25 }}>
               {replying ? <Box sx={{ flex: '1 1 100%', minWidth: 0 }}>{replyComposer}</Box> : (
-                <Button
-                  aria-label="返信"
-                  color="inherit"
-                  disabled={disabled}
-                  onClick={() => onReply(discussion)}
-                  startIcon={<ReplyRoundedIcon />}
-                  sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', color: 'text.secondary', flex: '1 1 240px', fontWeight: 400, justifyContent: 'flex-start', '&:hover': { bgcolor: 'background.paper', borderColor: 'text.secondary' } }}
-                >返信を書く…</Button>
+                <Button disabled={disabled} onClick={() => onReply(discussion)} size="small" startIcon={<ReplyRoundedIcon />}>返信</Button>
               )}
-              {!isCollapsed && notePageCount > 1 ? (
+              {notePageCount > 1 ? (
                 <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
-                  <Button aria-label={`${discussion.id}の前のノートページ`} disabled={disabled || paginationDisabled || notePage <= 1} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage - 1 })))} size="small">前へ</Button>
-                  <Typography color="text.secondary" variant="caption">コメント {noteRangeStart(notePage, NOTES_PER_PAGE)}–{noteRangeEnd(notePage, NOTES_PER_PAGE, notes.length)} / {notes.length}</Typography>
-                  <Button aria-label={`${discussion.id}の次のノートページ`} disabled={disabled || paginationDisabled || notePage >= notePageCount} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage + 1 })))} size="small">次へ</Button>
+                  <Button aria-label={`${threadLabel}の前のコメント`} disabled={disabled || paginationDisabled || notePage <= 1} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage - 1 })))} size="small">前へ</Button>
+                  <Typography color="textSecondary" variant="caption">コメント {noteRangeStart(notePage, NOTES_PER_PAGE)}–{noteRangeEnd(notePage, NOTES_PER_PAGE, notes.length)} / {notes.length}</Typography>
+                  <Button aria-label={`${threadLabel}の次のコメント`} disabled={disabled || paginationDisabled || notePage >= notePageCount} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage + 1 })))} size="small">次へ</Button>
                 </Stack>
               ) : null}
-            </Stack>
+            </Stack> : null}
           </Box>
         )
       })}
-      {commentDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="text.secondary" variant="body2">表示できるコメントはありません。</Typography></Paper> : null}
-      {commentDiscussions.length > 0 && filteredDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="text.secondary" variant="body2">条件に合う議論はありません。</Typography></Paper> : null}
+      {commentDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">表示できるコメントはありません。</Typography></Paper> : null}
+      {commentDiscussions.length > 0 && filteredDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">条件に合う議論はありません。</Typography></Paper> : null}
+    </Stack>
+  )
+}
+
+/**
+ * Edits an own comment. Its text is kept in the composer buffer, so closing
+ * (Esc) or leaving the tab keeps it; cancelling a changed text asks first.
+ */
+function NoteEditor({ bufferKey, disabled, note, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; note: Note; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+  const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
+  const confirm = useConfirm()
+  const [saving, setSaving] = useState(false)
+  const seededRef = useRef(false)
+  useEffect(() => {
+    // Start from the comment, or from the text kept when the edit was last closed.
+    if (seededRef.current || persistenceStatus === 'hydrating') return
+    seededRef.current = true
+    seedComposerBuffer(bufferKey, note.body)
+  }, [bufferKey, note.body, persistenceStatus])
+  const changed = body !== note.body
+  const close = () => {
+    // An unchanged copy of the comment is not worth keeping.
+    if (!changed) change('')
+    onClose()
+  }
+  const cancel = async () => {
+    if (changed && !await confirm({ cancelLabel: '編集を続ける', confirmLabel: '破棄する', destructive: true, title: '編集中のコメントを破棄しますか？' })) return
+    change('')
+    onClose()
+  }
+  const save = async () => {
+    const trimmed = body.trim()
+    if (!trimmed || disabled || saving) return
+    setSaving(true)
+    try {
+      if (await onSave(trimmed)) {
+        change('')
+        onClose()
+      }
+    } catch {
+      // The text stays in the editor; the detail view reports the failure.
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <Stack data-composer="" spacing={1} sx={{ mt: 1 }}>
+      <MarkdownEditor
+        autoFocus
+        disabled={disabled || saving}
+        label="コメントを編集"
+        onChange={change}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.preventDefault(); close(); return true }
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void save(); return true }
+          return false
+        }}
+        value={body}
+      />
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
+        <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">Ctrl+Enter: 保存 · Esc: 閉じる（入力は保持）</Typography>
+        <Button disabled={saving} onClick={() => void cancel()}>取消</Button>
+        <Button disabled={!body.trim() || disabled || saving} onClick={() => void save()} variant="contained">{saving ? '保存中…' : '保存'}</Button>
+      </Stack>
     </Stack>
   )
 }

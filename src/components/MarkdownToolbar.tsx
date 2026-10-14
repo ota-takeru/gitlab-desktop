@@ -5,9 +5,9 @@ import FormatItalicRoundedIcon from '@mui/icons-material/FormatItalicRounded'
 import FormatListBulletedRoundedIcon from '@mui/icons-material/FormatListBulletedRounded'
 import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumberedRounded'
 import FormatQuoteRoundedIcon from '@mui/icons-material/FormatQuoteRounded'
+import GridOnRoundedIcon from '@mui/icons-material/GridOnRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import StrikethroughSRoundedIcon from '@mui/icons-material/StrikethroughSRounded'
-import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined'
 import TitleRoundedIcon from '@mui/icons-material/TitleRounded'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
@@ -27,7 +27,7 @@ const tools: { format: MarkdownFormat; icon: ReactNode; label: string; shortcut?
   { format: 'bulletList', icon: <FormatListBulletedRoundedIcon />, label: '箇条書き' },
   { format: 'numberedList', icon: <FormatListNumberedRoundedIcon />, label: '番号付きリスト' },
   { format: 'taskList', icon: <ChecklistRoundedIcon />, label: 'タスクリスト' },
-  { format: 'table', icon: <TableChartOutlinedIcon />, label: '表' },
+  { format: 'table', icon: <GridOnRoundedIcon />, label: '表' },
 ]
 
 /** GitLab-style formatting buttons for a Markdown textarea. */

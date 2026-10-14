@@ -77,12 +77,12 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
             renderInput={(params) => <TextField {...params} autoFocus label={label} placeholder="名前またはユーザー名で検索" size="small" />}
             renderOption={(optionProps, user) => {
               const { key, ...rest } = optionProps
-              return <li key={key} {...rest}><Stack spacing={0.125} sx={{ minWidth: 0 }}><Typography variant="body2">{user.name}</Typography><Typography color="text.secondary" variant="caption">@{user.username}</Typography></Stack></li>
+              return <li key={key} {...rest}><Stack spacing={0.25} sx={{ minWidth: 0 }}><Typography variant="body2">{user.name}</Typography><Typography color="textSecondary" variant="caption">@{user.username}</Typography></Stack></li>
             }}
             value={selected}
           />
           {self && !selected.some((user) => user.id === self.id) ? <Button disabled={busy} onClick={() => setSelected((users) => [...users, self])} size="small" sx={{ alignSelf: 'flex-start' }}>自分を追加</Button> : null}
-          <Typography color="text.secondary" variant="caption">GitLabのプランやプロジェクトの権限によっては、選んだ全員を設定できないことがあります。</Typography>
+          <Typography color="textSecondary" variant="caption">GitLabのプランやプロジェクトの権限によっては、選んだ全員を設定できないことがあります。</Typography>
           {failed ? <Alert severity="error">{label}を変更できませんでした。MR画面のメッセージを確認してください。</Alert> : null}
         </Stack>
       </DialogContent>

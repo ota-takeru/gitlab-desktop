@@ -8,6 +8,8 @@ import { Component, Fragment, type ReactNode } from 'react'
 
 interface AppErrorBoundaryProps {
   children: ReactNode
+  /** Fills one pane instead of the window, so the rest of the shell keeps working. */
+  compact?: boolean
 }
 
 interface AppErrorBoundaryState {
@@ -55,6 +57,7 @@ export class AppErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <AppErrorFallback
+          compact={this.props.compact}
           onGoToConnectionSettings={this.goToConnectionSettings}
           onRetry={this.retry}
           retryCount={this.state.retryCount}
@@ -95,18 +98,18 @@ export function AppErrorFallback({
       }}
     >
       <Paper
-        component="main"
+        component={compact ? 'div' : 'main'}
         sx={{ maxWidth: 600, p: { md: 4, xs: 3 }, width: '100%' }}
         variant="outlined"
       >
         <Stack spacing={2}>
-          <Typography color="error.main" sx={{ fontWeight: 800 }} variant="overline">
+          <Typography color="textSecondary" component="p" variant="overline">
             GitLab Desktop
           </Typography>
           <Typography component="h1" variant="h1">
             画面を表示できません
           </Typography>
-          <Typography color="text.secondary" variant="body1">
+          <Typography color="textSecondary" variant="body1">
             画面の表示中に問題が発生しました。再表示を試してください。
           </Typography>
           {retryCount > 0 ? (
@@ -125,6 +128,11 @@ export function AppErrorFallback({
             <Button onClick={onGoToConnectionSettings} variant="outlined">
               設定へ移動
             </Button>
+            {compact ? null : (
+              <Button onClick={() => window.location.reload()} variant="text">
+                再読み込み
+              </Button>
+            )}
           </Stack>
         </Stack>
       </Paper>

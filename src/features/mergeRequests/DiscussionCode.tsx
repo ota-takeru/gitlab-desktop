@@ -25,13 +25,16 @@ export function DiscussionCode({ current, position, projectId, sessionId }: { cu
   return <FileExcerpt outdated={!current} position={position} projectId={projectId} sessionId={sessionId} />
 }
 
+/** The diff viewer's code: its type, 22px rows and 44px line-number columns. */
 const codeSx = {
-  fontFamily: 'typography.code.fontFamily',
-  fontSize: 12,
-  lineHeight: '20px',
+  color: 'text.primary',
+  fontFamily: 'code.fontFamily',
+  fontSize: 'code.fontSize',
+  lineHeight: '22px',
   overflowWrap: 'anywhere',
   whiteSpace: 'pre-wrap',
 } as const
+const numberSx = { color: 'text.secondary', opacity: 0.8, px: 0.5, textAlign: 'right', userSelect: 'none' } as const
 
 function DiffExcerpt({ lines, target }: { lines: ParsedLine[]; target: number }) {
   return <Box aria-label="コメント対象の差分" component="figure" role="group" sx={{ m: 0 }}>
@@ -43,15 +46,16 @@ function DiffExcerpt({ lines, target }: { lines: ParsedLine[]; target: number })
         sx={(theme) => ({
           ...codeSx,
           display: 'grid',
-          gridTemplateColumns: '40px 40px 16px minmax(0, 1fr)',
-          '&[data-kind="add"]': { bgcolor: theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
-          '&[data-kind="remove"]': { bgcolor: theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
+          gridTemplateColumns: '44px 44px 16px minmax(0, 1fr)',
+          // Only the background and the +/− mark take the diff colour, as in the diff viewer.
+          '&[data-kind="add"]': { bgcolor: theme.palette.diff?.addedBackground, '& .excerpt-prefix': { color: theme.palette.diff?.addedText } },
+          '&[data-kind="remove"]': { bgcolor: theme.palette.diff?.deletedBackground, '& .excerpt-prefix': { color: theme.palette.diff?.deletedText } },
           '&[data-target="true"]': { boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
         })}
       >
-        <Box component="span" sx={{ color: 'text.secondary', pr: 1, textAlign: 'right' }}>{line.oldLine ?? ''}</Box>
-        <Box component="span" sx={{ color: 'text.secondary', pr: 1, textAlign: 'right' }}>{line.newLine ?? ''}</Box>
-        <Box aria-hidden component="span">{line.prefix}</Box>
+        <Box component="span" sx={numberSx}>{line.oldLine ?? ''}</Box>
+        <Box component="span" sx={numberSx}>{line.newLine ?? ''}</Box>
+        <Box aria-hidden className="excerpt-prefix" component="span">{line.prefix}</Box>
         <Box component="span" sx={{ pr: 1 }}>{line.text}</Box>
       </Box>
     ))}
@@ -74,17 +78,17 @@ function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: b
   const start = Math.max(1, line - LINES_BEFORE)
   const end = Math.min(lines.length, line + LINES_AFTER)
   return <Box>
-    {outdated ? <Typography color="text.secondary" component="div" sx={{ px: 1, py: 0.5 }} variant="caption">コメント時点のコード（{sha.slice(0, 8)}）。その後の変更で現在の差分とは異なります。</Typography> : null}
+    {outdated ? <Typography color="textSecondary" component="div" sx={{ px: 1, py: 0.5 }} variant="caption">コメント時点のコード（{sha.slice(0, 8)}）。その後の変更で現在の差分とは異なります。</Typography> : null}
     <Box aria-label="コメント対象のコード" component="figure" role="group" sx={{ m: 0 }}>
       {lines.slice(start - 1, end).map((text, index) => {
         const number = start + index
         return <Box
           data-target={number === line ? 'true' : undefined}
           key={number}
-          sx={(theme) => ({ ...codeSx, display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr)', '&[data-target="true"]': { bgcolor: 'action.selected', boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` } })}
+          sx={(theme) => ({ ...codeSx, display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', '&[data-target="true"]': { bgcolor: 'action.selected', boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` } })}
         >
-          <Box component="span" sx={{ color: 'text.secondary', pr: 1, textAlign: 'right' }}>{number}</Box>
-          <Box component="span" sx={{ pr: 1 }}>{text}</Box>
+          <Box component="span" sx={numberSx}>{number}</Box>
+          <Box component="span" sx={{ pl: 1, pr: 1 }}>{text}</Box>
         </Box>
       })}
     </Box>
@@ -92,5 +96,5 @@ function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: b
 }
 
 function CodeMessage({ children }: { children: ReactNode }) {
-  return <Typography color="text.secondary" component="div" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">{children}</Typography>
+  return <Typography color="textSecondary" component="div" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">{children}</Typography>
 }

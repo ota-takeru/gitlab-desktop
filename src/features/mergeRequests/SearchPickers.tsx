@@ -4,7 +4,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useState } from 'react'
 
-import type { GitLabUser, Project, ProjectQuery, UsersQuery } from '../../types/gitlab'
+import type { GitLabGroup, GitLabUser, GroupsQuery, Project, ProjectQuery, UsersQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 
@@ -83,7 +83,41 @@ export function ProjectSearchPicker(props: SearchPickerProps) {
   )
 }
 
-function CandidatePicker({ ariaLabel, label, loading, noOptionsText, onChange, onClose, onOpen, onSearchTextChange, options, queryError, value }: SearchPickerProps & {
+/**
+ * Finds a group by name or path. The condition stores the group's ID; a path
+ * saved by earlier versions stays selected as it is, since GitLab accepts both.
+ */
+export function GroupSearchPicker({ onChange, selectedPath, ...props }: Omit<SearchPickerProps, 'onChange'> & {
+  onChange: (id: string, fullPath: string) => void
+  /** The full path of the selected ID, when the caller knows it. */
+  selectedPath?: string
+}) {
+  const { session } = useConnection()
+  const [searchText, setSearchText] = useState('')
+  const debouncedSearch = useDebouncedSearch(searchText)
+  const query = useMemo<GroupsQuery | null>(() => session && debouncedSearch.trim().length >= 2
+    ? { kind: 'groups', page: 1, search: debouncedSearch.trim() }
+    : null, [debouncedSearch, session])
+  const result = useGitLabQuery<GroupsQuery>(session?.id ?? null, query)
+  const options = useMemo(() => (result.data ?? []).map(groupOption), [result.data])
+
+  return (
+    <CandidatePicker
+      {...props}
+      fallback={(value) => savedGroupOption(value, selectedPath)}
+      loading={result.loading || result.refreshing}
+      noOptionsText={result.error ? 'グループ候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力してください' : '候補がありません'}
+      onChange={(id) => onChange(id, result.data?.find((group) => group.id === id)?.fullPath ?? '')}
+      onSearchTextChange={setSearchText}
+      options={options}
+      queryError={result.error?.message ?? null}
+    />
+  )
+}
+
+function CandidatePicker({ ariaLabel, fallback = savedIdOption, label, loading, noOptionsText, onChange, onClose, onOpen, onSearchTextChange, options, queryError, value }: SearchPickerProps & {
+  /** Stands in for a value whose candidate is not loaded. */
+  fallback?: (value: string) => PickerOption | null
   loading: boolean
   noOptionsText: string
   onClose?: () => void
@@ -92,7 +126,7 @@ function CandidatePicker({ ariaLabel, label, loading, noOptionsText, onChange, o
   options: PickerOption[]
   queryError: string | null
 }) {
-  const selected = options.find((option) => option.id === value) ?? (value ? { detail: '保存済みのID', id: value, name: `ID ${value}` } : null)
+  const selected = options.find((option) => option.id === value) ?? fallback(value)
   const pickerOptions = selected && !options.some((option) => option.id === selected.id) ? [selected, ...options] : options
 
   return (
@@ -113,9 +147,9 @@ function CandidatePicker({ ariaLabel, label, loading, noOptionsText, onChange, o
       renderInput={(params) => <TextField {...params} error={Boolean(queryError)} helperText={queryError ?? undefined} label={label} size="small" slotProps={{ ...params.slotProps, htmlInput: { ...params.slotProps.htmlInput, 'aria-label': ariaLabel } }} />}
       renderOption={(optionProps, option) => (
         <li {...optionProps}>
-          <Stack spacing={0.125} sx={{ minWidth: 0 }}>
+          <Stack spacing={0.25} sx={{ minWidth: 0 }}>
             <Typography variant="body2">{option.name}</Typography>
-            <Typography color="text.secondary" variant="caption" sx={{ overflowWrap: 'anywhere' }}>{option.detail}</Typography>
+            <Typography color="textSecondary" variant="caption" sx={{ overflowWrap: 'anywhere' }}>{option.detail}</Typography>
           </Stack>
         </li>
       )}
@@ -123,6 +157,18 @@ function CandidatePicker({ ariaLabel, label, loading, noOptionsText, onChange, o
       filterOptions={(available) => available}
     />
   )
+}
+
+/** Only a real ID stands in for a person or project whose name is not loaded; anything else is no choice yet. */
+function savedIdOption(value: string): PickerOption | null {
+  return /^[1-9]\d*$/u.test(value) ? { detail: '保存済みのID', id: value, name: `ID ${value}` } : null
+}
+
+function savedGroupOption(value: string, fullPath: string | undefined): PickerOption | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (!/^[1-9]\d*$/u.test(trimmed)) return { detail: '保存済みのグループパス', id: value, name: trimmed }
+  return fullPath ? { detail: `ID ${trimmed}`, id: value, name: fullPath } : savedIdOption(trimmed)
 }
 
 function useDebouncedSearch(value: string): string {
@@ -140,6 +186,10 @@ function userOption(user: GitLabUser): PickerOption {
 
 function projectOption(project: Project): PickerOption {
   return { detail: `${project.pathWithNamespace} · ID ${project.id}`, id: project.id, name: project.name }
+}
+
+function groupOption(group: GitLabGroup): PickerOption {
+  return { detail: `${group.fullPath} · ID ${group.id}`, id: group.id, name: group.name }
 }
 
 function getOptionLabel(option: PickerOption): string {

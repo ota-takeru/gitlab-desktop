@@ -40,11 +40,11 @@ it('lists pinned tabs above open tabs with the remembered titles', () => {
 it('pins and unpins in the sidebar, keeping an unpinned MR as an open tab', () => {
   render(<MergeRequestTabs collapsed={false} onOpen={vi.fn()} selected={null} />)
 
-  fireEvent.click(screen.getByRole('button', { name: '!2を固定' }))
+  fireEvent.click(screen.getByRole('button', { name: '!2をサイドバーに固定' }))
   expect(readWorkspace(scope).pinned.map((ref) => ref.iid)).toEqual(['2', '1'])
   expect(readWorkspace(scope).open.map((ref) => ref.iid)).toEqual(['3'])
 
-  fireEvent.click(screen.getByRole('button', { name: '!1を固定解除' }))
+  fireEvent.click(screen.getByRole('button', { name: '!1の固定を外す' }))
   expect(readWorkspace(scope).pinned.map((ref) => ref.iid)).toEqual(['2'])
   expect(readWorkspace(scope).open.map((ref) => ref.iid)).toEqual(['1', '3'])
 })
@@ -63,5 +63,14 @@ it('adds an opened MR as the newest tab only when it has no tab yet', () => {
   openWorkspaceTab(scope, { projectId: '7', iid: '3' })
   openWorkspaceTab(scope, { projectId: '7', iid: '1' })
   expect(readWorkspace(scope).open.map((ref) => ref.iid)).toEqual(['9', '2', '3'])
+  expect(readWorkspace(scope).pinned.map((ref) => ref.iid)).toEqual(['1'])
+})
+
+it('reorders tabs within their section with Alt and the arrow keys', () => {
+  render(<MergeRequestTabs collapsed={false} onOpen={vi.fn()} selected={null} />)
+
+  fireEvent.keyDown(screen.getByRole('button', { name: 'team/app !2 開いているMRの題名' }), { altKey: true, key: 'ArrowDown' })
+  expect(readWorkspace(scope).open.map((ref) => ref.iid)).toEqual(['3', '2'])
+  // Pinned tabs stay where they are.
   expect(readWorkspace(scope).pinned.map((ref) => ref.iid)).toEqual(['1'])
 })

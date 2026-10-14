@@ -7,6 +7,7 @@ import { createAppTheme } from '../theme'
 import type { GitLabSession, GitLabSnapshot, MergeRequest } from '../types/gitlab'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { ClientApp } from './ClientApp'
+import { reportGitLabConnectivity } from './connectivity'
 import { clearComposerBufferStore, createComposerBufferKey, useComposerBuffer } from './mergeRequests/useComposerBuffer'
 
 const { connection, gitlabQueryMock, invokeMock } = vi.hoisted(() => ({
@@ -72,14 +73,16 @@ it('retains the installation guard when authentication expiry resets the private
   let rejectInstall: (reason: Error) => void = () => undefined
   invokeMock.mockImplementation((command: string) => {
     if (command === 'check_app_update') return Promise.resolve({ configured: true, version: '0.2.0', notes: null })
+    if (command === 'download_app_update') return Promise.resolve(null)
     if (command === 'install_app_update') return new Promise((_, reject) => { rejectInstall = reject })
     if (command === 'runtime_info') return Promise.resolve({ appVersion: '9.9.9', arch: 'x86_64', os: 'windows' })
     throw new Error(`Unexpected command: ${command}`)
   })
-  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>
+  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>
   const view = render(app())
   expect(await screen.findByLabelText('アプリのバージョン 9.9.9')).toHaveTextContent('v9.9.9')
-  fireEvent.click(await screen.findByRole('button', { name: '更新をインストール' }))
+  // The footer offers the update on every screen; the settings show it too.
+  fireEvent.click(await within(screen.getByRole('contentinfo')).findByRole('button', { name: '再起動して更新' }))
   expect(await screen.findByRole('dialog')).toBeInTheDocument()
 
   connection.session = null
@@ -92,7 +95,7 @@ it('retains the installation guard when authentication expiry resets the private
   await act(async () => rejectInstall(new Error('download failed')))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   expect(screen.getByRole('textbox', { name: 'GitLab URL' })).toBeInTheDocument()
-  expect(screen.getByText('download failed')).toBeInTheDocument()
+  expect(within(screen.getByRole('contentinfo')).getByText('download failed')).toBeInTheDocument()
 })
 
 it('waits for session restoration before choosing the default route', async () => {
@@ -100,7 +103,7 @@ it('waits for session restoration before choosing the default route', async () =
   connection.session = null
   connection.status = 'checking'
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
-  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>
+  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>
   const view = render(app())
 
   expect(window.location.hash).toBe('')
@@ -121,12 +124,32 @@ it('waits for session restoration before choosing the default route', async () =
 it('maps a legacy home URL to the authenticated review queue', async () => {
   window.history.replaceState(null, '', '#client/home')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
   expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.queryByRole('button', { name: /ホーム/u })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /UI catalog/u })).not.toBeInTheDocument()
+})
+
+it('starts the MR list at the first tab in the reader order and searches all MRs with Ctrl+K', async () => {
+  localStorage.setItem('gitlab-desktop:mr-hub-tab-order', JSON.stringify(['search', 'waiting']))
+  try {
+    window.history.replaceState(null, '', '#client/home')
+    invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+    render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+
+    await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['検索', 'レビュー依頼', '担当', '作成'])
+    expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'レビュー依頼' }))
+    await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'k' })
+    await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
+  } finally {
+    localStorage.removeItem('gitlab-desktop:mr-hub-tab-order')
+  }
 })
 
 it('opens a legacy full-page MR link over the review queue', async () => {
@@ -135,7 +158,7 @@ it('opens a legacy full-page MR link over the review queue', async () => {
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
     ? { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
     : emptyQueryResult())
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
   expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
@@ -144,24 +167,23 @@ it('opens a legacy full-page MR link over the review queue', async () => {
   expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
 })
 
-it('shrinks the navigation while an MR is open and remembers each choice', async () => {
+it('keeps the navigation as it is while an MR is open, and remembers one choice', async () => {
   localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
-  localStorage.removeItem('gitlab-desktop:sidebar-collapsed-reviewing')
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
     ? { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
     : emptyQueryResult())
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  expect(await screen.findByRole('button', { name: 'ナビゲーションを展開' })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'ナビゲーションを展開' }))
-  expect(localStorage.getItem('gitlab-desktop:sidebar-collapsed-reviewing')).toBe('false')
+  expect(await screen.findByRole('button', { name: 'ナビゲーションを折りたたむ' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' }))
+  expect(localStorage.getItem('gitlab-desktop:sidebar-collapsed')).toBe('true')
 
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' })).toBeInTheDocument()
-  expect(localStorage.getItem('gitlab-desktop:sidebar-collapsed')).toBeNull()
+  expect(screen.getByRole('button', { name: 'ナビゲーションを展開' })).toBeInTheDocument()
+  localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
 })
 
 it('shows an open MR in place of the list and returns to the list with Esc', async () => {
@@ -172,7 +194,7 @@ it('shows an open MR in place of the list and returns to the list with Esc', asy
     if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
     return emptyQueryResult()
   })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
   expect(document.querySelector('[data-list-pane]')).not.toBeVisible()
@@ -191,7 +213,7 @@ it('moves the focus through the list with J and K without opening an MR', async 
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mrs'
     ? { ...emptyQueryResult(), data: [mergeRequestFixture, second], snapshot: snapshot([mergeRequestFixture, second]) }
     : emptyQueryResult())
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   await within(screen.getByRole('region', { name: '一覧' })).findByText('Second request')
   fireEvent.keyDown(window, { key: 'j' })
@@ -210,14 +232,14 @@ it('keeps the list mounted and only toggles the selection parameter when opening
     if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
     return emptyQueryResult()
   })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' }), { target: { value: 'unsent draft' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' }), { target: { value: 'unsent draft' } })
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })).toHaveValue('unsent draft')
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toHaveValue('unsent draft')
 })
 
 it('returns to the list through history, so Back does not reopen the MR', async () => {
@@ -228,7 +250,7 @@ it('returns to the list through history, so Back does not reopen the MR', async 
     if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
     return emptyQueryResult()
   })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
@@ -265,7 +287,7 @@ it('preserves MR search filters when returning from an opened request', async ()
     }
     return emptyQueryResult()
   })
-  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>
+  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>
   render(app())
 
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
@@ -273,7 +295,7 @@ it('preserves MR search filters when returning from an opened request', async ()
 
   // Returning goes back through history, which completes after the click.
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&search=needle'))
-  expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })).toHaveValue('needle')
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toHaveValue('needle')
   expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
 })
 
@@ -292,7 +314,7 @@ it.each([
     return emptyQueryResult()
   })
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   fireEvent.click(screen.getByRole('tab', { name: tab }))
   await waitFor(() => expect(window.location.hash).toBe(`#client/mrs?${queryString}`))
@@ -314,17 +336,18 @@ it.each([
 it('returns to the last MR list tab from the navigation', async () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  fireEvent.click(screen.getByRole('tab', { name: 'To-Do' }))
+  fireEvent.click(screen.getByRole('tab', { name: '担当' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
+  // To-Do is a place of its own, without the MR list's tabs.
+  fireEvent.click(screen.getByRole('button', { name: 'To-Do' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/todos'))
-  fireEvent.click(screen.getByRole('button', { name: 'プロジェクト' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/projects'))
-  expect(screen.queryByRole('tab', { name: 'To-Do' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('tablist', { name: 'MR一覧の切り替え' })).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/todos'))
-  expect(screen.getByRole('tab', { name: 'To-Do' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
+  expect(screen.getByRole('tab', { name: '担当' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('opens the project screen from an MR and names where Back returns to', async () => {
@@ -334,7 +357,7 @@ it('opens the project screen from an MR and names where Back returns to', async 
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
     ? { ...emptyQueryResult(), data: withPath, snapshot: snapshot(withPath) }
     : emptyQueryResult())
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   expect(await screen.findByRole('button', { name: '担当に戻る' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'group/project' }))
@@ -351,7 +374,7 @@ it('switches a project screen between its MRs and branches, and shows the MRs of
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'branches'
     ? { ...emptyQueryResult(), data: [branch], snapshot: snapshot([branch]) }
     : emptyQueryResult())
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   expect(screen.getByRole('tab', { name: 'MR' })).toHaveAttribute('aria-selected', 'true')
   fireEvent.click(screen.getByRole('tab', { name: 'ブランチ' }))
@@ -373,36 +396,40 @@ it('switches a project screen between its MRs and branches, and shows the MRs of
 it('keeps the account, theme and connection in one settings entry', async () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
-  const onModeChange = vi.fn()
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={onModeChange} /></ThemeProvider>)
+  const onColorPreferenceChange = vi.fn()
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={onColorPreferenceChange} /></ThemeProvider>)
 
   expect(screen.queryByRole('button', { name: /モードに切り替え/u })).not.toBeInTheDocument()
-  const settings = screen.getByRole('button', { name: '設定' })
+  const settings = screen.getByRole('button', { name: '@one · 設定' })
   expect(settings).toHaveTextContent('@one')
   fireEvent.click(settings)
   await waitFor(() => expect(window.location.hash).toBe('#client/settings'))
   expect(screen.getByRole('heading', { name: '設定' })).toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'ダーク' }))
-  expect(onModeChange).not.toHaveBeenCalled()
+  expect(onColorPreferenceChange).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'ライト' }))
-  expect(onModeChange).toHaveBeenCalledTimes(1)
+  expect(onColorPreferenceChange).toHaveBeenLastCalledWith('light')
+  fireEvent.click(screen.getByRole('button', { name: 'システムに合わせる' }))
+  expect(onColorPreferenceChange).toHaveBeenLastCalledWith('system')
+  expect(screen.getByRole('heading', { name: '自動取得と通知' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'アプリの更新' })).toBeInTheDocument()
 })
 
-it('shows the history for a former pinned-list link', async () => {
-  window.history.replaceState(null, '', '#client/pinned')
+it.each(['#client/pinned', '#client/recent'])('starts the MR list for the former list link %s', async (hash) => {
+  window.history.replaceState(null, '', hash)
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  await waitFor(() => expect(window.location.hash).toBe('#client/recent'))
-  expect(screen.getByRole('tab', { name: '最近開いた' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('moves back and forward with the mouse side buttons without moving twice', async () => {
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined)
   const forward = vi.spyOn(window.history, 'forward').mockImplementation(() => undefined)
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   fireEvent.mouseUp(window, { button: 3 })
   await waitFor(() => expect(back).toHaveBeenCalledTimes(1))
@@ -418,7 +445,7 @@ it('moves back and forward with the mouse side buttons without moving twice', as
 
 it('keeps the collapsed navigation controls accessible', () => {
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   fireEvent.click(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' }))
 
@@ -430,11 +457,11 @@ it('keeps the collapsed navigation controls accessible', () => {
 it('keeps places in the navigation, the MR lists in tabs, and opening by URL beside the tabs', () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   const navigation = screen.getByRole('navigation', { name: 'GitLab client navigation' })
-  expect(within(within(navigation).getAllByRole('list')[0]).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['MR一覧', 'プロジェクト'])
-  expect(within(screen.getByRole('tablist', { name: 'MR一覧の切り替え' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['レビュー依頼', '担当', '作成', 'To-Do', '最近開いた', '検索'])
+  expect(within(within(navigation).getAllByRole('list')[0]).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['MR一覧', 'To-Do', 'プロジェクト'])
+  expect(within(screen.getByRole('tablist', { name: 'MR一覧の切り替え' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['レビュー依頼', '担当', '作成', '検索'])
   expect(within(navigation).queryByRole('button', { name: 'MR検索' })).not.toBeInTheDocument()
   expect(within(navigation).queryByRole('button', { name: 'MR URLから開く' })).not.toBeInTheDocument()
 
@@ -452,7 +479,7 @@ it('clears in-memory composer buffers after an explicit logout event', () => {
     if (command === 'runtime_info') return Promise.resolve({ appVersion: '9.9.9', arch: 'x86_64', os: 'windows' })
     throw new Error(`Unexpected command: ${command}`)
   })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   act(() => globalThis.dispatchEvent(new Event('gitlab-explicit-logout')))
 
@@ -473,7 +500,7 @@ it('clears in-memory composer buffers after an account replacement event', () =>
     if (command === 'runtime_info') return Promise.resolve({ appVersion: '9.9.9', arch: 'x86_64', os: 'windows' })
     throw new Error(`Unexpected command: ${command}`)
   })
-  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp mode="dark" onModeChange={() => undefined} /></ThemeProvider>)
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   act(() => globalThis.dispatchEvent(new Event('gitlab-account-replaced')))
 
@@ -493,4 +520,136 @@ it('preserves composer text when same-account reauthentication emits no replacem
   expect(screen.getByRole('textbox', { name: 'retained body' })).toHaveValue('同一アカウントで保持する本文')
   probe.unmount()
   clearComposerBufferStore()
+})
+
+it('leaves Ctrl+K and Esc to the composer and lists the shortcuts with ?', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
+    ? { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    : emptyQueryResult())
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+  expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
+
+  const comment = document.createElement('textarea')
+  const toolbar = document.createElement('div')
+  toolbar.setAttribute('role', 'toolbar')
+  const bold = document.createElement('button')
+  toolbar.append(bold)
+  document.body.append(comment, toolbar)
+  try {
+    fireEvent.keyDown(comment, { ctrlKey: true, key: 'k' })
+    fireEvent.keyDown(bold, { key: 'Escape' })
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 20))
+    expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7')
+
+    fireEvent.keyDown(comment, { key: '?' })
+    expect(screen.queryByRole('dialog', { name: 'キーボードショートカット' })).not.toBeInTheDocument()
+    fireEvent.keyDown(window, { key: '?' })
+    const dialog = await screen.findByRole('dialog', { name: 'キーボードショートカット' })
+    expect(within(dialog).getByText('すべてのMRを検索')).toBeInTheDocument()
+  } finally {
+    comment.remove()
+    toolbar.remove()
+  }
+})
+
+it('returns the focus to the MR row it was opened from', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => {
+    if (query?.kind === 'mrs') return { ...emptyQueryResult(), data: [mergeRequestFixture], snapshot: snapshot([mergeRequestFixture]) }
+    if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    return emptyQueryResult()
+  })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
+  expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  await waitFor(() => expect((document.activeElement as HTMLElement | null)?.dataset.mrId).toBe('42-7'))
+})
+
+it.each([
+  ['FORBIDDEN', '権限がありません'],
+  ['NOT_FOUND', 'MRが見つかりません'],
+  ['NETWORK', 'GitLabに接続できません'],
+] as const)('explains an MR that cannot open (%s) and retries it', async (code, title) => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  const refresh = vi.fn()
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
+    ? { ...emptyQueryResult(), error: { code, message: 'GitLabの応答' }, refresh }
+    : emptyQueryResult())
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+
+  const detail = screen.getByRole('main')
+  expect(await within(detail).findByText(title)).toBeInTheDocument()
+  fireEvent.click(within(detail).getByRole('button', { name: '再試行' }))
+  expect(refresh).toHaveBeenCalledTimes(1)
+})
+
+it('keeps the screen and its URL when the token expires, and offers reconnecting in place', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  connection.session = null
+  connection.status = 'disconnected'
+  Object.assign(connection, { reauthRequired: { instanceUrl: 'https://gitlab.com', username: 'one' } })
+  try {
+    render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+
+    expect(screen.getByRole('button', { name: '再接続' })).toBeInTheDocument()
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 20))
+    expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7')
+    expect(screen.getByRole('button', { name: 'MR一覧' })).toHaveClass('Mui-disabled')
+    expect(within(screen.getByRole('contentinfo')).getByText(/再認証が必要です/u)).toBeInTheDocument()
+  } finally {
+    Object.assign(connection, { reauthRequired: null })
+  }
+})
+
+it('shows the restore state at startup even when the window opens on a screen', () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  connection.session = null
+  connection.status = 'checking'
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+
+  expect(screen.getByText('GitLab接続を確認中…')).toBeInTheDocument()
+  expect(screen.queryByRole('textbox', { name: 'GitLab URL' })).not.toBeInTheDocument()
+  expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened')
+})
+
+it('turns the footer amber while GitLab cannot be reached and green again after a success', () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+  const footer = screen.getByRole('contentinfo')
+  expect(within(footer).getByText(/^接続済み/u)).toBeInTheDocument()
+
+  act(() => reportGitLabConnectivity({ code: 'NETWORK' }, true))
+  expect(within(footer).getByText(/GitLabに接続できません · 保存済みデータを表示中/u)).toBeInTheDocument()
+  // A denied resource still means GitLab answered; it does not change reachability.
+  act(() => reportGitLabConnectivity({ code: 'FORBIDDEN' }))
+  expect(within(footer).getByText(/GitLabに接続できません/u)).toBeInTheDocument()
+  act(() => reportGitLabConnectivity(null))
+  expect(within(footer).getByText(/^接続済み/u)).toBeInTheDocument()
+})
+
+it('keeps the MR list mounted when it applies a search itself', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+
+  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })
+  fireEvent.change(search, { target: { value: 'needle' } })
+  fireEvent.submit(search.closest('form')!)
+  await waitFor(() => expect(window.location.hash).toContain('search=needle'))
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toBe(search)
+
+  // Another list still starts fresh.
+  fireEvent.click(screen.getByRole('tab', { name: '担当' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
+  expect(screen.queryByDisplayValue('needle')).not.toBeInTheDocument()
 })

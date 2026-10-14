@@ -1,7 +1,7 @@
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined'
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import MemoryOutlinedIcon from '@mui/icons-material/MemoryOutlined'
-import PendingOutlinedIcon from '@mui/icons-material/PendingOutlined'
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -87,7 +87,7 @@ export function HealthPanel() {
                 <Typography component="h2" id="runtime-health-title" variant="h2">
                   開発環境のヘルスチェック
                 </Typography>
-                <Typography color="text.secondary" variant="body2">
+                <Typography color="textSecondary" variant="body2">
                   GitLab のデータへ接続する前に、このアプリと Rust ブリッジの状態を確認します。
                 </Typography>
               </Stack>
@@ -109,15 +109,15 @@ export function HealthPanel() {
               aria-atomic="true"
               aria-live="polite"
               direction="row"
-              spacing={1.25}
+              spacing={1}
               sx={{ alignItems: 'center' }}
             >
               {state.status === 'success' ? (
-                <CheckCircleOutlineIcon color="success" fontSize="small" />
+                <CheckCircleOutlineRoundedIcon color="success" fontSize="small" />
               ) : state.status === 'error' ? (
-                <ErrorOutlineIcon color="error" fontSize="small" />
+                <ErrorOutlineRoundedIcon color="error" fontSize="small" />
               ) : (
-                <PendingOutlinedIcon color={state.status === 'pending' ? 'info' : 'disabled'} fontSize="small" />
+                <ScheduleRoundedIcon color={state.status === 'pending' ? 'info' : 'disabled'} fontSize="small" />
               )}
               <Stack spacing={0.25}>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -126,7 +126,7 @@ export function HealthPanel() {
                   </Typography>
                   <StatusPill label={copy.label} tone={copy.tone} />
                 </Stack>
-                <Typography color="text.secondary" variant="caption">
+                <Typography color="textSecondary" variant="caption">
                   {copy.message}
                 </Typography>
               </Stack>
@@ -134,7 +134,7 @@ export function HealthPanel() {
             <Button
               disabled={state.status === 'pending'}
               onClick={() => void handleCheck()}
-              startIcon={state.status === 'pending' ? <PendingOutlinedIcon /> : <MemoryOutlinedIcon />}
+              startIcon={state.status === 'pending' ? <ScheduleRoundedIcon /> : <MemoryOutlinedIcon />}
               variant="contained"
             >
               {state.status === 'pending' ? '確認中…' : 'Rust 環境を確認'}
@@ -146,7 +146,7 @@ export function HealthPanel() {
               direction={{ xs: 'column', sm: 'row' }}
               divider={<Divider flexItem orientation="vertical" />}
               spacing={{ xs: 1, sm: 3 }}
-              sx={{ bgcolor: 'action.hover', borderRadius: 1.5, p: 1.5 }}
+              sx={{ bgcolor: 'action.hover', borderRadius: 2, p: 1.5 }}
             >
               <RuntimeValue label="App version" value={state.info.appVersion} />
               <RuntimeValue label="OS" value={state.info.os} />
@@ -162,10 +162,10 @@ export function HealthPanel() {
 function RuntimeValue({ label, value }: { label: string; value: string }) {
   return (
     <Stack spacing={0.25} sx={{ minWidth: 120 }}>
-      <Typography color="text.secondary" variant="caption">
+      <Typography color="textSecondary" variant="caption">
         {label}
       </Typography>
-      <Typography sx={{ fontFamily: 'monospace', fontWeight: 700 }} variant="body2">
+      <Typography sx={{ fontFamily: 'code.fontFamily', fontWeight: 700 }} variant="body2">
         {value}
       </Typography>
     </Stack>

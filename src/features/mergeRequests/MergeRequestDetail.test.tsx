@@ -22,8 +22,16 @@ const detailMocks = vi.hoisted(() => {
   const diff = { oldPath: 'src/example.ts', newPath: 'src/example.ts', diff: '@@ -1,3 +1,3 @@\n line one\n line two\n line three\n', newFile: false, deletedFile: false, renamedFile: false, tooLarge: false, collapsed: false }
   const session = { id: 'session-42', instanceUrl: 'https://gitlab.com', user: currentUser, serverVersion: '18.0' }
   return {
+    commits: [] as { id: string; title: string }[],
     diff,
+    /** Diff pages by page number, when a test needs more than the one file. */
+    diffPages: null as Record<number, typeof diff[]> | null,
     discussion,
+    drafts: [] as { id: string; body: string; discussionId: string | null; position: null }[],
+    mutationState: { error: null as Error | null, status: 'idle', unknownAction: null as { kind: string } | null },
+    openUrlMock: vi.fn(async () => undefined),
+    queryGitLabMock: vi.fn(),
+    refreshKinds: [] as unknown[],
     discussions: { 1: [discussion] } as Record<number, typeof discussion[]>,
     flushComposerBuffersMock: vi.fn(),
     markReadMock: vi.fn(),
@@ -76,16 +84,18 @@ vi.mock('../shared/useGitLabQuery', () => ({
     let data: unknown = null
     if (query?.kind === 'mr') data = detailMocks.mergeRequest
     else if (query?.kind === 'discussions') data = detailMocks.discussions[query.page ?? 1] ?? []
-    else if (query?.kind === 'diffs') data = [detailMocks.diff]
+    else if (query?.kind === 'diffs') data = detailMocks.diffPages?.[query.page ?? 1] ?? [detailMocks.diff]
     else if (query?.kind === 'users') data = query.search === 'al' ? detailMocks.users : []
-    else if (query?.kind === 'drafts' || query?.kind === 'commits' || query?.kind === 'approvals') data = []
+    else if (query?.kind === 'drafts') data = detailMocks.drafts
+    else if (query?.kind === 'commits') data = detailMocks.commits
+    else if (query?.kind === 'approvals') data = []
     return {
       data,
       error: null,
       loading: false,
       refreshing: false,
-      refresh: vi.fn(),
-      snapshot: query ? { data, source: 'network', nextPage: null, completeness: 'complete', fetchedAt: 1 } : null,
+      refresh: () => { if (query) detailMocks.refreshKinds.push(query.kind) },
+      snapshot: query ? { data, source: 'network', nextPage: query.kind === 'diffs' && detailMocks.diffPages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt: 1 } : null,
       stale: false,
     }
   },
@@ -94,16 +104,20 @@ vi.mock('../shared/useGitLabQuery', () => ({
 vi.mock('../shared/useGitLabMutation', () => ({
   clearGitLabMutationStates: vi.fn(),
   useGitLabMutation: () => ({
-    error: null,
-    isLocked: false,
+    ...detailMocks.mutationState,
+    isLocked: detailMocks.mutationState.status === 'unknown',
     isPending: false,
     reset: vi.fn(async () => true),
     retryLookup: vi.fn(async () => false),
     run: detailMocks.mutationRunMock,
     runDetailed: detailMocks.mutationDetailedMock,
-    status: 'idle',
-    unknownAction: null,
   }),
+}))
+
+vi.mock('../../lib/gitlab', async () => ({
+  ...await vi.importActual<typeof import('../../lib/gitlab')>('../../lib/gitlab'),
+  openGitLabUrl: detailMocks.openUrlMock,
+  queryGitLab: detailMocks.queryGitLabMock,
 }))
 
 /*
@@ -181,8 +195,8 @@ describe('BufferedReviewComposer', () => {
     const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
     textbox.setSelectionRange(textbox.value.length, textbox.value.length)
     fireEvent.click(textbox)
-    await waitFor(() => expect(screen.getByRole('button', { name: '@aliceを挿入' })).toBeInTheDocument(), { timeout: 2_000 })
-    fireEvent.click(screen.getByRole('button', { name: '@aliceを挿入' }))
+    await waitFor(() => expect(screen.getByRole('option', { name: /@alice$/u })).toBeInTheDocument(), { timeout: 2_000 })
+    fireEvent.click(screen.getByRole('option', { name: /@alice$/u }))
     expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('**保持する本文**\n\n@alice ')
     expect(detailMocks.queryCalls).toContainEqual({ kind: 'users', page: 1, search: 'al' })
 
@@ -215,7 +229,7 @@ describe('BufferedReviewComposer', () => {
       </QueryClientProvider>,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: 'レビュアーを変更' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^レビュアーを変更/u }))
     const dialog = await screen.findByRole('dialog', { name: 'レビュアーを変更' })
     expect(within(dialog).getByRole('button', { name: '変更する' })).toBeDisabled()
     fireEvent.click(within(dialog).getByRole('button', { name: '自分を追加' }))
@@ -273,7 +287,7 @@ describe('BufferedReviewComposer', () => {
     await waitFor(() => expect(reply).toHaveFocus())
     expect(screen.getAllByRole('textbox', { name: 'コメント本文' }).find((box) => !thread.contains(box))).toHaveValue('新規コメント本文')
 
-    fireEvent.click(within(thread).getByRole('button', { name: 'コメントを投稿' }))
+    fireEvent.click(within(thread).getByRole('button', { name: '返信' }))
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ body: '返信本文', discussionId: 'discussion-120', iid: '120', kind: 'reply', projectId: '7' }, expect.any(String)))
     await waitFor(() => expect(within(thread).queryByRole('textbox', { name: 'コメント本文' })).not.toBeInTheDocument())
   })
@@ -378,7 +392,7 @@ describe('replying and resolving in the diff', () => {
     fireEvent.click(within(thread).getByRole('button', { name: '返信' }))
 
     const editor = within(thread).getByRole('region', { name: 'レビューコメント入力' })
-    fireEvent.click(within(editor).getByRole('button', { name: 'コメントを投稿' }))
+    fireEvent.click(within(editor).getByRole('button', { name: '返信' }))
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ body: '差分からの返信', discussionId: 'discussion-120', iid: '120', kind: 'reply', projectId: '7' }, expect.any(String)))
     await waitFor(() => expect(within(thread).queryByRole('region', { name: 'レビューコメント入力' })).not.toBeInTheDocument())
   })
@@ -388,5 +402,232 @@ describe('replying and resolving in the diff', () => {
     const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
     fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ discussionId: 'discussion-120', iid: '120', kind: 'resolve', projectId: '7', resolved: true }, undefined))
+  })
+})
+
+describe('MergeRequestDetail header, results and pending review', () => {
+  beforeEach(() => {
+    detailMocks.useComposerBufferMock.mockReset().mockReturnValue({ body: '', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    detailMocks.mutationRunMock.mockReset().mockResolvedValue(true)
+    detailMocks.mutationDetailedMock.mockClear()
+    detailMocks.refreshKinds.length = 0
+    globalThis.confirm = vi.fn(() => true)
+    return () => {
+      detailMocks.drafts = []
+      detailMocks.commits = []
+      detailMocks.mutationState = { error: null, status: 'idle', unknownAction: null }
+    }
+  })
+
+  function renderDetail(tab: 'discussion' | 'changes' | 'overview' = 'discussion') {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={vi.fn()} tab={tab} /></ThemeProvider></QueryClientProvider>)
+  }
+
+  it('refreshes what the visible tab shows, not only the overview', async () => {
+    renderDetail('discussion')
+    fireEvent.click(await screen.findByRole('button', { name: '更新' }))
+    expect(detailMocks.refreshKinds).toEqual(expect.arrayContaining(['mr', 'approvals', 'drafts', 'discussions']))
+  })
+
+  it('names the write whose result is unknown, in the header', async () => {
+    detailMocks.mutationState = { error: new Error('unknown'), status: 'unknown', unknownAction: { kind: 'approve' } }
+    renderDetail('discussion')
+    const header = (await screen.findByRole('heading', { level: 1 })).closest('header') as HTMLElement
+    expect(within(header).getByText('承認の結果を確認できないため、このMRへの再送を停止しています。')).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: 'サーバーから再取得' })).toBeInTheDocument()
+  })
+
+  it('shows a failed write in the header until it is dismissed', async () => {
+    detailMocks.mutationState = { error: new Error('GitLabが拒否しました。'), status: 'error', unknownAction: null }
+    renderDetail('discussion')
+    const header = (await screen.findByRole('heading', { level: 1 })).closest('header') as HTMLElement
+    expect(within(header).getByText('GitLabが拒否しました。')).toBeInTheDocument()
+    fireEvent.click(within(header).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByText('GitLabが拒否しました。')).not.toBeInTheDocument()
+  })
+
+  it('keeps the approve button busy until the write and the approvals read finish', async () => {
+    let finish: (value: boolean) => void = () => undefined
+    detailMocks.mutationRunMock.mockReturnValue(new Promise<boolean>((resolve) => { finish = resolve }))
+    renderDetail('overview')
+    fireEvent.click(await screen.findByRole('button', { name: '承認する' }))
+    expect(screen.getByRole('button', { name: '承認中…' })).toBeDisabled()
+    finish(true)
+    await waitFor(() => expect(screen.getByRole('button', { name: '承認する' })).toBeEnabled())
+    expect(detailMocks.mutationRunMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads every page of the pending review before publishing all of it, one by one', async () => {
+    const first = { body: '一件目', discussionId: null, id: 'draft-1', position: null }
+    const second = { body: '二件目', discussionId: null, id: 'draft-2', position: null }
+    detailMocks.drafts = [first]
+    detailMocks.queryGitLabMock.mockReset().mockImplementation(async ({ query }: { query: { page: number } }) => query.page === 1 ? { data: [first], nextPage: 2 } : { data: [second], nextPage: null })
+    renderDetail('discussion')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'すべて公開' }))
+    await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('未公開レビュー2件をすべて公開しますか？')))
+    await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledTimes(2))
+    expect(detailMocks.mutationDetailedMock.mock.calls.map(([action]) => (action as { draftId: string }).draftId)).toEqual(['draft-1', 'draft-2'])
+  })
+
+  it('keeps an edited draft across tab changes and Esc, and asks before cancelling it', async () => {
+    const actual = await vi.importActual<typeof import('./useComposerBuffer')>('./useComposerBuffer')
+    detailMocks.useComposerBufferMock.mockImplementation(actual.useComposerBuffer)
+    detailMocks.drafts = [{ body: '下書きの本文', discussionId: null, id: 'draft-1', position: null }]
+    globalThis.confirm = vi.fn(() => false)
+    function Harness() {
+      const [tab, setTab] = useState<'discussion' | 'changes' | 'overview'>('discussion')
+      return <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={setTab} tab={tab} />
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><Harness /></ThemeProvider></QueryClientProvider>)
+    try {
+      const editButton = await screen.findByRole('button', { name: '下書き「下書きの本文」を編集' })
+      fireEvent.click(editButton)
+      expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('下書きの本文')
+      fireEvent.change(screen.getByRole('textbox', { name: '下書きを編集' }), { target: { value: '直した下書き' } })
+
+      // Another tab and back: the edit is still open with its text.
+      fireEvent.click(screen.getByRole('tab', { name: '変更' }))
+      expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
+      expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('直した下書き')
+
+      // Esc closes without asking and keeps the text for the next edit.
+      fireEvent.keyDown(screen.getByRole('textbox', { name: '下書きを編集' }), { key: 'Escape' })
+      expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument()
+      expect(globalThis.confirm).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: '下書き「下書きの本文」を編集' }))
+      expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('直した下書き')
+
+      // 取消 asks first; declining keeps editing.
+      fireEvent.click(screen.getByRole('button', { name: '取消' }))
+      await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('下書きの編集を破棄しますか？')))
+      expect(screen.getByRole('textbox', { name: '下書きを編集' })).toHaveValue('直した下書き')
+
+      // A saved edit closes and leaves nothing kept.
+      fireEvent.keyDown(screen.getByRole('textbox', { name: '下書きを編集' }), { ctrlKey: true, key: 'Enter' })
+      await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ body: '直した下書き', draftId: 'draft-1', iid: '120', kind: 'editDraft', projectId: '7' }, undefined))
+      await waitFor(() => expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument())
+      expect(actual.listUnsafeComposerTargets()).toEqual([])
+      fireEvent.click(screen.getByRole('button', { name: '下書き「下書きの本文」を編集' }))
+      expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('下書きの本文')
+    } finally {
+      actual.clearComposerBufferStore()
+    }
+  })
+
+  it('drops a cancelled draft edit once confirmed', async () => {
+    const actual = await vi.importActual<typeof import('./useComposerBuffer')>('./useComposerBuffer')
+    detailMocks.useComposerBufferMock.mockImplementation(actual.useComposerBuffer)
+    detailMocks.drafts = [{ body: '下書きの本文', discussionId: null, id: 'draft-1', position: null }]
+    globalThis.confirm = vi.fn(() => true)
+    renderDetail('discussion')
+    try {
+      fireEvent.click(await screen.findByRole('button', { name: '下書き「下書きの本文」を編集' }))
+      fireEvent.change(await screen.findByRole('textbox', { name: '下書きを編集' }), { target: { value: '直した下書き' } })
+      expect(actual.listUnsafeComposerTargets()).toEqual([{ iid: '120', projectId: '7', projectPath: '', title: 'Read-only integration sample' }])
+      fireEvent.click(screen.getByRole('button', { name: '取消' }))
+      await waitFor(() => expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument())
+      expect(actual.listUnsafeComposerTargets()).toEqual([])
+      expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
+    } finally {
+      actual.clearComposerBufferStore()
+    }
+  })
+
+  it('moves between commits with the arrow keys and says why a commit cannot be commented', async () => {
+    detailMocks.commits = [{ id: 'aaaaaaaa1', title: '最初のコミット' }, { id: 'bbbbbbbb2', title: '次のコミット内容' }]
+    renderDetail('changes')
+    const whole = await screen.findByRole('button', { name: 'MR全体' })
+    whole.focus()
+    fireEvent.keyDown(whole, { key: 'ArrowRight' })
+    expect(screen.getByRole('button', { name: /最初のコミット/u })).toHaveFocus()
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'End' })
+    expect(screen.getByRole('button', { name: /次のコミット内容/u })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: /次のコミット内容/u }))
+    expect(screen.getByText('コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。')).toBeInTheDocument()
+  })
+})
+
+describe('stepping through unresolved threads', () => {
+  const original = detailMocks.discussions[1]
+  beforeEach(() => {
+    detailMocks.useComposerBufferMock.mockReset().mockReturnValue({ body: '', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    detailMocks.discussions[1] = [{ ...detailMocks.discussion, notes: detailMocks.discussion.notes.map((note) => note.position ? { ...note, resolvable: true } : note) }]
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    return () => { detailMocks.discussions[1] = original }
+  })
+
+  function renderDetail(tab: 'discussion' | 'changes') {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={vi.fn()} tab={tab} /></ThemeProvider></QueryClientProvider>)
+  }
+
+  it('moves to the next unresolved thread with N in the discussion tab', async () => {
+    renderDetail('discussion')
+    await screen.findByText('位置コメント')
+    fireEvent.keyDown(document.body, { key: 'n' })
+    expect(document.activeElement?.getAttribute('data-note-id')).toBe('1001')
+  })
+
+  it('moves to the unresolved thread under the diff line with the header control', async () => {
+    renderDetail('changes')
+    const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+    fireEvent.click(screen.getByRole('button', { name: '次の未解決スレッド' }))
+    expect(thread).toHaveFocus()
+  })
+
+  describe('across files in the changes tab', () => {
+    const thread = (id: string, path: string, line: number, body: string) => ({ id, individualNote: false, notes: [{ author: { id: '99', name: `${body}の人`, username: 'colleague' }, body, createdAt: '2026-04-03T00:00:00.000Z', id: `note-${id}`, position: { ...detailMocks.position, newLine: line, newPath: path, oldLine: line, oldPath: path }, resolvable: true, resolved: false, system: false }] })
+    const file = (path: string) => ({ ...detailMocks.diff, diff: '@@ -1,2 +1,2 @@\n first\n second\n', newPath: path, oldPath: path })
+    beforeEach(() => {
+      // Every thread sits just below the header, where a reached thread lands.
+      // (The header's lower edge is 0; every size the tabs read stays a number.)
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ bottom: 0, height: 0, left: 0, right: 0, toJSON: () => ({}), top: 8, width: 0, x: 0, y: 8 })
+      return () => {
+        detailMocks.diffPages = null
+        vi.restoreAllMocks()
+      }
+    })
+    const focusedThread = () => document.activeElement?.closest('[data-diff-thread]')?.getAttribute('data-diff-thread')
+
+    it('continues to the next file with unresolved threads in file tree order, wrapping around', async () => {
+      // GitLab returns README.md first; the tree lists folders first: lib/z.ts, src/example.ts, README.md.
+      detailMocks.diffPages = { 1: [file('README.md'), file('src/example.ts'), file('lib/z.ts')] }
+      detailMocks.discussions[1] = [thread('readme', 'README.md', 1, 'りーどみー'), thread('example', 'src/example.ts', 2, 'えぐざんぷる'), thread('z', 'lib/z.ts', 1, 'ぜっと')]
+      renderDetail('changes')
+      await screen.findByText('りーどみー')
+
+      fireEvent.keyDown(document.body, { key: 'n' })
+      await waitFor(() => expect(focusedThread()).toBe('z'))
+      fireEvent.keyDown(document.body, { key: 'n' })
+      await waitFor(() => expect(focusedThread()).toBe('example'))
+      fireEvent.keyDown(document.body, { key: 'p' })
+      await waitFor(() => expect(focusedThread()).toBe('z'))
+      fireEvent.keyDown(document.body, { key: 'p' })
+      await waitFor(() => expect(focusedThread()).toBe('readme'))
+    })
+
+    it('opens a file on a later diff page and focuses its thread', async () => {
+      detailMocks.diffPages = { 1: [file('README.md')], 2: [file('src/example.ts')] }
+      detailMocks.discussions[1] = [thread('example', 'src/example.ts', 2, 'えぐざんぷる')]
+      renderDetail('changes')
+      await screen.findByRole('button', { name: '差分の次のページ' })
+      expect(screen.queryByText('えぐざんぷる')).not.toBeInTheDocument()
+
+      fireEvent.keyDown(document.body, { key: 'n' })
+      await waitFor(() => expect(focusedThread()).toBe('example'))
+      expect(screen.getByText('差分のページ 2')).toBeInTheDocument()
+    })
+  })
+
+  it('ignores N while typing', async () => {
+    renderDetail('discussion')
+    const input = await screen.findByRole('textbox', { name: 'コメント本文' })
+    input.focus()
+    fireEvent.keyDown(input, { key: 'n' })
+    expect(input).toHaveFocus()
   })
 })

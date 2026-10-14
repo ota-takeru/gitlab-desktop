@@ -46,7 +46,7 @@ describe('development-only foundation screens', () => {
   it('navigates to an empty module page without inventing GitLab data', () => {
     render(<App />)
 
-    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /Merge requests レビュー待ち/ }))
+    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'MR' }))
 
     expect(screen.getByRole('heading', { name: 'Merge requests' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Merge requests は未接続です' })).toBeInTheDocument()
@@ -100,9 +100,9 @@ describe('development-only foundation screens', () => {
   it('opens the UI catalog for shared component review', async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: /UI catalog コンポーネント一覧/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'UIカタログ' }))
 
-    expect(await screen.findByRole('heading', { name: 'UI catalog' }, { timeout: 5000 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'UIカタログ' }, { timeout: 5000 })).toBeInTheDocument()
     expect(await screen.findByText('Status pills')).toBeInTheDocument()
     expect(await screen.findByText('表示するデータがありません')).toBeInTheDocument()
   })

@@ -2,6 +2,7 @@ import AddCommentRoundedIcon from '@mui/icons-material/AddCommentRounded'
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
 import SendRoundedIcon from '@mui/icons-material/SendRounded'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Checkbox from '@mui/material/Checkbox'
@@ -11,7 +12,7 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
@@ -69,6 +70,7 @@ export function ReviewComposer({
   const uploadingRef = useRef(false)
   const mountedRef = useRef(true)
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
+  const mentionListId = useId()
   const valueRef = useRef(value)
   const onChangeRef = useRef(onChange)
   const fallbackTargetKey = JSON.stringify({ discussionId: replyDiscussionId ?? '', position: targetPosition ?? null })
@@ -118,6 +120,7 @@ export function ReviewComposer({
   const targetControlsDisabled = controlsDisabled || uploading
   const showMentionCandidates = Boolean(enableMentions && mentionQuery)
   const visibleMentionCandidates = mentionCandidates.slice(0, 8)
+  const mentionListShown = showMentionCandidates && visibleMentionCandidates.length > 0 && !controlsDisabled
 
   const insertMention = (user: GitLabUser) => {
     editorRef.current?.insertMention(`@${user.username}`)
@@ -195,14 +198,16 @@ export function ReviewComposer({
   const targetLabel = targetPosition ? `${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}` : ''
   return (
     // A reply opens in place of the thread's reply field, so it has no frame or heading of its own.
-    <Paper component="section" aria-label="レビューコメント入力" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.25 }} variant="outlined">
-      <Stack spacing={0.75}>
+    <Paper component="section" aria-label="レビューコメント入力" data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.5 }} variant="outlined">
+      <Stack spacing={1}>
         {replyDiscussionId ? null : <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
           <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? `${targetLabel} にコメント` : 'コメントを追加'}</Typography>
-          {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} title={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} variant="outlined" /> : null}
+          {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} variant="outlined" /> : null}
         </Stack>}
         <MarkdownEditor
+          activeDescendantId={mentionListShown ? mentionOptionId(mentionListId, activeMentionIndex) : null}
           autoFocus={Boolean(replyDiscussionId) || inlineTarget}
+          controlsId={mentionListShown ? mentionListId : null}
           disabled={controlsDisabled}
           label="コメント本文"
           onChange={updateValue}
@@ -232,21 +237,21 @@ export function ReviewComposer({
           ) : null}
           value={value}
         />
-        {uploading ? <Typography aria-live="polite" color="text.secondary" variant="caption">添付ファイルをアップロード中です。投稿先は変更できませんが、本文の入力は続けられます。</Typography> : null}
+        {uploading ? <Typography aria-live="polite" color="textSecondary" variant="caption">添付ファイルをアップロード中です。投稿先は変更できませんが、本文の入力は続けられます。</Typography> : null}
         {attachmentError ? <Alert onClose={() => setAttachmentError(null)} severity="error">{attachmentError}</Alert> : null}
-        {enableMentions ? <MentionSuggestions onSelect={insertMention} onUsersChange={onMentionCandidatesChange} search={controlsDisabled ? '' : mentionQuery ?? ''} selectedIndex={activeMentionIndex} /> : null}
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.75 }}>
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
+        {enableMentions ? <MentionSuggestions id={mentionListId} onSelect={insertMention} onUsersChange={onMentionCandidatesChange} search={controlsDisabled ? '' : mentionQuery ?? ''} selectedIndex={activeMentionIndex} /> : null}
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 1 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
             {/* Line comments always start a resolvable thread. */}
             {!replyDiscussionId && !targetPosition ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label="解決可能なスレッドとして投稿" sx={{ mr: 0 }} /> : null}
-            {uploading ? null : <Typography color="text.secondary" sx={{ fontSize: 11 }} variant="caption">Ctrl+Enter: レビューに追加 · Ctrl+Shift+Enter: 今すぐ投稿</Typography>}
+            {uploading ? null : <Typography color="textSecondary" variant="caption">Ctrl+Enter: レビューに追加 · Ctrl+Shift+Enter: 今すぐ投稿</Typography>}
           </Stack>
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
-            {replyDiscussionId || inlineTarget ? <Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) close() }} size="small" title="入力した本文は保持されます (Esc)">閉じる</Button> : null}
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
+            {replyDiscussionId || inlineTarget ? <Tooltip title="入力した本文は保持されます (Esc)"><span><Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) close() }} size="small">閉じる</Button></span></Tooltip> : null}
             {/* GitLab's two actions: keep it in the pending review, or publish it now. */}
             <Tooltip title="未公開レビューに追加し、あとでまとめて公開します (Ctrl+Enter)"><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('draft')} startIcon={<AddCommentRoundedIcon />} variant="outlined">レビューに追加</Button></span></Tooltip>
-            <Tooltip title="すぐにMRへ投稿します (Ctrl+Shift+Enter)"><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('comment')} startIcon={<SendRoundedIcon />} variant="contained">
-              {uploading ? '添付ファイルをアップロード中…' : pending || submitting ? '送信中…' : 'コメントを投稿'}
+            <Tooltip title="すぐにMRへ投稿します (Ctrl+Shift+Enter)"><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('comment')} startIcon={<SendRoundedIcon />} variant="outlined">
+              {uploading ? '添付ファイルをアップロード中…' : pending || submitting ? '送信中…' : replyDiscussionId ? '返信' : 'コメントを投稿'}
             </Button></span></Tooltip>
           </Stack>
         </Stack>
@@ -255,7 +260,7 @@ export function ReviewComposer({
   )
 }
 
-function MentionSuggestions({ onSelect, onUsersChange, search, selectedIndex }: { onSelect: (user: GitLabUser) => void; onUsersChange: (users: GitLabUser[]) => void; search: string; selectedIndex: number }) {
+function MentionSuggestions({ id, onSelect, onUsersChange, search, selectedIndex }: { id: string; onSelect: (user: GitLabUser) => void; onUsersChange: (users: GitLabUser[]) => void; search: string; selectedIndex: number }) {
   const { session } = useConnection()
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -276,25 +281,30 @@ function MentionSuggestions({ onSelect, onUsersChange, search, selectedIndex }: 
 
   if (search.trim().length < 2) return null
   return (
-    <Paper aria-label="メンション候補" sx={{ maxHeight: 180, overflowY: 'auto', p: 0.5 }} variant="outlined">
-      {search.trim() !== debouncedSearch || result.loading ? <Typography color="text.secondary" sx={{ p: 0.75 }} variant="caption">ユーザー候補を検索中…</Typography> : null}
-      {search.trim() === debouncedSearch && !result.loading && users.length === 0 ? <Typography color="text.secondary" sx={{ p: 0.75 }} variant="caption">候補がありません。</Typography> : null}
-      <Stack spacing={0.25}>
+    <Paper sx={{ maxHeight: 180, overflowY: 'auto', p: 0.5 }} variant="outlined">
+      {search.trim() !== debouncedSearch || result.loading ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">ユーザー候補を検索中…</Typography> : null}
+      {search.trim() === debouncedSearch && !result.loading && users.length === 0 ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">候補がありません。</Typography> : null}
+      {/* The editor keeps the focus; ↑/↓ move aria-activedescendant through these options. */}
+      <Box aria-label="メンション候補" component="ul" id={id} role="listbox" sx={{ listStyle: 'none', m: 0, p: 0 }}>
         {users.slice(0, 8).map((user, index) => (
-          <Button
-            aria-label={`@${user.username}を挿入`}
-            aria-pressed={index === selectedIndex}
+          <Box
+            aria-selected={index === selectedIndex}
+            component="li"
+            id={mentionOptionId(id, index)}
             key={user.id}
             onClick={() => onSelect(user)}
             onMouseDown={(event) => event.preventDefault()}
-            size="small"
-            sx={{ justifyContent: 'flex-start', textAlign: 'left', textTransform: 'none' }}
-            variant={index === selectedIndex ? 'contained' : 'text'}
-          >{user.name} <Typography color="text.secondary" component="span" sx={{ ml: 0.75 }} variant="caption">@{user.username}</Typography></Button>
+            role="option"
+            sx={{ bgcolor: index === selectedIndex ? 'action.selected' : 'transparent', borderRadius: 1, cursor: 'pointer', px: 1, py: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
+          ><Typography component="span" variant="body2">{user.name}</Typography><Typography color="textSecondary" component="span" sx={{ ml: 1 }} variant="caption">@{user.username}</Typography></Box>
         ))}
-      </Stack>
+      </Box>
     </Paper>
   )
+}
+
+function mentionOptionId(listId: string, index: number): string {
+  return `${listId}-option-${index}`
 }
 
 const EMPTY_USERS: GitLabUser[] = []

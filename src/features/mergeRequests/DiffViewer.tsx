@@ -4,6 +4,11 @@ import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded'
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined'
 import ViewStreamOutlinedIcon from '@mui/icons-material/ViewStreamOutlined'
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined'
+import KeyboardArrowLeftRoundedIcon from '@mui/icons-material/KeyboardArrowLeftRounded'
+import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded'
+import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined'
+import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
@@ -17,12 +22,15 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import InputAdornment from '@mui/material/InputAdornment'
-import { alpha, type Theme } from '@mui/material/styles'
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type Theme } from '@mui/material/styles'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { Diff, Discussion, Draft, Position } from '../../types/gitlab'
+import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/gitlab'
+import { DiffFileTree, FileThreadMark, fileTreeOrder } from './DiffFileTree'
+import { DiffGap, type GapExpansion } from './DiffGap'
+import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
-import { lineKey, pendingDraftsByLine, threadsByLine } from './diffLineThreads'
+import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
 import { highlightLines, languageForPath, type SyntaxToken } from '../../lib/syntaxHighlight'
 import { parseDiff, splitFileLines, type ParsedLine } from './diffParser'
 import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
@@ -58,9 +66,15 @@ interface DiffViewerProps {
   lineComposer?: { position: Position; node: React.ReactNode }
   /** Replying to and resolving the threads shown in the diff. */
   threadActions?: ThreadActions
+  /**
+   * Where the shown version of the files is read (MR head or the selected
+   * commit), to open unchanged lines between hunks. Without it they open only
+   * from `fileContent`.
+   */
+  fileSource?: { sessionId: string; projectId: string; sha: string }
 }
 
-export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, view }: DiffViewerProps) {
+export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, fileSource, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, view }: DiffViewerProps) {
   const selectedDiffIndex = diffs.findIndex((diff) => (diff.newPath || diff.oldPath) === selectedFile)
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
@@ -111,6 +125,11 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
   }, [diffs, fileSearch])
   const displayedFileMatchIndex = fileSearchMatches.findIndex(({ path }) => path === displayedPath)
   const [layout, setLayout] = useState<DiffLayout>(readDiffLayout)
+  const [fileListMode, setFileListMode] = useState<FileListMode>(readFileListMode)
+  const changeFileListMode = (next: FileListMode) => {
+    setFileListMode(next)
+    try { globalThis.localStorage?.setItem(FILE_LIST_MODE_KEY, next) } catch { /* The choice still applies until the viewer is reopened. */ }
+  }
   const changeLayout = (next: DiffLayout) => {
     setLayout(next)
     saveDiffLayout(next)
@@ -131,7 +150,26 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
   const lineThreads = useMemo(() => threadsByLine(discussions, selectedDiff, discussionHeadSha), [discussionHeadSha, discussions, selectedDiff])
   const composer = commentsEnabled && lineComposer ? { key: lineKey(lineComposer.position), node: lineComposer.node, position: lineComposer.position } : undefined
   const draftsByLine = useMemo(() => pendingDraftsByLine(pendingDrafts, selectedDiff, discussionHeadSha), [discussionHeadSha, pendingDrafts, selectedDiff])
-  const threadView = (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, threads: lineThreads.byLine } : undefined
+  const threadView = (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, sessionId: fileSource?.sessionId, threads: lineThreads.byLine } : undefined
+  const threadCounts = useMemo(() => threadCountsByFile(discussions, diffs), [diffs, discussions])
+  const reviewedCount = reviewState.reviewedPaths.size
+
+  // Unchanged lines between hunks open from the shown version of the file.
+  const [shownGaps, setShownGaps] = useState<{ diffKey: string; shown: ReadonlyMap<string, number> }>({ diffKey: '', shown: NO_SHOWN_GAPS })
+  const sourceSessionId = fileSource?.sessionId
+  const sourceProjectId = fileSource?.projectId
+  const sourceSha = fileSource?.sha
+  // The same query as the whole-file view, so both share one cached read.
+  const gapQuery = useMemo<FileQuery | null>(() => sourceProjectId && sourceSha && displayedPath ? { kind: 'file', path: displayedPath, projectId: sourceProjectId, sha: sourceSha } : null, [displayedPath, sourceProjectId, sourceSha])
+  const gapsExpandable = Boolean(selectedDiff && !selectedDiff.deletedFile && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid')
+  const gapExpansion: GapExpansion | undefined = gapsExpandable && ((gapQuery && sourceSessionId) || typeof fileContent === 'string') ? {
+    content: gapQuery && sourceSessionId ? undefined : fileContent ?? undefined,
+    language,
+    onExpand: (key, shown) => setShownGaps((current) => ({ diffKey, shown: new Map(current.diffKey === diffKey ? current.shown : []).set(key, shown) })),
+    query: gapQuery,
+    sessionId: sourceSessionId,
+    shown: shownGaps.diffKey === diffKey ? shownGaps.shown : NO_SHOWN_GAPS,
+  } : undefined
 
   const navigateSearch = (direction: -1 | 1) => {
     if (searchMatches.length === 0) return
@@ -151,6 +189,35 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
     else nextIndex = (displayedFileMatchIndex + direction + fileSearchMatches.length) % fileSearchMatches.length
     onSelectFile(fileSearchMatches[nextIndex].path)
   }
+
+  // The file tree takes 240px plus the 12px gap beside it; it shows only when the diff keeps enough room beside it,
+  // more for the side-by-side layout, and the reader can hide it.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [])
+  const [treeHidden, setTreeHidden] = useState(readTreeHidden)
+  const treeFits = width >= (view === 'diff' && layout === 'split' ? 1100 : 820)
+  const treeShown = treeFits && !treeHidden
+  const toggleTree = () => {
+    setTreeHidden(treeShown)
+    try { globalThis.localStorage?.setItem(TREE_HIDDEN_KEY, String(treeShown)) } catch { /* The choice still applies until the viewer is reopened. */ }
+  }
+  // Beside the tree the field only filters it, so it needs no buttons to step through matches.
+  const fileSearchField = (inTree: boolean) => <TextField
+              fullWidth
+              onChange={(event) => setFileSearch(event.target.value)}
+              placeholder={inTree ? 'ファイル名で絞り込み' : 'ファイル名を検索'}
+              size="small"
+              sx={denseFieldSx}
+              value={fileSearch}
+              slotProps={{ htmlInput: { 'aria-label': 'ファイル名を検索' }, input: { endAdornment: inTree ? undefined : <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{fileSearch.trim() ? `${displayedFileMatchIndex >= 0 ? displayedFileMatchIndex + 1 : 0}/${fileSearchMatches.length}` : ''}</Typography><Tooltip title="前の一致ファイル"><span><IconButton aria-label="前の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title="次の一致ファイル"><span><IconButton aria-label="次の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
+            />
 
   const composerOpen = Boolean(lineComposer)
   useLayoutEffect(() => {
@@ -180,78 +247,120 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
     if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView?.({ behavior: 'auto', block: 'start' })
   }, [displayedPath])
 
+  // Line comment editors stick their toolbar below the file header, which wraps to more rows when narrow.
+  const fileHeaderRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const header = fileHeaderRef.current
+    const container = fileTopRef.current
+    if (!header || !container || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => container.style.setProperty('--diff-file-header-height', `${header.offsetHeight}px`))
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [])
+
   const selectRelative = (delta: number) => {
     const next = diffs[displayedIndex + delta]
     if (next) onSelectFile(next.newPath || next.oldPath)
   }
 
+  // ] and [ step through the files, as the header buttons do, unless typing or in a dialog.
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== ']' && event.key !== '[') return
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || isEditableTarget(event.target) || document.querySelector('[role="dialog"]')) return
+      const next = diffs[displayedIndex + (event.key === ']' ? 1 : -1)]
+      if (!next) return
+      event.preventDefault()
+      onSelectFile(next.newPath || next.oldPath)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [diffs, displayedIndex, onSelectFile])
+
+  // Marking a file reviewed opens the next file still to review, after it in the list and then from the top.
+  const toggleReviewed = () => {
+    if (!selectedDiff || !displayedPath) return
+    const marking = !reviewState.isReviewed(displayedPath)
+    reviewState.toggleReviewed(selectedDiff)
+    if (!marking) return
+    for (let step = 1; step < diffs.length; step += 1) {
+      const candidate = diffs[(displayedIndex + step) % diffs.length]
+      const path = candidate.newPath || candidate.oldPath
+      if (!reviewState.isReviewed(path)) { onSelectFile(path); return }
+    }
+  }
+
   return (
-    <Box sx={{ containerType: 'inline-size' }}>
-      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start', minHeight: 420 }}>
-        <Box component="nav" aria-label="変更ファイル" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 48px)`, minWidth: 0, position: 'sticky', top: BELOW_DETAIL_HEADER, '@container (min-width: 820px)': { display: 'flex' } }}>
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.25, py: 0.75 }}><Typography color="text.secondary" variant="overline">変更ファイル</Typography><Typography color="text.secondary" variant="caption">{fileSearchMatches.length}/{diffs.length}</Typography></Stack>
+    <Box ref={rootRef}>
+      <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'flex-start', minHeight: 420 }}>
+        <Box component="nav" aria-label="変更ファイル" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: treeShown ? 'flex' : 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 40px)`, minWidth: 0, position: 'sticky', top: 'var(--detail-header-height, 0px)' }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
+            <Typography color="textSecondary" variant="overline">変更ファイル</Typography>
+            <Typography color="textSecondary" sx={{ flex: 1 }} variant="caption">{fileSearchMatches.length}/{diffs.length}</Typography>
+            <ToggleButtonGroup aria-label="変更ファイルの表示形式" exclusive onChange={(_, next: FileListMode | null) => { if (next) changeFileListMode(next) }} size="small" value={fileListMode}>
+              <Tooltip title="フォルダごとのツリー"><ToggleButton aria-label="ツリー表示" sx={{ px: 1, py: 0.25 }} value="tree"><AccountTreeOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
+              <Tooltip title="ファイルの一覧"><ToggleButton aria-label="一覧表示" sx={{ px: 1, py: 0.25 }} value="list"><ViewListOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
+            </ToggleButtonGroup>
+          </Stack>
+          {reviewState.enabled ? <Typography color="textSecondary" component="div" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 0.25 }} variant="caption">確認済み {reviewedCount}/{diffs.length}</Typography> : null}
+          {/* The file-name search filters the tree, so it sits on top of it. */}
+          {treeShown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, p: 0.5 }}>{fileSearchField(true)}</Box> : null}
           <List disablePadding sx={{ overflowY: 'auto', p: 0.5 }}>
-            {fileSearchMatches.map(({ diff, path }) => {
+            {fileListMode === 'tree' ? <DiffFileTree displayedPath={displayedPath} entries={fileSearchMatches} expandAll={Boolean(fileSearch.trim())} fileMark={(diff) => <FileKindMark diff={diff} />} isReviewed={reviewState.isReviewed} onSelect={onSelectFile} threadCount={(path) => threadCounts.get(path)} /> : fileSearchMatches.map(({ diff, path }) => {
               const { directory, name } = splitPath(path)
               const kind = diff.tooLarge ? '取得制限' : diff.newFile ? '新規' : diff.deletedFile ? '削除' : diff.renamedFile ? `名前変更: ${diff.oldPath}` : null
-              return <ListItemButton aria-label={path} key={`${diff.oldPath}\0${path}`} onClick={() => onSelectFile(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }} title={path}><ListItemText primary={<Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography>{reviewState.isReviewed(path) ? <Tooltip title="確認済み"><DoneRoundedIcon aria-label="確認済み" color="success" fontSize="small" /></Tooltip> : null}</Stack>} secondary={<Typography color="text.secondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton>
+              return <ListItemButton aria-label={fileRowLabel(path, threadCounts.get(path), reviewState.isReviewed(path))} key={`${diff.oldPath}\0${path}`} onClick={() => onSelectFile(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }} title={path}><ListItemText primary={<Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography><FileThreadMark count={threadCounts.get(path)} />{reviewState.isReviewed(path) ? <Tooltip title="確認済み"><DoneRoundedIcon aria-label="確認済み" color="success" fontSize="small" /></Tooltip> : null}</Stack>} secondary={<Typography color="textSecondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton>
             })}
-            {fileSearchMatches.length === 0 ? <Box sx={{ p: 2 }}><Typography color="text.secondary" variant="caption">{diffs.length === 0 ? '変更ファイルはありません。' : '一致するファイルはありません。'}</Typography></Box> : null}
+            {fileSearchMatches.length === 0 ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="caption">{diffs.length === 0 ? '変更ファイルはありません。' : '一致するファイルはありません。'}</Typography></Box> : null}
           </List>
         </Box>
-        <Box ref={fileTopRef} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, overflow: 'clip', scrollMarginTop: BELOW_DETAIL_HEADER }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', minHeight: 40, position: 'sticky', px: 1, py: 0.5, top: 'var(--detail-header-height, 0px)', zIndex: 2 }}>
-            <Tooltip title="前のファイル"><span><IconButton aria-label="前のファイル" disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip>
-            <Tooltip title="次のファイル"><span><IconButton aria-label="次のファイル" disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, minWidth: 0 }}>
-              <Typography noWrap title={displayedPath ?? undefined} sx={{ direction: 'rtl', fontFamily: 'typography.code.fontFamily', fontSize: 12.5, fontWeight: 600, minWidth: 0, textAlign: 'left' }} variant="body2">{displayedPath ?? 'ファイルを選択'}</Typography>
-              {diffs.length > 1 ? <Typography color="text.secondary" sx={{ flexShrink: 0 }} variant="caption">{displayedIndex + 1}/{diffs.length}</Typography> : null}
-              {selectedDiff && view === 'diff' ? <Typography aria-label={`追加${lineCounts.added}行、削除${lineCounts.removed}行`} component="span" sx={{ flexShrink: 0, fontFamily: 'typography.code.fontFamily', whiteSpace: 'nowrap' }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
+        <Box ref={fileTopRef} sx={{ '--composer-sticky-top': 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px))', border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, overflow: 'clip', scrollMarginTop: BELOW_DETAIL_HEADER }}>
+          {/* The controls wrap below the path rather than squeezing it. */}
+          <Stack ref={fileHeaderRef} direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', flexWrap: 'wrap', minHeight: 40, position: 'sticky', px: 1, py: 0.5, rowGap: 0.5, top: 'var(--detail-header-height, 0px)', zIndex: 2 }}>
+            {treeFits ? <Tooltip title={treeShown ? 'ファイルツリーを隠す' : 'ファイルツリーを表示'}><IconButton aria-label={treeShown ? 'ファイルツリーを隠す' : 'ファイルツリーを表示'} aria-pressed={treeShown} onClick={toggleTree}><ViewSidebarOutlinedIcon /></IconButton></Tooltip> : null}
+            <Tooltip title="前のファイル（[）"><span><IconButton aria-keyshortcuts="[" aria-label="前のファイル" disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowLeftRoundedIcon /></IconButton></span></Tooltip>
+            <Tooltip title="次のファイル（]）"><span><IconButton aria-keyshortcuts="]" aria-label="次のファイル" disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowRightRoundedIcon /></IconButton></span></Tooltip>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: '1 1 280px', minWidth: 0 }}>
+              {/* Long paths lose their start, not their name; the isolate keeps a leading '.' in place. */}
+              <Tooltip title={displayedPath ?? ''}><Typography noWrap sx={{ direction: 'rtl', fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0, textAlign: 'left' }} variant="body2"><bdi dir="ltr">{displayedPath ?? 'ファイルを選択'}</bdi></Typography></Tooltip>
+              {diffs.length > 1 ? <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{displayedIndex + 1}/{diffs.length}</Typography> : null}
+              {selectedDiff && view === 'diff' ? <Typography aria-label={`追加${lineCounts.added}行、削除${lineCounts.removed}行`} component="span" sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap' }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
             </Stack>
-            {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title="head SHAまたはファイル差分が変わると未確認に戻ります。"><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={() => reviewState.toggleReviewed(selectedDiff)} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? '確認済み' : '確認済みにする'}</Button></Tooltip> : null}
+            {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title="確認済みにすると次の未確認ファイルを開きます。head SHAまたはファイル差分が変わると未確認に戻ります。"><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={toggleReviewed} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? '確認済み' : '確認済みにする'}</Button></Tooltip> : null}
             {view === 'diff' ? <ToggleButtonGroup aria-label="差分の表示形式" exclusive onChange={(_, next: DiffLayout | null) => { if (next) changeLayout(next) }} size="small" sx={{ flexShrink: 0 }} value={layout}>
-              <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon sx={{ fontSize: 16 }} /></ToggleButton></Tooltip>
-              <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon sx={{ fontSize: 16 }} /></ToggleButton></Tooltip>
+              <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
+              <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup> : null}
-            <ToggleButtonGroup exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
+            <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
               <ToggleButton value="diff">差分</ToggleButton>
               <ToggleButton value="file">ファイル全体</ToggleButton>
             </ToggleButtonGroup>
           </Stack>
           {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
-            <TextField
+            <Tooltip describeChild placement="bottom-start" title="表示中の差分ページを検索します。他のページは対象外です。"><TextField
               fullWidth
               onChange={(event) => { setDiffSearch(event.target.value); setActiveSearch(null) }}
               placeholder="差分内を検索"
               size="small"
               sx={denseFieldSx}
-              title="表示中の差分ページを検索します。他のページは対象外です。"
               value={diffSearch}
-              slotProps={{ htmlInput: { 'aria-label': '差分内を検索' }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{diffSearch.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><IconButton aria-label="前の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton><IconButton aria-label="次の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></InputAdornment> } }}
-            />
-            <TextField
-              fullWidth
-              onChange={(event) => setFileSearch(event.target.value)}
-              placeholder="ファイル名を検索"
-              size="small"
-              sx={denseFieldSx}
-              value={fileSearch}
-              slotProps={{ htmlInput: { 'aria-label': 'ファイル名を検索' }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{fileSearch.trim() ? `${displayedFileMatchIndex >= 0 ? displayedFileMatchIndex + 1 : 0}/${fileSearchMatches.length}` : ''}</Typography><IconButton aria-label="前の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton><IconButton aria-label="次の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></InputAdornment> } }}
-            />
+              slotProps={{ htmlInput: { 'aria-label': '差分内を検索' }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{diffSearch.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><Tooltip title="前の検索結果"><span><IconButton aria-label="前の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title="次の検索結果"><span><IconButton aria-label="次の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
+            /></Tooltip>
+            {treeShown ? null : fileSearchField(false)}
           </Stack>
-          {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
+          {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">この差分は大きすぎるため省略されています。</Typography></Stack></Box> : null}
-          {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="text.secondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
+          {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
           {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} /> : <>
-            {parsed.status !== 'valid' ? <Typography color="warning.main" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
-            {threadView && lineThreads.outdated > 0 ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">このファイルの古い版へのコメント{lineThreads.outdated}件は差分に表示していません。議論タブで確認できます。</Typography> : null}
-            {threadView && discussionsIncomplete ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">古い議論は未取得のため、読み込み済みのコメントだけを表示しています。</Typography> : null}
-            {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="text.secondary" role="status" sx={{ px: 1.25, pt: 1 }} variant="caption">取得済みの差分に一致する行はありません。</Typography> : null}
+            {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
+            {threadView && lineThreads.outdated > 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルの古い版へのコメント{lineThreads.outdated}件は差分に表示していません。議論タブで確認できます。</Typography> : null}
+            {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">古い議論は未取得のため、読み込み済みのコメントだけを表示しています。</Typography> : null}
+            {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">取得済みの差分に一致する行はありません。</Typography> : null}
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={parsed.lines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, parsed.lines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {layout === 'split'
-              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} />
-              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} />}
+              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />}
           </>}
         </Box>
       </Stack>
@@ -259,11 +368,22 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
   )
 }
 
+/** The files of a diff page in the order the file list shows them: as the folder tree, or as returned in the list view. */
+export function diffFileOrder(diffs: Diff[]): Diff[] {
+  const entries = diffs.map((diff) => ({ diff, path: diff.newPath || diff.oldPath }))
+  return (readFileListMode() === 'list' ? entries : fileTreeOrder(entries)).map(({ diff }) => diff)
+}
+
 const denseFieldSx = { '& .MuiInputBase-input': { py: 0.5 } }
+const NO_SHOWN_GAPS: ReadonlyMap<string, number> = new Map()
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
+}
 
 function FileKindMark({ diff }: { diff: Diff }) {
   const [label, color] = diff.newFile ? ['A', 'success.main'] : diff.deletedFile ? ['D', 'error.main'] : diff.renamedFile ? ['R', 'info.main'] : ['M', 'warning.main']
-  return <Box aria-hidden component="span" sx={{ color, flexShrink: 0, fontFamily: 'typography.code.fontFamily', fontSize: 11, fontWeight: 700, width: 10 }}>{label}</Box>
+  return <Box aria-hidden component="span" sx={{ color, flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'overline.fontSize', fontWeight: 700, width: 10 }}>{label}</Box>
 }
 
 function PageControls({ offset, pageSize, total, onNext, onPrevious }: { offset: number; pageSize: number; total: number; onNext: () => void; onPrevious: () => void }) {
@@ -271,15 +391,23 @@ function PageControls({ offset, pageSize, total, onNext, onPrevious }: { offset:
   const end = Math.min(total, offset + pageSize)
   const previous = offset
   const remaining = Math.max(0, total - end)
-  return <Stack aria-label="行ページ" direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 1.25, py: 0.75 }}>
-    <Typography color="text.secondary" sx={{ mr: 'auto' }} variant="caption">表示 {offset + 1}–{end} / {total}行{remaining > 0 ? `（残り${remaining}行）` : ''}</Typography>
+  return <Stack aria-label="行ページ" direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 1.5, py: 1 }}>
+    <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">表示 {offset + 1}–{end} / {total}行{remaining > 0 ? `（残り${remaining}行）` : ''}</Typography>
     <Button aria-label={`前の${pageSize}行`} disabled={previous === 0} onClick={onPrevious} size="small">前へ</Button>
     <Button aria-label={`次の${pageSize}行`} disabled={remaining === 0} onClick={onNext} size="small">次へ</Button>
   </Stack>
 }
 
-function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
-  const skipped = skippedLines(lines, startIndex)
+function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+  const skipped = diffGaps(lines, startIndex)
+  // Opened unchanged lines: plain context rows, outside paging and search.
+  const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
+    <div className="diff-row" data-kind="context" data-testid="diff-opened-line">
+      <span className="diff-gutter"><span className="diff-number">{line.oldLine}</span><span className="diff-number">{line.newLine}</span></span>
+      <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(openedTokens[index] ?? [{ text: line.text }], '')}</span>
+    </div>
+    <LineThreads line={line} view={threadView} />
+  </Fragment>)
   // Rows are plain elements styled from this one block: a page holds up to
   // DIFF_PAGE_SIZE rows, and per-row styled components dominate render time.
   return (
@@ -291,7 +419,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrol
       '& .diff-row[data-kind="remove"]': { '--row-bg': theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
       '& .diff-row[data-selected="true"]': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
       '& .diff-row[data-search-active="true"]': { outline: `2px solid ${theme.palette.secondary.main}`, outlineOffset: -2 },
-      '& mark': { backgroundColor: theme.palette.warning.light, color: theme.palette.warning.contrastText },
+      '& mark': { backgroundColor: theme.palette.diff?.searchMatchBackground, color: theme.palette.diff?.searchMatchText },
       '& .diff-gutter': { backgroundColor: 'var(--row-bg)', display: 'flex', flexShrink: 0, paddingRight: '26px', position: 'relative' },
       '& .diff-number': { color: theme.palette.text.secondary, opacity: 0.8, padding: '0 6px', textAlign: 'right', userSelect: 'none', width: 44 },
       '& .diff-row:hover .diff-action, & .diff-row:focus-within .diff-action, & .diff-row[data-selected="true"] .diff-action': { opacity: 1 },
@@ -299,14 +427,14 @@ function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrol
       '& .diff-row[data-kind="add"] .diff-prefix': { color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
     })}>
-      {lines.length === 0 ? <Typography color="text.secondary" sx={{ fontFamily: 'typography.fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
+      {lines.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
       <div className="diff-rows">
         {lines.map((line, index) => {
           const isSelectedPosition = matchesPosition(line, selectedPosition)
           const position = linePosition(line)
           const key = `${startIndex + index}-${line.oldLine ?? ''}-${line.newLine ?? ''}`
           return <Fragment key={key}>
-            {skipped[index] > 0 ? <div aria-hidden className="diff-gap"><span>⋯ 変更のない{skipped[index]}行</span></div> : null}
+            {skipped[index].count > 0 ? <DiffGap expansion={gapExpansion} gap={skipped[index]} renderLines={openedRows} /> : null}
             <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-match={searchMatchIndices.has(startIndex + index) ? 'true' : undefined} data-search-active={activeSearchMatch === startIndex + index ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" tabIndex={isSelectedPosition ? -1 : undefined}>
               <span className="diff-gutter">
                 <span className="diff-number">{line.oldLine ?? ''}</span>
@@ -324,6 +452,25 @@ function UnifiedDiff({ activeSearchMatch, allowComments, lines, onComment, scrol
 }
 
 type DiffLayout = 'unified' | 'split'
+type FileListMode = 'tree' | 'list'
+const FILE_LIST_MODE_KEY = 'gitlab-desktop:diff-file-list'
+const TREE_HIDDEN_KEY = 'gitlab-desktop:diff-file-tree-hidden'
+
+function readTreeHidden(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(TREE_HIDDEN_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function readFileListMode(): FileListMode {
+  try {
+    return globalThis.localStorage?.getItem(FILE_LIST_MODE_KEY) === 'list' ? 'list' : 'tree'
+  } catch {
+    return 'tree'
+  }
+}
 const DIFF_LAYOUT_KEY = 'gitlab-desktop:diff-layout'
 
 function readDiffLayout(): DiffLayout {
@@ -351,7 +498,7 @@ function linePosition(line: ParsedLine): Position | undefined {
 interface SplitRow {
   key: string
   /** Unchanged lines GitLab omitted before this row. */
-  gap: number
+  gap?: DiffGapInfo
   left?: ParsedLine
   right?: ParsedLine
   leftIndex?: number
@@ -364,7 +511,7 @@ interface SplitRow {
  * follow it, row by row.
  */
 function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
-  const skipped = skippedLines(lines, startIndex)
+  const skipped = diffGaps(lines, startIndex)
   const rows: SplitRow[] = []
   let index = 0
   while (index < lines.length) {
@@ -383,13 +530,13 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
       index += 1
     }
     for (let pair = 0; pair < Math.max(removed.length, added.length); pair += 1) {
-      rows.push({ gap: pair === 0 ? skipped[start] : 0, key: `${startIndex + start}-${pair}`, left: removed[pair]?.line, leftIndex: removed[pair]?.index, right: added[pair]?.line, rightIndex: added[pair]?.index })
+      rows.push({ gap: pair === 0 ? skipped[start] : undefined, key: `${startIndex + start}-${pair}`, left: removed[pair]?.line, leftIndex: removed[pair]?.index, right: added[pair]?.line, rightIndex: added[pair]?.index })
     }
   }
   return rows
 }
 
-function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
   const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
     // Context rows offer one comment action, on the new side, with both line numbers.
@@ -408,31 +555,44 @@ function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollR
       <span className="split-code" data-kind={kind} data-search-match={lineIndex !== undefined && searchMatchIndices.has(lineIndex) ? 'true' : undefined}>{line && lineIndex !== undefined ? renderCode(tokens[lineIndex - startIndex] ?? [{ text: line.text }], searchTerm) : ''}</span>
     </>
   }
+  // Opened unchanged lines: the same text on both sides, outside paging and search.
+  const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => {
+    const code = renderCode(openedTokens[index] ?? [{ text: line.text }], '')
+    return <Fragment key={`opened-${line.newLine}`}>
+      <div className="split-row" data-testid="diff-opened-line">
+        <span className="split-number" data-kind="context" data-side="old">{line.oldLine}</span>
+        <span className="split-code" data-kind="context">{code}</span>
+        <span className="split-number" data-kind="context" data-side="new">{line.newLine}</span>
+        <span className="split-code" data-kind="context">{code}</span>
+      </div>
+      <LineThreads line={line} view={threadView} />
+    </Fragment>
+  })
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
-      '& .split-row': { display: 'grid', gridTemplateColumns: '54px minmax(0, 1fr) 54px minmax(0, 1fr)', minHeight: 22 },
+      '& .split-row': { display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 22 },
       '& .split-row[data-selected="true"]': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
       '& .split-row[data-search-active="true"]': { outline: `2px solid ${theme.palette.secondary.main}`, outlineOffset: -2 },
-      '& mark': { backgroundColor: theme.palette.warning.light, color: theme.palette.warning.contrastText },
-      '& .split-number': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.secondary, padding: '0 24px 0 4px', position: 'relative', textAlign: 'right', userSelect: 'none' },
-      '& .split-number .diff-action': { right: '2px' },
+      '& mark': { backgroundColor: theme.palette.diff?.searchMatchBackground, color: theme.palette.diff?.searchMatchText },
+      // As in the unified view: room for a 5-digit number, then the 26px of the comment button.
+      '& .split-number': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.secondary, padding: '0 26px 0 6px', position: 'relative', textAlign: 'right', userSelect: 'none' },
       '& .split-number[data-side="new"]': { borderLeft: `1px solid ${theme.palette.divider}` },
       '& .split-code': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, overflowWrap: 'anywhere', padding: '0 10px 0 6px', whiteSpace: 'pre-wrap' },
       '& [data-kind="remove"]': { backgroundColor: theme.palette.diff?.deletedBackground },
       '& .split-number[data-kind="remove"]': { color: theme.palette.diff?.deletedText },
       '& [data-kind="add"]': { backgroundColor: theme.palette.diff?.addedBackground },
       '& .split-number[data-kind="add"]': { color: theme.palette.diff?.addedText },
-      '& [data-kind="empty"]': { backgroundColor: theme.palette.action.hover },
+      '& [data-kind="empty"]': { backgroundColor: quietBand(theme) },
       '& .split-row:hover .diff-action, & .split-row:focus-within .diff-action, & .split-row[data-selected="true"] .diff-action': { opacity: 1 },
       '& .diff-gap > span': { position: 'static' },
     })}>
-      {rows.length === 0 ? <Typography color="text.secondary" sx={{ fontFamily: 'typography.fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
+      {rows.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
       {rows.map((row) => {
         const selected = Boolean(selectedPosition && ((row.left && matchesPosition(row.left, selectedPosition)) || (row.right && matchesPosition(row.right, selectedPosition))))
         const activeSearch = row.leftIndex === activeSearchMatch || row.rightIndex === activeSearchMatch
         const hasSearchMatch = (row.leftIndex !== undefined && searchMatchIndices.has(row.leftIndex)) || (row.rightIndex !== undefined && searchMatchIndices.has(row.rightIndex))
         return <Fragment key={row.key}>
-          {row.gap > 0 ? <div aria-hidden className="diff-gap"><span>⋯ 変更のない{row.gap}行</span></div> : null}
+          {row.gap && row.gap.count > 0 ? <DiffGap expansion={gapExpansion} gap={row.gap} renderLines={openedRows} /> : null}
           <div className="split-row" data-line-id={selected && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-active={activeSearch ? 'true' : undefined} data-search-match={hasSearchMatch ? 'true' : undefined} data-selected={selected ? 'true' : undefined} data-testid="diff-split-row" tabIndex={selected ? -1 : undefined}>
             {cell(row.left, 'old', row.leftIndex)}
             {cell(row.right, 'new', row.rightIndex)}
@@ -445,6 +605,11 @@ function SplitDiff({ activeSearchMatch, allowComments, lines, onComment, scrollR
   )
 }
 
+/** Rows without code (empty split cells, omitted lines): a tone that stays visible on the dark theme too. */
+function quietBand(theme: Theme): string {
+  return theme.palette.mode === 'dark' && theme.palette.surface ? theme.palette.surface.list : theme.palette.action.hover
+}
+
 /** Styles shared by the unified and side-by-side layouts. */
 function diffBaseStyles(theme: Theme) {
   return {
@@ -454,11 +619,17 @@ function diffBaseStyles(theme: Theme) {
     lineHeight: '22px',
     minWidth: 0,
     py: 0.5,
-    '& .diff-action': { alignItems: 'center', backgroundColor: theme.palette.primary.dark, border: 0, borderRadius: '4px', color: theme.palette.primary.contrastText, cursor: 'pointer', fontFamily: theme.typography.fontFamily, fontSize: 14, fontWeight: 700, height: 18, lineHeight: '18px', opacity: 0, padding: 0, position: 'absolute', right: '3px', textAlign: 'center', top: 2, width: 20 },
-    '& .diff-action:hover': { backgroundColor: alpha(theme.palette.primary.dark, 0.85) },
+    '& .diff-action': { alignItems: 'center', backgroundColor: theme.palette.fill?.primary ?? theme.palette.primary.dark, border: 0, borderRadius: `${theme.shape.borderRadius}px`, color: theme.palette.fill?.primaryText ?? theme.palette.primary.contrastText, cursor: 'pointer', fontFamily: theme.typography.fontFamily, fontSize: theme.typography.body1.fontSize, fontWeight: 700, height: 18, lineHeight: '18px', opacity: 0, padding: 0, position: 'absolute', right: '3px', textAlign: 'center', top: 2, width: 20 },
+    // The visible mark stays small to fit the 22px row; the hit area around it is 26×24px.
+    '& .diff-action::before': { content: '""', inset: '-3px', position: 'absolute' },
+    '& .diff-action:hover': { backgroundColor: theme.palette.fill?.primaryHover ?? theme.palette.primary.dark },
     '& .diff-action:focus-visible': { opacity: 1, outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
     ...syntaxStyles(theme),
-    '& .diff-gap': { backgroundColor: theme.palette.action.hover, color: theme.palette.text.secondary, fontFamily: theme.typography.fontFamily, fontSize: theme.typography.caption.fontSize, padding: '2px 12px' },
+    '& .diff-gap': { alignItems: 'center', backgroundColor: quietBand(theme), color: theme.palette.text.secondary, columnGap: '12px', display: 'flex', flexWrap: 'wrap', fontFamily: theme.typography.fontFamily, fontSize: theme.typography.caption.fontSize, padding: '2px 12px' },
+    '& .diff-gap-toggle': { alignItems: 'center', background: 'none', border: 0, borderRadius: `${theme.shape.borderRadius}px`, color: theme.palette.primary.main, cursor: 'pointer', display: 'inline-flex', font: 'inherit', gap: '4px', margin: '0 -4px', padding: '0 4px' },
+    '& .diff-gap-toggle:hover': { textDecoration: 'underline' },
+    '& .diff-gap-toggle:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
+    '& .diff-gap-error': { color: theme.palette.error.main },
   }
 }
 
@@ -498,21 +669,6 @@ function highlightDiffLines(lines: ParsedLine[], language: string | null): Synta
   return result
 }
 
-/** Number of unchanged lines GitLab omitted before each displayed line. */
-function skippedLines(lines: ParsedLine[], startIndex: number): number[] {
-  let lastOld: number | undefined
-  let lastNew: number | undefined
-  return lines.map((line, index) => {
-    let skipped = 0
-    if (startIndex + index === 0) skipped = Math.max(0, (line.newLine ?? line.oldLine ?? 1) - 1)
-    else if (line.newLine !== undefined && lastNew !== undefined) skipped = Math.max(0, line.newLine - lastNew - 1)
-    else if (line.oldLine !== undefined && lastOld !== undefined) skipped = Math.max(0, line.oldLine - lastOld - 1)
-    if (line.oldLine !== undefined) lastOld = line.oldLine
-    if (line.newLine !== undefined) lastNew = line.newLine
-    return skipped
-  })
-}
-
 function FullFileView({ content, language, loading }: { content?: string | null; language: string | null; loading: boolean }) {
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
@@ -528,12 +684,12 @@ function FullFileView({ content, language, loading }: { content?: string | null;
   const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
   const visibleTokens = useMemo(() => highlightLines(visibleLines, language), [language, visibleLines])
 
-  if (loading) return <Typography color="text.secondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
-  if (content === null || content === undefined) return <Typography color="text.secondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
-  if (!content) return <Typography color="text.secondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
+  if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
+  if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
+  if (!content) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
   return <>
     <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
-    <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="text.secondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
+    <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
   </>
 }
 

@@ -12,41 +12,57 @@ interface SyntaxPalette {
   variable: string
 }
 
+interface DiffPalette {
+  addedBackground: string
+  deletedBackground: string
+  addedText: string
+  deletedText: string
+  /** Text matched by the in-diff search. */
+  searchMatchBackground: string
+  searchMatchText: string
+}
+
+interface SurfacePalette {
+  nav: string
+  list: string
+  raised: string
+  selected: string
+  borderStrong: string
+  /** Outline of text inputs and editors; at least 3:1 against the surfaces around them. */
+  inputBorder: string
+}
+
+/** Filled controls such as the primary button, the diff comment button and filled chips. */
+interface FillPalette {
+  primary: string
+  primaryHover: string
+  /** Text and icons on a primary fill. */
+  primaryText: string
+}
+
+/** Initial avatars use quiet tints that never read as a state colour. */
+interface AvatarTone {
+  background: string
+  text: string
+}
+
 declare module '@mui/material/styles' {
   interface Palette {
-    diff: {
-      addedBackground: string
-      deletedBackground: string
-      addedText: string
-      deletedText: string
-    }
+    diff: DiffPalette
     /** Code token colours for syntax highlighting. */
     syntax: SyntaxPalette
-    /** Layered surfaces of the three-pane workspace. */
-    surface: {
-      nav: string
-      list: string
-      raised: string
-      selected: string
-      borderStrong: string
-    }
+    /** Layered surfaces of the workspace. */
+    surface: SurfacePalette
+    fill: FillPalette
+    avatar: AvatarTone[]
   }
 
   interface PaletteOptions {
-    diff?: {
-      addedBackground: string
-      deletedBackground: string
-      addedText: string
-      deletedText: string
-    }
+    diff?: DiffPalette
     syntax?: SyntaxPalette
-    surface?: {
-      nav: string
-      list: string
-      raised: string
-      selected: string
-      borderStrong: string
-    }
+    surface?: SurfacePalette
+    fill?: FillPalette
+    avatar?: AvatarTone[]
   }
 
   interface TypographyVariants {
@@ -66,8 +82,8 @@ declare module '@mui/material/Typography' {
 
 // GitHub-like token colours, readable on both the plain and the added/removed diff backgrounds.
 const syntaxTokens: Record<PaletteMode, SyntaxPalette> = {
-  light: { keyword: '#cf222e', string: '#0a3069', comment: '#6e7781', number: '#0550ae', title: '#8250df', type: '#953800', attribute: '#0550ae', tag: '#116329', variable: '#953800' },
-  dark: { keyword: '#ff7b72', string: '#a5d6ff', comment: '#8b949e', number: '#79c0ff', title: '#d2a8ff', type: '#ffa657', attribute: '#79c0ff', tag: '#7ee787', variable: '#ffa657' },
+  light: { keyword: '#cf222e', string: '#0a3069', comment: '#57606a', number: '#0550ae', title: '#7339d0', type: '#953800', attribute: '#0550ae', tag: '#116329', variable: '#953800' },
+  dark: { keyword: '#ff7b72', string: '#a5d6ff', comment: '#9da5b0', number: '#79c0ff', title: '#d2a8ff', type: '#ffa657', attribute: '#79c0ff', tag: '#7ee787', variable: '#ffa657' },
 }
 
 interface Tokens {
@@ -80,53 +96,75 @@ interface Tokens {
   inkMuted: string
   border: string
   borderStrong: string
+  /** Outline of text inputs; at least 3:1 against the input and the surfaces around it. */
+  inputBorder: string
   primary: string
   primaryStrong: string
   /** Background of filled primary controls; white text must stay readable on it. */
   primaryFill: string
+  /** Darker, opaque hover of the fill, so white text keeps its contrast. */
+  primaryFillHover: string
   accent: string
   success: string
   warning: string
   error: string
   info: string
   tooltip: string
-  diff: { addedBackground: string; deletedBackground: string; addedText: string; deletedText: string }
+  diff: DiffPalette
+  avatar: AvatarTone[]
 }
+
+const forcedColors = '@media (forced-colors: active)'
+const selectedOutline = { outline: '2px solid Highlight', outlineOffset: -2 }
 
 // Neutral grays, blue only for selection and the primary action.
 const tokens: Record<PaletteMode, Tokens> = {
   light: {
     canvas: '#ffffff', nav: '#f1f3f5', list: '#f8f9fb', surface: '#ffffff', raised: '#ffffff',
-    ink: '#1b1f24', inkMuted: '#5d6672', border: '#e3e6ea', borderStrong: '#cfd4da',
-    primary: '#2f6fde', primaryStrong: '#1f56b8', primaryFill: '#2f6fde', accent: '#8a5cf5',
-    success: '#1f8a4c', warning: '#9a6200', error: '#c93c37', info: '#2f6fde', tooltip: '#24292f',
-    diff: { addedBackground: '#e6f4ea', deletedBackground: '#fbe9eb', addedText: '#1a6b34', deletedText: '#a3242f' },
+    ink: '#1b1f24', inkMuted: '#5d6672', border: '#e3e6ea', borderStrong: '#cfd4da', inputBorder: '#848c96',
+    primary: '#2860c4', primaryStrong: '#1f56b8', primaryFill: '#2f6fde', primaryFillHover: '#2459b8', accent: '#6f45d8',
+    success: '#1a7440', warning: '#8c5800', error: '#b5352f', info: '#0a6676', tooltip: '#24292f',
+    diff: { addedBackground: '#e6f4ea', deletedBackground: '#fbe9eb', addedText: '#1a6b34', deletedText: '#a3242f', searchMatchBackground: '#fff0b3', searchMatchText: '#1b1f24' },
+    avatar: [
+      { background: '#e3e8f4', text: '#3a4a6b' },
+      { background: '#e0efec', text: '#2f5a52' },
+      { background: '#f2eadf', text: '#6b4f2a' },
+      { background: '#ece5f3', text: '#58447a' },
+    ],
   },
   dark: {
-    canvas: '#212327', nav: '#121316', list: '#1a1b1f', surface: '#212327', raised: '#2a2c31',
-    ink: '#e3e6ea', inkMuted: '#9ca3ad', border: '#34373e', borderStrong: '#464a52',
-    primary: '#7aa7ee', primaryStrong: '#a3c2f5', primaryFill: '#2e66c8', accent: '#a990ea',
-    success: '#5cbf8e', warning: '#dca54f', error: '#ef7272', info: '#5bb8d4', tooltip: '#2e3036',
-    diff: { addedBackground: '#1d3527', deletedBackground: '#3c2428', addedText: '#e3e6ea', deletedText: '#e3e6ea' },
+    canvas: '#232529', nav: '#101113', list: '#1a1b1f', surface: '#232529', raised: '#2e3036',
+    ink: '#e3e6ea', inkMuted: '#9ca3ad', border: '#3a3d45', borderStrong: '#4d515a', inputBorder: '#7e848e',
+    primary: '#7aa7ee', primaryStrong: '#a3c2f5', primaryFill: '#2e66c8', primaryFillHover: '#2858b0', accent: '#a990ea',
+    success: '#5cbf8e', warning: '#dca54f', error: '#f07c7c', info: '#5bb8d4', tooltip: '#2e3036',
+    diff: { addedBackground: '#1d3527', deletedBackground: '#3c2428', addedText: '#e3e6ea', deletedText: '#e3e6ea', searchMatchBackground: '#5c4a12', searchMatchText: '#e3e6ea' },
+    avatar: [
+      { background: '#2d3446', text: '#b9c6e4' },
+      { background: '#263b37', text: '#a9d3c9' },
+      { background: '#3d3428', text: '#e0c9a6' },
+      { background: '#352f42', text: '#cdbfe6' },
+    ],
   },
 }
 
 export function createAppTheme(mode: PaletteMode) {
   const palette = tokens[mode]
   const selected = mode === 'dark' ? alpha(palette.ink, 0.09) : alpha(palette.primary, 0.1)
+  // Text on the main colour: white on the light theme's dark blue, dark ink on the dark theme's light blue.
+  const onMain = mode === 'dark' ? palette.nav : '#ffffff'
 
   return createTheme({
     palette: {
       mode,
       primary: {
         main: palette.primary,
-        dark: palette.primaryFill,
-        light: palette.primaryStrong,
-        contrastText: '#ffffff',
+        dark: mode === 'dark' ? palette.primaryFill : palette.primaryStrong,
+        light: mode === 'dark' ? palette.primaryStrong : palette.primaryFill,
+        contrastText: onMain,
       },
       secondary: {
         main: palette.accent,
-        contrastText: '#ffffff',
+        contrastText: onMain,
       },
       background: {
         default: palette.canvas,
@@ -135,12 +173,15 @@ export function createAppTheme(mode: PaletteMode) {
       text: {
         primary: palette.ink,
         secondary: palette.inkMuted,
+        disabled: alpha(palette.ink, 0.42),
       },
       divider: palette.border,
       action: {
         hover: alpha(palette.ink, mode === 'dark' ? 0.05 : 0.04),
         selected,
         focus: alpha(palette.primary, 0.2),
+        disabled: alpha(palette.ink, 0.38),
+        disabledBackground: alpha(palette.ink, 0.1),
       },
       success: { main: palette.success },
       warning: { main: palette.warning },
@@ -154,7 +195,10 @@ export function createAppTheme(mode: PaletteMode) {
         raised: palette.raised,
         selected,
         borderStrong: palette.borderStrong,
+        inputBorder: palette.inputBorder,
       },
+      fill: { primary: palette.primaryFill, primaryHover: palette.primaryFillHover, primaryText: '#ffffff' },
+      avatar: palette.avatar,
     },
     typography: {
       fontSize: 13,
@@ -167,7 +211,7 @@ export function createAppTheme(mode: PaletteMode) {
       },
       h1: {
         fontSize: '1.125rem',
-        fontWeight: 600,
+        fontWeight: 700,
         letterSpacing: '-0.01em',
         lineHeight: 1.35,
       },
@@ -188,16 +232,20 @@ export function createAppTheme(mode: PaletteMode) {
       caption: { fontSize: '0.75rem', lineHeight: 1.45, letterSpacing: 0 },
       overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: 1.6 },
     },
+    // Radii are 4 (small) or 8 (standard): `borderRadius: 1` or `2` in sx.
     shape: {
-      borderRadius: 6,
+      borderRadius: 4,
     },
     spacing: 8,
+    // MUI transitions (Dialog, Menu, Collapse, the tab indicator) follow the system's reduced-motion setting.
+    motion: { reducedMotion: 'system' },
     components: {
       MuiButtonBase: {
         defaultProps: { disableRipple: true },
         styleOverrides: {
           root: {
             '&:focus-visible': { outline: `2px solid ${palette.primary}`, outlineOffset: 1 },
+            [forcedColors]: { '&:focus-visible': { outlineColor: 'Highlight' } },
           },
         },
       },
@@ -212,6 +260,13 @@ export function createAppTheme(mode: PaletteMode) {
             scrollbarWidth: 'thin',
           },
           '::selection': { backgroundColor: alpha(palette.primary, 0.3) },
+          // High contrast replaces background colours, so states drawn only with a fill or a bar need a shape.
+          [forcedColors]: {
+            ':focus-visible': { outlineColor: 'Highlight' },
+            '[aria-current="true"], [aria-current="page"]': { outline: '2px solid Highlight', outlineOffset: -2 },
+            '[data-kind="add"]:not(.split-number)': { borderInlineStart: '3px solid CanvasText' },
+            '[data-kind="remove"]:not(.split-number)': { borderInlineStart: '3px dashed CanvasText' },
+          },
         },
       },
       MuiButton: {
@@ -221,26 +276,30 @@ export function createAppTheme(mode: PaletteMode) {
         },
         styleOverrides: {
           root: {
-            borderRadius: 6,
+            borderRadius: 4,
             fontWeight: 500,
             textTransform: 'none',
             whiteSpace: 'nowrap',
-            minHeight: 30,
+            minHeight: 32,
             padding: '4px 12px',
             fontSize: '0.8125rem',
-            '&.MuiButton-sizeSmall': { minHeight: 28, padding: '3px 10px', fontSize: '0.8125rem' },
+            '&.MuiButton-sizeSmall': { minHeight: 32, padding: '4px 12px', fontSize: '0.8125rem' },
           },
-          contained: { '&.MuiButton-colorPrimary': { backgroundColor: palette.primaryFill, color: '#ffffff', '&:hover': { backgroundColor: alpha(palette.primaryFill, 0.88) } } },
+          // The ring sits apart from the fill in the text colour, so it shows even when the fill is the focus colour.
+          // Disabled fills keep MUI's disabled colours, so a primary button never looks pressable while disabled.
+          contained: { '&:focus-visible': { outlineColor: palette.ink, outlineOffset: 2 }, [forcedColors]: { '&:focus-visible': { outlineColor: 'Highlight' } }, '&.MuiButton-colorPrimary:not(.Mui-disabled)': { backgroundColor: palette.primaryFill, color: '#ffffff', '&:hover': { backgroundColor: palette.primaryFillHover } } },
           outlined: { '&.MuiButton-colorPrimary': { borderColor: palette.borderStrong, color: palette.ink, '&:hover': { borderColor: palette.borderStrong, backgroundColor: alpha(palette.ink, 0.05) } } },
           text: { '&.MuiButton-colorPrimary': { color: mode === 'dark' ? palette.primaryStrong : palette.primary } },
-          startIcon: { marginRight: 6, '& > *:nth-of-type(1)': { fontSize: 16 } },
+          startIcon: { marginRight: 8, '& > *:nth-of-type(1)': { fontSize: 16 } },
         },
       },
       MuiIconButton: {
         defaultProps: { size: 'small' },
         styleOverrides: {
-          root: { borderRadius: 6, color: palette.inkMuted, '&:hover': { backgroundColor: alpha(palette.ink, 0.07), color: palette.ink } },
-          sizeSmall: { padding: 5, '& .MuiSvgIcon-root': { fontSize: 18 } },
+          root: { borderRadius: 4, color: palette.inkMuted, '&:hover': { backgroundColor: alpha(palette.ink, 0.07), color: palette.ink } },
+          // Only default-sized icons are set to 18px; an icon with fontSize="inherit" follows the button's own
+          // font size, so `<IconButton sx={{ fontSize: 14 }}><Icon fontSize="inherit" /></IconButton>` gives a 14px icon.
+          sizeSmall: { fontSize: 18, padding: 7, '& .MuiSvgIcon-fontSizeMedium': { fontSize: 18 } },
         },
       },
       MuiTooltip: {
@@ -275,24 +334,27 @@ export function createAppTheme(mode: PaletteMode) {
             fontSize: '0.6875rem',
           },
           label: {
-            paddingLeft: 6,
-            paddingRight: 6,
+            paddingLeft: 8,
+            paddingRight: 8,
           },
-          outlined: { borderColor: palette.borderStrong },
+          // Neutral chips are metadata such as labels; they recede behind titles and coloured states.
+          outlined: { borderColor: palette.borderStrong, '&.MuiChip-colorDefault': { color: palette.inkMuted, fontWeight: 400 } },
           filled: { '&.MuiChip-colorPrimary': { backgroundColor: palette.primaryFill, color: '#ffffff' } },
-          icon: { fontSize: 14, marginLeft: 5 },
+          icon: { fontSize: 14, marginLeft: 4 },
         },
       },
       MuiListItemButton: {
         styleOverrides: {
           root: {
-            borderRadius: 6,
+            borderRadius: 4,
             marginBottom: 1,
-            padding: '6px 10px',
+            minHeight: 32,
+            padding: '4px 8px',
             '&.Mui-selected': {
               backgroundColor: selected,
               '&:hover': { backgroundColor: mode === 'dark' ? alpha(palette.ink, 0.12) : alpha(palette.primary, 0.14) },
             },
+            [forcedColors]: { '&.Mui-selected': selectedOutline },
           },
         },
       },
@@ -306,8 +368,8 @@ export function createAppTheme(mode: PaletteMode) {
       },
       MuiTabs: {
         styleOverrides: {
-          root: { minHeight: 38 },
-          indicator: { height: 2, borderRadius: 2 },
+          root: { minHeight: 40 },
+          indicator: { height: 2, borderRadius: 2, [forcedColors]: { forcedColorAdjust: 'none', backgroundColor: 'Highlight' } },
         },
       },
       MuiTab: {
@@ -315,13 +377,15 @@ export function createAppTheme(mode: PaletteMode) {
           root: {
             fontSize: '0.8125rem',
             fontWeight: 500,
-            minHeight: 38,
+            minHeight: 40,
             minWidth: 0,
-            padding: '6px 12px',
+            padding: '8px 12px',
             textTransform: 'none',
             color: palette.inkMuted,
-            '&.Mui-selected': { color: palette.ink },
+            '&.Mui-selected': { color: palette.ink, fontWeight: 600 },
             '& .MuiTab-iconWrapper': { fontSize: 16 },
+            // Inside the ring of the tab, so the scrolling tab bar does not clip it.
+            '&:focus-visible': { outlineOffset: -2 },
           },
         },
       },
@@ -341,8 +405,8 @@ export function createAppTheme(mode: PaletteMode) {
           root: {
             backgroundColor: palette.raised,
             fontSize: '0.8125rem',
-            '& .MuiOutlinedInput-notchedOutline': { borderColor: palette.border },
-            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: palette.borderStrong },
+            '& .MuiOutlinedInput-notchedOutline': { borderColor: palette.inputBorder },
+            '&:hover:not(.Mui-focused, .Mui-error, .Mui-disabled) .MuiOutlinedInput-notchedOutline': { borderColor: palette.inkMuted },
             '& .MuiInputBase-inputSizeSmall': { paddingBottom: 6, paddingTop: 6 },
           },
         },
@@ -354,13 +418,13 @@ export function createAppTheme(mode: PaletteMode) {
         styleOverrides: { paper: { border: `1px solid ${palette.border}`, boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.12)}` } },
       },
       MuiMenuItem: {
-        styleOverrides: { root: { fontSize: '0.8125rem', minHeight: 30 } },
+        styleOverrides: { root: { fontSize: '0.8125rem', minHeight: 32, [forcedColors]: { '&.Mui-selected': selectedOutline } } },
       },
       MuiDialog: {
-        styleOverrides: { paper: { backgroundColor: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 10 } },
+        styleOverrides: { paper: { backgroundColor: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 8 } },
       },
       MuiDialogTitle: {
-        styleOverrides: { root: { fontSize: '0.9375rem', fontWeight: 600, padding: '14px 18px 8px' } },
+        styleOverrides: { root: { fontSize: '0.9375rem', fontWeight: 600, padding: '16px 24px 8px' } },
       },
       MuiAlert: {
         styleOverrides: {
@@ -369,13 +433,15 @@ export function createAppTheme(mode: PaletteMode) {
             border: '1px solid',
             borderColor: 'transparent',
             fontSize: '0.8125rem',
-            padding: '2px 10px',
+            padding: '0 12px',
             '&.MuiAlert-colorError': { borderColor: alpha(palette.error, 0.35) },
             '&.MuiAlert-colorWarning': { borderColor: alpha(palette.warning, 0.35) },
             '&.MuiAlert-colorInfo': { borderColor: alpha(palette.info, 0.35) },
             '&.MuiAlert-colorSuccess': { borderColor: alpha(palette.success, 0.35) },
+            // A toast floats over lists and diffs, so it needs its own opaque surface.
+            '.MuiSnackbar-root &': { backgroundColor: palette.raised, boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.16)}` },
           },
-          icon: { fontSize: 18, padding: '5px 0' },
+          icon: { fontSize: 18, padding: '8px 0' },
         },
       },
       MuiToggleButton: {
@@ -385,9 +451,11 @@ export function createAppTheme(mode: PaletteMode) {
             color: palette.inkMuted,
             fontSize: '0.75rem',
             fontWeight: 500,
-            padding: '3px 10px',
+            padding: '4px 12px',
             textTransform: 'none',
-            '&.Mui-selected': { backgroundColor: alpha(palette.ink, 0.08), color: palette.ink },
+            // The inset bar marks the choice by shape as well as by colour.
+            '&.Mui-selected': { backgroundColor: alpha(palette.ink, 0.1), boxShadow: `inset 0 -2px 0 ${palette.primary}`, color: palette.ink, fontWeight: 600 },
+            [forcedColors]: { '&.Mui-selected': selectedOutline },
           },
         },
       },

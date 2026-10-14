@@ -1,4 +1,4 @@
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined'
+import AltRouteRoundedIcon from '@mui/icons-material/AltRouteRounded'
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
@@ -16,13 +16,16 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { ListRow } from '../../components/ListRow'
+import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
+import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import type { BranchesQuery, GitLabBranch } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { useRememberedListState } from './listState'
 
 /**
  * Branches of one project, recently updated first. A row shows the MRs whose
@@ -31,9 +34,9 @@ import { useGitLabQuery } from '../shared/useGitLabQuery'
 export function BranchList({ navigation, onShowMergeRequests, projectId, projectName }: { navigation?: ReactNode; onShowMergeRequests: (branch: string) => void; projectId: string; projectName: string }) {
   const { session } = useConnection()
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
+  // Kept per project for the session, so returning from a branch's MRs shows the list as it was left.
+  const [conditions, setConditions] = useRememberedListState(`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:branches:${projectId}`, { page: 1, search: '', searchInput: '' })
+  const { page, search, searchInput } = conditions
   const [openError, setOpenError] = useState<string | null>(null)
   const query = useMemo<BranchesQuery>(() => ({ kind: 'branches', page, projectId, search }), [page, projectId, search])
   const result = useGitLabQuery(session?.id ?? null, session ? query : null)
@@ -58,7 +61,8 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
     return <PaneEmpty description="GitLabに接続すると、プロジェクトのブランチを表示できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
   }
 
-  const freshness = result.stale ? ' · 保存済みの一覧を表示中' : result.refreshing ? ' · 更新中…' : ''
+  const freshness = result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''
+  const clearSearch = () => setConditions({ page: 1, search: '', searchInput: '' })
   return (
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader
@@ -67,11 +71,11 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
         subtitle="更新の新しい順。行を選ぶと、そのブランチから作られたMRを表示します"
         title={`${projectName}のブランチ`}
       >
-        <Box component="form" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput.trim()); setPage(1) }}>
+        <Box component="form" onSubmit={(event) => { event.preventDefault(); setConditions({ page: 1, search: searchInput.trim() }) }}>
           <TextField
             fullWidth
             inputRef={searchInputRef}
-            onChange={(event) => setSearchInput(event.target.value)}
+            onChange={(event) => setConditions({ searchInput: event.target.value })}
             placeholder="ブランチ名"
             slotProps={{
               htmlInput: { 'aria-label': 'ブランチを検索' },
@@ -84,31 +88,31 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
           />
         </Box>
       </PaneHeader>
-      <PaneStatus>{result.data ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{freshness}</> : result.loading ? 'ブランチを読み込み中…' : null}</PaneStatus>
+      <PaneStatus announcement={result.data ? `ブランチ ${result.data.length}件（ページ ${page}）` : null}>{result.data ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{freshness}</> : result.loading ? 'ブランチを読み込み中…' : null}</PaneStatus>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
+        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
         {openError ? <Alert onClose={() => setOpenError(null)} severity="error" sx={{ m: 1.5 }}>GitLabで開けませんでした: {openError}</Alert> : null}
-        {result.data && result.data.length === 0 ? <PaneEmpty description={search ? '検索語を変えてください。' : 'このプロジェクトにはブランチがありません。'} icon={<AccountTreeOutlinedIcon fontSize="inherit" />} title={search ? '一致するブランチがありません' : 'ブランチはありません'} /> : null}
-        {result.data?.length ? <Box aria-label="ブランチ" component="ul" sx={{ m: 0, p: 0 }}>{result.data.map((branch) => <BranchRow branch={branch} key={branch.name} onOpenInGitLab={openInGitLab} onShowMergeRequests={onShowMergeRequests} />)}</Box> : null}
+        {result.data && result.data.length === 0 ? <PaneEmpty description={search ? `適用中の条件: 検索語「${search}」` : 'このプロジェクトにはブランチがありません。'} icon={<AltRouteRoundedIcon fontSize="inherit" />} title={search ? '一致するブランチがありません' : 'ブランチはありません'}>{search ? <Button onClick={clearSearch} variant="outlined">検索をクリア</Button> : null}</PaneEmpty> : null}
+        {result.data?.length ? <Box aria-label="ブランチ" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((branch) => <BranchRow branch={branch} key={branch.name} onOpenInGitLab={openInGitLab} onShowMergeRequests={onShowMergeRequests} />)}</Box> : null}
       </Box>
-      {result.data && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setPage(result.snapshot!.nextPage!)} onPrevious={() => setPage((value) => Math.max(1, value - 1))} page={page} /></Box> : null}
+      {result.data && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setConditions({ page: result.snapshot!.nextPage! })} onPrevious={() => setConditions({ page: Math.max(1, page - 1) })} page={page} /></Box> : null}
     </Box>
   )
 }
 
 function BranchRow({ branch, onOpenInGitLab, onShowMergeRequests }: { branch: GitLabBranch; onOpenInGitLab: (url: string) => Promise<void>; onShowMergeRequests: (branch: string) => void }) {
   const actions = branch.webUrl ? <Tooltip title="GitLabで開く"><IconButton aria-label={`${branch.name}をGitLabで開く`} onClick={() => void onOpenInGitLab(branch.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : undefined
-  return <ListRow actions={actions} ariaLabel={`${branch.name}のMRを表示`} leading={<AccountTreeOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
-    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
-      <Typography noWrap sx={{ flex: 1, fontFamily: 'typography.code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{branch.name}</Typography>
+  return <ListRow actions={actions} ariaLabel={`${branch.name}のMRを表示`} leading={<AltRouteRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+      <Tooltip enterDelay={600} title={branch.name}><Typography noWrap sx={{ flex: 1, fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{branch.name}</Typography></Tooltip>
       {branch.default ? <Chip label="デフォルト" size="small" variant="outlined" /> : null}
       {branch.protected ? <Chip label="保護" size="small" variant="outlined" /> : null}
       {branch.merged ? <Chip label="マージ済み" size="small" variant="outlined" /> : null}
       {branch.commit?.committedDate ? <RelativeTime value={branch.commit.committedDate} /> : null}
     </Stack>
-    {branch.commit ? <Typography color="text.secondary" component="div" noWrap sx={{ mt: 0.25 }} variant="caption">
-      <Box component="span" sx={{ fontFamily: 'typography.code.fontFamily' }}>{branch.commit.shortId}</Box> {branch.commit.title}{branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}
+    {branch.commit ? <Typography color="textSecondary" component="div" noWrap sx={{ mt: 0.25 }} title={`${branch.commit.shortId} ${branch.commit.title}${branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}`} variant="caption">
+      <Box component="span" sx={{ fontFamily: 'code.fontFamily' }}>{branch.commit.shortId}</Box> {branch.commit.title}{branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}
     </Typography> : null}
   </ListRow>
 }

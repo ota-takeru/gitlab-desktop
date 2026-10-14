@@ -1,0 +1,123 @@
+import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
+import DoneRoundedIcon from '@mui/icons-material/DoneRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
+import MarkChatUnreadOutlinedIcon from '@mui/icons-material/MarkChatUnreadOutlined'
+import Box from '@mui/material/Box'
+import ListItemButton from '@mui/material/ListItemButton'
+import Tooltip from '@mui/material/Tooltip'
+import Typography from '@mui/material/Typography'
+import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+
+import type { Diff } from '../../types/gitlab'
+import { fileRowLabel, threadLabel, type FileThreadCount } from './diffLineThreads'
+
+export interface FileEntry { diff: Diff; path: string }
+
+interface DirectoryNode { kind: 'directory'; name: string; path: string; children: TreeNode[] }
+interface FileNode { kind: 'file'; name: string; entry: FileEntry }
+type TreeNode = DirectoryNode | FileNode
+
+/**
+ * Changed files as a folder tree, as in GitLab's file browser: folders first,
+ * and a folder with only one folder inside shows as one row (`src/features`).
+ */
+export function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isReviewed, onSelect, threadCount }: { displayedPath: string | null; entries: FileEntry[]; expandAll: boolean; fileMark: (diff: Diff) => ReactNode; isReviewed: (path: string) => boolean; onSelect: (path: string) => void; threadCount?: (path: string) => FileThreadCount | undefined }) {
+  const tree = useMemo(() => buildFileTree(entries), [entries])
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const toggle = (path: string) => setCollapsed((current) => {
+    const next = new Set(current)
+    if (next.has(path)) next.delete(path)
+    else next.add(path)
+    return next
+  })
+  // The shown file's folders stay open, also when it is reached with next/previous file.
+  const isOpen = (path: string) => expandAll || !collapsed.has(path) || Boolean(displayedPath?.startsWith(`${path}/`))
+
+  const rows: ReactNode[] = []
+  const visit = (nodes: TreeNode[], depth: number) => {
+    for (const node of nodes) {
+      const indent = 1 + depth * 1.5
+      if (node.kind === 'directory') {
+        const open = isOpen(node.path)
+        rows.push(<ListItemButton aria-expanded={open} aria-label={`フォルダ ${node.path}`} key={`d:${node.path}`} onClick={() => toggle(node.path)} sx={{ gap: 0.5, pl: indent, pr: 1, py: 0.25 }} title={node.path}>
+          <Box component="span" sx={{ color: 'text.secondary', display: 'flex' }}>{open ? <ExpandMoreRoundedIcon fontSize="inherit" /> : <ChevronRightRoundedIcon fontSize="inherit" />}</Box>
+          <FolderOutlinedIcon fontSize="inherit" sx={{ color: 'text.secondary' }} />
+          <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="body2">{node.name}</Typography>
+        </ListItemButton>)
+        if (open) visit(node.children, depth + 1)
+        continue
+      }
+      const { diff, path } = node.entry
+      const selected = path === displayedPath
+      const threads = threadCount?.(path)
+      const reviewed = isReviewed(path)
+      rows.push(<ListItemButton aria-label={fileRowLabel(path, threads, reviewed)} key={`f:${diff.oldPath}\0${path}`} onClick={() => onSelect(path)} selected={selected} sx={{ gap: 1, pl: indent + 0.5, pr: 1, py: 0.25 }} title={diff.renamedFile ? `${diff.oldPath} → ${path}` : path}>
+        {fileMark(diff)}
+        <Typography noWrap sx={{ flex: 1, fontWeight: selected ? 600 : 400, minWidth: 0 }} variant="body2">{node.name}</Typography>
+        <FileThreadMark count={threads} />
+        {reviewed ? <Tooltip title="確認済み"><DoneRoundedIcon aria-label="確認済み" color="success" fontSize="small" /></Tooltip> : null}
+      </ListItemButton>)
+    }
+  }
+  visit(tree, 0)
+  return <>{rows}</>
+}
+
+/** Threads on a file; unresolved ones get their own icon, so the state does not rest on colour alone. */
+export function FileThreadMark({ count }: { count?: FileThreadCount }) {
+  if (!count?.total) return null
+  const label = threadLabel(count)
+  return <Tooltip title={label}>
+    <Box aria-label={label} component="span" data-unresolved={count.unresolved > 0 ? 'true' : undefined} role="img" sx={{ alignItems: 'center', color: count.unresolved ? 'warning.main' : 'text.secondary', display: 'inline-flex', flexShrink: 0, gap: 0.25, typography: 'caption' }}>
+      {count.unresolved ? <MarkChatUnreadOutlinedIcon fontSize="inherit" /> : <ChatBubbleOutlineRoundedIcon fontSize="inherit" />}
+      {count.unresolved || count.total}
+    </Box>
+  </Tooltip>
+}
+
+/** The files in the order the tree lists them: folders first, then by name. */
+export function fileTreeOrder(entries: FileEntry[]): FileEntry[] {
+  const files: FileEntry[] = []
+  const visit = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      if (node.kind === 'file') files.push(node.entry)
+      else visit(node.children)
+    }
+  }
+  visit(buildFileTree(entries))
+  return files
+}
+
+function buildFileTree(entries: FileEntry[]): TreeNode[] {
+  const root: DirectoryNode = { children: [], kind: 'directory', name: '', path: '' }
+  for (const entry of entries) {
+    const parts = entry.path.split('/')
+    let directory = root
+    for (const part of parts.slice(0, -1)) {
+      const path = directory.path ? `${directory.path}/${part}` : part
+      let child = directory.children.find((node): node is DirectoryNode => node.kind === 'directory' && node.path === path)
+      if (!child) {
+        child = { children: [], kind: 'directory', name: part, path }
+        directory.children.push(child)
+      }
+      directory = child
+    }
+    directory.children.push({ entry, kind: 'file', name: parts[parts.length - 1] })
+  }
+  return finish(root.children)
+}
+
+function finish(nodes: TreeNode[]): TreeNode[] {
+  return nodes.map((node) => {
+    if (node.kind === 'file') return node
+    let directory = node
+    while (directory.children.length === 1 && directory.children[0].kind === 'directory') {
+      const only: DirectoryNode = directory.children[0]
+      directory = { ...only, name: `${directory.name}/${only.name}` }
+    }
+    return { ...directory, children: finish(directory.children) }
+  }).sort((left, right) => left.kind === right.kind ? left.name.localeCompare(right.name) : left.kind === 'directory' ? -1 : 1)
+}

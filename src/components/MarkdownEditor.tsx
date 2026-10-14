@@ -34,6 +34,10 @@ export interface MarkdownEditorHandle {
 }
 
 interface MarkdownEditorProps {
+  /** The highlighted option of a suggestion list the input controls, such as mention candidates. */
+  activeDescendantId?: string | null
+  /** The id of that suggestion list while it is shown. */
+  controlsId?: string | null
   autoFocus?: boolean
   disabled?: boolean
   label: string
@@ -73,9 +77,9 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
   }
 
   return (
-    <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 1, minWidth: 0, '&:focus-within': { borderColor: 'primary.main' } }}>
+    <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'surface.inputBorder', borderRadius: 1, minWidth: 0, '&:focus-within': { borderColor: 'primary.main', outline: (theme) => `2px solid ${theme.palette.primary.main}`, outlineOffset: -1 } }}>
       {/* The editor grows with its text, so its toolbar stays in view below the MR header. */}
-      <Stack direction="row" sx={{ alignItems: 'center', bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider', borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.25, top: 'var(--detail-header-height, 0px)', zIndex: 1 }}>
+      <Stack direction="row" sx={{ alignItems: 'center', bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider', borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.25, top: 'var(--composer-sticky-top, var(--detail-header-height, 0px))', zIndex: 1 }}>
         <MarkdownToolbar
           disabled={disabled}
           onFormat={(format) => {
@@ -101,7 +105,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
         ? <RichInput {...inputProps} editorRef={richRef} handleRef={ref} onUnsupported={() => setRichBlocked(true)} />
         : <SourceInput {...inputProps} handleRef={ref} inputHandleRef={sourceRef} />}
       {richBlocked && preferredMode === 'rich' ? (
-        <Typography color="text.secondary" component="p" sx={{ borderTop: 1, borderColor: 'divider', px: 1.25, py: 0.5 }} variant="caption">
+        <Typography color="textSecondary" component="p" sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }} variant="caption">
           HTMLなどリッチ表示で保持できない記法を含むため、{label}をMarkdownのまま編集しています。
         </Typography>
       ) : null}
@@ -113,7 +117,7 @@ interface InputProps extends Omit<MarkdownEditorProps, 'ref' | 'toolbarEnd'> {
   handleRef?: Ref<MarkdownEditorHandle>
 }
 
-function RichInput({ autoFocus, disabled = false, editorRef, handleRef, label, onChange, onKeyDown, onMentionQueryChange, onPasteImage, onUnsupported, placeholder, value }: InputProps & { editorRef: { current: Editor | null }; onUnsupported: () => void }) {
+function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false, editorRef, handleRef, label, onChange, onKeyDown, onMentionQueryChange, onPasteImage, onUnsupported, placeholder, value }: InputProps & { editorRef: { current: Editor | null }; onUnsupported: () => void }) {
   const lastValueRef = useRef(value)
   const mentionRef = useRef<{ from: number; to: number } | null>(null)
   const callbacksRef = useRef({ onChange, onKeyDown, onMentionQueryChange, onPasteImage })
@@ -178,6 +182,15 @@ function RichInput({ autoFocus, disabled = false, editorRef, handleRef, label, o
     editor.setEditable(!disabled, false)
   }, [disabled, editor])
 
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    // ProseMirror only manages the attributes it set itself, so these stay until changed here.
+    const dom = wrapperRef.current?.querySelector('.ProseMirror')
+    if (!dom) return
+    setOptionalAttribute(dom, 'aria-activedescendant', activeDescendantId)
+    setOptionalAttribute(dom, 'aria-controls', controlsId)
+  }, [activeDescendantId, controlsId])
+
   useEffect(() => {
     // Follow changes made outside the editor: clearing after submit, restored or appended text.
     if (value === lastValueRef.current) return
@@ -202,14 +215,14 @@ function RichInput({ autoFocus, disabled = false, editorRef, handleRef, label, o
     },
   }), [editor])
 
-  return <Box sx={richEditorSx}><EditorContent editor={editor} /></Box>
+  return <Box ref={wrapperRef} sx={richEditorSx}><EditorContent editor={editor} /></Box>
 }
 
 interface SourceInputHandle {
   applyFormat: ReturnType<typeof useMarkdownFormatting>['applyFormat']
 }
 
-function SourceInput({ autoFocus, disabled = false, handleRef, inputHandleRef, label, onChange, onKeyDown, onMentionQueryChange, onPasteImage, placeholder, value }: InputProps & { inputHandleRef: { current: SourceInputHandle | null } }) {
+function SourceInput({ activeDescendantId, autoFocus, controlsId, disabled = false, handleRef, inputHandleRef, label, onChange, onKeyDown, onMentionQueryChange, onPasteImage, placeholder, value }: InputProps & { inputHandleRef: { current: SourceInputHandle | null } }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const valueRef = useRef(value)
   const mentionRef = useRef<{ start: number; end: number } | null>(null)
@@ -270,7 +283,7 @@ function SourceInput({ autoFocus, disabled = false, handleRef, inputHandleRef, l
       autoFocus={autoFocus}
       disabled={disabled}
       fullWidth
-      inputProps={{ 'aria-label': label }}
+      inputProps={{ 'aria-activedescendant': activeDescendantId ?? undefined, 'aria-controls': controlsId ?? undefined, 'aria-label': label }}
       inputRef={inputRef}
       minRows={2}
       multiline
@@ -291,10 +304,15 @@ function SourceInput({ autoFocus, disabled = false, handleRef, inputHandleRef, l
         onPasteImage(image)
       }}
       placeholder={placeholder}
-      sx={{ fontFamily: 'typography.code.fontFamily', fontSize: 'body2.fontSize', px: 1.25, py: 1 }}
+      sx={{ fontFamily: 'code.fontFamily', fontSize: 'body2.fontSize', px: 1, py: 1 }}
       value={value}
     />
   )
+}
+
+function setOptionalAttribute(element: Element, name: string, value: string | null | undefined) {
+  if (value) element.setAttribute(name, value)
+  else element.removeAttribute(name)
 }
 
 /** Office apps put a rendered image next to copied text; that text is pasted, not the image. */
@@ -333,11 +351,11 @@ const richEditorSx = {
     ...markdownBodySx('body2'),
     minHeight: 60,
     outline: 'none',
-    px: 1.25,
+    px: 1,
     py: 1,
-    '& p.is-editor-empty:first-of-type::before': { color: 'text.disabled', content: 'attr(data-placeholder)', float: 'left', height: 0, pointerEvents: 'none' },
+    '& p.is-editor-empty:first-of-type::before': { color: 'text.secondary', content: 'attr(data-placeholder)', float: 'left', height: 0, pointerEvents: 'none' },
     '& ul[data-type="taskList"]': { listStyle: 'none', pl: 0.5 },
-    '& ul[data-type="taskList"] li': { alignItems: 'flex-start', display: 'flex', gap: 0.75 },
+    '& ul[data-type="taskList"] li': { alignItems: 'flex-start', display: 'flex', gap: 1 },
     '& ul[data-type="taskList"] li > div': { flex: 1, minWidth: 0 },
     '& ul[data-type="taskList"] li > label': { lineHeight: 1, pt: 0.5 },
     '& ul[data-type="taskList"] li p, & td p, & th p': { my: 0 },
