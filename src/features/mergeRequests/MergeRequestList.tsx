@@ -11,6 +11,7 @@ import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined'
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -36,6 +37,7 @@ import type { ReactNode } from 'react'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
+import { delayedRevealSx, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
@@ -48,7 +50,7 @@ import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, write
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
 import { listTitle } from './listTitle'
-import { MergeRequestPreview } from './MergeRequestPreview'
+import { MergeRequestPreview, type PointerSpot } from './MergeRequestPreview'
 import { personalQueueFor, type PersonalQueue } from './personalQueue'
 import { GroupSearchPicker, ProjectSearchPicker, UserSearchPicker } from './SearchPickers'
 
@@ -118,7 +120,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   // Full paths of groups chosen in the picker; the condition itself keeps the ID.
   const [groupPaths, setGroupPaths] = useState<Record<string, string>>({})
   const query = useMemo<MergeRequestsQuery | null>(() => applied && session ? buildQuery(applied, session.user.id) : null, [applied, session])
-  const result = useGitLabQuery(session?.id ?? null, query)
+  const result = useGitLabQuery(session?.id ?? null, query, { keepPrevious: true })
 
   useEffect(() => {
     const focus = () => searchInputRef.current?.focus()
@@ -424,10 +426,10 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
         <DialogActions><Button onClick={() => setSavedSearchesOpen(false)}>閉じる</Button></DialogActions>
       </Dialog>
 
-      <PaneStatus announcement={result.data ? `MR ${result.data.length}件（ページ ${page}）` : null}>{result.data ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{freshness ? ` · ${freshness}` : ''}</> : result.loading ? 'MRを読み込み中…' : result.error ? '取得に失敗しました' : null}</PaneStatus>
+      <PaneStatus announcement={result.data && !result.previous ? `MR ${result.data.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{freshness ? ` · ${freshness}` : ''}</> : result.loading || result.previous ? 'MRを読み込み中…' : result.error ? '取得に失敗しました' : null}</PaneStatus>
       {/* The preview sits beside the results, so it hides none of them. */}
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, overflowY: 'auto' }}>
+      <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの結果を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
         {pipelineOpenError ? <Alert onClose={() => setPipelineOpenError(null)} severity="error" sx={{ m: 1.5 }}>CIパイプラインを開けませんでした: {pipelineOpenError}</Alert> : null}
@@ -436,7 +438,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
         {result.data && result.data.length === 0 ? <PaneEmpty description={<>適用中の条件: {conditionSummary(applied ?? { ...draft, page }, personalQueue, projectId)}<br />{searchTarget}</>} title="条件に一致するMRがありません">{conditionsChanged ? <Button onClick={resetConditions} variant="outlined">条件をクリア</Button> : null}</PaneEmpty> : null}
         {result.data?.length ? <MergeRequestResults currentUserId={session.user.id} grouping={personalQueue === 'waiting' ? 'mine' : personalQueue ? 'any' : null} mergeRequests={result.data} onFocusRow={(next) => setPreview((current) => current ? next : current)} onOpenMergeRequest={openMergeRequest} onOpenPipeline={openPipeline} onPreview={(next) => setPreview((current) => current?.mergeRequest.id === next.mergeRequest.id ? null : next)} orderBy={applied?.orderBy ?? 'updated_at'} personalWorkspace={personalWorkspace} previewing={preview?.mergeRequest ?? null} recentMrId={recentMrId} selected={selected ?? null} sessionId={session.id} showProject={!projectName} /> : null}
       </Box>
-      {preview ? <MergeRequestPreview approval={preview.approval} mergeRequest={preview.mergeRequest} onClose={closePreview} onOpen={() => openMergeRequest(preview.mergeRequest)} /> : null}
+      {preview ? <MergeRequestPreview approval={preview.approval} closeAt={preview.closeAt} mergeRequest={preview.mergeRequest} onClose={closePreview} onOpen={() => openMergeRequest(preview.mergeRequest)} /> : null}
       </Box>
       {result.data && (page > 1 || result.snapshot?.nextPage) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={(result.snapshot?.nextPage ?? null) !== null} hasPrevious={page > 1} onNext={() => updatePage(page + 1)} onPrevious={() => updatePage(Math.max(1, page - 1))} page={page} /></Box> : null}
     </Box>
@@ -521,7 +523,8 @@ interface RowApproval { byMe: boolean; count: number }
  * of the whole page come from one request; until they arrive the grouped queues
  * show placeholders instead of a flat list that would then reorder.
  */
-interface RowPreview { approval: string | null; mergeRequest: MergeRequest }
+/** `closeAt` is where the pointer opened the preview, so a second click there closes it. */
+interface RowPreview { approval: string | null; closeAt?: PointerSpot; mergeRequest: MergeRequest }
 
 function MergeRequestResults({ currentUserId, grouping, mergeRequests, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, personalWorkspace, previewing, recentMrId, selected, sessionId, showProject }: { currentUserId: string; grouping: 'mine' | 'any' | null; mergeRequests: MergeRequest[]; onFocusRow: (preview: RowPreview) => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: (preview: RowPreview) => void; orderBy: OrderBy; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: MergeRequest | null; recentMrId: string | null; selected: MrRef | null; sessionId: string; showProject: boolean }) {
   const itemsKey = mergeRequests.filter((mergeRequest) => mergeRequest.projectPath).map((mergeRequest) => `${mergeRequest.projectPath}!${mergeRequest.iid}`).join(' ')
@@ -541,7 +544,7 @@ function MergeRequestResults({ currentUserId, grouping, mergeRequests, onFocusRo
     approvalPending={approvalPending}
     key={`${mergeRequest.projectId}:${mergeRequest.iid}`}
     onFocusRow={() => onFocusRow({ approval: approvalText(approvalOf(mergeRequest), mergeRequest.state), mergeRequest })}
-    onPreview={() => onPreview({ approval: approvalText(approvalOf(mergeRequest), mergeRequest.state), mergeRequest })}
+    onPreview={(closeAt) => onPreview({ approval: approvalText(approvalOf(mergeRequest), mergeRequest.state), closeAt, mergeRequest })}
     mergeRequest={mergeRequest}
     onOpenMergeRequest={onOpenMergeRequest}
     onOpenPipeline={onOpenPipeline}
@@ -583,7 +586,7 @@ const ROW_ACTIONS_SPACE = 12
 /** Labels shown on a row before the rest fold into 「+N」. */
 const ROW_LABELS = 3
 
-function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, personalWorkspace, previewing, selected, showProject }: { approval: RowApproval | null; approvalPending: boolean; mergeRequest: MergeRequest; onFocusRow: () => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: () => void; orderBy: OrderBy; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: boolean; selected: boolean; showProject: boolean }) {
+function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, personalWorkspace, previewing, selected, showProject }: { approval: RowApproval | null; approvalPending: boolean; mergeRequest: MergeRequest; onFocusRow: () => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: (closeAt?: PointerSpot) => void; orderBy: OrderBy; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: boolean; selected: boolean; showProject: boolean }) {
   const ref = { iid: mergeRequest.iid, projectId: mergeRequest.projectId }
   const labels = mergeRequest.labels ?? []
   const hiddenLabels = labels.slice(ROW_LABELS)
@@ -600,7 +603,9 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
   return (
     <ListRow
       actions={<>
-        <Tooltip title="概要をプレビュー (Space)"><IconButton aria-label={`!${mergeRequest.iid}の概要をプレビュー`} onClick={onPreview}><VisibilityOutlinedIcon /></IconButton></Tooltip>
+        {previewing
+          ? <Tooltip title="概要を閉じる (Space / Esc)"><IconButton aria-label={`!${mergeRequest.iid}の概要を閉じる`} aria-pressed color="primary" onClick={() => onPreview()}><VisibilityOffOutlinedIcon /></IconButton></Tooltip>
+          : <Tooltip title="概要をプレビュー (Space)"><IconButton aria-label={`!${mergeRequest.iid}の概要をプレビュー`} onClick={(event) => onPreview(event.detail > 0 ? { x: event.clientX, y: event.clientY } : undefined)}><VisibilityOutlinedIcon /></IconButton></Tooltip>}
         {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
         {pinned ? null : pinButton}
       </>}
@@ -609,7 +614,7 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
       mrId={`${mergeRequest.projectId}-${mergeRequest.iid}`}
       onFocus={onFocusRow}
       onOpen={() => onOpenMergeRequest(mergeRequest)}
-      onPreview={onPreview}
+      onPreview={() => onPreview()}
       previewing={previewing}
       // The last line keeps ROW_ACTIONS_SPACE for the buttons itself.
       reserveActionsSpace={false}
@@ -656,7 +661,7 @@ function ApprovalStatus({ approval, pending, state }: { approval: RowApproval | 
 }
 
 function LoadingRows() {
-  return <Box aria-label="MRを読み込み中" role="status" sx={{ p: 1.5 }}><Stack spacing={1.5}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '60%' }} /></Stack>)}</Stack></Box>
+  return <Box aria-label="MRを読み込み中" role="status" sx={{ ...delayedRevealSx, p: 1.5 }}><Stack spacing={1.5}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '60%' }} /></Stack>)}</Stack></Box>
 }
 
 function shorten(text: string, length: number): string {

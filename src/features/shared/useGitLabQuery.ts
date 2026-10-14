@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo } from 'react'
 import { useQueryRefreshAllowed } from './QueryRefreshPolicy'
 
@@ -15,6 +15,8 @@ export interface GitLabQueryState<T> {
   snapshot: GitLabSnapshot<T> | null
   loading: boolean
   refreshing: boolean
+  /** The data belongs to the previous query of a `keepPrevious` caller while the current one loads. */
+  previous: boolean
   error: GitLabCommandError | null
   stale: boolean
   refresh: () => void
@@ -36,6 +38,7 @@ interface LoadedQuery<T> {
 export function useGitLabQuery<Q extends GitLabQuery>(
   sessionId: string | null,
   query: Q | null,
+  options: { keepPrevious?: boolean } = {},
 ): GitLabQueryState<GitLabQueryData<Q>> {
   const queryClient = useQueryClient()
   const autoRefresh = useQueryRefreshAllowed()
@@ -52,13 +55,19 @@ export function useGitLabQuery<Q extends GitLabQuery>(
       if (!sessionId || !query) {
         return Promise.reject(new GitLabCommandError({ code: 'AUTH_REQUIRED', message: 'GitLabに接続してください。' }))
       }
-      return fetchGitLabQuery(sessionId, query, signal, (snapshot) => {
+      // A refresh of data already on screen goes straight to the network: publishing
+      // the older disk copy first would flip the view to 「保存済み」 and back.
+      const shown = queryClient.getQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey)?.snapshot ?? null
+      return fetchGitLabQuery(sessionId, query, signal, shown, (snapshot) => {
         // Publish the cache hit while the network request is still in flight;
         // observers can render it immediately with `refreshing=true`.
         queryClient.setQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey, { error: null, snapshot })
       })
     },
     queryKey,
+    // Another page or filter of the same list keeps the rows on screen, marked as
+    // updating, instead of blanking them; only within one session.
+    placeholderData: options.keepPrevious ? (previous, previousQuery) => previousQuery?.queryKey[1] === (sessionId ?? '') ? keepPreviousData(previous) : undefined : undefined,
   })
 
   // Every hook without a query shares one disabled key, so nothing stored there belongs to the caller.
@@ -87,6 +96,7 @@ export function useGitLabQuery<Q extends GitLabQuery>(
     data: snapshot?.data ?? null,
     error: queryError,
     loading: loaded.isPending && !snapshot,
+    previous: loaded.isPlaceholderData && Boolean(snapshot),
     refreshing: loaded.isFetching && Boolean(snapshot),
     refresh,
     snapshot,
@@ -98,16 +108,17 @@ async function fetchGitLabQuery<Q extends GitLabQuery>(
   sessionId: string,
   query: Q,
   signal: AbortSignal,
+  shown: GitLabSnapshot<GitLabQueryData<Q>> | null,
   onCached: (snapshot: GitLabSnapshot<GitLabQueryData<Q>>) => void,
 ): Promise<LoadedQuery<GitLabQueryData<Q>>> {
   const requestId = createRequestId('query')
   const cancel = () => { void cancelGitLabRequest(sessionId, requestId) }
   signal.addEventListener('abort', cancel, { once: true })
 
-  let cached: GitLabSnapshot<GitLabQueryData<Q>> | null = null
+  let cached: GitLabSnapshot<GitLabQueryData<Q>> | null = shown
   try {
     throwIfAborted(signal)
-    try {
+    if (!shown) try {
       cached = await queryGitLab({ mode: 'cache', query, requestId, sessionId })
       throwIfAborted(signal)
       if (cached) onCached(cached)

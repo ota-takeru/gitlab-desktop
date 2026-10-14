@@ -30,6 +30,7 @@ import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { ClientNavItem } from '../components/ClientNavItem'
 import { useConfirm } from '../components/Feedback'
 import { PaneEmpty } from '../components/Pane'
+import { delayedRevealSx } from '../components/paneSx'
 import { useReorder } from '../components/useReorder'
 import { SettingsSection } from '../components/SettingsSection'
 import { StatusBar } from '../components/StatusBar'
@@ -150,7 +151,7 @@ export function ClientApp(props: ClientAppProps) {
   const { colorPreference, onColorPreferenceChange }: ColorPreferenceProps = 'colorPreference' in props
     ? props
     : { colorPreference: props.mode, onColorPreferenceChange: (next) => { if (next !== props.mode && next !== 'system') props.onModeChange() } }
-  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } }, queryCache: trackConnectivity() }))
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { gcTime: 15 * 60_000, refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } }, queryCache: trackConnectivity() }))
   useEffect(() => {
     const handleWorkspaceReset = () => clearComposerBuffers()
     globalThis.addEventListener('gitlab-explicit-logout', handleWorkspaceReset)
@@ -785,7 +786,7 @@ function describeMergeRequestFailure(error: GitLabCommandError | null): { title:
 /** Placeholder with the shape of the MR detail header, so the detail does not jump in. */
 function MergeRequestSkeleton() {
   const bar = (width: number | string, height = 12) => <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height, width }} />
-  return <Box aria-live="polite" role="status" sx={{ borderBottom: 1, borderColor: 'divider', px: { md: 3, xs: 2 }, pb: 1.5, pt: 1.5 }}>
+  return <Box aria-live="polite" role="status" sx={{ ...delayedRevealSx, borderBottom: 1, borderColor: 'divider', px: { md: 3, xs: 2 }, pb: 1.5, pt: 1.5 }}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
       <Typography color="textSecondary" variant="caption">MRを読み込み中…</Typography>
     </Stack>

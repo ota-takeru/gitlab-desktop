@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
+import { paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { formatFetchedAt } from '../../lib/format'
@@ -50,7 +51,7 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
     page,
     search: search.trim(),
   }), [includeArchived, membershipOnly, page, search])
-  const result = useGitLabQuery(session?.id ?? null, query)
+  const result = useGitLabQuery(session?.id ?? null, query, { keepPrevious: true })
   const projects = useMemo(() => result.data ?? [], [result.data])
 
   const rememberLabels = (keepIds: string[], project: Project) => {
@@ -132,9 +133,9 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
 
       {pinned.length > 0 || recent.length > 0 ? <ProjectShortcuts ids={pinned} label="お気に入り" labelOf={shortcutLabel} onOpen={openProjectId} secondaryIds={recent} secondaryLabel="最近" /> : null}
       {/* GitLab returns the projects most recently active first. */}
-      <PaneStatus announcement={result.data ? `プロジェクト ${projects.length}件（ページ ${page}）` : null}>{result.data ? <>{projects.length}件取得 · 最近の活動順{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</> : result.loading ? 'プロジェクトを読み込み中…' : null}</PaneStatus>
+      <PaneStatus announcement={result.data && !result.previous ? `プロジェクト ${projects.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{projects.length}件取得 · 最近の活動順{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</> : result.loading || result.previous ? 'プロジェクトを読み込み中…' : null}</PaneStatus>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
         {!result.loading && !result.data && !result.error ? <PaneEmpty description="検索条件を変えるか、別のページを取得してください。" icon={<SourceOutlinedIcon fontSize="inherit" />} title="プロジェクトがありません" /> : null}

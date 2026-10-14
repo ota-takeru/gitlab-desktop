@@ -7,7 +7,7 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { RelativeTime } from '../../components/RelativeTime'
@@ -20,7 +20,23 @@ import type { MergeRequest } from '../../types/gitlab'
  * fetched, so it appears at once. Space on a row toggles it; while it is open
  * it follows the focused row, and Escape closes it.
  */
-export function MergeRequestPreview({ approval, mergeRequest, onClose, onOpen }: { approval: string | null; mergeRequest: MergeRequest; onClose: () => void; onOpen: () => void }) {
+export function MergeRequestPreview({ approval, closeAt, mergeRequest, onClose, onOpen }: { approval: string | null; closeAt?: PointerSpot; mergeRequest: MergeRequest; onClose: () => void; onOpen: () => void }) {
+  const rootRef = useRef<HTMLElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const [closeSpot, setCloseSpot] = useState<{ left: number; top: number } | null>(null)
+  useLayoutEffect(() => {
+    // Opening the preview narrows the list, so the button that was clicked moves away
+    // from the pointer; a close button appears where the pointer still is instead.
+    const root = rootRef.current
+    if (!closeAt || !root) { setCloseSpot(null); return }
+    const box = root.getBoundingClientRect()
+    const headerBottom = headerRef.current?.offsetHeight ?? 0
+    const half = CLOSE_SPOT_SIZE / 2
+    setCloseSpot({
+      left: Math.min(Math.max(closeAt.x - box.left - half, 0), Math.max(box.width - CLOSE_SPOT_SIZE, 0)),
+      top: Math.min(Math.max(closeAt.y - box.top - half, headerBottom), Math.max(box.height - CLOSE_SPOT_SIZE, headerBottom)),
+    })
+  }, [closeAt])
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
@@ -36,8 +52,10 @@ export function MergeRequestPreview({ approval, mergeRequest, onClose, onOpen }:
   ].filter(Boolean)
 
   return (
-    <Box aria-label={`!${mergeRequest.iid}の概要`} component="aside" sx={{ bgcolor: 'background.paper', borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0, width: 'min(520px, 50%)' }}>
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
+    <Box aria-label={`!${mergeRequest.iid}の概要`} component="aside" ref={rootRef} sx={{ bgcolor: 'background.paper', borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0, position: 'relative', width: 'min(520px, 50%)' }}>
+      {/* Keyboard and screen reader users close with Esc or the header's button; this one only saves pointer travel. */}
+      {closeSpot ? <Tooltip title="閉じる (Esc)"><IconButton aria-hidden onClick={onClose} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'divider', boxShadow: 2, left: closeSpot.left, position: 'absolute', top: closeSpot.top, zIndex: 1, '&:hover': { bgcolor: 'surface.raised' } }} tabIndex={-1}><CloseRoundedIcon /></IconButton></Tooltip> : null}
+      <Stack direction="row" ref={headerRef} spacing={0.5} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
         <Tooltip title={`${mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`} !${mergeRequest.iid}`}><Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`} !{mergeRequest.iid}</Typography></Tooltip>
         <Button onClick={onOpen} size="small" startIcon={<OpenInFullRoundedIcon />} variant="contained">MRを開く</Button>
         <Tooltip title="閉じる (Esc)"><IconButton aria-label="概要を閉じる" onClick={onClose}><CloseRoundedIcon /></IconButton></Tooltip>
@@ -60,3 +78,9 @@ export function MergeRequestPreview({ approval, mergeRequest, onClose, onOpen }:
     </Box>
   )
 }
+
+/** A pointer position in viewport coordinates. */
+export interface PointerSpot { x: number; y: number }
+
+/** The theme's icon button size. */
+const CLOSE_SPOT_SIZE = 32

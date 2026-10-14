@@ -37,7 +37,7 @@ beforeEach(() => {
 it('lists branches with their state and latest commit, and searches by name', () => {
   render(<BranchList onShowMergeRequests={vi.fn()} projectId="7" projectName="group/project" />)
 
-  expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: '' })
+  expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: '' }, { keepPrevious: true })
   expect(screen.getByRole('heading', { name: 'group/projectのブランチ' })).toBeInTheDocument()
   expect(screen.getByText('2件取得')).toBeInTheDocument()
   expect(screen.getByText('マージ済み')).toBeInTheDocument()
@@ -47,7 +47,7 @@ it('lists branches with their state and latest commit, and searches by name', ()
 
   fireEvent.change(screen.getByRole('textbox', { name: 'ブランチを検索' }), { target: { value: ' feat ' } })
   fireEvent.click(screen.getByRole('button', { name: '検索' }))
-  expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: 'feat' })
+  expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: 'feat' }, { keepPrevious: true })
 })
 
 it('opens the MRs of a branch from its row and the branch on GitLab from its action', async () => {
@@ -93,5 +93,5 @@ it('keeps the search of each project when its branches are opened again', () => 
 
   render(<BranchList onShowMergeRequests={vi.fn()} projectId="7" projectName="group/project" />)
   expect(screen.getByRole('textbox', { name: 'ブランチを検索' })).toHaveValue('feat')
-  expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: 'feat' })
+  expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: 'feat' }, { keepPrevious: true })
 })

@@ -32,6 +32,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useConfirm, useNotify } from '../../components/Feedback'
 import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { delayedRevealSx } from '../../components/paneSx'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StatusPill } from '../../components/StatusPill'
@@ -1106,7 +1107,7 @@ function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description
   </Box>
 }
 
-function LoadingPanel({ label }: { label: string }) { return <Typography color="textSecondary" role="status" sx={{ py: 2 }} variant="body2">{label}</Typography> }
+function LoadingPanel({ label }: { label: string }) { return <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">{label}</Typography> }
 
 function normalizePosition(position: Position, mergeRequest: MergeRequest): Position {
   return { ...position, baseSha: mergeRequest.diffRefs?.baseSha ?? position.baseSha, headSha: mergeRequest.diffRefs?.headSha ?? position.headSha, startSha: mergeRequest.diffRefs?.startSha ?? position.startSha }

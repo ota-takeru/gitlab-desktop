@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
+import { paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { formatFetchedAt } from '../../lib/format'
@@ -39,7 +40,7 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
   const { page, search, searchInput } = conditions
   const [openError, setOpenError] = useState<string | null>(null)
   const query = useMemo<BranchesQuery>(() => ({ kind: 'branches', page, projectId, search }), [page, projectId, search])
-  const result = useGitLabQuery(session?.id ?? null, session ? query : null)
+  const result = useGitLabQuery(session?.id ?? null, session ? query : null, { keepPrevious: true })
 
   useEffect(() => {
     const focus = () => searchInputRef.current?.focus()
@@ -88,8 +89,8 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
           />
         </Box>
       </PaneHeader>
-      <PaneStatus announcement={result.data ? `ブランチ ${result.data.length}件（ページ ${page}）` : null}>{result.data ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{freshness}</> : result.loading ? 'ブランチを読み込み中…' : null}</PaneStatus>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <PaneStatus announcement={result.data && !result.previous ? `ブランチ ${result.data.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{freshness}</> : result.loading || result.previous ? 'ブランチを読み込み中…' : null}</PaneStatus>
+      <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
         {openError ? <Alert onClose={() => setOpenError(null)} severity="error" sx={{ m: 1.5 }}>GitLabで開けませんでした: {openError}</Alert> : null}

@@ -90,11 +90,11 @@ describe('ProjectView', () => {
 
     render(<ProjectView onOpenProject={vi.fn()} />)
     expect(screen.getByRole('textbox', { name: 'プロジェクトを検索' })).toHaveValue('platform')
-    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: true, search: 'platform' }))
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: true, search: 'platform' }), { keepPrevious: true })
     expect(screen.getByText(/適用中の条件: 検索語「platform」 · 参加中のみ · アーカイブ済みを含む/u)).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: '条件をクリア' })[0])
-    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: false, membership: true, page: 1, search: '' }))
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: false, membership: true, page: 1, search: '' }), { keepPrevious: true })
     expect(screen.queryByRole('button', { name: '条件をクリア' })).not.toBeInTheDocument()
   })
 

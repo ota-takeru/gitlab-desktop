@@ -46,6 +46,8 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
         position: 'relative',
         '&:hover .list-row-actions, &:focus-within .list-row-actions': { bgcolor: 'surface.raised', borderColor: 'divider' },
         '&:hover .list-row-hover-actions, &:focus-within .list-row-hover-actions': { maxWidth: 240, opacity: 1 },
+        // The previewed row keeps its buttons where they were, so the one that opened the preview closes it without moving the pointer.
+        ...(previewing ? { '& .list-row-actions': { bgcolor: 'surface.raised', borderColor: 'divider' }, '& .list-row-hover-actions': { maxWidth: 240, opacity: 1 } } : {}),
         // Selected is a solid bar; previewed is a dashed outline, so the two differ in shape as well as colour.
         '&::before': selected ? { bgcolor: 'primary.main', borderRadius: 1, bottom: 6, content: '""', left: 0, position: 'absolute', top: 6, width: 3 } : undefined,
         '&::after': previewing ? { border: 1, borderColor: 'text.secondary', borderRadius: 1, borderStyle: 'dashed', content: '""', inset: 2, pointerEvents: 'none', position: 'absolute' } : undefined,

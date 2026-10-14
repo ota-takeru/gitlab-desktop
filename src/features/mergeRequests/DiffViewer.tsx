@@ -141,9 +141,10 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
     })
   }
 
-  const rows = parsed.lines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE)
+  // One array per page, so the split view's row pairing is not rebuilt on every render.
+  const rows = useMemo(() => parsed.lines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, parsed])
   const language = displayedPath ? languageForPath(displayedPath) : null
-  const rowTokens = useMemo(() => highlightDiffLines(parsed.lines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), language), [diffOffset, language, parsed])
+  const rowTokens = useMemo(() => highlightDiffLines(rows, language), [language, rows])
   const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
   const lineCounts = useMemo(() => ({ added: parsed.lines.filter((line) => line.kind === 'add').length, removed: parsed.lines.filter((line) => line.kind === 'remove').length }), [parsed])
   const commentsEnabled = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'

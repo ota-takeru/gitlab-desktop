@@ -11,6 +11,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
+import { paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StatusPill, type StatusTone } from '../../components/StatusPill'
@@ -27,11 +28,11 @@ export function TodoView({ navigation, onOpen, selected = null }: { navigation?:
   const { session } = useConnection()
   const [page, setPage] = useState(1)
   const query = useMemo(() => session ? ({ kind: 'todos' as const, page }) : null, [page, session])
-  const result = useGitLabQuery(session?.id ?? null, query)
+  const result = useGitLabQuery(session?.id ?? null, query, { keepPrevious: true })
   return <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
     <PaneHeader navigation={navigation} actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={!session || result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} subtitle="GitLabの未完了To-DoにあるMRへのメンション・承認依頼など" title="To-Do" />
-    <PaneStatus announcement={result.data ? `To-Do ${result.data.length}件（ページ ${page}）` : null}>{result.data ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}</> : result.loading ? 'To-Doを読み込み中…' : null}</PaneStatus>
-    <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+    <PaneStatus announcement={result.data && !result.previous ? `To-Do ${result.data.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}</> : result.loading || result.previous ? 'To-Doを読み込み中…' : null}</PaneStatus>
+    <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
       {!session ? <Alert severity="info" sx={{ m: 1.5 }}>設定でGitLabに接続してください。</Alert> : null}
       {result.error ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity={result.data ? 'warning' : 'error'} sx={{ m: 1.5 }}>{result.data ? `保存済みのTo-Doを表示中です。更新に失敗しました: ${result.error.message}` : result.error.message}</Alert> : null}
       {result.data && result.data.length === 0 ? <PaneEmpty description="このページに未完了のMR To-Doはありません。" icon={<InboxOutlinedIcon fontSize="inherit" />} title="To-Doはありません" /> : null}
