@@ -40,6 +40,23 @@ describe('fixture IPC', () => {
     expect(after!.data[0].notes.at(-1)?.body).toBe('返信')
   })
 
+  it('answers label and milestone candidates and applies merge operations to its own copy', async () => {
+    installFixtureIpc('ready')
+    const labels = await queryGitLab({ mode: 'network', query: { kind: 'labels', page: 1, projectId: mr.projectId, search: 'perf' }, sessionId: 'fixture-session' })
+    expect(labels!.data.map((label) => label.name)).toEqual(['performance'])
+    expect(labels!.data[0].color).toMatch(/^#[0-9a-f]{6}$/u)
+    const milestones = await queryGitLab({ mode: 'network', query: { kind: 'milestones', page: 1, projectId: mr.projectId, search: '' }, sessionId: 'fixture-session' })
+    expect(milestones!.data.length).toBeGreaterThan(0)
+
+    const query = { kind: 'mr' as const, ...mr }
+    const before = (await queryGitLab({ mode: 'network', query, sessionId: 'fixture-session' }))!.data
+    await expect(mutateGitLab({ action: { expectedTitle: 'changed elsewhere', kind: 'setTitle', title: 'New', ...mr }, sessionId: 'fixture-session' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await mutateGitLab({ action: { expectedTitle: before.title, kind: 'setTitle', title: `Draft: ${before.title}`, ...mr }, sessionId: 'fixture-session' })
+    await mutateGitLab({ action: { kind: 'setState', stateEvent: 'close', ...mr }, sessionId: 'fixture-session' })
+    const after = (await queryGitLab({ mode: 'network', query, sessionId: 'fixture-session' }))!.data
+    expect(after).toMatchObject({ draft: true, state: 'closed', title: `Draft: ${before.title}` })
+  })
+
   it('serves stale cache with a failing refresh, and empty collections', async () => {
     installFixtureIpc('stale')
     const cached = await queryGitLab({ mode: 'cache', query: { kind: 'mr', ...mr }, sessionId: 'fixture-session' })

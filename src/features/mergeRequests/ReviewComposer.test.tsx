@@ -260,4 +260,19 @@ describe('ReviewComposer', () => {
     expect(onChange).not.toHaveBeenCalled()
     expect(onDetachedAttachment).toHaveBeenCalledWith('![screen.png](/uploads/screen.png)')
   })
+
+  it.each(['source', 'rich'])('inserts a suggestion of the commented lines in the %s editor', async (mode) => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, mode)
+    const onChange = vi.fn()
+    const position = { baseSha: 'a', headSha: 'b', newLine: 13, newPath: 'src/a.ts', oldPath: 'src/a.ts', positionType: 'text' as const, startSha: 'c' }
+    render(<ReviewComposer inlineTarget onCancelReply={() => undefined} onChange={onChange} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} suggestionLines={() => ['  if (cached) {', '    return cached.value']} targetPosition={position} value="" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '提案を挿入' }))
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith('```suggestion:-1+0\n  if (cached) {\n    return cached.value\n```'))
+  })
+
+  it('offers no suggestion on a comment that ends on a removed line', () => {
+    render(<ReviewComposer inlineTarget onCancelReply={() => undefined} onChange={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} suggestionLines={null} value="" />)
+    expect(screen.getByRole('button', { name: '提案を挿入' })).toBeDisabled()
+  })
 })

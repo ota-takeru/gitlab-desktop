@@ -32,7 +32,10 @@ import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
 import { highlightLines, languageForPath, type SyntaxToken } from '../../lib/syntaxHighlight'
-import { parseDiff, splitFileLines, type ParsedLine } from './diffParser'
+import { ignoreWhitespace as ignoreWhitespaceChanges, parseDiff, splitFileLines, type DiffHunk, type ParsedDiff, type ParsedLine } from './diffParser'
+import { positionLines } from './diffLineThreads'
+import type { SuggestionActions } from './SuggestionBlock'
+import { positionIndexRange, rangePosition } from './suggestions'
 import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
 
 export const DIFF_PAGE_SIZE = 600
@@ -40,7 +43,7 @@ export const FILE_PAGE_SIZE = 1000
 /** Keep the file list and code inside the window so long diffs scroll in place. */
 /** Below the MR header, which stays at the top of the detail while it scrolls. */
 const BELOW_DETAIL_HEADER = 'calc(var(--detail-header-height, 0px) + 8px)'
-const EMPTY_PARSED_DIFF = { lines: [], status: 'valid' as const }
+const EMPTY_PARSED_DIFF: ParsedDiff = { lines: [], status: 'valid' }
 
 interface DiffViewerProps {
   allowComments?: boolean
@@ -72,17 +75,28 @@ interface DiffViewerProps {
    * from `fileContent`.
    */
   fileSource?: { sessionId: string; projectId: string; sha: string }
+  /** Applying the suggestions in the threads shown under the lines. */
+  suggestionActions?: SuggestionActions
 }
 
-export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, fileSource, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, view }: DiffViewerProps) {
+export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, fileSource, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, suggestionActions, view }: DiffViewerProps) {
   const selectedDiffIndex = diffs.findIndex((diff) => (diff.newPath || diff.oldPath) === selectedFile)
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
   const displayedPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
-  const diffKey = selectedDiff ? `${displayedPath}\0${selectedDiff.diff}` : ''
+  // GitLab's diff API has no whitespace option, so whitespace-only changes are folded here.
+  const [whitespaceIgnored, setWhitespaceIgnored] = useState(readIgnoreWhitespace)
+  const toggleWhitespace = () => {
+    setWhitespaceIgnored(!whitespaceIgnored)
+    saveIgnoreWhitespace(!whitespaceIgnored)
+  }
+  const folded = useMemo(() => whitespaceIgnored ? ignoreWhitespaceChanges(parsed.lines) : null, [parsed, whitespaceIgnored])
+  const displayLines = folded?.lines ?? parsed.lines
+  const whitespaceOnlyFile = Boolean(folded && !folded.changed && parsed.lines.some((line) => line.kind !== 'context'))
+  const diffKey = selectedDiff ? `${displayedPath}\0${selectedDiff.diff}\0${whitespaceIgnored}` : ''
   const positionKey = selectedPosition ? `${selectedPosition.newPath}:${selectedPosition.oldPath}:${selectedPosition.oldLine ?? ''}:${selectedPosition.newLine ?? ''}` : ''
-  const selectedLineIndex = useMemo(() => parsed.status === 'valid' && selectedPosition ? parsed.lines.findIndex((line) => matchesPosition(line, selectedPosition)) : -1, [parsed, selectedPosition])
+  const selectedLineIndex = useMemo(() => parsed.status === 'valid' && selectedPosition ? displayLines.findIndex((line) => matchesPosition(line, selectedPosition)) : -1, [displayLines, parsed.status, selectedPosition])
   const [diffSearch, setDiffSearch] = useState('')
   const [fileSearch, setFileSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState<{ query: string; path: string; lineIndex: number } | null>(null)
@@ -90,8 +104,11 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
   // page of diffs rather than on every keystroke.
   const searching = Boolean(diffSearch.trim())
   const searchableLines = useMemo(() => searching
-    ? diffs.map((diff) => parseDiff(diff.diff, diff.oldPath, diff.newPath).lines.map((line) => line.text.toLocaleLowerCase()))
-    : [], [diffs, searching])
+    ? diffs.map((diff) => {
+      const lines = parseDiff(diff.diff, diff.oldPath, diff.newPath).lines
+      return (whitespaceIgnored ? ignoreWhitespaceChanges(lines).lines : lines).map((line) => line.text.toLocaleLowerCase())
+    })
+    : [], [diffs, searching, whitespaceIgnored])
   const searchMatches = useMemo(() => {
     const query = diffSearch.trim().toLocaleLowerCase()
     if (!query) return [] as Array<{ path: string; lineIndex: number }>
@@ -142,16 +159,105 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
   }
 
   // One array per page, so the split view's row pairing is not rebuilt on every render.
-  const rows = useMemo(() => parsed.lines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, parsed])
+  const rows = useMemo(() => displayLines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, displayLines])
   const language = displayedPath ? languageForPath(displayedPath) : null
   const rowTokens = useMemo(() => highlightDiffLines(rows, language), [language, rows])
   const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
-  const lineCounts = useMemo(() => ({ added: parsed.lines.filter((line) => line.kind === 'add').length, removed: parsed.lines.filter((line) => line.kind === 'remove').length }), [parsed])
-  const commentsEnabled = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
+  const lineCounts = useMemo(() => ({ added: displayLines.filter((line) => line.kind === 'add').length, removed: displayLines.filter((line) => line.kind === 'remove').length }), [displayLines])
+  const commentable = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
+  // Folded whitespace changes move lines, so new line comments wait until whitespace is shown again.
+  const commentsEnabled = commentable && !whitespaceIgnored
   const lineThreads = useMemo(() => threadsByLine(discussions, selectedDiff, discussionHeadSha), [discussionHeadSha, discussions, selectedDiff])
   const composer = commentsEnabled && lineComposer ? { key: lineKey(lineComposer.position), node: lineComposer.node, position: lineComposer.position } : undefined
   const draftsByLine = useMemo(() => pendingDraftsByLine(pendingDrafts, selectedDiff, discussionHeadSha), [discussionHeadSha, pendingDrafts, selectedDiff])
-  const threadView = (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, sessionId: fileSource?.sessionId, threads: lineThreads.byLine } : undefined
+  const threadView = (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, sessionId: fileSource?.sessionId, suggestionActions, threads: lineThreads.byLine } : undefined
+
+  // Lines chosen for a comment: the open editor's lines, or a range being chosen
+  // with Shift+click, Shift+↑/↓ on the 「+」 buttons, or by dragging over the gutter.
+  const hunks = parsed.hunks ?? NO_HUNKS
+  const [lineChoice, setLineChoice] = useState<{ diffKey: string; anchor: number; focus: number | null } | null>(null)
+  const choice = lineChoice?.diffKey === diffKey ? lineChoice : null
+  const composerPosition = composer && selectedDiff && (composer.position.newPath === selectedDiff.newPath || composer.position.oldPath === selectedDiff.oldPath) ? composer.position : undefined
+  const composerRange = useMemo(() => composerPosition ? positionIndexRange(displayLines, composerPosition) : null, [composerPosition, displayLines])
+  const chosenRange: [number, number] | null = choice && choice.focus !== null ? [Math.min(choice.anchor, choice.focus), Math.max(choice.anchor, choice.focus)] : composerRange
+  const sameHunk = (first: number, second: number) => {
+    const left = displayLines[first]
+    const right = displayLines[second]
+    return Boolean(left?.commentable && right?.commentable && left.hunk !== undefined && left.hunk === right.hunk)
+  }
+  const commentOnLines = (first: number, second: number) => {
+    const position = rangePosition(displayLines, hunks, Math.min(first, second), Math.max(first, second))
+    if (position) onComment(position)
+  }
+  const dragStart = useRef<number | null>(null)
+  const focusAfterRender = useRef<number | null>(null)
+  const latestChoice = useRef({ choice, commentOnLines, diffKey })
+  useLayoutEffect(() => { latestChoice.current = { choice, commentOnLines, diffKey } })
+  useLayoutEffect(() => {
+    const target = focusAfterRender.current
+    if (target === null) return
+    focusAfterRender.current = null
+    diffScrollRef.current?.querySelector<HTMLElement>(`[data-line-action="${target}"]`)?.focus()
+  })
+  useEffect(() => {
+    // A drag over several lines comments on them when the button is released.
+    const finishDrag = () => {
+      const start = dragStart.current
+      dragStart.current = null
+      const { choice: current, commentOnLines: comment, diffKey: key } = latestChoice.current
+      if (start === null || !current || current.anchor !== start || current.focus === null || current.focus === start) return
+      setLineChoice({ anchor: start, diffKey: key, focus: null })
+      comment(start, current.focus)
+    }
+    window.addEventListener('mouseup', finishDrag)
+    return () => window.removeEventListener('mouseup', finishDrag)
+  }, [])
+  const lineSelection: LineSelection = {
+    isChosen: (index) => chosenRange !== null && index >= chosenRange[0] && index <= chosenRange[1],
+    onAction: (index, event) => {
+      // Enter on the last line of a range chosen with Shift+↑/↓ comments on the range.
+      if (choice && choice.focus === index && choice.anchor !== index && sameHunk(choice.anchor, index)) {
+        setLineChoice({ anchor: choice.anchor, diffKey, focus: null })
+        commentOnLines(choice.anchor, index)
+        return
+      }
+      const anchor = event.shiftKey ? choice?.anchor ?? composerRange?.[1] : undefined
+      if (anchor !== undefined && anchor !== index && sameHunk(anchor, index)) {
+        setLineChoice({ anchor, diffKey, focus: null })
+        commentOnLines(anchor, index)
+        return
+      }
+      setLineChoice({ anchor: index, diffKey, focus: null })
+      commentOnLines(index, index)
+    },
+    onDragStart: (index, event) => {
+      if (event.button !== 0 || event.shiftKey) return
+      // Dragging over the gutter must not select the code text.
+      event.preventDefault()
+      dragStart.current = index
+    },
+    onDragOver: (index) => {
+      const start = dragStart.current
+      if (start === null || !sameHunk(start, index)) return
+      if (choice?.anchor !== start || choice.focus !== index) setLineChoice({ anchor: start, diffKey, focus: index })
+    },
+    onKeyDown: (index, event) => {
+      if (event.key === 'Escape' && choice?.focus != null) {
+        event.preventDefault()
+        event.stopPropagation()
+        setLineChoice({ anchor: choice.anchor, diffKey, focus: null })
+        return
+      }
+      if (!event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+      event.preventDefault()
+      const anchor = choice && choice.focus === index ? choice.anchor : index
+      const next = index + (event.key === 'ArrowUp' ? -1 : 1)
+      if (next < diffOffset || next >= diffOffset + DIFF_PAGE_SIZE || !sameHunk(anchor, next)) return
+      setLineChoice({ anchor, diffKey, focus: next === anchor ? null : next })
+      focusAfterRender.current = next
+    },
+  }
+  const pendingRangeLabel = choice && choice.focus !== null ? rangePosition(displayLines, hunks, Math.min(choice.anchor, choice.focus), Math.max(choice.anchor, choice.focus)) : undefined
   const threadCounts = useMemo(() => threadCountsByFile(discussions, diffs), [diffs, discussions])
   const reviewedCount = reviewState.reviewedPaths.size
 
@@ -328,6 +434,7 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
               {selectedDiff && view === 'diff' ? <Typography aria-label={`追加${lineCounts.added}行、削除${lineCounts.removed}行`} component="span" sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap' }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
             </Stack>
             {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title="確認済みにすると次の未確認ファイルを開きます。head SHAまたはファイル差分が変わると未確認に戻ります。"><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={toggleReviewed} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? '確認済み' : '確認済みにする'}</Button></Tooltip> : null}
+            {view === 'diff' ? <Tooltip describeChild title={whitespaceIgnored ? '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示しています。行の位置がずれる可能性があるため、この間は新しい行コメントを書けません。' : '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示します。表示中は新しい行コメントを書けません。'}><ToggleButton aria-label="空白の変更を無視" onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25 }} value="ignore-whitespace">空白を無視</ToggleButton></Tooltip> : null}
             {view === 'diff' ? <ToggleButtonGroup aria-label="差分の表示形式" exclusive onChange={(_, next: DiffLayout | null) => { if (next) changeLayout(next) }} size="small" sx={{ flexShrink: 0 }} value={layout}>
               <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
@@ -355,13 +462,16 @@ export function DiffViewer({ allowComments = true, diffs, discussionHeadSha, dis
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
           {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} /> : <>
             {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
+            {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルは空白の変更のみです。</Typography> : null}
+            {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">空白の変更を無視して表示中です。行の位置がずれる可能性があるため、新しい行コメントは書けません。</Typography> : null}
+            {pendingRangeLabel ? <Typography color="primary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{positionLines(pendingRangeLabel)}行目を選択中です。Enterでこの範囲にコメント、Escで選択を解除します。</Typography> : null}
             {threadView && lineThreads.outdated > 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルの古い版へのコメント{lineThreads.outdated}件は差分に表示していません。議論タブで確認できます。</Typography> : null}
             {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">古い議論は未取得のため、読み込み済みのコメントだけを表示しています。</Typography> : null}
             {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">取得済みの差分に一致する行はありません。</Typography> : null}
-            <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={parsed.lines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, parsed.lines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
+            <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={displayLines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, displayLines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {layout === 'split'
-              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
-              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} onComment={onComment} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />}
+              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />}
           </>}
         </Box>
       </Stack>
@@ -377,6 +487,7 @@ export function diffFileOrder(diffs: Diff[]): Diff[] {
 
 const denseFieldSx = { '& .MuiInputBase-input': { py: 0.5 } }
 const NO_SHOWN_GAPS: ReadonlyMap<string, number> = new Map()
+const NO_HUNKS: DiffHunk[] = []
 
 function isEditableTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
@@ -399,7 +510,31 @@ function PageControls({ offset, pageSize, total, onNext, onPrevious }: { offset:
   </Stack>
 }
 
-function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+/** Choosing the lines of a comment with the 「+」 buttons, by absolute line index. */
+interface LineSelection {
+  isChosen: (index: number) => boolean
+  onAction: (index: number, event: React.MouseEvent) => void
+  onDragStart: (index: number, event: React.MouseEvent) => void
+  onDragOver: (index: number) => void
+  onKeyDown: (index: number, event: React.KeyboardEvent) => void
+}
+
+const LINE_ACTION_TITLE = 'この行にコメント（Shift+クリック・ドラッグ・Shift+↑↓で複数行）'
+
+/** The 「+」 of a commentable line; it also extends a multi-line choice. A plain element, as a page holds many rows. */
+function lineAction(index: number, label: string, selection: LineSelection) {
+  return <button aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown" aria-label={label} className="diff-action line-action" data-line-action={index} onClick={(event) => selection.onAction(index, event)} onKeyDown={(event) => selection.onKeyDown(index, event)} onMouseDown={(event) => selection.onDragStart(index, event)} title={LINE_ACTION_TITLE} type="button">+</button>
+}
+
+/** Follows a gutter drag over the rows, which carry their line index. */
+function dragOver(selection: LineSelection) {
+  return (event: React.MouseEvent) => {
+    const index = (event.target as HTMLElement).closest?.('[data-line-index]')?.getAttribute('data-line-index')
+    if (index) selection.onDragOver(Number(index))
+  }
+}
+
+function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const skipped = diffGaps(lines, startIndex)
   // Opened unchanged lines: plain context rows, outside paging and search.
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
@@ -422,6 +557,8 @@ function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lines, on
       '& .diff-row[data-search-active="true"]': { outline: `2px solid ${theme.palette.secondary.main}`, outlineOffset: -2 },
       '& mark': { backgroundColor: theme.palette.diff?.searchMatchBackground, color: theme.palette.diff?.searchMatchText },
       '& .diff-gutter': { backgroundColor: 'var(--row-bg)', display: 'flex', flexShrink: 0, paddingRight: '26px', position: 'relative' },
+      // Lines chosen for a multi-line comment: a bar and a tint on the gutter, keeping the add/remove colour of the code.
+      '& .diff-row[data-range="true"] .diff-gutter': { backgroundColor: theme.palette.action.selected, boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
       '& .diff-number': { color: theme.palette.text.secondary, opacity: 0.8, padding: '0 6px', textAlign: 'right', userSelect: 'none', width: 44 },
       '& .diff-row:hover .diff-action, & .diff-row:focus-within .diff-action, & .diff-row[data-selected="true"] .diff-action': { opacity: 1 },
       '& .diff-code': { color: theme.palette.text.primary, flex: 1, minWidth: 0, overflowWrap: 'anywhere', paddingRight: '24px', whiteSpace: 'pre-wrap' },
@@ -429,18 +566,19 @@ function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lines, on
       '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
     })}>
       {lines.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
-      <div className="diff-rows">
+      <div className="diff-rows" onMouseOver={allowComments ? dragOver(lineSelection) : undefined}>
         {lines.map((line, index) => {
           const isSelectedPosition = matchesPosition(line, selectedPosition)
           const position = linePosition(line)
-          const key = `${startIndex + index}-${line.oldLine ?? ''}-${line.newLine ?? ''}`
+          const lineIndex = startIndex + index
+          const key = `${lineIndex}-${line.oldLine ?? ''}-${line.newLine ?? ''}`
           return <Fragment key={key}>
             {skipped[index].count > 0 ? <DiffGap expansion={gapExpansion} gap={skipped[index]} renderLines={openedRows} /> : null}
-            <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-match={searchMatchIndices.has(startIndex + index) ? 'true' : undefined} data-search-active={activeSearchMatch === startIndex + index ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" tabIndex={isSelectedPosition ? -1 : undefined}>
+            <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineSelection.isChosen(lineIndex) ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" tabIndex={isSelectedPosition ? -1 : undefined}>
               <span className="diff-gutter">
                 <span className="diff-number">{line.oldLine ?? ''}</span>
                 <span className="diff-number">{line.newLine ?? ''}</span>
-                {position && allowComments ? <button aria-label={`${line.newPath}の${line.newLine ?? line.oldLine}行にコメント`} className="diff-action line-action" onClick={() => onComment(position)} title="この行にコメント" type="button">+</button> : null}
+                {position && allowComments ? lineAction(lineIndex, `${line.newPath}の${line.newLine ?? line.oldLine}行にコメント`, lineSelection) : null}
               </span>
               <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(tokens[index] ?? [{ text: line.text }], searchTerm)}</span>
             </div>
@@ -485,6 +623,24 @@ function readDiffLayout(): DiffLayout {
 function saveDiffLayout(layout: DiffLayout): void {
   try {
     globalThis.localStorage?.setItem(DIFF_LAYOUT_KEY, layout)
+  } catch {
+    // The choice still applies until the viewer is reopened.
+  }
+}
+
+const IGNORE_WHITESPACE_KEY = 'gitlab-desktop:diff-ignore-whitespace'
+
+function readIgnoreWhitespace(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(IGNORE_WHITESPACE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function saveIgnoreWhitespace(ignore: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(IGNORE_WHITESPACE_KEY, String(ignore))
   } catch {
     // The choice still applies until the viewer is reopened.
   }
@@ -537,7 +693,7 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
   return rows
 }
 
-function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lines, onComment, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lines: ParsedLine[]; onComment: (position: Position) => void; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
   const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
     // Context rows offer one comment action, on the new side, with both line numbers.
@@ -548,10 +704,11 @@ function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lines, onCo
     const label = side === 'old' && line?.kind === 'remove'
       ? `${line.oldPath}の変更前${line.oldLine}行にコメント`
       : line ? `${line.newPath}の${line.newLine ?? line.oldLine}行にコメント` : ''
+    const chosen = allowComments && lineIndex !== undefined && lineSelection.isChosen(lineIndex)
     return <>
-      <span className="split-number" data-kind={kind} data-side={side}>
+      <span className="split-number" data-kind={kind} data-line-index={line ? lineIndex : undefined} data-range={chosen ? 'true' : undefined} data-side={side}>
         {number ?? ''}
-        {position ? <button aria-label={label} className="diff-action line-action" onClick={() => onComment(position)} title="この行にコメント" type="button">+</button> : null}
+        {position && lineIndex !== undefined ? lineAction(lineIndex, label, lineSelection) : null}
       </span>
       <span className="split-code" data-kind={kind} data-search-match={lineIndex !== undefined && searchMatchIndices.has(lineIndex) ? 'true' : undefined}>{line && lineIndex !== undefined ? renderCode(tokens[lineIndex - startIndex] ?? [{ text: line.text }], searchTerm) : ''}</span>
     </>
@@ -585,8 +742,9 @@ function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lines, onCo
       '& .split-number[data-kind="add"]': { color: theme.palette.diff?.addedText },
       '& [data-kind="empty"]': { backgroundColor: quietBand(theme) },
       '& .split-row:hover .diff-action, & .split-row:focus-within .diff-action, & .split-row[data-selected="true"] .diff-action': { opacity: 1 },
+      '& .split-number[data-range="true"]': { boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
       '& .diff-gap > span': { position: 'static' },
-    })}>
+    })} onMouseOver={allowComments ? dragOver(lineSelection) : undefined}>
       {rows.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
       {rows.map((row) => {
         const selected = Boolean(selectedPosition && ((row.left && matchesPosition(row.left, selectedPosition)) || (row.right && matchesPosition(row.right, selectedPosition))))

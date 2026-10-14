@@ -5,7 +5,7 @@
  */
 import { getMockCommitsForMergeRequest } from './commits'
 import { mockMergeRequests, mockProjects, type MockAuthor, type MockChangedFile, type MockDiscussion, type MockMergeRequest } from './fixtures'
-import type { Commit, Diff, Discussion, GitLabGroup, GitLabSession, GitLabUser, MergeRequest, Note, Position, Project } from '../types/gitlab'
+import type { Commit, Diff, Discussion, GitLabGroup, GitLabLabel, GitLabSession, GitLabUser, MergeRequest, Milestone, Note, Position, Project } from '../types/gitlab'
 
 export const fixtureUser: GitLabUser = { id: '9000', name: '固定データの利用者', username: 'fixture-user' }
 
@@ -147,6 +147,40 @@ export interface FixtureMergeRequest {
 
 const reviewerPool = Object.values({ akari: '@akari.t', ken: '@ken.sato', mai: '@mai.i', ryo: '@ryo.n' })
 
+export const fixtureMilestones: Milestone[] = [
+  { dueDate: '2026-11-30', id: '701', state: 'active', title: 'v0.9', webUrl: `${fixtureSession.instanceUrl}/groups/platform/-/milestones/1` },
+  { dueDate: null, id: '702', state: 'active', title: 'v1.0', webUrl: `${fixtureSession.instanceUrl}/groups/platform/-/milestones/2` },
+]
+
+// Label colours are GitLab data, written without the hash so they stay out of the theme's colour check.
+const labelPalette = ['428bca', '009966', 'dc143c', 'ed9121', '6699cc', '8e44ad']
+
+/** The fixture project's labels: every label a fixture MR uses, coloured from a fixed list. */
+export function fixtureLabels(): GitLabLabel[] {
+  const names = [...new Set([...mockMergeRequests.flatMap((mock) => mock.labels), 'blocked', 'needs-design'])].sort()
+  return names.map((name, index) => ({ color: `#${labelPalette[index % labelPalette.length]}`, description: '', id: String(800 + index), name }))
+}
+
+/** What GitLab reports about merging, derived from the mock's CI and threads. */
+function fixtureMergeStatus(mock: MockMergeRequest): Partial<MergeRequest> {
+  const opened = mock.state === 'open'
+  const unresolved = mock.discussions.some((discussion) => discussion.kind !== 'comment' && discussion.state !== 'resolved')
+  const passed = mock.checksPassed === mock.checksTotal
+  return {
+    autoMerge: false,
+    blockingDiscussionsResolved: !unresolved,
+    canMerge: true,
+    detailedMergeStatus: !opened ? 'not_open' : !passed ? 'ci_must_pass' : unresolved ? 'discussions_not_resolved' : 'mergeable',
+    divergedCommitsCount: opened && mock.iid % 3 === 0 ? 2 : 0,
+    forceRemoveSourceBranch: true,
+    hasConflicts: false,
+    mergeError: null,
+    rebaseInProgress: false,
+    squash: false,
+    squashOnMerge: false,
+  }
+}
+
 function toFixtureMergeRequest(mock: MockMergeRequest, now: number): FixtureMergeRequest {
   const projectId = projectIdOf(mock.projectId)
   const headSha = headShaOf(mock)
@@ -178,6 +212,8 @@ function toFixtureMergeRequest(mock: MockMergeRequest, now: number): FixtureMerg
       iid: String(mock.iid),
       labels: mock.labels,
       pipeline: { status: mock.checksPassed === mock.checksTotal ? 'success' : 'failed', webUrl: `${fixtureSession.instanceUrl}/${mock.projectPath}/-/pipelines` },
+      ...fixtureMergeStatus(mock),
+      milestone: mock.iid % 2 === 0 ? fixtureMilestones[0] : null,
       projectId,
       projectPath: mock.projectPath,
       reviewers,
@@ -193,6 +229,50 @@ function toFixtureMergeRequest(mock: MockMergeRequest, now: number): FixtureMerg
   }
 }
 
+const SUGGESTION_PATH = 'src/lib/review-cache.ts'
+
+/** A multi-line comment with a suggestion, to show both on the diff and in the discussion. */
+function addSuggestionThread(target: FixtureMergeRequest | undefined, now: number): void {
+  const diff = target?.diffs.find((item) => item.newPath === SUGGESTION_PATH)
+  const reviewer = target?.discussions.flatMap((discussion) => discussion.notes).find((note) => note.author.id !== fixtureUser.id)?.author
+  if (!target || !diff || !reviewer) return
+  const { diffRefs } = target.mergeRequest
+  const position: Position = {
+    baseSha: diffRefs?.baseSha ?? '',
+    headSha: diffRefs?.headSha ?? '',
+    lineRange: { end: { newLine: 13, type: 'new' }, start: { newLine: 12, type: 'new' } },
+    newLine: 13,
+    newPath: SUGGESTION_PATH,
+    oldPath: SUGGESTION_PATH,
+    positionType: 'text',
+    startSha: diffRefs?.startSha ?? '',
+  }
+  const proposed = '  if (cached && !isExpired(cached.updatedAt, LIST_CACHE_TTL_MS)) {\n    return cached.value'
+  target.discussions.push({
+    id: 'fixture-suggestion',
+    individualNote: false,
+    notes: [{
+      author: reviewer,
+      body: `期限切れの判定は関数にまとめると読みやすくなりそうです。\n\n\`\`\`suggestion:-1+0\n${proposed}\n\`\`\``,
+      createdAt: new Date(now - 30 * 60_000).toISOString(),
+      id: 'fixture-suggestion-note',
+      position,
+      resolvable: true,
+      resolved: false,
+      suggestions: [{
+        appliable: true,
+        applied: false,
+        fromContent: '  if (cached && Date.now() - cached.updatedAt < LIST_CACHE_TTL_MS) {\n    return cached.value\n',
+        fromLine: 12,
+        id: '9001',
+        toContent: `${proposed}\n`,
+        toLine: 13,
+      }],
+      system: false,
+    }],
+  })
+}
+
 export function createFixtureData(now: number) {
   const projects: Project[] = mockProjects.map((project) => ({
     archived: false,
@@ -200,6 +280,7 @@ export function createFixtureData(now: number) {
     id: projectIdOf(project.id),
     name: project.name,
     pathWithNamespace: project.path,
+    squashOption: 'default_off',
     webUrl: `${fixtureSession.instanceUrl}/${project.path}`,
   }))
   // Every namespace above a fixture project, e.g. `platform` and `platform/desktop`.
@@ -215,9 +296,10 @@ export function createFixtureData(now: number) {
     webUrl: `${fixtureSession.instanceUrl}/groups/${fullPath}`,
   }))
   const mergeRequests = mockMergeRequests.map((mock) => toFixtureMergeRequest(mock, now))
+  addSuggestionThread(mergeRequests[0], now)
   const users = [fixtureUser, ...mergeRequests.flatMap((item) => [item.mergeRequest.author, ...item.discussions.flatMap((discussion) => discussion.notes.map((note) => note.author))])]
     .filter((user, index, all) => all.findIndex((candidate) => candidate.id === user.id) === index)
-  return { groups, mergeRequests, projects, users }
+  return { groups, labels: fixtureLabels(), mergeRequests, milestones: fixtureMilestones, projects, users }
 }
 
 export type FixtureData = ReturnType<typeof createFixtureData>

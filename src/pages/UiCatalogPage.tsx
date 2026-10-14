@@ -20,17 +20,20 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { useTheme } from '@mui/material/styles'
 import { useEffect, useState } from 'react'
 
 import { ClientNavItem } from '../components/ClientNavItem'
 import { useConfirm, useNotify } from '../components/Feedback'
 import { AppErrorFallback } from '../components/AppErrorBoundary'
+import { LabelChip } from '../components/LabelChip'
 import { ListRow } from '../components/ListRow'
 import { MergeRequestStateIcon } from '../components/MergeRequestStateIcon'
 import { Kbd, PaneEmpty, PaneHeader, PaneStatus } from '../components/Pane'
 import { Pager } from '../components/Pager'
 import { PipelineStatus } from '../components/PipelineStatus'
 import { RelativeTime } from '../components/RelativeTime'
+import { ReactionBar } from '../components/ReactionBar'
 import { ResolveToggle } from '../components/ResolveToggle'
 import { SettingsSection } from '../components/SettingsSection'
 import { StatusBar } from '../components/StatusBar'
@@ -40,15 +43,19 @@ import { DiscussionLayout } from '../features/mergeRequests/DiscussionLayout'
 import { DiscussionList } from '../features/mergeRequests/DiscussionList'
 import { UnresolvedThreadNav } from '../features/mergeRequests/UnresolvedThreadNav'
 import { ReviewComposer } from '../features/mergeRequests/ReviewComposer'
+import { NoteBody } from '../features/mergeRequests/SuggestionBlock'
 import { DiffViewer } from '../features/mergeRequests/DiffViewer'
+import { JobLogLines } from '../features/mergeRequests/JobLog'
 import { MergeRequestTab } from '../features/mergeRequests/MergeRequestTabs'
 import { useReorder } from '../components/useReorder'
 import { KeyboardShortcutsDialog } from '../features/KeyboardShortcutsDialog'
 import { ProjectShortcuts } from '../features/projects/ProjectView'
 import { GitLabUserAvatar } from '../features/shared/GitLabUserAvatar'
+import type { AwardEmoji } from '../types/gitlab'
 
 /** `section` is the suffix of a `catalog-*` id, e.g. `#foundation/catalog?section=review`. */
 export function UiCatalogPage({ section }: { section?: string } = {}) {
+  const theme = useTheme()
   useEffect(() => {
     if (section) document.getElementById(`catalog-${section}`)?.scrollIntoView()
   }, [section])
@@ -133,6 +140,7 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
             </Stack>
             <Autocomplete disabled getOptionLabel={(option) => option.name} options={[{ id: '42', name: '検証ユーザー @sample' }]} renderInput={(params) => <TextField {...params} label="ユーザー候補（サンプル）" />} size="small" />
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><Chip color="info" label="未読 3" size="small" variant="outlined" /><Chip label="Draft" size="small" variant="outlined" /><StatusPill label="Open" size="small" subtle tone="success" /></Stack>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>{/* Label colours are GitLab data; theme colours stand in for them here. */}<LabelChip color={theme.palette.error.main} name="bug" /><LabelChip color={theme.palette.info.main} name="review" /><LabelChip name="色不明のラベル" /></Stack>
           </Stack>
         </CardContent>
       </Card>
@@ -177,6 +185,7 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
               <PipelineStatus status="running" />
               <PipelineStatus status="manual" />
               <PipelineStatus status={null} />
+              <PipelineStatus prefix="" status="canceled" />
             </Stack>
             <Pager hasNext hasPrevious onNext={() => undefined} onPrevious={() => undefined} page={2} summary="20件取得" />
           </Stack>
@@ -194,7 +203,9 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
         <Typography color="textSecondary" variant="caption">表示サンプルです。GitLabへの取得・投稿は行いません。</Typography>
         <ReviewComposer disabled value="MR全体へのコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
         <DiscussionLayout composer={null} navigator={<UnresolvedThreadNav discussions={[catalogDiscussion]} olderNotLoaded={false} onSelect={() => undefined} />} side={null} threads={<CatalogReplyThread />} />
-        <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments diffs={[catalogDiff]} lineComposer={{ position: catalogPosition, node: <ReviewComposer disabled inlineTarget targetPosition={catalogPosition} value="変更の意図を確認する行コメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} /> }} selectedFile="example.ts" selectedPosition={catalogPosition} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
+        <JobLogLines label="ジョブログ（サンプル）" lines={[[{ bold: true, fg: 'cyan', text: 'Preparing the "docker" executor' }], [{ bold: true, fg: 'green', text: '$ npm test' }], [{ text: '  ✓ 12 tests passed' }], [{ fg: 'yellow', text: 'warning: deprecated option' }], [{ bold: true, fg: 'red', text: 'ERROR: Job failed: exit code 1' }]]} />
+        <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments diffs={[catalogDiff]} lineComposer={{ position: catalogPosition, node: <ReviewComposer disabled inlineTarget suggestionLines={() => null} targetPosition={catalogPosition} value="変更の意図を確認する複数行コメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} /> }} selectedFile="example.ts" selectedPosition={catalogPosition} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
+        <Box sx={{ maxWidth: 760 }}><NoteBody actions={{ currentUserId: 'catalog', disabled: true, headSha: null, onApply: async () => false }} note={catalogSuggestionNote} /></Box>
       </Stack>
 
       <Card component="section" id="catalog-empty-state">
@@ -218,7 +229,13 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
 }
 
 const catalogDiff = { oldPath: 'example.ts', newPath: 'example.ts', diff: '@@ -1,5 +1,6 @@\n /** Feature flags read at startup. */\n-export const enabled = false\n+export const enabled = true\n+const retries = 3\n export function label(name: string): string {\n-  return `flag: ${name}`\n+  return `flag: ${name} (${retries})`\n }', newFile: false, deletedFile: false, renamedFile: false, tooLarge: false, collapsed: false }
-const catalogPosition = { baseSha: '', headSha: '', newLine: 5, newPath: 'example.ts', oldPath: 'example.ts', positionType: 'text' as const, startSha: '' }
+/** A comment on new lines 2–5, shown as a chosen range with its editor under line 5. */
+const catalogPosition = { baseSha: '', headSha: '', lineRange: { end: { newLine: 5, newPosition: 5, oldPosition: 5 }, hunk: { newCount: 6, newStart: 1, oldCount: 5, oldStart: 1 }, start: { newLine: 2, newPosition: 2, oldPosition: 3 } }, newLine: 5, newPath: 'example.ts', oldPath: 'example.ts', positionType: 'text' as const, startSha: '' }
+const catalogSuggestionNote = {
+  author: { id: 'catalog-reviewer', name: '検証ユーザー', username: 'sample' },
+  body: 'リトライ回数は表示しない方が読みやすそうです。\n\n```suggestion\n  return `flag: ${name}`\n```',
+  suggestions: [{ appliable: true, applied: false, fromContent: '  return `flag: ${name} (${retries})`\n', fromLine: 5, id: '1', toContent: '  return `flag: ${name}`\n', toLine: 5 }],
+}
 
 const catalogAuthor = { id: 'catalog-reviewer', name: 'Reviewer', username: 'reviewer' }
 const catalogDiscussion = {
@@ -386,6 +403,18 @@ function CatalogFrameParts() {
           </CardContent>
         </Card>
 
+        <Card component="section" id="catalog-reaction-bar">
+          <CardContent sx={{ p: 2.5 }}>
+            <Stack spacing={2}>
+              <Typography component="h2" variant="h2">ReactionBar</Typography>
+              <Typography color="textSecondary" variant="caption">コメントとMR説明の絵文字リアクション。自分が付けたものは選択状態、ツールチップに付けた人（サンプル）</Typography>
+              <Divider />
+              <CatalogReactions />
+              <ReactionBar awards={[]} currentUserId="42" disabled label="リアクションのないコメント" onToggle={() => undefined} />
+            </Stack>
+          </CardContent>
+        </Card>
+
         <Card component="section" id="catalog-mr-tabs">
           <CardContent sx={{ p: 2.5 }}>
             <Stack spacing={2}>
@@ -406,6 +435,17 @@ const catalogTabs = [
   { mrRef: { projectId: '101', iid: '39' }, pinned: false, meta: { title: '差分ビューの行描画を可視範囲だけに制限する', state: 'opened', projectPath: 'platform/desktop-client' } },
   { mrRef: { projectId: '7', iid: '64' }, pinned: false, meta: { title: 'レビュー検索用のローカルインデックスを追加する', state: 'merged', projectPath: 'data/catalog' } },
 ]
+
+function CatalogReactions() {
+  const me = { id: '42', name: '自分', username: 'me' }
+  const [awards, setAwards] = useState<AwardEmoji[]>([
+    { name: 'thumbsup', user: { id: '7', name: '佐藤', username: 'sato' } },
+    { name: 'thumbsup', user: me },
+    { name: 'eyes', user: { id: '8', name: '鈴木', username: 'suzuki' } },
+    { name: 'party_parrot', user: { id: '7', name: '佐藤', username: 'sato' } },
+  ])
+  return <ReactionBar awards={awards} currentUserId={me.id} label="サンプルのコメント" onToggle={(name, add) => setAwards((current) => add ? [...current, { name, user: me }] : current.filter((award) => !(award.name === name && award.user.id === me.id)))} />
+}
 
 function CatalogMrTabs() {
   const reorder = useReorder({ axis: 'y', keys: catalogTabs.map((tab) => `${tab.mrRef.projectId}-${tab.mrRef.iid}`), onMove: () => undefined })

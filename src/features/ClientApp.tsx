@@ -872,7 +872,7 @@ function withoutSelection(params: Record<string, string>): Record<string, string
 }
 
 function parseTab(value: string | undefined): ReviewTab {
-  return value === 'changes' || value === 'overview' ? value : 'discussion'
+  return value === 'changes' || value === 'overview' || value === 'pipelines' ? value : 'discussion'
 }
 
 /** Composers, toolbars, menus and forms handle Esc themselves. `data-composer` marks a composer's whole region. */

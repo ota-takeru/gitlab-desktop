@@ -245,6 +245,16 @@ export function restoreComposerBuffer(bufferKey: string, text: string): boolean 
   return composerBuffers.get(bufferKey)?.body ? appendComposerBuffer(bufferKey, text) : setComposerBody(bufferKey, text)
 }
 
+/**
+ * Moves the text of one input to another, such as a line comment whose last
+ * line moved when more lines were chosen. Text already in the target is kept first.
+ */
+export function moveComposerBuffer(fromKey: string, toKey: string): boolean {
+  const text = composerBuffers.get(fromKey)?.body ?? ''
+  if (!text || fromKey === toKey) return true
+  return restoreComposerBuffer(toKey, text) && setComposerBody(fromKey, '')
+}
+
 /** Sets the initial text of an input that starts from existing content, unless it already holds text. */
 export function seedComposerBuffer(bufferKey: string, text: string): boolean {
   return composerBuffers.get(bufferKey)?.body ? true : setComposerBody(bufferKey, text)

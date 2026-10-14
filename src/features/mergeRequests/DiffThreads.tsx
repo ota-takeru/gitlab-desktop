@@ -5,14 +5,14 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 
-import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { RelativeTime } from '../../components/RelativeTime'
 import { ResolveToggle } from '../../components/ResolveToggle'
-import type { Discussion, Draft, Position } from '../../types/gitlab'
+import type { Discussion, Draft, Note, Position } from '../../types/gitlab'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import type { ParsedLine } from './diffParser'
-import { lineKey } from './diffLineThreads'
+import { lineKey, positionLines } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
+import { NoteBody, type SuggestionActions } from './SuggestionBlock'
 
 /**
  * What the diff shows under its lines, as on GitLab: line comment threads,
@@ -26,6 +26,8 @@ export interface ThreadActions {
   replyComposer: React.ReactNode
   onReply: (discussion: Discussion) => void
   onResolve: (discussion: Discussion, resolved: boolean) => void
+  /** The emoji reactions shown under a comment. */
+  renderReactions?: (note: Note) => React.ReactNode
 }
 
 export interface ThreadView {
@@ -36,28 +38,38 @@ export interface ThreadView {
   actions?: ThreadActions
   /** Session used to load GitLab avatars; initials are shown without it. */
   sessionId?: string | null
+  /** Applying the suggestions in the threads. */
+  suggestionActions?: SuggestionActions
 }
 
 export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadView }) {
   const key = line && view ? lineKey(line) : null
-  const threads = key ? view?.threads.get(key) ?? [] : []
-  const drafts = key ? view?.drafts?.get(key) ?? [] : []
+  // A line shown as unchanged because only its whitespace changed keeps the comments on its removed version too.
+  const keys = key && line?.whitespaceOnly && line.oldLine != null ? [key, `o:${line.oldLine}`] : key ? [key] : []
+  const threads = keys.flatMap((at) => view?.threads.get(at) ?? [])
+  const drafts = keys.flatMap((at) => view?.drafts?.get(at) ?? [])
   const composer = key && line && view?.composer?.key === key && (view.composer.position.newPath === line.newPath || view.composer.position.oldPath === line.oldPath) ? view.composer.node : null
   if (!threads.length && !drafts.length && !composer) return null
   return <Box className="diff-threads" sx={{ bgcolor: 'surface.list', borderBottom: 1, borderTop: 1, borderColor: 'divider', fontFamily: 'fontFamily', lineHeight: 'normal', px: 1.5, py: 1, whiteSpace: 'normal' }}>
     <Stack spacing={1} sx={{ maxWidth: 900 }}>
-      {threads.map((discussion) => <DiffThread actions={view?.actions} discussion={discussion} key={discussion.id} onOpen={view?.onOpen} sessionId={view?.sessionId} />)}
+      {threads.map((discussion) => <DiffThread actions={view?.actions} discussion={discussion} key={discussion.id} onOpen={view?.onOpen} sessionId={view?.sessionId} suggestionActions={view?.suggestionActions} />)}
       {drafts.map((draft) => <Box aria-label="未公開のコメント" component="article" key={draft.id} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'warning.main', borderRadius: 1, borderStyle: 'dashed', px: 1.5, py: 1 }}>
-        <Chip color="warning" label="未公開レビュー" size="small" variant="outlined" />
-        <MockMarkdown body={draft.body} />
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Chip color="warning" label="未公開レビュー" size="small" variant="outlined" />
+          {draft.position?.lineRange ? <Typography color="textSecondary" variant="caption">{positionLines(draft.position)}行目</Typography> : null}
+        </Stack>
+        <NoteBody note={{ body: draft.body }} size="body2" />
       </Box>)}
       {composer}
     </Stack>
   </Box>
 }
 
-function DiffThread({ actions, discussion, onOpen, sessionId }: { actions?: ThreadActions; discussion: Discussion; onOpen?: (discussionId: string) => void; sessionId?: string | null }) {
+function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions }: { actions?: ThreadActions; discussion: Discussion; onOpen?: (discussionId: string) => void; sessionId?: string | null; suggestionActions?: SuggestionActions }) {
   const notes = discussion.notes.filter((note) => !note.system)
+  // A multi-line comment sits under its last line, as on GitLab, and names its lines.
+  const position = notes.find((note) => note.position)?.position
+  const rangeLabel = position?.lineRange ? `${positionLines(position)}行目へのコメント` : null
   const resolvable = notes.filter((note) => note.resolvable)
   const resolved = resolvable.length > 0 && resolvable.every((note) => note.resolved)
   // Only resolved threads fold; one being replied to stays open.
@@ -74,13 +86,15 @@ function DiffThread({ actions, discussion, onOpen, sessionId }: { actions?: Thre
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
             <RelativeTime value={note.createdAt} />
           </Stack>
-          <Box sx={{ color: 'text.primary', mt: 0.25 }}><MockMarkdown body={note.body} size="body1" /></Box>
+          <Box sx={{ color: 'text.primary', mt: 0.25 }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>
+          {actions?.renderReactions ? <Box sx={{ mt: 1 }}>{actions.renderReactions(note)}</Box> : null}
         </Box>
       </Box>)}
     </Stack> : null}
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: expanded ? 1 : 0, borderColor: 'divider', px: 1, py: 0.25 }}>
       {actions && resolvable.length > 0 ? <ResolveToggle dense disabled={actions.disabled} onToggle={(resolve) => actions.onResolve(discussion, resolve)} resolved={resolved} /> : null}
-      {!expanded ? <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} title={notes[0] ? plainExcerpt(notes[0].body, 200) : undefined} variant="caption">{notes[0]?.author.name}{notes.length > 1 ? ` ほか${notes.length - 1}件` : ''}のコメント</Typography> : <Box sx={{ flex: 1 }} />}
+      {!expanded ? <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} title={notes[0] ? plainExcerpt(notes[0].body, 200) : undefined} variant="caption">{rangeLabel ? `${rangeLabel} · ` : ''}{notes[0]?.author.name}{notes.length > 1 ? ` ほか${notes.length - 1}件` : ''}のコメント</Typography>
+        : <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{rangeLabel}</Typography>}
       {resolved && !replying ? <Button onClick={() => setExpanded(!expanded)} size="small" sx={barButtonSx}>{expanded ? '折りたたむ' : '表示'}</Button> : null}
       {actions && !replying ? <Button disabled={actions.disabled} onClick={() => actions.onReply(discussion)} size="small" sx={barButtonSx}>返信</Button> : null}
       {onOpen ? <Button onClick={() => onOpen(discussion.id)} size="small" sx={barButtonSx}>{actions ? '議論タブで表示' : '議論で返信・解決'}</Button> : null}

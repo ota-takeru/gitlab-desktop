@@ -29,6 +29,7 @@ const shortcutGroups: Array<{ title: string; items: Array<{ keys: string[][]; la
     items: [
       { keys: [['N'], ['P']], label: '次/前の未解決スレッド' },
       { keys: [[']'], ['[']], label: '次/前のファイル' },
+      { keys: [['Shift', '↑'], ['Shift', '↓']], label: '行の「+」で複数行を選択（Enterでコメント）' },
       { keys: [['Ctrl', 'Enter']], label: 'レビューに追加' },
       { keys: [['Ctrl', 'Shift', 'Enter']], label: '今すぐ投稿' },
     ],

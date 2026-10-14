@@ -76,6 +76,43 @@ pub struct Position {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_line: Option<u32>,
     pub position_type: PositionType,
+    /// The lines of a multi-line comment, ending at `old_line`/`new_line`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_range: Option<LineRange>,
+}
+
+/// A range of diff lines within one hunk. GitLab's line codes are computed
+/// from it on the native side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineRange {
+    pub start: LineRangePoint,
+    pub end: LineRangePoint,
+    /// The hunk both lines belong to, as its `@@ -a,b +c,d @@` header gives it.
+    pub hunk: DiffHunk,
+}
+
+/// One end of a line range. `old_line`/`new_line` are the numbers shown for
+/// the line (absent on the side it does not exist on); the positions are the
+/// hunk's counters at the line, which GitLab's line code uses on both sides.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineRangePoint {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_line: Option<u32>,
+    pub old_position: u32,
+    pub new_position: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffHunk {
+    pub old_start: u32,
+    pub old_count: u32,
+    pub new_start: u32,
+    pub new_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,6 +239,68 @@ pub enum Query {
     MrApprovals {
         items: Vec<MrPathRef>,
     },
+    /// Emoji reactions on a merge request itself.
+    MrAwards {
+        project_id: String,
+        iid: String,
+    },
+    /// Emoji reactions on the comments of a merge request, from the newest
+    /// back to `since_note_id`, read through GraphQL so the shown threads cost
+    /// one request instead of one per comment.
+    NoteAwards {
+        project_path: String,
+        iid: String,
+        since_note_id: String,
+    },
+    /// One page of the merge request's pipelines, newest first.
+    MrPipelines {
+        project_id: String,
+        iid: String,
+        page: u32,
+    },
+    /// One pipeline, in the project that ran it (a fork MR's pipeline can run
+    /// outside the MR's project).
+    Pipeline {
+        project_id: String,
+        pipeline_id: String,
+    },
+    /// The pipeline's jobs and trigger jobs, read page by page up to a bound.
+    PipelineJobs {
+        project_id: String,
+        pipeline_id: String,
+    },
+    /// The end of a job log, bounded and cleaned for display. Never cached.
+    JobTrace {
+        project_id: String,
+        job_id: String,
+    },
+    /// Labels a merge request in the project can use, including those of its
+    /// ancestor groups.
+    Labels {
+        project_id: String,
+        search: String,
+        page: u32,
+    },
+    /// Active milestones of the project and its ancestor groups.
+    Milestones {
+        project_id: String,
+        search: String,
+        page: u32,
+    },
+    /// The MR's diff versions (one per push), newest first.
+    MrVersions {
+        project_id: String,
+        iid: String,
+        page: u32,
+    },
+    /// The changes between two versions of the MR, by their head commits.
+    VersionCompare {
+        project_id: String,
+        iid: String,
+        from_sha: String,
+        to_sha: String,
+        page: u32,
+    },
 }
 
 /// A merge request addressed by its project's full path.
@@ -210,6 +309,14 @@ pub enum Query {
 pub struct MrPathRef {
     pub project_path: String,
     pub iid: String,
+}
+
+/// The state change requested by `Action::SetState`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StateEvent {
+    Close,
+    Reopen,
 }
 
 /// Write operations supported by the GitLab REST adapter.
@@ -313,6 +420,135 @@ pub enum Action {
         description: String,
         expected_description: String,
     },
+    /// Adds the user's emoji reaction to the MR, or to one of its comments.
+    AddAward {
+        project_id: String,
+        iid: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        note_id: Option<String>,
+        name: String,
+    },
+    /// Removes the user's own reaction of that name; its ID is read from GitLab first.
+    RemoveAward {
+        project_id: String,
+        iid: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        note_id: Option<String>,
+        name: String,
+    },
+    /// Marks a To-Do done. `project_id`/`iid` name the To-Do's merge request,
+    /// which GitLab must confirm before anything is written.
+    MarkTodoDone {
+        project_id: String,
+        iid: String,
+        todo_id: String,
+    },
+    /// Job and pipeline operations carry the MR they were started from
+    /// (`project_id`/`iid`) so an unknown outcome blocks writes to that MR;
+    /// `pipeline_project_id` is the project that ran the pipeline.
+    RetryJob {
+        project_id: String,
+        iid: String,
+        pipeline_project_id: String,
+        job_id: String,
+    },
+    CancelJob {
+        project_id: String,
+        iid: String,
+        pipeline_project_id: String,
+        job_id: String,
+    },
+    PlayJob {
+        project_id: String,
+        iid: String,
+        pipeline_project_id: String,
+        job_id: String,
+    },
+    RetryPipeline {
+        project_id: String,
+        iid: String,
+        pipeline_project_id: String,
+        pipeline_id: String,
+    },
+    CancelPipeline {
+        project_id: String,
+        iid: String,
+        pipeline_project_id: String,
+        pipeline_id: String,
+    },
+    /// Merges the head `sha` the user saw, or with `auto_merge` lets GitLab
+    /// merge it once its checks pass.
+    Merge {
+        project_id: String,
+        iid: String,
+        sha: String,
+        squash: bool,
+        remove_source_branch: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        merge_commit_message: Option<String>,
+        auto_merge: bool,
+    },
+    CancelAutoMerge {
+        project_id: String,
+        iid: String,
+    },
+    /// Rebases the source branch whose head is `sha`.
+    Rebase {
+        project_id: String,
+        iid: String,
+        sha: String,
+    },
+    /// Closes or reopens; refused unless the MR is still open or closed.
+    SetState {
+        project_id: String,
+        iid: String,
+        state_event: StateEvent,
+    },
+    /// Replaces the title; refused when GitLab no longer has `expected_title`.
+    SetTitle {
+        project_id: String,
+        iid: String,
+        title: String,
+        expected_title: String,
+    },
+    /// Adds and removes labels, leaving labels others changed meanwhile alone.
+    SetLabels {
+        project_id: String,
+        iid: String,
+        add_labels: Vec<String>,
+        remove_labels: Vec<String>,
+    },
+    /// Sets or (with `None`) clears the milestone; refused when GitLab no
+    /// longer has `expected_milestone_id`.
+    SetMilestone {
+        project_id: String,
+        iid: String,
+        milestone_id: Option<String>,
+        expected_milestone_id: Option<String>,
+    },
+    /// Marks the current user's review as requesting changes (GraphQL).
+    RequestChanges {
+        project_id: String,
+        iid: String,
+        project_path: String,
+    },
+    /// Asks a reviewer of the MR for a new review (GraphQL).
+    RerequestReview {
+        project_id: String,
+        iid: String,
+        project_path: String,
+        user_id: String,
+    },
+    /// Applies suggestions of the MR's comments as one commit. Refused when
+    /// the MR head is no longer `head_sha`, the head the suggestions were read on.
+    ApplySuggestions {
+        project_id: String,
+        iid: String,
+        suggestion_ids: Vec<String>,
+        head_sha: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        commit_message: Option<String>,
+    },
 }
 
 #[cfg(test)]
@@ -381,6 +617,10 @@ mod tests {
             serde_json::json!({"kind": "todos", "page": 2}),
             serde_json::json!({"kind": "branches", "projectId": "7", "search": "feat", "page": 1}),
             serde_json::json!({"kind": "notes", "projectId": "7", "iid": "3", "page": 1}),
+            serde_json::json!({"kind": "mrPipelines", "projectId": "7", "iid": "3", "page": 1}),
+            serde_json::json!({"kind": "pipeline", "projectId": "7", "pipelineId": "55"}),
+            serde_json::json!({"kind": "pipelineJobs", "projectId": "7", "pipelineId": "55"}),
+            serde_json::json!({"kind": "jobTrace", "projectId": "7", "jobId": "900"}),
         ] {
             let query: Query = serde_json::from_value(value.clone()).unwrap();
             assert_eq!(serde_json::to_value(query).unwrap(), value);
@@ -412,6 +652,7 @@ mod tests {
                 old_line: None,
                 new_line: Some(12),
                 position_type: PositionType::Text,
+                line_range: None,
             }),
         })
         .unwrap();
@@ -419,5 +660,122 @@ mod tests {
         assert_eq!(value["position"]["baseSha"], "a".repeat(40));
         assert_eq!(value["position"]["newLine"], 12);
         assert!(value["position"].get("base_sha").is_none());
+
+        for value in [
+            serde_json::json!({"kind": "retryJob", "projectId": "7", "iid": "9", "pipelineProjectId": "8", "jobId": "900"}),
+            serde_json::json!({"kind": "cancelJob", "projectId": "7", "iid": "9", "pipelineProjectId": "7", "jobId": "900"}),
+            serde_json::json!({"kind": "playJob", "projectId": "7", "iid": "9", "pipelineProjectId": "7", "jobId": "900"}),
+            serde_json::json!({"kind": "retryPipeline", "projectId": "7", "iid": "9", "pipelineProjectId": "7", "pipelineId": "55"}),
+            serde_json::json!({"kind": "cancelPipeline", "projectId": "7", "iid": "9", "pipelineProjectId": "7", "pipelineId": "55"}),
+        ] {
+            let action: Action = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(action).unwrap(), value);
+        }
+        assert!(value["position"].get("lineRange").is_none());
+    }
+
+    #[test]
+    fn reaction_and_todo_wire_shapes_use_camel_case_fields() {
+        for value in [
+            serde_json::json!({"kind": "mrAwards", "projectId": "7", "iid": "3"}),
+            serde_json::json!({"kind": "noteAwards", "projectPath": "group/app", "iid": "3", "sinceNoteId": "41"}),
+        ] {
+            let query: Query = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(query).unwrap(), value);
+        }
+        for value in [
+            serde_json::json!({"kind": "addAward", "projectId": "7", "iid": "3", "name": "thumbsup"}),
+            serde_json::json!({"kind": "addAward", "projectId": "7", "iid": "3", "noteId": "41", "name": "tada"}),
+            serde_json::json!({"kind": "removeAward", "projectId": "7", "iid": "3", "noteId": "41", "name": "tada"}),
+            serde_json::json!({"kind": "markTodoDone", "projectId": "7", "iid": "3", "todoId": "102"}),
+        ] {
+            let action: Action = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(action).unwrap(), value);
+        }
+    }
+
+    #[test]
+    fn merge_request_operations_round_trip_in_camel_case() {
+        for value in [
+            serde_json::json!({"kind": "merge", "projectId": "7", "iid": "9", "sha": "a".repeat(40), "squash": true, "removeSourceBranch": false, "mergeCommitMessage": "Merge", "autoMerge": false}),
+            serde_json::json!({"kind": "merge", "projectId": "7", "iid": "9", "sha": "a".repeat(40), "squash": false, "removeSourceBranch": true, "autoMerge": true}),
+            serde_json::json!({"kind": "cancelAutoMerge", "projectId": "7", "iid": "9"}),
+            serde_json::json!({"kind": "rebase", "projectId": "7", "iid": "9", "sha": "a".repeat(40)}),
+            serde_json::json!({"kind": "setState", "projectId": "7", "iid": "9", "stateEvent": "close"}),
+            serde_json::json!({"kind": "setState", "projectId": "7", "iid": "9", "stateEvent": "reopen"}),
+            serde_json::json!({"kind": "setTitle", "projectId": "7", "iid": "9", "title": "Draft: A", "expectedTitle": "A"}),
+            serde_json::json!({"kind": "setLabels", "projectId": "7", "iid": "9", "addLabels": ["bug"], "removeLabels": []}),
+            serde_json::json!({"kind": "setMilestone", "projectId": "7", "iid": "9", "milestoneId": null, "expectedMilestoneId": "5"}),
+            serde_json::json!({"kind": "requestChanges", "projectId": "7", "iid": "9", "projectPath": "group/app"}),
+            serde_json::json!({"kind": "rerequestReview", "projectId": "7", "iid": "9", "projectPath": "group/app", "userId": "8"}),
+        ] {
+            let action: Action = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(action).unwrap(), value);
+        }
+        for value in [
+            serde_json::json!({"kind": "labels", "projectId": "7", "search": "bug", "page": 1}),
+            serde_json::json!({"kind": "milestones", "projectId": "7", "search": "", "page": 2}),
+        ] {
+            let query: Query = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(query).unwrap(), value);
+        }
+        assert!(serde_json::from_value::<Action>(serde_json::json!({"kind": "setState", "projectId": "7", "iid": "9", "stateEvent": "merge"})).is_err());
+    }
+    #[test]
+    fn line_range_and_suggestion_wire_shapes_use_camel_case_fields() {
+        let position: Position = serde_json::from_value(serde_json::json!({
+            "baseSha": "a".repeat(40),
+            "startSha": "b".repeat(40),
+            "headSha": "c".repeat(40),
+            "oldPath": "src/a.ts",
+            "newPath": "src/a.ts",
+            "newLine": 14,
+            "positionType": "text",
+            "lineRange": {
+                "start": {"oldLine": 11, "newLine": 12, "oldPosition": 11, "newPosition": 12},
+                "end": {"newLine": 14, "oldPosition": 12, "newPosition": 14},
+                "hunk": {"oldStart": 10, "oldCount": 4, "newStart": 11, "newCount": 6},
+            },
+        }))
+        .unwrap();
+        let range = position.line_range.as_ref().unwrap();
+        assert_eq!(range.start.old_line, Some(11));
+        assert_eq!(range.end.old_line, None);
+        assert_eq!(range.end.old_position, 12);
+        assert_eq!(range.hunk.new_count, 6);
+        let wire = serde_json::to_value(&position).unwrap();
+        assert_eq!(wire["lineRange"]["end"]["newPosition"], 14);
+        assert!(wire["lineRange"]["end"].get("oldLine").is_none());
+
+        for value in [
+            serde_json::json!({"kind": "mrVersions", "projectId": "7", "iid": "3", "page": 1}),
+            serde_json::json!({"kind": "versionCompare", "projectId": "7", "iid": "3", "fromSha": "a".repeat(40), "toSha": "b".repeat(40), "page": 2}),
+        ] {
+            let query: Query = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(query).unwrap(), value);
+        }
+
+        let apply = serde_json::json!({
+            "kind": "applySuggestions",
+            "projectId": "7",
+            "iid": "3",
+            "suggestionIds": ["41", "42"],
+            "headSha": "c".repeat(40),
+            "commitMessage": "Apply review suggestions",
+        });
+        let action: Action = serde_json::from_value(apply.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&action).unwrap(), apply);
+        let without_message: Action = serde_json::from_value(serde_json::json!({
+            "kind": "applySuggestions",
+            "projectId": "7",
+            "iid": "3",
+            "suggestionIds": ["41"],
+            "headSha": "c".repeat(40),
+        }))
+        .unwrap();
+        assert!(serde_json::to_value(without_message)
+            .unwrap()
+            .get("commitMessage")
+            .is_none());
     }
 }

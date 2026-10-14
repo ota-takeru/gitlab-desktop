@@ -391,3 +391,90 @@ describe('DiffViewer line comments', () => {
     expect(screen.getByText(/古い版へのコメント1件/u)).toBeInTheDocument()
   })
 })
+
+describe('DiffViewer multi-line comments and whitespace', () => {
+  beforeEach(() => localStorage.clear())
+  // Rows: a (10/10), -b (11), +B (11), +C (12), d (12/13) | -x (30), +y (31)
+  const diff = makeDiff('@@ -10,3 +10,4 @@\n a\n-b\n+B\n+C\n d\n@@ -30 +31 @@\n-x\n+y\n')
+  const renderFor = (onComment = vi.fn(), extra: Partial<React.ComponentProps<typeof DiffViewer>> = {}) => {
+    render(<ThemeProvider theme={createAppTheme('dark')}><DiffViewer diffs={[diff]} onComment={onComment} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile="src/example.ts" selectedPosition={undefined} view="diff" {...extra} /></ThemeProvider>)
+    return onComment
+  }
+  const lineButton = (label: string, index = 0) => screen.getAllByRole('button', { name: `src/example.tsの${label}行にコメント` })[index]
+
+  it('chooses lines with Shift+↑/↓ on the comment buttons and comments on them with Enter', async () => {
+    const onComment = renderFor()
+    lineButton('10').focus()
+    fireEvent.keyDown(lineButton('10'), { key: 'ArrowDown', shiftKey: true })
+    await waitFor(() => expect(lineButton('11', 0)).toHaveFocus())
+    fireEvent.keyDown(lineButton('11', 0), { key: 'ArrowDown', shiftKey: true })
+    await waitFor(() => expect(lineButton('11', 1)).toHaveFocus())
+    expect(screen.getByText(/10〜11行目を選択中です/u)).toBeInTheDocument()
+    expect(screen.getAllByTestId('diff-line').filter((row) => row.dataset.range === 'true')).toHaveLength(3)
+
+    // Enter on a button is a click; it comments on the chosen lines.
+    fireEvent.click(lineButton('11', 1))
+    expect(onComment).toHaveBeenLastCalledWith(expect.objectContaining({
+      lineRange: { end: { newLine: 11, newPosition: 11, oldPosition: 12 }, hunk: { newCount: 4, newStart: 10, oldCount: 3, oldStart: 10 }, start: { newLine: 10, newPosition: 10, oldLine: 10, oldPosition: 10 } },
+      newLine: 11,
+    }))
+  })
+
+  it('does not choose lines across hunks, and Esc drops a choice', () => {
+    const onComment = renderFor()
+    fireEvent.keyDown(lineButton('13'), { key: 'ArrowDown', shiftKey: true })
+    expect(screen.queryByText(/行目を選択中です/u)).not.toBeInTheDocument()
+    fireEvent.keyDown(lineButton('13'), { key: 'ArrowUp', shiftKey: true })
+    expect(screen.getByText(/12〜13行目を選択中です/u)).toBeInTheDocument()
+    fireEvent.keyDown(lineButton('12'), { key: 'Escape' })
+    expect(screen.queryByText(/行目を選択中です/u)).not.toBeInTheDocument()
+
+    fireEvent.click(lineButton('13'))
+    fireEvent.click(lineButton('31'), { shiftKey: true })
+    expect(onComment).toHaveBeenLastCalledWith(expect.not.objectContaining({ lineRange: expect.anything() }))
+  })
+
+  it('chooses lines by dragging over the gutter or by Shift+click', () => {
+    const onComment = renderFor()
+    fireEvent.mouseDown(lineButton('10'), { button: 0 })
+    const rows = screen.getAllByTestId('diff-line')
+    fireEvent.mouseOver(rows[3])
+    expect(rows.map((row) => row.dataset.range === 'true')).toEqual([true, true, true, true, false, false, false])
+    fireEvent.mouseUp(window)
+    expect(onComment).toHaveBeenLastCalledWith(expect.objectContaining({ lineRange: expect.objectContaining({ end: expect.objectContaining({ newLine: 12 }), start: expect.objectContaining({ newLine: 10 }) }), newLine: 12 }))
+
+    fireEvent.click(lineButton('11', 1))
+    fireEvent.click(lineButton('13'), { shiftKey: true })
+    expect(onComment).toHaveBeenLastCalledWith(expect.objectContaining({ lineRange: expect.objectContaining({ end: expect.objectContaining({ newLine: 13, oldLine: 12 }), start: expect.objectContaining({ newLine: 11 }) }), newLine: 13 }))
+  })
+
+  it('shows a multi-line comment under its last line with its lines', () => {
+    const author = { id: '9', name: 'Colleague', username: 'colleague' }
+    const position: Position = { baseSha: 'base', headSha: 'head', lineRange: { end: { newLine: 12, type: 'new' }, start: { newLine: 10, oldLine: 10, type: 'old' } }, newLine: 12, newPath: 'src/example.ts', oldPath: 'src/example.ts', positionType: 'text', startSha: 'start' }
+    renderFor(vi.fn(), { discussionHeadSha: 'head', discussions: [{ id: 'range', individualNote: false, notes: [{ author, body: '3行への指摘', createdAt: '2026-01-01T00:00:00.000Z', id: 'n1', position, resolvable: true, resolved: false, system: false }] }] })
+    const thread = screen.getByText('3行への指摘').closest('.diff-threads') as HTMLElement
+    expect(thread.previousElementSibling?.textContent).toContain('C')
+    expect(within(thread).getByText('10〜12行目へのコメント')).toBeInTheDocument()
+  })
+
+  it('folds whitespace-only changes when asked, remembers it, and stops new line comments meanwhile', () => {
+    const spaced = makeDiff('@@ -1,3 +1,3 @@\n-if (a) {\n-  run()\n+if (a)  {\n+    run()\n }\n', 'src/space.ts')
+    const view = render(<ThemeProvider theme={createAppTheme('dark')}><DiffViewer allowComments diffs={[spaced]} onComment={vi.fn()} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile="src/space.ts" selectedPosition={undefined} view="diff" /></ThemeProvider>)
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(5)
+
+    fireEvent.click(screen.getByRole('button', { name: '空白の変更を無視' }))
+    const rows = screen.getAllByTestId('diff-line')
+    expect(rows.map((row) => row.dataset.kind)).toEqual(['context', 'context', 'context'])
+    expect(rows[1].textContent).toContain('    run()')
+    expect(screen.getByText('このファイルは空白の変更のみです。')).toBeInTheDocument()
+    expect(screen.getByText(/新しい行コメントは書けません/u)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /行にコメント$/u })).not.toBeInTheDocument()
+    expect(localStorage.getItem('gitlab-desktop:diff-ignore-whitespace')).toBe('true')
+
+    view.unmount()
+    renderFor()
+    expect(screen.getByRole('button', { name: '空白の変更を無視' })).toHaveAttribute('aria-pressed', 'true')
+    // Real changes stay changes while whitespace is ignored.
+    expect(screen.getAllByTestId('diff-line').filter((row) => row.dataset.kind !== 'context')).toHaveLength(5)
+  })
+})

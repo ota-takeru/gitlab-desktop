@@ -35,6 +35,8 @@ commitDiff: {kind:'commitDiff',projectId,iid,sha:string,page:number}
 file: {kind:'file',projectId,path:string,sha:string} -> {content:string} (bounded UTF8 text only)
 approvals: {kind:'approvals',projectId,iid} -> {approved:boolean,approvedBy:User[]}
 mrApprovals: {kind:'mrApprovals',items:{projectPath,iid}[] (1-30)} -> {projectPath,iid,approvedBy:string[]|null}[]; one read-only GraphQL POST per list page, paths/iids sent as variables only
+mrAwards: {kind:'mrAwards',projectId,iid} -> {name,user:User}[]; REST award_emoji, first 100
+noteAwards: {kind:'noteAwards',projectPath,iid,sinceNoteId} -> {noteId,awards:{name,user:User}[]}[]; read-only GraphQL `notes(filter: ONLY_COMMENTS, last: 100)` pages walked back from the newest comment to sinceNoteId (at most 5 pages, else completeness 'truncated'); values as variables only
 
 QueryData is Project[] | MergeRequest[] | MergeRequest | Diff[] | Discussion[] | Commit[] | Draft[] | {content:string} | Approvals
 Project={id,name,pathWithNamespace,description:string,webUrl,archived:boolean}
@@ -60,6 +62,8 @@ All actions contain projectId,iid. No automatic retries for writes. Check headSh
 - deleteDraft/publishDraft: {kind,draftId}; publish each selected draft separately, never bulk publish unseen web drafts
 - approve: {kind,sha:string}; unapprove: {kind}
 - setAssignees/setReviewers: {kind,userIds:string[],expectedUserIds:string[]}; Rust refuses when the MR no longer has expectedUserIds and reports UNSUPPORTED when GitLab saved a different set than userIds
+- addAward/removeAward: {kind,noteId?:string,name:string}; Rust reads the MR's or note's award list first: add is refused when the user already gave that emoji, remove deletes the user's own award ID found there (refused when none)
+- markTodoDone: {kind,todoId:string}; projectId/iid are the To-Do's MR. Rust lists the user's pending MergeRequest To-Dos of that project first and refuses unless the To-Do is there for that iid
 
 Unsupported server API => UNSUPPORTED/NOT_FOUND, no synthetic success. Mutations clear account read cache after successful HTTP response; UI refreshes visible resource. UNKNOWN_OUTCOME locks repeat submission until explicit verification.
 

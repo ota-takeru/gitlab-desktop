@@ -166,6 +166,34 @@ export interface ApprovalsQuery {
   iid: string
 }
 
+/** The MR's diff versions (one per push), newest first. */
+export interface MrVersionsQuery {
+  kind: 'mrVersions'
+  projectId: string
+  iid: string
+  page: number
+}
+
+/** The changes between two versions of an MR, by their head commits. */
+export interface VersionCompareQuery {
+  kind: 'versionCompare'
+  projectId: string
+  iid: string
+  fromSha: string
+  toSha: string
+  page: number
+}
+
+export interface MrVersion {
+  id: string
+  headCommitSha: string
+  baseCommitSha: string
+  startCommitSha: string
+  createdAt: string
+  state: string
+  realSize: string
+}
+
 /** Who approved each MR of one list page, fetched in a single request. */
 export interface MrApprovalsQuery {
   kind: 'mrApprovals'
@@ -177,6 +205,90 @@ export interface MrApproval {
   projectPath: string
   iid: string
   approvedBy: string[] | null
+}
+
+/** Emoji reactions on a merge request itself. */
+export interface MrAwardsQuery {
+  kind: 'mrAwards'
+  projectId: string
+  iid: string
+}
+
+/**
+ * Emoji reactions on the comments of a merge request, from the newest back to
+ * `sinceNoteId` (the oldest comment on screen), read in one GraphQL request per
+ * 100 comments.
+ */
+export interface NoteAwardsQuery {
+  kind: 'noteAwards'
+  projectPath: string
+  iid: string
+  sinceNoteId: string
+}
+
+/** One user's emoji reaction; `name` is GitLab's emoji name such as `thumbsup`. */
+export interface AwardEmoji {
+  name: string
+  user: GitLabUser
+}
+
+export interface NoteAwards {
+  noteId: string
+  awards: AwardEmoji[]
+}
+
+/** One page of an MR's pipelines, newest first. */
+export interface MrPipelinesQuery { kind: 'mrPipelines'; projectId: string; iid: string; page: number }
+/** One pipeline, in the project that ran it (`Pipeline.projectId`, else the MR's project). */
+export interface PipelineQuery { kind: 'pipeline'; projectId: string; pipelineId: string }
+/** All jobs and trigger jobs of a pipeline, up to a bound (`completeness: 'truncated'` beyond it). */
+export interface PipelineJobsQuery { kind: 'pipelineJobs'; projectId: string; pipelineId: string }
+/** The end of a job log; kept in memory only, never in the cache. */
+export interface JobTraceQuery { kind: 'jobTrace'; projectId: string; jobId: string }
+
+export interface Pipeline {
+  id: string
+  /** The project that ran it; null when GitLab omitted it. */
+  projectId: string | null
+  status: string
+  ref: string
+  sha: string
+  source?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  /** Seconds; only the single-pipeline response has it. */
+  duration?: number | null
+  webUrl: string
+}
+
+export interface PipelineJob {
+  id: string
+  /** A bridge (trigger job) starts a downstream pipeline instead of running a script. */
+  kind: 'job' | 'bridge'
+  name: string
+  stage: string
+  status: string
+  allowFailure: boolean
+  createdAt: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  duration: number | null
+  failureReason: string | null
+  webUrl: string
+  downstreamPipeline: { id: string; status: string; webUrl: string } | null
+}
+
+/** A colour name from the log, shown with a theme colour. */
+export type TraceColor = 'gray' | 'red' | 'green' | 'yellow' | 'blue' | 'magenta' | 'cyan'
+export interface TraceSpan { text: string; fg?: TraceColor; bold?: boolean }
+
+export interface JobTrace {
+  /** Each line is a list of styled spans; escape sequences are already removed. */
+  lines: TraceSpan[][]
+  /** The start of a longer log was left out. */
+  headOmitted: boolean
 }
 
 export type GitLabQuery =
@@ -195,6 +307,37 @@ export type GitLabQuery =
   | FileQuery
   | ApprovalsQuery
   | MrApprovalsQuery
+  | MrAwardsQuery
+  | NoteAwardsQuery
+  | MrPipelinesQuery
+  | PipelineQuery
+  | PipelineJobsQuery
+  | JobTraceQuery
+  | LabelsQuery
+  | MilestonesQuery
+  | MrVersionsQuery
+  | VersionCompareQuery
+
+/** Labels the project's MRs can use, including those of its ancestor groups. */
+export interface LabelsQuery { kind: 'labels'; projectId: string; search: string; page: number }
+/** Active milestones of the project and its ancestor groups. */
+export interface MilestonesQuery { kind: 'milestones'; projectId: string; search: string; page: number }
+
+export interface GitLabLabel {
+  id: string
+  name: string
+  /** GitLab's `#rrggbb` colour; null when GitLab sent something else. */
+  color: string | null
+  description: string
+}
+
+export interface Milestone {
+  id: string
+  title: string
+  state: string
+  dueDate: string | null
+  webUrl: string | null
+}
 
 export interface Project {
   id: string
@@ -205,6 +348,8 @@ export interface Project {
   archived: boolean
   /** ISO time of the latest activity; absent when GitLab omitted it. */
   lastActivityAt?: string
+  /** `never`, `always`, `default_on` or `default_off`; absent when GitLab omitted it. */
+  squashOption?: string
 }
 
 export interface DiffRefs {
@@ -235,6 +380,28 @@ export interface MergeRequest {
   assignees?: GitLabUser[]
   reviewers?: GitLabUser[]
   pipeline?: { status: string; webUrl: string } | null
+  /*
+   * What the merge controls need. Null (or absent in older cached data) means
+   * GitLab did not say, which is never read as "allowed".
+   */
+  detailedMergeStatus?: string | null
+  mergeStatus?: string | null
+  hasConflicts?: boolean | null
+  blockingDiscussionsResolved?: boolean | null
+  squash?: boolean | null
+  /** Whether a merge squashes once the project's squash setting is applied. */
+  squashOnMerge?: boolean | null
+  forceRemoveSourceBranch?: boolean | null
+  shouldRemoveSourceBranch?: boolean | null
+  /** Set to merge automatically when its checks pass. */
+  autoMerge?: boolean | null
+  rebaseInProgress?: boolean | null
+  /** Commits the source branch is behind the target. */
+  divergedCommitsCount?: number | null
+  /** Whether the current user may merge. */
+  canMerge?: boolean | null
+  mergeError?: string | null
+  milestone?: Milestone | null
 }
 
 export interface Diff {
@@ -257,6 +424,39 @@ export interface Position {
   oldLine?: number
   newLine?: number
   positionType: 'text' | 'file'
+  /** The lines of a multi-line comment, ending at `oldLine`/`newLine`. */
+  lineRange?: LineRange
+}
+
+/**
+ * One end of a line range. GitLab returns the shown numbers and the line's
+ * side; a new comment also sends the hunk's counters at the line, from which
+ * the native side computes GitLab's line code.
+ */
+export interface LineRangePoint {
+  oldLine?: number
+  newLine?: number
+  type?: 'old' | 'new'
+  oldPosition?: number
+  newPosition?: number
+}
+
+export interface LineRange {
+  start: LineRangePoint
+  end: LineRangePoint
+  /** The hunk both lines belong to; sent with a new comment only. */
+  hunk?: { oldStart: number; oldCount: number; newStart: number; newCount: number }
+}
+
+/** A change suggested in a diff comment, as GitLab lists it with the comment. */
+export interface Suggestion {
+  id: string
+  fromLine: number | null
+  toLine: number | null
+  appliable: boolean
+  applied: boolean
+  fromContent: string
+  toContent: string
 }
 
 export interface Note {
@@ -269,6 +469,8 @@ export interface Note {
   resolvable: boolean
   resolved: boolean
   position: Position | null
+  /** Suggestions of a diff comment, in the order of the body's blocks. */
+  suggestions?: Suggestion[]
 }
 
 export interface Discussion {
@@ -315,6 +517,15 @@ export type QueryData =
   | Draft[]
   | FileContent
   | Approvals
+  | AwardEmoji[]
+  | NoteAwards[]
+  | Pipeline[]
+  | Pipeline
+  | PipelineJob[]
+  | JobTrace
+  | GitLabLabel[]
+  | Milestone[]
+  | MrVersion[]
 
 export interface GitLabSnapshot<T = QueryData> {
   data: T
@@ -444,6 +655,116 @@ export type GitLabAction =
   | SetReviewersAction
   | UploadAttachmentAction
   | SetDescriptionAction
+  | AddAwardAction
+  | RemoveAwardAction
+  | MarkTodoDoneAction
+  | JobAction
+  | PipelineAction
+  | MergeAction
+  | CancelAutoMergeAction
+  | RebaseAction
+  | SetStateAction
+  | SetTitleAction
+  | SetLabelsAction
+  | SetMilestoneAction
+  | RequestChangesAction
+  | RerequestReviewAction
+  | ApplySuggestionsAction
+
+/** Adds the user's reaction to the MR, or to the comment `noteId`. */
+export type AddAwardAction = {
+  kind: 'addAward'
+  projectId: string
+  iid: string
+  noteId?: string
+  name: string
+}
+
+/** Removes the user's own reaction of that name; Rust reads its ID from GitLab first. */
+export type RemoveAwardAction = {
+  kind: 'removeAward'
+  projectId: string
+  iid: string
+  noteId?: string
+  name: string
+}
+
+/** Marks a To-Do done; `projectId`/`iid` are its merge request, checked before the write. */
+export type MarkTodoDoneAction = {
+  kind: 'markTodoDone'
+  projectId: string
+  iid: string
+  todoId: string
+}
+
+/**
+ * Job and pipeline operations carry the MR they were started from, so an
+ * unknown outcome stops writes to that MR; `pipelineProjectId` ran the pipeline.
+ */
+export type JobAction = {
+  kind: 'retryJob' | 'cancelJob' | 'playJob'
+  projectId: string
+  iid: string
+  pipelineProjectId: string
+  jobId: string
+}
+
+export type PipelineAction = {
+  kind: 'retryPipeline' | 'cancelPipeline'
+  projectId: string
+  iid: string
+  pipelineProjectId: string
+  pipelineId: string
+}
+
+/** Merges the head `sha` the user saw, or with `autoMerge` once its checks pass. */
+export type MergeAction = {
+  kind: 'merge'
+  projectId: string
+  iid: string
+  sha: string
+  squash: boolean
+  removeSourceBranch: boolean
+  /** Omitted for GitLab's default message. */
+  mergeCommitMessage?: string
+  autoMerge: boolean
+}
+
+export type CancelAutoMergeAction = { kind: 'cancelAutoMerge'; projectId: string; iid: string }
+
+/** Rebases the source branch whose head is `sha`; GitLab finishes it in the background. */
+export type RebaseAction = { kind: 'rebase'; projectId: string; iid: string; sha: string }
+
+/** Closes an open MR or reopens a closed one; refused when the state changed. */
+export type SetStateAction = { kind: 'setState'; projectId: string; iid: string; stateEvent: 'close' | 'reopen' }
+
+/** Replaces the title; refused when GitLab no longer has `expectedTitle`. */
+export type SetTitleAction = { kind: 'setTitle'; projectId: string; iid: string; title: string; expectedTitle: string }
+
+/** Adds and removes labels, keeping labels others changed meanwhile. */
+export type SetLabelsAction = { kind: 'setLabels'; projectId: string; iid: string; addLabels: string[]; removeLabels: string[] }
+
+/** Sets or (null) clears the milestone; refused when GitLab no longer has `expectedMilestoneId`. */
+export type SetMilestoneAction = { kind: 'setMilestone'; projectId: string; iid: string; milestoneId: string | null; expectedMilestoneId: string | null }
+
+/** Marks the current user's review as requesting changes. */
+export type RequestChangesAction = { kind: 'requestChanges'; projectId: string; iid: string; projectPath: string }
+
+/** Asks a reviewer for a new review. */
+export type RerequestReviewAction = { kind: 'rerequestReview'; projectId: string; iid: string; projectPath: string; userId: string }
+
+/**
+ * Applies suggestions as one commit; refused when the MR head is no longer
+ * `headSha`, the head they were shown on.
+ */
+export type ApplySuggestionsAction = {
+  kind: 'applySuggestions'
+  projectId: string
+  iid: string
+  suggestionIds: string[]
+  headSha: string
+  commitMessage?: string
+}
 
 /** Replaces the description; refused when GitLab no longer has `expectedDescription`. */
 export type SetDescriptionAction = {
@@ -480,6 +801,16 @@ export type GitLabQueryData<Q extends GitLabQuery> =
             : Q extends FileQuery ? FileContent
               : Q extends ApprovalsQuery ? Approvals
                 : Q extends MrApprovalsQuery ? MrApproval[]
+                : Q extends MrAwardsQuery ? AwardEmoji[]
+                : Q extends NoteAwardsQuery ? NoteAwards[]
+                : Q extends MrPipelinesQuery ? Pipeline[]
+                : Q extends PipelineQuery ? Pipeline
+                : Q extends PipelineJobsQuery ? PipelineJob[]
+                : Q extends JobTraceQuery ? JobTrace
+                : Q extends LabelsQuery ? GitLabLabel[]
+                : Q extends MilestonesQuery ? Milestone[]
+                : Q extends MrVersionsQuery ? MrVersion[]
+                : Q extends VersionCompareQuery ? Diff[]
                 : QueryData
 
 export function isGitLabErrorShape(value: unknown): value is GitLabErrorShape {

@@ -20,15 +20,20 @@ const statuses: Record<string, { label: string; tone: Tone; icon: ReactElement }
   preparing: { label: '準備中', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
   waiting_for_resource: { label: 'リソース待ち', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
   scheduled: { label: '予約済み', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  waiting_for_callback: { label: '応答待ち', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  canceling: { label: 'キャンセル中', tone: 'warning.main', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
   manual: { label: '手動待ち', tone: 'warning.main', icon: <PauseCircleOutlineRoundedIcon fontSize="inherit" /> },
   canceled: { label: 'キャンセル', tone: 'warning.main', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
   skipped: { label: 'スキップ', tone: 'text.secondary', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
 }
 
-/** Pipeline state as icon plus text, so the state never depends on color alone. */
-export function PipelineStatus({ status }: { status: string | null }) {
+/**
+ * Pipeline or job state as icon plus text, so the state never depends on color alone.
+ * `prefix` names what the state belongs to; a job list leaves it empty.
+ */
+export function PipelineStatus({ prefix = 'CI', status }: { prefix?: string; status: string | null }) {
   const known = status ? statuses[status] : undefined
-  const label = `CI ${known?.label ?? (status || '状態不明')}`
+  const label = `${prefix ? `${prefix} ` : ''}${known?.label ?? (status || '状態不明')}`
   return (
     <Stack aria-label={label} component="span" direction="row" role="img" spacing={0.5} sx={{ alignItems: 'center', color: known?.tone ?? 'text.secondary', display: 'inline-flex', fontSize: 16, whiteSpace: 'nowrap' }}>
       {known?.icon ?? <HelpOutlineRoundedIcon fontSize="inherit" />}

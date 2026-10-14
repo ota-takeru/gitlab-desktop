@@ -1,3 +1,4 @@
+import DoneRoundedIcon from '@mui/icons-material/DoneRounded'
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import Alert from '@mui/material/Alert'
@@ -7,7 +8,9 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState, type ReactNode } from 'react'
+import { useNotify } from '../../components/Feedback'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
@@ -16,9 +19,12 @@ import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StatusPill, type StatusTone } from '../../components/StatusPill'
 import { formatFetchedAt } from '../../lib/format'
+import type { GitLabTodo } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import type { MrRef } from '../shared/personalWorkspace'
+import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { forgetDoneTodo } from './todoCache'
 
 const actionLabels: Record<string, string> = { assigned: '担当依頼', mentioned: 'メンション', directly_addressed: '直接メンション', approval_required: '承認依頼', marked: 'To-Do', build_failed: 'CI失敗', unmergeable: 'マージ不可', merge_train_removed: 'マージトレイン解除', review_requested: 'レビュー依頼' }
 // What blocks the MR stands out from requests and mentions.
@@ -36,7 +42,7 @@ export function TodoView({ navigation, onOpen, selected = null }: { navigation?:
       {!session ? <Alert severity="info" sx={{ m: 1.5 }}>設定でGitLabに接続してください。</Alert> : null}
       {result.error ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity={result.data ? 'warning' : 'error'} sx={{ m: 1.5 }}>{result.data ? `保存済みのTo-Doを表示中です。更新に失敗しました: ${result.error.message}` : result.error.message}</Alert> : null}
       {result.data && result.data.length === 0 ? <PaneEmpty description="このページに未完了のMR To-Doはありません。" icon={<InboxOutlinedIcon fontSize="inherit" />} title="To-Doはありません" /> : null}
-      {result.data?.length ? <Box aria-label="To-Do" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((todo) => <ListRow key={todo.id} mrId={`${todo.projectId}-${todo.iid}`} onOpen={() => onOpen(todo)} selected={selected?.projectId === todo.projectId && selected.iid === todo.iid}>
+      {result.data?.length ? <Box aria-label="To-Do" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((todo) => <ListRow actions={session ? <TodoDoneButton sessionId={session.id} todo={todo} /> : undefined} key={todo.id} mrId={`${todo.projectId}-${todo.iid}`} onOpen={() => onOpen(todo)} selected={selected?.projectId === todo.projectId && selected.iid === todo.iid}>
         {/* The same three lines as an MR list row: where and when, the title, then what it asks and from whom. */}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
           <Tooltip title={`${todo.projectName} !${todo.iid}`}><Typography color="textSecondary" noWrap sx={{ minWidth: 0 }} variant="caption">{todo.projectName} !{todo.iid}</Typography></Tooltip>
@@ -53,4 +59,30 @@ export function TodoView({ navigation, onOpen, selected = null }: { navigation?:
     </Box>
     {session && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setPage(result.snapshot!.nextPage!)} onPrevious={() => setPage((value) => value - 1)} page={page} /></Box> : null}
   </Box>
+}
+
+/**
+ * Marks one To-Do done. The write is recorded against the To-Do's MR, so an
+ * unknown outcome stops further writes to that MR until it is checked there.
+ */
+export function TodoDoneButton({ sessionId, todo, variant = 'icon' }: { sessionId: string; todo: GitLabTodo; variant?: 'icon' | 'button' }) {
+  const queryClient = useQueryClient()
+  const notify = useNotify()
+  const mutation = useGitLabMutation(sessionId, JSON.stringify({ iid: todo.iid, projectId: todo.projectId }))
+  const disabled = mutation.isLocked || mutation.isPending
+  const markDone = async () => {
+    const result = await mutation.runDetailed({ iid: todo.iid, kind: 'markTodoDone', projectId: todo.projectId, todoId: todo.id })
+    if (result.ok) {
+      forgetDoneTodo(queryClient, sessionId, todo.id)
+      notify({ message: 'To-Doを完了しました', severity: 'success' })
+    } else if (result.status === 'unknown') {
+      notify({ message: 'To-Doの完了結果を確認できません。MRを開いて結果を確認してください。', severity: 'warning' })
+    } else if (result.error) {
+      notify({ message: `To-Doを完了できませんでした: ${result.error.message}`, severity: 'error' })
+    }
+  }
+  if (variant === 'button') {
+    return <Button disabled={disabled} onClick={() => void markDone()} startIcon={<DoneRoundedIcon />} variant="outlined">{mutation.isPending ? '完了中…' : 'To-Doを完了'}</Button>
+  }
+  return <Tooltip title="To-Doを完了"><span><IconButton aria-label={`「${todo.title}」のTo-Doを完了`} disabled={disabled} onClick={() => void markDone()}><DoneRoundedIcon /></IconButton></span></Tooltip>
 }

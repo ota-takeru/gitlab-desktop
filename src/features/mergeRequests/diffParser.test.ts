@@ -1,4 +1,4 @@
-import { parseDiff, splitFileLines } from './diffParser'
+import { ignoreWhitespace, parseDiff, splitFileLines } from './diffParser'
 
 describe('parseDiff', () => {
   it('keeps header-looking additions and deletions inside a hunk', () => {
@@ -94,5 +94,29 @@ describe('parseDiff', () => {
       expect(parsed.status).toBe('invalid')
       expect(parsed.lines).toHaveLength(0)
     }
+  })
+
+  it('keeps each line\'s hunk and both counters, as GitLab\'s line codes count them', () => {
+    const parsed = parseDiff('@@ -0,0 +1,1 @@\n+first\n@@ -4,2 +5,2 @@\n-gone\n+new\n kept\n', 'a.ts', 'a.ts')
+    expect(parsed.hunks).toEqual([{ newCount: 1, newStart: 1, oldCount: 0, oldStart: 0 }, { newCount: 2, newStart: 5, oldCount: 2, oldStart: 4 }])
+    expect(parsed.lines.map((line) => [line.hunk, line.oldPosition, line.newPosition])).toEqual([[0, 0, 1], [1, 4, 5], [1, 5, 5], [1, 5, 6]])
+  })
+})
+
+describe('ignoreWhitespace', () => {
+  it('shows lines that differ only in whitespace as unchanged, best match first, and keeps real changes', () => {
+    const { lines } = parseDiff('@@ -1,4 +1,4 @@\n-a  b\n-real\n-  c\n+ab\n+changed\n+    c\n same\n', 'a.ts', 'a.ts')
+    const folded = ignoreWhitespace(lines)
+    expect(folded.changed).toBe(true)
+    expect(folded.lines.map((line) => [line.kind, line.oldLine, line.newLine, line.text, Boolean(line.whitespaceOnly)])).toEqual([
+      ['context', 1, 1, 'ab', true],
+      ['remove', 2, undefined, 'real', false],
+      ['add', undefined, 2, 'changed', false],
+      ['context', 3, 3, '    c', true],
+      ['context', 4, 4, 'same', false],
+    ])
+    const onlySpace = ignoreWhitespace(parseDiff('@@ -1 +1 @@\n-x =1\n+x = 1\n', 'a.ts', 'a.ts').lines)
+    expect(onlySpace.changed).toBe(false)
+    expect(onlySpace.lines).toHaveLength(1)
   })
 })

@@ -1,4 +1,4 @@
-import type { Diff, Discussion, Draft } from '../../types/gitlab'
+import type { Diff, Discussion, Draft, Position } from '../../types/gitlab'
 import type { ParsedLine } from './diffParser'
 
 /** Places line comments of a diff file by line, for the threads shown under diff lines. */
@@ -19,6 +19,26 @@ export function pendingDraftsByLine(drafts: Draft[] | undefined, diff: Diff | un
 export function lineKey(line: Pick<ParsedLine, 'newLine' | 'oldLine'>): string | null {
   if (line.newLine != null) return `n:${line.newLine}`
   return line.oldLine != null ? `o:${line.oldLine}` : null
+}
+
+/**
+ * The commented lines: `12`, or `12〜15` for a multi-line comment. A line that
+ * exists only before the change is marked `−`, where a range mixes the sides.
+ */
+export function positionLines(position: Pick<Position, 'newLine' | 'oldLine' | 'lineRange'>): string {
+  const end = position.newLine ?? position.oldLine
+  if (end == null) return 'file'
+  const range = position.lineRange
+  const start = range?.start.newLine ?? range?.start.oldLine
+  if (!range || start == null || (start === end && (range.start.newLine == null) === (position.newLine == null))) return String(end)
+  const mixed = (range.start.newLine == null) !== (position.newLine == null)
+  const label = (line: number, oldOnly: boolean) => mixed && oldOnly ? `−${line}` : String(line)
+  return `${label(start, range.start.newLine == null)}〜${label(end, position.newLine == null)}`
+}
+
+/** Where a line comment is, such as `src/a.ts:12〜15`. */
+export function positionLabel(position: Pick<Position, 'newPath' | 'newLine' | 'oldLine' | 'lineRange'>): string {
+  return `${position.newPath}:${positionLines(position)}`
 }
 
 /** Threads of the file placed by line, and how many belong to another version of it. */

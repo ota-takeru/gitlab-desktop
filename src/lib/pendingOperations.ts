@@ -55,6 +55,6 @@ function parsePendingOperation(value: unknown): PendingOperation {
 function isGitLabAction(value: unknown): value is GitLabAction {
   if (!value || typeof value !== 'object') return false
   const candidate = value as { kind?: unknown; projectId?: unknown; iid?: unknown }
-  const kinds = ['comment', 'reply', 'editNote', 'deleteNote', 'resolve', 'saveDraft', 'editDraft', 'deleteDraft', 'publishDraft', 'approve', 'unapprove', 'setAssignees', 'setReviewers', 'uploadAttachment', 'setDescription'] as const
+  const kinds = ['comment', 'reply', 'editNote', 'deleteNote', 'resolve', 'saveDraft', 'editDraft', 'deleteDraft', 'publishDraft', 'approve', 'unapprove', 'setAssignees', 'setReviewers', 'uploadAttachment', 'setDescription', 'merge', 'cancelAutoMerge', 'rebase', 'setState', 'setTitle', 'setLabels', 'setMilestone', 'requestChanges', 'rerequestReview', 'applySuggestions'] as const
   return typeof candidate.kind === 'string' && (kinds as readonly string[]).includes(candidate.kind) && typeof candidate.projectId === 'string' && typeof candidate.iid === 'string'
 }

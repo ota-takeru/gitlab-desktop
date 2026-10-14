@@ -1,5 +1,6 @@
 import AddCommentRoundedIcon from '@mui/icons-material/AddCommentRounded'
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
+import DifferenceOutlinedIcon from '@mui/icons-material/DifferenceOutlined'
 import SendRoundedIcon from '@mui/icons-material/SendRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -19,6 +20,8 @@ import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import type { GitLabUser, Position, UsersQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { positionLabel } from './diffLineThreads'
+import { MAX_SUGGESTION_LINES_ABOVE, suggestionBlock } from './suggestions'
 
 interface ReviewComposerProps {
   attachmentTargetKey?: string
@@ -38,6 +41,12 @@ interface ReviewComposerProps {
   onUploadAttachment?: (file: File) => Promise<string | null>
   /** Keeps a link whose upload finished after this editor was closed or retargeted. */
   onDetachedAttachment?: (markdown: string) => void
+  /**
+   * Reads the current text of the commented lines, which 「提案を挿入」 starts
+   * a suggestion from; null when the lines allow no suggestion (a comment
+   * ending on a removed line). Without it the button is not shown.
+   */
+  suggestionLines?: (() => string[] | null) | null
   value: string
 }
 
@@ -56,6 +65,7 @@ export function ReviewComposer({
   pending = false,
   replyAuthor,
   replyDiscussionId,
+  suggestionLines,
   targetPosition,
   value,
 }: ReviewComposerProps) {
@@ -63,6 +73,7 @@ export function ReviewComposer({
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionCandidates, setMentionCandidates] = useState<GitLabUser[]>([])
   const [activeMentionIndex, setActiveMentionIndex] = useState(0)
@@ -195,14 +206,22 @@ export function ReviewComposer({
   }
 
   const close = replyDiscussionId ? onCancelReply : onClearPosition
-  const targetLabel = targetPosition ? `${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}` : ''
+  const targetLabel = targetPosition ? positionLabel(targetPosition) : ''
+  const suggestionHint = suggestionLines === null ? '変更前の行（削除行）で終わるコメントには提案を付けられません' : '選択した行の現在の内容から変更提案を作成します'
+  const insertSuggestion = () => {
+    const lines = suggestionLines?.()
+    if (!lines) { setSuggestionError('選択した行の内容を差分から読み取れませんでした。差分を更新してから行を選び直してください。'); return }
+    if (lines.length - 1 > MAX_SUGGESTION_LINES_ABOVE) { setSuggestionError(`提案はコメント行から上${MAX_SUGGESTION_LINES_ABOVE}行までです。範囲を狭めてください。`); return }
+    setSuggestionError(null)
+    editorRef.current?.insertBlock(suggestionBlock(lines))
+  }
   return (
     // A reply opens in place of the thread's reply field, so it has no frame or heading of its own.
     <Paper component="section" aria-label="レビューコメント入力" data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.5 }} variant="outlined">
       <Stack spacing={1}>
         {replyDiscussionId ? null : <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
           <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? `${targetLabel} にコメント` : 'コメントを追加'}</Typography>
-          {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={`${targetPosition.newPath}:${targetPosition.newLine ?? targetPosition.oldLine ?? 'file'}`} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} variant="outlined" /> : null}
+          {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={targetLabel} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} variant="outlined" /> : null}
         </Stack>}
         <MarkdownEditor
           activeDescendantId={mentionListShown ? mentionOptionId(mentionListId, activeMentionIndex) : null}
@@ -216,7 +235,15 @@ export function ReviewComposer({
           onPasteImage={onUploadAttachment ? (file) => { void uploadAttachment(file) } : undefined}
           placeholder={replyAuthor ? `${replyAuthor}に返信` : 'Markdownでコメントを書けます'}
           ref={editorRef}
-          toolbarEnd={onUploadAttachment ? (
+          toolbarEnd={onUploadAttachment || suggestionLines !== undefined ? <>
+            {suggestionLines !== undefined ? (
+              <Tooltip title={suggestionHint}>
+                <span>
+                  <Button disabled={controlsDisabled || !suggestionLines} onClick={insertSuggestion} size="small" startIcon={<DifferenceOutlinedIcon />}>提案を挿入</Button>
+                </span>
+              </Tooltip>
+            ) : null}
+            {onUploadAttachment ? (
             <Tooltip title="ファイルを添付（コメント投稿前にGitLabへアップロード・10 MiBまで。画像は貼り付けでも可）">
               <span>
                 <IconButton aria-label={uploading ? '添付ファイルをアップロード中…' : 'ファイルを添付'} component="label" disabled={targetControlsDisabled} size="small">
@@ -234,11 +261,13 @@ export function ReviewComposer({
                 </IconButton>
               </span>
             </Tooltip>
-          ) : null}
+            ) : null}
+          </> : null}
           value={value}
         />
         {uploading ? <Typography aria-live="polite" color="textSecondary" variant="caption">添付ファイルをアップロード中です。投稿先は変更できませんが、本文の入力は続けられます。</Typography> : null}
         {attachmentError ? <Alert onClose={() => setAttachmentError(null)} severity="error">{attachmentError}</Alert> : null}
+        {suggestionError ? <Alert onClose={() => setSuggestionError(null)} severity="warning">{suggestionError}</Alert> : null}
         {enableMentions ? <MentionSuggestions id={mentionListId} onSelect={insertMention} onUsersChange={onMentionCandidatesChange} search={controlsDisabled ? '' : mentionQuery ?? ''} selectedIndex={activeMentionIndex} /> : null}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 1 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>

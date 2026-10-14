@@ -18,14 +18,15 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/Feedback'
 import { MarkdownEditor } from '../../components/MarkdownEditor'
-import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { RelativeTime } from '../../components/RelativeTime'
 import { ResolveToggle } from '../../components/ResolveToggle'
 import type { Discussion, Note, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
+import { positionLabel as formatPositionLabel } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
+import { NoteBody, type SuggestionActions } from './SuggestionBlock'
 import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
 
 const NOTES_PER_PAGE = 50
@@ -57,6 +58,10 @@ interface DiscussionListProps {
   onEditingNoteChange?: (noteId: string | null) => void
   /** Where an edit's text is kept, like new comments, so it survives leaving the tab. */
   noteEditBufferKey?: (note: Note) => string
+  /** The emoji reactions shown under a comment. */
+  renderReactions?: (note: Note) => React.ReactNode
+  /** Applying the suggestions in the comments. */
+  suggestionActions?: SuggestionActions
 }
 
 export interface OlderDiscussions {
@@ -71,7 +76,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, renderCodeContext, replyComposer, replyDiscussionId, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, renderCodeContext, renderReactions, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
   const setEditing = onEditingNoteChange ?? setLocalEditingId
@@ -226,7 +231,7 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
         const replying = discussion.id === replyDiscussionId && Boolean(replyComposer)
         const isCollapsed = isThreadCollapsible(notes) && (collapsedThreads[discussion.id] ?? resolved) && !containsEditingNote && !replying
         const position = notes.find((note) => note.position)?.position ?? null
-        const positionLabel = position ? `${position.newPath}:${position.newLine ?? position.oldLine ?? 'file'}` : null
+        const positionLabel = position ? formatPositionLabel(position) : null
         const firstNote = notes[0]
         const threadLabel = positionLabel ?? `${firstNote?.author.name ?? ''}のスレッド`
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
@@ -309,7 +314,8 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                       </Stack>
                       {editing === note.id ? (
                         <NoteEditor bufferKey={noteEditBufferKey?.(note) ?? JSON.stringify({ noteEdit: note.id })} disabled={disabled} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
-                      ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><MockMarkdown body={note.body} size="body1" /></Box>}
+                      ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
+                      {editing !== note.id && renderReactions ? <Box sx={{ mt: 1 }}>{renderReactions(note)}</Box> : null}
                     </Box>
                   </Box>
                 )

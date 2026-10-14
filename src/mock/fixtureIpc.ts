@@ -6,7 +6,8 @@
 import { mockIPC } from '@tauri-apps/api/mocks'
 
 import { createFixtureData, fixtureSession, fixtureUser, type FixtureMergeRequest } from './gitlabFixtures'
-import type { Discussion, Draft, GitLabAction, GitLabErrorShape, GitLabQuery, GitLabSnapshot, Note, QueryData } from '../types/gitlab'
+import { createPipelineFixtures } from './pipelineFixtures'
+import type { AwardEmoji, Discussion, Draft, GitLabAction, GitLabErrorShape, GitLabQuery, GitLabSnapshot, Note, QueryData } from '../types/gitlab'
 
 /**
  * - ready: network queries return the fixtures.
@@ -32,8 +33,18 @@ interface MutateInput { action: GitLabAction }
 export function installFixtureIpc(state: FixtureState): void {
   const now = Date.now()
   const data = createFixtureData(now)
+  const pipelines = createPipelineFixtures()
   const drafts = new Map<string, Draft[]>()
   const localDrafts = new Map<string, { body: string; updatedAt: number }>()
+  // Reactions by `<projectId>-<iid>` (the MR) or `<projectId>-<iid>:<noteId>` (a comment).
+  const awards = new Map<string, AwardEmoji[]>()
+  const doneTodos = new Set<string>()
+  const sample = data.mergeRequests[0]
+  if (sample) {
+    awards.set(keyOf(sample.mergeRequest), [{ name: 'thumbsup', user: data.users[0] ?? fixtureUser }, { name: 'tada', user: fixtureUser }])
+    const firstNote = sample.discussions.flatMap((discussion) => discussion.notes).find((item) => !item.system)
+    if (firstNote) awards.set(`${keyOf(sample.mergeRequest)}:${firstNote.id}`, [{ name: 'eyes', user: data.users[1] ?? fixtureUser }, { name: 'rocket', user: data.users[0] ?? fixtureUser }])
+  }
   let sequence = 0
 
   // `isTauri()` reads this flag; mockIPC provides the IPC internals.
@@ -99,7 +110,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'project': return data.projects.find((project) => project.pathWithNamespace === request.path) ?? notFound()
       case 'users': return data.users.filter((user) => matches(`${user.name} ${user.username}`, request.search))
       case 'groups': return data.groups.filter((group) => matches(`${group.name} ${group.fullPath}`, request.search))
-      case 'todos': return data.mergeRequests.slice(0, 1).map(({ mergeRequest }) => ({
+      case 'todos': return data.mergeRequests.slice(0, 1).filter(({ mergeRequest }) => !doneTodos.has(`todo-${mergeRequest.id}`)).map(({ mergeRequest }) => ({
         actionName: 'review_requested',
         author: mergeRequest.author,
         body: mergeRequest.title,
@@ -149,6 +160,38 @@ export function installFixtureIpc(state: FixtureState): void {
         ...item,
         approvedBy: data.mergeRequests.find(({ mergeRequest }) => mergeRequest.projectPath === item.projectPath && mergeRequest.iid === item.iid)?.approvedBy.map((user) => user.id) ?? null,
       })) as unknown as QueryData
+      case 'mrAwards': return awards.get(keyOf(find(request).mergeRequest)) ?? []
+      case 'noteAwards': {
+        const target = data.mergeRequests.find(({ mergeRequest }) => mergeRequest.projectPath === request.projectPath && mergeRequest.iid === request.iid) ?? notFound()
+        return notesOf(target).filter((item) => !item.system).map((item) => ({ awards: awards.get(`${keyOf(target.mergeRequest)}:${item.id}`) ?? [], noteId: item.id }))
+      }
+      case 'mrPipelines': return pipelines.pipelinesOf(find(request).mergeRequest).map((item) => ({ ...item.pipeline }))
+      case 'pipeline': return { ...pipelines.pipeline(request.pipelineId).pipeline }
+      case 'pipelineJobs': return pipelines.pipeline(request.pipelineId).jobs.map((job) => ({ ...job }))
+      case 'jobTrace': return pipelines.trace(request.jobId)
+      case 'labels': return data.labels.filter((label) => matches(label.name, request.search))
+      case 'milestones': return data.milestones.filter((milestone) => matches(milestone.title, request.search))
+      // Each fixture commit stands for one push, newest first.
+      case 'mrVersions': {
+        const target = find(request)
+        return target.commits.map((commit, index) => ({
+          baseCommitSha: target.mergeRequest.diffRefs?.baseSha ?? '',
+          createdAt: commit.createdAt,
+          headCommitSha: commit.id,
+          id: String(1000 + index),
+          realSize: String(commit.diffs.length),
+          startCommitSha: target.mergeRequest.diffRefs?.startSha ?? '',
+          state: 'collected',
+        })).reverse()
+      }
+      // The files changed by the commits after the chosen version, the latest change of each.
+      case 'versionCompare': {
+        const { commits } = find(request)
+        const from = commits.findIndex((commit) => commit.id === request.fromSha)
+        if (from < 0) return notFound()
+        const byPath = new Map(commits.slice(from + 1).flatMap((commit) => commit.diffs).map((diff) => [diff.newPath, diff]))
+        return [...byPath.values()]
+      }
     }
   }
 
@@ -209,8 +252,67 @@ export function installFixtureIpc(state: FixtureState): void {
         break
       case 'uploadAttachment':
         break
+      case 'addAward':
+      case 'removeAward': {
+        const key = action.noteId ? `${keyOf(action)}:${action.noteId}` : keyOf(action)
+        const others = (awards.get(key) ?? []).filter((award) => !(award.name === action.name && award.user.id === fixtureUser.id))
+        awards.set(key, action.kind === 'addAward' ? [...others, { name: action.name, user: fixtureUser }] : others)
+        break
+      }
+      case 'markTodoDone':
+        doneTodos.add(action.todoId)
+        break
+      case 'retryJob':
+      case 'cancelJob':
+      case 'playJob':
+      case 'retryPipeline':
+      case 'cancelPipeline':
+        pipelines.mutate(action)
+        break
+      // Merge operations change only the fixture's own copy, the way GitLab would answer.
+      case 'merge':
+        if (target.mergeRequest.headSha !== action.sha) stale()
+        target.mergeRequest = action.autoMerge
+          ? { ...target.mergeRequest, autoMerge: true }
+          : { ...target.mergeRequest, detailedMergeStatus: 'not_open', state: 'merged' }
+        break
+      case 'cancelAutoMerge':
+        target.mergeRequest = { ...target.mergeRequest, autoMerge: false }
+        break
+      case 'rebase':
+        if (target.mergeRequest.headSha !== action.sha) stale()
+        target.mergeRequest = { ...target.mergeRequest, detailedMergeStatus: target.mergeRequest.detailedMergeStatus === 'need_rebase' ? 'mergeable' : target.mergeRequest.detailedMergeStatus, divergedCommitsCount: 0 }
+        break
+      case 'setState':
+        if (target.mergeRequest.state !== (action.stateEvent === 'close' ? 'opened' : 'closed')) stale()
+        target.mergeRequest = { ...target.mergeRequest, detailedMergeStatus: action.stateEvent === 'close' ? 'not_open' : 'mergeable', state: action.stateEvent === 'close' ? 'closed' : 'opened' }
+        break
+      case 'setTitle':
+        if (target.mergeRequest.title !== action.expectedTitle) stale()
+        target.mergeRequest = { ...target.mergeRequest, draft: /^\s*(?:\[draft\]|\(draft\)|draft:)/iu.test(action.title), title: action.title }
+        break
+      case 'setLabels':
+        target.mergeRequest = { ...target.mergeRequest, labels: [...(target.mergeRequest.labels ?? []).filter((label) => !action.removeLabels.includes(label)), ...action.addLabels.filter((label) => !target.mergeRequest.labels?.includes(label))] }
+        break
+      case 'setMilestone':
+        if ((target.mergeRequest.milestone?.id ?? null) !== action.expectedMilestoneId) stale()
+        target.mergeRequest = { ...target.mergeRequest, milestone: data.milestones.find((milestone) => milestone.id === action.milestoneId) ?? null }
+        break
+      case 'requestChanges':
+      case 'rerequestReview':
+        break
+      case 'applySuggestions':
+        if (target.mergeRequest.headSha !== action.headSha) throw { code: 'INVALID_INPUT', message: 'MRが更新されています。再読み込みしてから再試行してください。' } satisfies GitLabErrorShape
+        for (const item of notesOf(target)) {
+          for (const suggestion of item.suggestions ?? []) if (action.suggestionIds.includes(suggestion.id)) Object.assign(suggestion, { appliable: false, applied: true })
+        }
+        break
     }
     return null
+  }
+
+  function stale(): never {
+    throw { code: 'INVALID_INPUT', message: 'MRが更新されています。再読み込みしてから再試行してください。' } satisfies GitLabErrorShape
   }
 
   // GitLab accepts a group's ID or its path; the fixture resolves either.

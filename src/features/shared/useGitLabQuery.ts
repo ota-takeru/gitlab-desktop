@@ -38,15 +38,24 @@ interface LoadedQuery<T> {
 export function useGitLabQuery<Q extends GitLabQuery>(
   sessionId: string | null,
   query: Q | null,
-  options: { keepPrevious?: boolean } = {},
+  options: {
+    keepPrevious?: boolean
+    /**
+     * Replaces the default 60-second refresh of open reviews, e.g. 15 seconds
+     * for a running pipeline; false turns it off. It still runs only while the
+     * window is visible, auto refresh is allowed and the last read succeeded.
+     */
+    refreshIntervalMs?: number | false
+  } = {},
 ): GitLabQueryState<GitLabQueryData<Q>> {
+  const { refreshIntervalMs } = options
   const queryClient = useQueryClient()
   const autoRefresh = useQueryRefreshAllowed()
   const queryJson = useMemo(() => (query ? JSON.stringify(query) : ''), [query])
   const queryKey = useMemo(() => ['gitlab', sessionId ?? '', queryJson] as const, [queryJson, sessionId])
   const loaded = useQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
     enabled: Boolean(sessionId && query),
-    refetchInterval: (current) => autoRefresh && document.visibilityState === 'visible' && query && ['mrs', 'mr', 'notes', 'discussions', 'drafts', 'todos', 'approvals', 'mrApprovals'].includes(query.kind) && !current.state.error && !current.state.data?.error ? 60_000 : false,
+    refetchInterval: (current) => autoRefresh && document.visibilityState === 'visible' && query && (refreshIntervalMs === undefined ? ['mrs', 'mr', 'notes', 'discussions', 'drafts', 'todos', 'approvals', 'mrApprovals', 'mrAwards', 'noteAwards'].includes(query.kind) : refreshIntervalMs !== false) && !current.state.error && !current.state.data?.error ? refreshIntervalMs || 60_000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: (current) => autoRefresh && !current.state.error && !current.state.data?.error && Date.now() - current.state.dataUpdatedAt > 60_000,
     queryFn: ({ signal }) => {

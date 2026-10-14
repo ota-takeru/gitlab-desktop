@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
 import type { MergeRequest, Note } from '../../types/gitlab'
@@ -50,8 +50,15 @@ const detailMocks = vi.hoisted(() => {
     togglePinnedMock: vi.fn(),
     unreadIds: ['1001'],
     useComposerBufferMock: vi.fn(),
+    versions: [
+      { id: '3', headCommitSha: 'head-abc', baseCommitSha: 'base-abc', startCommitSha: 'start-abc', createdAt: '2026-04-03T00:00:00.000Z', state: 'collected', realSize: '1' },
+      { id: '2', headCommitSha: 'b'.repeat(40), baseCommitSha: 'base-abc', startCommitSha: 'start-abc', createdAt: '2026-04-02T00:00:00.000Z', state: 'collected', realSize: '1' },
+      { id: '1', headCommitSha: 'a'.repeat(40), baseCommitSha: 'base-abc', startCommitSha: 'start-abc', createdAt: '2026-04-01T00:00:00.000Z', state: 'collected', realSize: '1' },
+    ],
     workspaceObserveMock: vi.fn(),
     users: [{ id: '50', name: 'Alice Example', username: 'alice' }],
+    mrAwards: [] as unknown[],
+    noteAwards: [] as unknown[],
   }
 })
 
@@ -89,6 +96,11 @@ vi.mock('../shared/useGitLabQuery', () => ({
     else if (query?.kind === 'drafts') data = detailMocks.drafts
     else if (query?.kind === 'commits') data = detailMocks.commits
     else if (query?.kind === 'approvals') data = []
+    else if (query?.kind === 'mrAwards') data = detailMocks.mrAwards
+    else if (query?.kind === 'noteAwards') data = detailMocks.noteAwards
+    else if (query?.kind === 'mrPipelines') data = []
+    else if (query?.kind === 'mrVersions') data = detailMocks.versions
+    else if (query?.kind === 'versionCompare') data = [detailMocks.diff]
     return {
       data,
       error: null,
@@ -299,7 +311,7 @@ describe('MergeRequestDetail tabs and description', () => {
     detailMocks.mutationRunMock.mockReset().mockResolvedValue(true)
   })
 
-  function renderDetail(initialTab: 'discussion' | 'changes' | 'overview', onTabChange = vi.fn()) {
+  function renderDetail(initialTab: 'discussion' | 'changes' | 'overview' | 'pipelines', onTabChange = vi.fn()) {
     function Harness() {
       const [tab, setTab] = useState(initialTab)
       return <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={(next) => { onTabChange(next); setTab(next) }} tab={tab} />
@@ -339,6 +351,23 @@ describe('MergeRequestDetail tabs and description', () => {
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ description: '## 変更点\n\n説明を追加', expectedDescription: '', iid: '120', kind: 'setDescription', projectId: '7' }, undefined))
     await waitFor(() => expect(screen.queryByRole('textbox', { name: '説明を編集' })).not.toBeInTheDocument())
   })
+
+  it('asks a reviewer for a new review from the overview and shows the merge state in the header', async () => {
+    const original = detailMocks.mergeRequest
+    detailMocks.mergeRequest = { ...original, canMerge: true, detailedMergeStatus: 'discussions_not_resolved', milestone: { dueDate: null, id: '4', state: 'active', title: 'v0.9', webUrl: null }, projectPath: 'group/project', reviewers: [{ id: '50', name: 'Alice Example', username: 'alice' }, detailMocks.session.user] } as typeof original
+    globalThis.confirm = vi.fn(() => true)
+    try {
+      renderDetail('overview')
+      expect(await screen.findByText('未解決のスレッドがあります')).toBeInTheDocument()
+      expect(screen.getByText('v0.9')).toBeInTheDocument()
+      // Only other reviewers can be asked again.
+      expect(screen.queryByRole('button', { name: 'Reviewerさんにレビューを再依頼' })).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Alice Exampleさんにレビューを再依頼' }))
+      await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ iid: '120', kind: 'rerequestReview', projectId: '7', projectPath: 'group/project', userId: '50' }, undefined))
+    } finally {
+      detailMocks.mergeRequest = original
+    }
+  })
 })
 
 describe('line comments from the diff', () => {
@@ -364,6 +393,75 @@ describe('line comments from the diff', () => {
 
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith(expect.objectContaining({ body: '行への指摘', kind, position: expect.objectContaining({ newLine: 2, newPath: 'src/example.ts', headSha: 'head-abc' }) }), expect.any(String)))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'レビューコメント入力' })).not.toBeInTheDocument())
+  })
+
+  it.each(['コメントを投稿', 'レビューに追加'])('sends a comment on lines chosen with Shift+click with their range (%s)', async (button) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab="changes" onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'src/example.tsの1行にコメント' }))
+    fireEvent.click(screen.getByRole('button', { name: 'src/example.tsの3行にコメント' }), { shiftKey: true })
+    const editor = await screen.findByRole('region', { name: 'レビューコメント入力' })
+    expect(within(editor).getByText('src/example.ts:1〜3 にコメント')).toBeInTheDocument()
+    expect(screen.getAllByTestId('diff-line').filter((row) => row.dataset.range === 'true')).toHaveLength(3)
+    fireEvent.click(within(editor).getByRole('button', { name: button }))
+
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      position: expect.objectContaining({
+        headSha: 'head-abc',
+        lineRange: { end: { newLine: 3, newPosition: 3, oldLine: 3, oldPosition: 3 }, hunk: { newCount: 3, newStart: 1, oldCount: 3, oldStart: 1 }, start: { newLine: 1, newPosition: 1, oldLine: 1, oldPosition: 1 } },
+        newLine: 3,
+        oldLine: 3,
+      }),
+    }), expect.any(String)))
+  })
+})
+
+describe('suggestions and versions', () => {
+  const original = { discussions: detailMocks.discussions[1] }
+  beforeEach(() => {
+    detailMocks.useComposerBufferMock.mockReset().mockReturnValue({ body: '', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    detailMocks.mutationRunMock.mockReset().mockResolvedValue(true)
+    detailMocks.queryCalls.length = 0
+    detailMocks.discussions[1] = original.discussions
+  })
+
+  function renderDetail(tab: 'discussion' | 'changes') {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} tab={tab} onTabChange={vi.fn()} /></ThemeProvider></QueryClientProvider>)
+  }
+
+  it('applies a suggestion by someone else on the head it was shown on, with the commit message', async () => {
+    const note = { ...original.discussions[0].notes[2], body: '提案です\n\n```suggestion\nline 2\n```', id: '1003', suggestions: [{ appliable: true, applied: false, fromContent: 'line two\n', fromLine: 2, id: '77', toContent: 'line 2\n', toLine: 2 }] }
+    detailMocks.discussions[1] = [{ ...original.discussions[0], notes: [note] }]
+    renderDetail('discussion')
+
+    const suggestion = await screen.findByRole('figure', { name: '変更提案' })
+    expect(within(suggestion).getByText('line two')).toBeInTheDocument()
+    expect(within(suggestion).getByText('line 2')).toBeInTheDocument()
+    fireEvent.click(within(suggestion).getByRole('button', { name: '提案を適用' }))
+    const dialog = await screen.findByRole('dialog', { name: '提案を適用しますか？' })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'コミットメッセージ（任意）' }), { target: { value: 'Apply review suggestion' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '適用する' }))
+
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ commitMessage: 'Apply review suggestion', headSha: 'head-abc', iid: '120', kind: 'applySuggestions', projectId: '7', suggestionIds: ['77'] }, undefined))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('shows the changes since an earlier version read-only, with the rebase note', async () => {
+    renderDetail('changes')
+
+    fireEvent.mouseDown(await screen.findByRole('combobox', { name: '比較元バージョン' }))
+    fireEvent.click(await screen.findByRole('option', { name: /^バージョン2 · bbbbbbbb/u }))
+
+    await waitFor(() => expect(detailMocks.queryCalls).toContainEqual({ fromSha: 'b'.repeat(40), iid: '120', kind: 'versionCompare', page: 1, projectId: '7', toSha: 'head-abc' }))
+    expect(screen.getByText(/ターゲットブランチ由来の変更も含まれます/u)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'src/example.tsの2行にコメント' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Colleagueのスレッド' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '確認済みにする' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'MR全体' }))
+    expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
   })
 })
 
@@ -419,7 +517,7 @@ describe('MergeRequestDetail header, results and pending review', () => {
     }
   })
 
-  function renderDetail(tab: 'discussion' | 'changes' | 'overview' = 'discussion') {
+  function renderDetail(tab: 'discussion' | 'changes' | 'overview' | 'pipelines' = 'discussion') {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={vi.fn()} tab={tab} /></ThemeProvider></QueryClientProvider>)
   }
@@ -438,6 +536,15 @@ describe('MergeRequestDetail header, results and pending review', () => {
     expect(within(header).getByRole('button', { name: 'サーバーから再取得' })).toBeInTheDocument()
   })
 
+  it('shows the pipelines tab and names an unknown pipeline write in the header', async () => {
+    detailMocks.mutationState = { error: new Error('unknown'), status: 'unknown', unknownAction: { kind: 'cancelPipeline' } }
+    renderDetail('pipelines')
+    const header = (await screen.findByRole('heading', { level: 1 })).closest('header') as HTMLElement
+    expect(within(header).getByRole('tab', { name: 'パイプライン' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(header).getByText('パイプラインのキャンセルの結果を確認できないため、このMRへの再送を停止しています。')).toBeInTheDocument()
+    expect(await screen.findByText('このMRのパイプラインはありません。')).toBeInTheDocument()
+  })
+
   it('shows a failed write in the header until it is dismissed', async () => {
     detailMocks.mutationState = { error: new Error('GitLabが拒否しました。'), status: 'error', unknownAction: null }
     renderDetail('discussion')
@@ -452,10 +559,32 @@ describe('MergeRequestDetail header, results and pending review', () => {
     detailMocks.mutationRunMock.mockReturnValue(new Promise<boolean>((resolve) => { finish = resolve }))
     renderDetail('overview')
     fireEvent.click(await screen.findByRole('button', { name: '承認する' }))
-    expect(screen.getByRole('button', { name: '承認中…' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: '承認中…' })).toBeDisabled()
+    expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('!120 を承認しますか？'))
     finish(true)
     await waitFor(() => expect(screen.getByRole('button', { name: '承認する' })).toBeEnabled())
     expect(detailMocks.mutationRunMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks before approving and sends nothing when declined', async () => {
+    globalThis.confirm = vi.fn(() => false)
+    renderDetail('overview')
+    fireEvent.click(await screen.findByRole('button', { name: '承認する' }))
+    await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('!120 を承認しますか？')))
+    expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '承認する' })).toBeEnabled()
+  })
+
+  it('asks before publishing one draft and sends nothing when declined', async () => {
+    detailMocks.drafts = [{ body: '一件目', discussionId: null, id: 'draft-1', position: null }]
+    globalThis.confirm = vi.fn(() => false)
+    renderDetail('discussion')
+    fireEvent.click(await screen.findByRole('button', { name: '下書き「一件目」を公開' }))
+    await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('この下書きを公開しますか？')))
+    expect(detailMocks.mutationDetailedMock).not.toHaveBeenCalled()
+    globalThis.confirm = vi.fn(() => true)
+    fireEvent.click(screen.getByRole('button', { name: '下書き「一件目」を公開' }))
+    await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ draftId: 'draft-1', iid: '120', kind: 'publishDraft', projectId: '7' }))
   })
 
   it('reads every page of the pending review before publishing all of it, one by one', async () => {
@@ -477,7 +606,7 @@ describe('MergeRequestDetail header, results and pending review', () => {
     detailMocks.drafts = [{ body: '下書きの本文', discussionId: null, id: 'draft-1', position: null }]
     globalThis.confirm = vi.fn(() => false)
     function Harness() {
-      const [tab, setTab] = useState<'discussion' | 'changes' | 'overview'>('discussion')
+      const [tab, setTab] = useState<'discussion' | 'changes' | 'overview' | 'pipelines'>('discussion')
       return <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={setTab} tab={tab} />
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -629,5 +758,65 @@ describe('stepping through unresolved threads', () => {
     input.focus()
     fireEvent.keyDown(input, { key: 'n' })
     expect(input).toHaveFocus()
+  })
+})
+
+describe('reactions and To-Dos', () => {
+  const colleague = { id: '99', name: 'Colleague', username: 'colleague' }
+  beforeEach(() => {
+    detailMocks.useComposerBufferMock.mockReturnValue({ body: '', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    detailMocks.mutationRunMock.mockReset().mockResolvedValue(true)
+    detailMocks.mutationDetailedMock.mockClear()
+    detailMocks.queryCalls.length = 0
+    detailMocks.refreshKinds.length = 0
+    detailMocks.discussions = { 1: [detailMocks.discussion] }
+    detailMocks.noteAwards = [{ awards: [{ name: 'thumbsup', user: colleague }, { name: 'thumbsup', user: detailMocks.session.user }], noteId: '1002' }]
+    detailMocks.mrAwards = [{ name: 'tada', user: colleague }]
+    // GraphQL addresses the project by its path.
+    Object.assign(detailMocks.mergeRequest, { projectPath: 'group/project' })
+  })
+  afterEach(() => {
+    delete (detailMocks.mergeRequest as { projectPath?: string }).projectPath
+  })
+
+  function renderDetail(tab: 'discussion' | 'overview', client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={vi.fn()} tab={tab} /></ThemeProvider></QueryClientProvider>)
+  }
+
+  it('reads the shown comments\' reactions in one query and toggles the own reaction on a comment', async () => {
+    renderDetail('discussion')
+    const own = await screen.findByRole('button', { name: '👍 2人' })
+    expect(own).toHaveAttribute('aria-pressed', 'true')
+    // One query reaches back to the oldest comment on screen (system notes excluded).
+    expect(detailMocks.queryCalls.filter((query) => (query as { kind?: string } | null)?.kind === 'noteAwards')).toContainEqual({ iid: '120', kind: 'noteAwards', projectPath: 'group/project', sinceNoteId: '1001' })
+
+    fireEvent.click(own)
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ iid: '120', kind: 'removeAward', name: 'thumbsup', noteId: '1002', projectId: '7' }, undefined))
+    expect(detailMocks.refreshKinds).toContain('noteAwards')
+
+    // Each comment by Colleague has its own add button; the first is the oldest.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Colleagueのコメントにリアクションを追加' })[0])
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /rocket/u }))
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'addAward', name: 'rocket' }), undefined))
+  })
+
+  it('shows the MR\'s own reactions under its description', async () => {
+    renderDetail('overview')
+    fireEvent.click(await screen.findByRole('button', { name: '🎉 1人' }))
+    await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ iid: '120', kind: 'addAward', name: 'tada', projectId: '7' }, undefined))
+    expect(detailMocks.refreshKinds).toContain('mrAwards')
+  })
+
+  it('offers to finish the MR\'s pending To-Do from the loaded To-Do pages only', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const todo = { actionName: 'review_requested', author: colleague, body: '', createdAt: '2026-10-09T00:00:00.000Z', id: '501', iid: '120', projectId: '7', projectName: 'Project', title: 'Read-only integration sample', webUrl: '' }
+    const other = { ...todo, id: '502', iid: '121' }
+    client.setQueryData(['gitlab', 'session-42', JSON.stringify({ kind: 'todos', page: 1 })], { error: null, snapshot: { completeness: 'complete', data: [other, todo], fetchedAt: 1, nextPage: null, source: 'network' } })
+    renderDetail('discussion', client)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'To-Doを完了' }))
+    await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ iid: '120', kind: 'markTodoDone', projectId: '7', todoId: '501' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'To-Doを完了' })).not.toBeInTheDocument())
+    expect(detailMocks.queryCalls).not.toContainEqual(expect.objectContaining({ kind: 'todos' }))
   })
 })

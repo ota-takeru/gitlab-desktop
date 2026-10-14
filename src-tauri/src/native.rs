@@ -817,8 +817,14 @@ impl NativeState {
             let mut result = match result {
                 Ok(value) => value,
                 Err(error) => {
-                    self.record_error(&session, &error, Some(key.clone()))
-                        .await?;
+                    // GitLab answers 404 for a job that has no log yet; that is
+                    // not a lost permission, and job logs are never cached.
+                    let missing_log =
+                        error.code == "NOT_FOUND" && matches!(input.query, Query::JobTrace { .. });
+                    if !missing_log {
+                        self.record_error(&session, &error, Some(key.clone()))
+                            .await?;
+                    }
                     return Err(error);
                 }
             };
@@ -845,12 +851,17 @@ impl NativeState {
                 }
                 .into(),
             };
+            // Job logs can hold secrets printed by CI scripts, so they stay in memory only.
+            let persist = !matches!(input.query, Query::JobTrace { .. });
             let copy = snapshot.clone();
             let session = session.clone();
             self.blocking(move |inner| {
                 ensure_active(inner, &session)?;
                 if session.revision.load(Ordering::SeqCst) != revision {
                     return Err(cancelled());
+                }
+                if !persist {
+                    return Ok(());
                 }
                 inner.store.put(&session.account, &key, &copy)
             })
@@ -2080,6 +2091,83 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn job_logs_are_returned_but_never_saved_to_the_cache() {
+        let (api, started, release, server) = spawn_http_response("200 OK", "secret=1\n");
+        let (state, session) = test_state(api);
+        let input = QueryInput {
+            session_id: session.public.id.clone(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            mode: ReadMode::NetworkOnly,
+            query: Query::JobTrace {
+                project_id: "7".into(),
+                job_id: "900".into(),
+            },
+        };
+        let key = serde_json::to_string(&input.query).unwrap();
+        let worker = state.clone();
+        let pending = tokio::spawn(async move { worker.query(input).await });
+        started.await.unwrap();
+        release.send(()).unwrap();
+        let snapshot = pending.await.unwrap().unwrap().unwrap();
+        assert_eq!(
+            snapshot.data["lines"],
+            serde_json::json!([[{"text": "secret=1"}]])
+        );
+        let account = session.account.clone();
+        assert!(state
+            .blocking(move |inner| inner.store.get(&account, &key))
+            .await
+            .unwrap()
+            .is_none());
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_job_without_a_log_keeps_the_account_cache() {
+        let (api, started, release, server) = spawn_http_response("404 Not Found", "{}");
+        let (state, session) = test_state(api);
+        let account = session.account.clone();
+        state
+            .blocking(move |inner| {
+                inner.store.put(
+                    &account,
+                    "cached",
+                    &Snapshot {
+                        data: serde_json::json!([]),
+                        fetched_at: now_ms(),
+                        source: "network".into(),
+                        next_page: None,
+                        total_pages: None,
+                        completeness: "complete".into(),
+                    },
+                )
+            })
+            .await
+            .unwrap();
+        let input = QueryInput {
+            session_id: session.public.id.clone(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            mode: ReadMode::NetworkOnly,
+            query: Query::JobTrace {
+                project_id: "7".into(),
+                job_id: "900".into(),
+            },
+        };
+        let worker = state.clone();
+        let pending = tokio::spawn(async move { worker.query(input).await });
+        started.await.unwrap();
+        release.send(()).unwrap();
+        assert_eq!(pending.await.unwrap().unwrap_err().code, "NOT_FOUND");
+        let account = session.account.clone();
+        assert!(state
+            .blocking(move |inner| inner.store.get(&account, "cached"))
+            .await
+            .unwrap()
+            .is_some());
         server.join().unwrap();
     }
 
