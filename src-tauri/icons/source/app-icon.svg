@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Source of the application icons; regenerate them with `npx tauri icon src-tauri/icons/source/app-icon.svg`. -->
+  <rect width="1024" height="1024" rx="192" fill="#283146"/>
+  <g stroke="#a8b4ff" stroke-width="88" stroke-linecap="round" fill="none">
+    <path d="M320 288V736"/>
+    <path d="M704 320C704 520 320 520 320 640"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="320" cy="272" r="104"/>
+    <circle cx="704" cy="304" r="104"/>
+    <circle cx="320" cy="768" r="104"/>
+  </g>
+</svg>

@@ -3,8 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#101317" />
-    <link rel="icon" href="data:," />
+    <!-- Canvas colours of src/theme.ts, shown before the app mounts so a dark start does not flash white. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#232529" />
+    <style>
+      html { background: #ffffff; color-scheme: light dark; }
+      @media (prefers-color-scheme: dark) { html { background: #232529; } }
+    </style>
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <title>GitLab Desktop</title>
   </head>
   <body>
