@@ -50,11 +50,11 @@ function TimelineLabel({
       <Box sx={{ alignItems: 'center', display: 'flex', minHeight: 17 }}>
         <TimelineDot selected={selected} />
       </Box>
-      <Typography color={selected ? 'text.primary' : 'text.secondary'} noWrap sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', lineHeight: 1.2 }}>
+      <Typography color={selected ? 'textPrimary' : 'textSecondary'} noWrap sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', lineHeight: 1.2 }}>
         {secondary}
       </Typography>
       <Tooltip placement="bottom-start" title={commit?.message ?? subject}>
-        <Typography color={selected ? 'text.primary' : 'text.secondary'} noWrap sx={{ fontSize: 'caption.fontSize', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Typography color={selected ? 'textPrimary' : 'textSecondary'} noWrap sx={{ fontSize: 'caption.fontSize', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {subject}
         </Typography>
       </Tooltip>

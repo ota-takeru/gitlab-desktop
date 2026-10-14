@@ -51,7 +51,7 @@ export function MockDiscussionList({
       <Paper variant="outlined" sx={{ bgcolor: 'background.paper', p: 2.5, textAlign: 'center' }}>
         <ForumOutlinedIcon sx={{ color: 'text.disabled', fontSize: 25 }} />
         <Typography sx={{ fontSize: 'body2.fontSize', fontWeight: 700, mt: 0.75 }}>議論はまだありません</Typography>
-        <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>最初のコメントを下書きできます。</Typography>
+        <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>最初のコメントを下書きできます。</Typography>
       </Paper>
     )
   }
@@ -145,7 +145,7 @@ function DiscussionCard({
           <Avatar sx={{ bgcolor: 'action.hover', color: 'primary.main', fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', height: 25, width: 25 }}>{discussion.author.initials}</Avatar>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: 'caption.fontSize', fontWeight: 600 }}>{discussion.author.name}</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{discussion.author.handle} · {discussion.createdAt}{discussion.edited ? ' · 編集済み' : ''}</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{discussion.author.handle} · {discussion.createdAt}{discussion.edited ? ' · 編集済み' : ''}</Typography>
           </Box>
           <Box sx={{ flex: 1 }} />
           {canEditRoot ? (
@@ -167,10 +167,10 @@ function DiscussionCard({
         </Stack>
         {position ? (
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography color="text.secondary" component="code" variant="code" sx={{ bgcolor: 'action.hover', borderRadius: 0.5, fontSize: 'caption.fontSize', px: 0.65, py: 0.25 }}>
+            <Typography color="textSecondary" component="code" variant="code" sx={{ bgcolor: 'action.hover', borderRadius: 0.5, fontSize: 'caption.fontSize', px: 0.65, py: 0.25 }}>
               {position}
             </Typography>
-            <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>行コメント</Typography>
+            <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>行コメント</Typography>
           </Stack>
         ) : null}
         <Collapse in={expanded}>
@@ -199,7 +199,7 @@ function DiscussionCard({
                     <Box key={reply.id}>
                       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                         <Typography sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold' }}>{reply.author.name}</Typography>
-                        <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{reply.author.handle} · {reply.createdAt}{reply.edited ? ' · 編集済み' : ''}</Typography>
+                        <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{reply.author.handle} · {reply.createdAt}{reply.edited ? ' · 編集済み' : ''}</Typography>
                         <Box sx={{ flex: 1 }} />
                         {canEditReply ? (
                           <IconButton aria-label="返信を編集" onClick={() => beginEdit(replyTarget, reply.body)} size="small">
@@ -269,7 +269,7 @@ function NoteBody({ body }: { body: string }) {
 }
 
 function DeletedNoteBody() {
-  return <Typography color="text.secondary" sx={{ fontSize: 'body2.fontSize', fontStyle: 'italic', lineHeight: 1.65 }}>コメントは削除されました</Typography>
+  return <Typography color="textSecondary" sx={{ fontSize: 'body2.fontSize', fontStyle: 'italic', lineHeight: 1.65 }}>コメントは削除されました</Typography>
 }
 
 function NoteEditor({

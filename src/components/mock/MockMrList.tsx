@@ -95,7 +95,7 @@ export function MockMrList({
         <Stack direction="row" sx={{ alignItems: 'start', justifyContent: 'space-between' }}>
           <Box>
             <Typography sx={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.02em' }}>レビューキュー</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>
               サンプルデータ · {mergeRequests.length}件のMR
             </Typography>
           </Box>
@@ -160,7 +160,7 @@ export function MockMrList({
                 >
                   <Stack spacing={0.7}>
                     <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography color="text.secondary" noWrap sx={{ fontSize: 'caption.fontSize', maxWidth: 180 }}>
+                      <Typography color="textSecondary" noWrap sx={{ fontSize: 'caption.fontSize', maxWidth: 180 }}>
                         {mergeRequest.projectPath} · !{mergeRequest.iid}
                       </Typography>
                       <StatusPill label={stateLabel(mergeRequest)} size="small" subtle tone={stateTone(mergeRequest)} />
@@ -185,23 +185,23 @@ export function MockMrList({
                       <Avatar sx={{ bgcolor: 'action.hover', color: 'primary.main', fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', height: 18, width: 18 }}>
                         {mergeRequest.author.initials}
                       </Avatar>
-                      <Typography color="text.secondary" noWrap sx={{ fontSize: 'caption.fontSize', minWidth: 0 }}>
+                      <Typography color="textSecondary" noWrap sx={{ fontSize: 'caption.fontSize', minWidth: 0 }}>
                         {mergeRequest.author.name}
                       </Typography>
                       <Box sx={{ flex: 1 }} />
                       <Stack direction="row" spacing={0.35} sx={{ alignItems: 'center' }}>
                         <TextSnippetOutlinedIcon sx={{ color: 'text.disabled', fontSize: 'body2.fontSize' }} />
-                        <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.files.length}</Typography>
-                        <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
-                        <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{discussionCount}</Typography>
+                        <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.files.length}</Typography>
+                        <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
+                        <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{discussionCount}</Typography>
                       </Stack>
                     </Stack>
                     <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
                       <CheckCircleOutlineOutlinedIcon sx={{ color: mergeRequest.checksPassed === mergeRequest.checksTotal ? 'success.main' : 'warning.main', fontSize: 'body2.fontSize' }} />
-                      <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.checksPassed}/{mergeRequest.checksTotal} checks</Typography>
+                      <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.checksPassed}/{mergeRequest.checksTotal} checks</Typography>
                       <Box sx={{ flex: 1 }} />
                       <AccessTimeOutlinedIcon sx={{ color: 'text.disabled', fontSize: 'body2.fontSize' }} />
-                      <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography>
+                      <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography>
                     </Stack>
                   </Stack>
                 </ListItemButton>
@@ -211,7 +211,7 @@ export function MockMrList({
         ) : (
           <Paper sx={{ bgcolor: 'action.hover', mt: 1, p: 2, textAlign: 'center' }}>
             <Typography sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold' }}>一致するMRがありません</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.5 }}>検索語か状態を変えてみてください。</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.5 }}>検索語か状態を変えてみてください。</Typography>
           </Paper>
         )}
       </Box>

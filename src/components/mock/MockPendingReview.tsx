@@ -104,7 +104,7 @@ export function MockPendingReview({ pending, onEdit, onDelete, onDiscard, onPubl
         <DialogTitle sx={{ pb: 1 }}>レビューを送信 ({pending.length})</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1.25}>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>
               保留中のコメントをまとめて確認してから送信するモックです。GitLabへは送信されません。
             </Typography>
             {pending.map((item, index) => {
@@ -115,7 +115,7 @@ export function MockPendingReview({ pending, onEdit, onDelete, onDiscard, onPubl
                   <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
                     <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', minWidth: 0 }}>
                       <Chip label={item.kind === 'thread' ? 'スレッド' : 'コメント'} size="small" sx={{ fontSize: 'caption.fontSize', height: 22 }} variant="outlined" />
-                      <Typography color="text.secondary" component="code" title={target} variant="code" sx={{ fontSize: 'caption.fontSize', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                      <Typography color="textSecondary" component="code" title={target} variant="code" sx={{ fontSize: 'caption.fontSize', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                         {target}
                       </Typography>
                     </Stack>
@@ -124,7 +124,7 @@ export function MockPendingReview({ pending, onEdit, onDelete, onDiscard, onPubl
                       <IconButton aria-label={`未公開コメント${index + 1}（${target}）を削除`} onClick={() => deletePending(item.id)} size="small" title={`${target}を削除`}><DeleteOutlineOutlinedIcon sx={{ fontSize: 17 }} /></IconButton>
                     </Stack>
                   </Stack>
-                  {item.resolution ? <Typography color={item.resolution === 'resolved' ? 'success.main' : 'warning.main'} sx={{ fontSize: 'caption.fontSize' }}>{item.resolution === 'resolved' ? '投稿時に解決' : '投稿時に再開'}</Typography> : null}
+                  {item.resolution ? <Typography color={item.resolution === 'resolved' ? 'success' : 'warning'} sx={{ fontSize: 'caption.fontSize' }}>{item.resolution === 'resolved' ? '投稿時に解決' : '投稿時に再開'}</Typography> : null}
                   {editingId === item.id ? (
                     <Stack spacing={0.6}>
                       <TextField autoFocus fullWidth label="コメントを編集" minRows={2} multiline onChange={(event) => setEditingBody(event.target.value)} value={editingBody} />

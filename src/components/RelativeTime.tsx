@@ -12,7 +12,7 @@ interface RelativeTimeProps {
 }
 
 /** Relative time with the exact local time available on hover and to assistive technology. */
-export function RelativeTime({ value, prefix, color = 'text.secondary', variant = 'caption' }: RelativeTimeProps) {
+export function RelativeTime({ value, prefix, color = 'textSecondary', variant = 'caption' }: RelativeTimeProps) {
   const absolute = formatAbsoluteTime(value)
   return (
     <Tooltip title={absolute}>

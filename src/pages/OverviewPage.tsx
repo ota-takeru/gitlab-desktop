@@ -43,20 +43,20 @@ export function OverviewPage({ onPageChange }: OverviewPageProps) {
   return (
     <Stack spacing={3.5} sx={{ maxWidth: 1120, mx: 'auto' }}>
       <Stack spacing={1}>
-        <Typography color="primary.main" sx={{ fontWeight: 800 }} variant="overline">
+        <Typography color="primary" sx={{ fontWeight: 800 }} variant="overline">
           Workspace overview
         </Typography>
         <Typography component="h1" variant="h1">
           自分の GitLab 作業を、軽く始める
         </Typography>
-        <Typography color="text.secondary" sx={{ maxWidth: 690 }} variant="body1">
+        <Typography color="textSecondary" sx={{ maxWidth: 690 }} variant="body1">
           ここは個人向けクライアントの基礎画面です。まず実行環境を確かめ、接続レイヤーを追加したあとに各モジュールを育てていきます。
         </Typography>
         <Box>
           <Button href="#mock" endIcon={<ArrowForwardRoundedIcon />} variant="outlined">
             UIモックを開く
           </Button>
-          <Typography color="text.secondary" sx={{ mt: 0.75 }} variant="caption">
+          <Typography color="textSecondary" sx={{ mt: 0.75 }} variant="caption">
             サンプルデータで画面と操作を確認できます。GitLabには接続しません。
           </Typography>
         </Box>
@@ -70,7 +70,7 @@ export function OverviewPage({ onPageChange }: OverviewPageProps) {
             <Typography component="h2" variant="h2">
               Workspace modules
             </Typography>
-            <Typography color="text.secondary" variant="body2">
+            <Typography color="textSecondary" variant="body2">
               いずれも GitLab 接続後にデータを表示する領域です。
             </Typography>
           </Box>
@@ -109,7 +109,7 @@ export function OverviewPage({ onPageChange }: OverviewPageProps) {
                       <Typography sx={{ fontWeight: 700 }} variant="h3">
                         {title}
                       </Typography>
-                      <Typography color="text.secondary" variant="body2">
+                      <Typography color="textSecondary" variant="body2">
                         {description}
                       </Typography>
                     </Stack>

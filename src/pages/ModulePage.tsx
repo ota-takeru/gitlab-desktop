@@ -52,7 +52,7 @@ export function ModulePage({ module }: { module: ModuleKey }) {
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Icon color="primary" fontSize="small" />
-          <Typography color="primary.main" sx={{ fontWeight: 800 }} variant="overline">
+          <Typography color="primary" sx={{ fontWeight: 800 }} variant="overline">
             {details.eyebrow}
           </Typography>
         </Stack>
@@ -66,7 +66,7 @@ export function ModulePage({ module }: { module: ModuleKey }) {
           </Typography>
           <StatusPill label="未接続" />
         </Stack>
-        <Typography color="text.secondary" sx={{ maxWidth: 690 }} variant="body1">
+        <Typography color="textSecondary" sx={{ maxWidth: 690 }} variant="body1">
           {details.description}
         </Typography>
       </Stack>

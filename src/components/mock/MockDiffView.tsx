@@ -66,7 +66,7 @@ function FileReviewFooter({ viewed, onToggleViewed }: { viewed: boolean; onToggl
   return (
     <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', borderTop: 1, borderColor: 'divider', mx: 1, mt: 1.5, pt: 1 }}>
       <CheckCircleOutlineOutlinedIcon sx={{ color: viewed ? 'success.main' : 'text.disabled', fontSize: 14 }} />
-      <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{viewed ? 'このファイルを確認済みにしました' : '確認したファイルを記録できます'}</Typography>
+      <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{viewed ? 'このファイルを確認済みにしました' : '確認したファイルを記録できます'}</Typography>
       <Box sx={{ flex: 1 }} />
       <Button aria-label={viewed ? 'ファイルの確認済みを解除' : 'ファイルを確認済みにする'} onClick={onToggleViewed} size="small" sx={{ fontSize: 'caption.fontSize', minWidth: 0, px: 0.75 }}>
         {viewed ? '解除' : '確認済み'}
@@ -129,7 +129,7 @@ function DiffLines({ file, discussions, onOpenDiscussion, showDiscussionMarkers,
             }}
           >
             <Box component="span" sx={{ minWidth: 0, position: 'relative', '& .line-comment-action': { opacity: 0 }, '&:focus-within .line-comment-action': { opacity: 1 } }}>
-              <Typography color="text.disabled" sx={{ display: 'block', fontSize: 'caption.fontSize', p: '3px 7px', textAlign: 'right', userSelect: 'none' }} variant="code">
+              <Typography color="textDisabled" sx={{ display: 'block', fontSize: 'caption.fontSize', p: '3px 7px', textAlign: 'right', userSelect: 'none' }} variant="code">
                 {line.oldLine ?? ''}
               </Typography>
               {onAddComment && commentPosition?.side === 'old' && commentLine !== undefined ? (
@@ -141,7 +141,7 @@ function DiffLines({ file, discussions, onOpenDiscussion, showDiscussionMarkers,
               ) : null}
             </Box>
             <Box component="span" sx={{ borderRight: 1, borderColor: 'divider', minWidth: 0, position: 'relative', '& .line-comment-action': { opacity: 0 }, '&:focus-within .line-comment-action': { opacity: 1 } }}>
-              <Typography color="text.disabled" sx={{ display: 'block', fontSize: 'caption.fontSize', p: '3px 7px', textAlign: 'right', userSelect: 'none' }} variant="code">
+              <Typography color="textDisabled" sx={{ display: 'block', fontSize: 'caption.fontSize', p: '3px 7px', textAlign: 'right', userSelect: 'none' }} variant="code">
                 {line.newLine ?? ''}
               </Typography>
               {onAddComment && commentPosition?.side === 'new' && commentLine !== undefined ? (
@@ -181,7 +181,7 @@ function FullFileContent({ file, onAddComment, commentSha, commentScope }: { fil
     return (
       <Stack spacing={0.5} sx={{ alignItems: 'flex-start', p: 2 }}>
         <Typography component="h4" sx={{ fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold' }}>ファイル全体の内容は未取得です</Typography>
-        <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>差分表示は利用できます。全体表示用の内容を取得すると、ここに変更後のファイルを表示します。</Typography>
+        <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>差分表示は利用できます。全体表示用の内容を取得すると、ここに変更後のファイルを表示します。</Typography>
       </Stack>
     )
   }
@@ -190,7 +190,7 @@ function FullFileContent({ file, onAddComment, commentSha, commentScope }: { fil
     return (
       <Stack spacing={0.5} sx={{ alignItems: 'flex-start', p: 2 }}>
         <Typography component="h4" sx={{ fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold' }}>このファイルは空です</Typography>
-        <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>変更後のファイルに表示する行はありません。</Typography>
+        <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>変更後のファイルに表示する行はありません。</Typography>
       </Stack>
     )
   }
@@ -201,7 +201,7 @@ function FullFileContent({ file, onAddComment, commentSha, commentScope }: { fil
       {lines.map((line, index) => (
         <Box key={`${file.path}-full-${index}`} sx={{ display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr)', minHeight: 25, '&:hover': { bgcolor: 'action.hover' }, '&:hover .line-comment-action': { opacity: 1 } }}>
           <Box component="span" sx={{ borderRight: 1, borderColor: 'divider', minWidth: 0, position: 'relative', '& .line-comment-action': { opacity: 0 }, '&:focus-within .line-comment-action': { opacity: 1 } }}>
-            <Typography color="text.disabled" sx={{ display: 'block', fontSize: 'code.fontSize', p: '3px 10px', textAlign: 'right', userSelect: 'none' }} variant="code">
+            <Typography color="textDisabled" sx={{ display: 'block', fontSize: 'code.fontSize', p: '3px 10px', textAlign: 'right', userSelect: 'none' }} variant="code">
               {index + 1}
             </Typography>
             {onAddComment ? (
@@ -238,10 +238,10 @@ export function MockDiffView({ files, discussions, selectedPath, onSelectPath, o
     <Box sx={{ display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', minHeight: 0, flex: 1, '@media (max-width: 1100px)': { gridTemplateColumns: '1fr' } }}>
       <Box sx={{ borderRight: 1, borderColor: 'divider', minHeight: 0, overflowY: 'auto', '@media (max-width: 1100px)': { borderBottom: 1, borderRight: 0, borderColor: 'divider', maxHeight: 116, overflowX: 'auto', overflowY: 'hidden' } }}>
         <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', px: 1.25, py: 1 }}>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
             変更ファイル
           </Typography>
-          <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>{files.length}</Typography>
+          <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>{files.length}</Typography>
         </Stack>
         <Divider />
         <List disablePadding sx={{ p: 0.6 }}>
@@ -296,11 +296,11 @@ export function MockDiffView({ files, discussions, selectedPath, onSelectPath, o
         </Stack>
         {displayMode === 'full' ? (
           <Stack direction={{ sm: 'row', xs: 'column' }} spacing={0.5} sx={{ alignItems: { sm: 'center' }, borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 0.45 }}>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', whiteSpace: 'nowrap' }}>変更後 · {contentVersionLabel} · {fullContentSummary}</Typography>
-            <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>{showDiscussionMarkers ? '行コメントは差分で表示' : '行コメントはMR全体の差分で表示'}</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', whiteSpace: 'nowrap' }}>変更後 · {contentVersionLabel} · {fullContentSummary}</Typography>
+            <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>{showDiscussionMarkers ? '行コメントは差分で表示' : '行コメントはMR全体の差分で表示'}</Typography>
           </Stack>
         ) : (
-          <Typography color="text.disabled" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, fontSize: 'caption.fontSize', px: 1.5, py: 0.4 }}>
+          <Typography color="textDisabled" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, fontSize: 'caption.fontSize', px: 1.5, py: 0.4 }}>
             {showDiscussionMarkers ? '差分の抜粋（サンプル）' : 'コミット差分 · 行コメントはMR全体で表示'}
           </Typography>
         )}

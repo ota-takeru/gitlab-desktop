@@ -146,9 +146,9 @@ export function MockPatternCatalog() {
       <Stack direction="row" sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
         <Box>
           <Typography component="h2" sx={{ fontSize: 16, fontWeight: 700 }}>レビューの共有パターン</Typography>
-          <Typography color="text.secondary" variant="caption">同じ実コンポーネントで、プロジェクト画面・変更範囲・議論の密度を確認します。</Typography>
+          <Typography color="textSecondary" variant="caption">同じ実コンポーネントで、プロジェクト画面・変更範囲・議論の密度を確認します。</Typography>
         </Box>
-        <Typography color="text.disabled" variant="caption">UIモック · 実通信なし</Typography>
+        <Typography color="textDisabled" variant="caption">UIモック · 実通信なし</Typography>
       </Stack>
 
       <MockProjectPage
@@ -168,14 +168,14 @@ export function MockPatternCatalog() {
         <Stack direction={{ sm: 'row', xs: 'column' }} spacing={0.75} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
           <Box>
             <Typography component="h2" sx={{ fontSize: 'body2.fontSize', fontWeight: 700 }}>コミットタイムライン</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.2 }}>MR全体を先頭に、古いコミットから順に表示します。選択した版の差分とファイル全体を切り替えられます。</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.2 }}>MR全体を先頭に、古いコミットから順に表示します。選択した版の差分とファイル全体を切り替えられます。</Typography>
           </Box>
           <Button onClick={() => setNotice('この画面の変更範囲を操作できます。')} size="small" sx={{ fontSize: 'caption.fontSize', minWidth: 0 }} variant="outlined">操作例</Button>
         </Stack>
         <Paper component="section" variant="outlined" sx={{ bgcolor: 'background.default', mt: 1, overflow: 'hidden', px: 0.5 }}>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', px: 1, pt: 0.65 }}>コミットが多い場合の表示例 · UI確認用</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', px: 1, pt: 0.65 }}>コミットが多い場合の表示例 · UI確認用</Typography>
           <MockCommitTimeline commits={timelinePreviewCommits} onChange={setTimelinePreviewValue} value={timelinePreviewValue} />
-          <Typography color="text.secondary" sx={{ borderTop: 1, borderColor: 'divider', fontSize: 'caption.fontSize', px: 1, py: 0.55 }}>
+          <Typography color="textSecondary" sx={{ borderTop: 1, borderColor: 'divider', fontSize: 'caption.fontSize', px: 1, py: 0.55 }}>
             {timelinePreviewValue === 'overall' ? 'MR全体 · すべての変更ファイル' : '親コミット → 選択コミット · UI確認用'}
           </Typography>
         </Paper>

@@ -165,7 +165,7 @@ export function MockReviewComposer({
             <Typography sx={{ fontSize: 'body2.fontSize', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {replyTarget ? `${replyTarget} に返信` : position ? (position.line === undefined ? 'ファイルコメント' : '行コメント') : 'レビューコメント'}
             </Typography>
-            <Typography color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' }, fontSize: 'caption.fontSize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <Typography color="textSecondary" sx={{ display: { xs: 'none', sm: 'block' }, fontSize: 'caption.fontSize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               メモリ内の下書き · 実通信なし
             </Typography>
           </Stack>
@@ -185,10 +185,10 @@ export function MockReviewComposer({
 
         {position ? (
           <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography color="text.secondary" component="code" variant="code" sx={{ bgcolor: 'action.hover', borderRadius: 0.5, fontSize: 'caption.fontSize', maxWidth: '100%', overflow: 'hidden', px: 0.65, py: 0.25, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <Typography color="textSecondary" component="code" variant="code" sx={{ bgcolor: 'action.hover', borderRadius: 0.5, fontSize: 'caption.fontSize', maxWidth: '100%', overflow: 'hidden', px: 0.65, py: 0.25, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {positionLabel(position)}
             </Typography>
-            <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>選択中</Typography>
+            <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>選択中</Typography>
           </Stack>
         ) : null}
 
@@ -242,7 +242,7 @@ export function MockReviewComposer({
           />
         ) : (
           <Paper variant="outlined" sx={{ bgcolor: 'background.default', maxHeight: 120, minHeight: 76, overflow: 'auto', p: 1 }}>
-            {draft.trim() ? <MockMarkdown body={draft} /> : <Typography color="text.secondary" sx={{ fontSize: 'body2.fontSize' }}>プレビューする内容がありません。</Typography>}
+            {draft.trim() ? <MockMarkdown body={draft} /> : <Typography color="textSecondary" sx={{ fontSize: 'body2.fontSize' }}>プレビューする内容がありません。</Typography>}
           </Paper>
         )}
 
@@ -256,7 +256,7 @@ export function MockReviewComposer({
 
         <Divider />
         <Stack direction={{ sm: 'row', xs: 'column' }} spacing={0.75} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>
             {canQueue ? 'Ctrl + Enter でレビューに追加 · Ctrl + Shift + Enter で即時コメント' : 'Ctrl + Enter で投稿シミュレーション'}
           </Typography>
           <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>

@@ -119,16 +119,16 @@ export function MockProjectPage({
                   </IconButton>
                 </Tooltip>
               </Stack>
-              <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.2 }}>{project.path}</Typography>
-              <Typography color="text.secondary" sx={{ fontSize: 'body2.fontSize', lineHeight: 1.65, mt: 0.65, maxWidth: 720 }}>{project.description}</Typography>
+              <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.2 }}>{project.path}</Typography>
+              <Typography color="textSecondary" sx={{ fontSize: 'body2.fontSize', lineHeight: 1.65, mt: 0.65, maxWidth: 720 }}>{project.description}</Typography>
             </Box>
           </Stack>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', pl: { xs: 0, md: 6.25 } }}>
             <Chip label={`${mergeRequests.length} MR`} size="small" variant="outlined" />
             <Chip label={`${openCount} open`} color="primary" size="small" variant="outlined" />
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergedCount} merged · {closedCount} closed</Typography>
-            <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{project.activity}</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergedCount} merged · {closedCount} closed</Typography>
+            <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{project.activity}</Typography>
           </Stack>
         </Stack>
 
@@ -137,7 +137,7 @@ export function MockProjectPage({
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
               <Box>
                 <Typography component="h2" sx={{ fontSize: 14, fontWeight: 'fontWeightBold' }}>Merge requests</Typography>
-                <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.25 }}>このプロジェクトの変更を、現在と過去の両方から確認できます。</Typography>
+                <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.25 }}>このプロジェクトの変更を、現在と過去の両方から確認できます。</Typography>
               </Box>
               <TextField
                 onChange={(event) => onQueryChange(event.target.value)}
@@ -161,7 +161,7 @@ export function MockProjectPage({
               >
                 {filterTabs.map(({ key, label }) => <Tab key={key} label={`${label} ${countForFilter(mergeRequests, key)}`} value={key} />)}
               </Tabs>
-              <Typography color="text.secondary" sx={{ flexShrink: 0, fontSize: 'caption.fontSize', ml: 1 }}>{results.length}件</Typography>
+              <Typography color="textSecondary" sx={{ flexShrink: 0, fontSize: 'caption.fontSize', ml: 1 }}>{results.length}件</Typography>
             </Stack>
           </Stack>
         </Paper>
@@ -174,7 +174,7 @@ export function MockProjectPage({
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0 }}>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
-                        <Typography color="text.secondary" sx={{ flexShrink: 0, fontSize: 'caption.fontSize' }}>!{mergeRequest.iid}</Typography>
+                        <Typography color="textSecondary" sx={{ flexShrink: 0, fontSize: 'caption.fontSize' }}>!{mergeRequest.iid}</Typography>
                         <StatusPill label={projectStateLabel(mergeRequest)} size="small" subtle tone={projectStateTone(mergeRequest)} />
                       </Stack>
                       <Button
@@ -189,23 +189,23 @@ export function MockProjectPage({
                       開く
                     </Button>
                   </Stack>
-                  <Typography color="text.secondary" sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', lineHeight: 1.55, overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>
+                  <Typography color="textSecondary" sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', lineHeight: 1.55, overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>
                     {mergeRequest.description}
                   </Typography>
                   <Stack direction="row" spacing={1.1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.author.name}</Typography>
-                    <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
+                    <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.author.name}</Typography>
+                    <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
                     <Stack direction="row" spacing={0.35} sx={{ alignItems: 'center' }}>
                       <TextSnippetOutlinedIcon sx={{ color: 'text.disabled', fontSize: 15 }} />
-                      <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.files.length} files</Typography>
+                      <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.files.length} files</Typography>
                     </Stack>
                     <Stack direction="row" spacing={0.35} sx={{ alignItems: 'center' }}>
-                      <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{getDiscussionCount(mergeRequest)} comments</Typography>
+                      <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{getDiscussionCount(mergeRequest)} comments</Typography>
                     </Stack>
                     <Box sx={{ flex: 1 }} />
                     <Stack direction="row" spacing={0.35} sx={{ alignItems: 'center' }}>
                       <AccessTimeOutlinedIcon sx={{ color: 'text.disabled', fontSize: 15 }} />
-                      <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography>
+                      <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography>
                     </Stack>
                   </Stack>
                 </Stack>

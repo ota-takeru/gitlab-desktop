@@ -43,7 +43,7 @@ export function EmptyState({ title, description, action }: EmptyStateProps) {
         <Typography component="h2" variant="h2">
           {title}
         </Typography>
-        <Typography color="text.secondary" variant="body2">
+        <Typography color="textSecondary" variant="body2">
           {description}
         </Typography>
         {action}

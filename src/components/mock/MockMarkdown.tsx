@@ -10,7 +10,7 @@ import { markdownBodySx } from '../markdownBodySx'
 const remarkPlugins = [remarkGfm]
 const components: Components = {
   a: ({ href, children }) => href ? <Link href={href} target="_blank" rel="noopener noreferrer">{children}</Link> : <span>{children}</span>,
-  img: ({ alt }) => <Typography component="span" color="text.secondary" variant="caption">[画像: {alt || '説明なし'} · 外部画像は読み込みません]</Typography>,
+  img: ({ alt }) => <Typography component="span" color="textSecondary" variant="caption">[画像: {alt || '説明なし'} · 外部画像は読み込みません]</Typography>,
   code: ({ children }) => <Typography component="code" variant="code" sx={{ fontSize: 'inherit', whiteSpace: 'pre-wrap' }}>{children}</Typography>,
 }
 const urlTransform = (url: string) => /^(https?:\/\/|mailto:)/i.test(url) ? url : ''

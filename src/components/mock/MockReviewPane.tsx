@@ -123,13 +123,13 @@ export function MockReviewPane({
               {mergeRequest.projectPath}
             </Button>
           ) : (
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.projectPath}</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.projectPath}</Typography>
           )}
-          <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>!{mergeRequest.iid}</Typography>
+          <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>·</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>!{mergeRequest.iid}</Typography>
           <StatusPill label={stateLabel(mergeRequest)} size="small" subtle tone={stateTone(mergeRequest)} />
           <Box sx={{ flex: 1 }} />
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography>
         </Stack>
         <Typography component="h1" sx={{ fontSize: { xs: 17, md: 20 }, fontWeight: 'fontWeightBold', letterSpacing: '-0.025em', lineHeight: 1.35, maxWidth: 780 }}>
           {mergeRequest.title}
@@ -137,7 +137,7 @@ export function MockReviewPane({
         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mt: 1 }}>
           <Avatar sx={{ bgcolor: 'action.hover', color: 'primary.main', fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', height: 23, width: 23 }}>{mergeRequest.author.initials}</Avatar>
           <Typography sx={{ fontSize: 'caption.fontSize', fontWeight: 600 }}>{mergeRequest.author.name}</Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.author.handle}</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.author.handle}</Typography>
           <Button aria-expanded={showMetadata} aria-label="MRの付帯情報を表示" onClick={() => setShowMetadata((current) => !current)} size="small" sx={{ color: 'text.secondary', fontSize: 'caption.fontSize', minWidth: 0, ml: 0.5, px: 0.5, textTransform: 'none' }}>
             {showMetadata ? '詳細を隠す' : '詳細'}
           </Button>
@@ -157,8 +157,8 @@ export function MockReviewPane({
         </Stack>
         <Collapse in={showMetadata} unmountOnExit={false}>
           <Stack direction={{ sm: 'row', xs: 'column' }} spacing={0.75} sx={{ alignItems: { sm: 'center' }, mt: 0.9 }}>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
-            <Typography color="text.disabled" sx={{ display: { xs: 'none', sm: 'block' }, fontSize: 'caption.fontSize' }}>·</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
+            <Typography color="textDisabled" sx={{ display: { xs: 'none', sm: 'block' }, fontSize: 'caption.fontSize' }}>·</Typography>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
               {mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" sx={{ fontSize: 'caption.fontSize', height: 22 }} />)}
             </Stack>
@@ -188,7 +188,7 @@ export function MockReviewPane({
           <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
             <Stack spacing={0.35} sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: { xs: 1, md: 1.25 }, pt: 0.3 }}>
               <MockCommitTimeline commits={commits} onChange={handleTimelineChange} value={timelineValue} />
-              <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', overflowWrap: 'anywhere' }}>
+              <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', overflowWrap: 'anywhere' }}>
                 {reviewScope === 'overall'
                   ? 'MR全体 · すべての変更ファイル'
                   : `親コミット → 選択コミット: ${selectedCommit?.parentSHA ?? 'root'} → ${selectedCommit?.sha ?? '—'}`}
@@ -216,7 +216,7 @@ export function MockReviewPane({
               <Stack direction="row" sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
                 <Box>
                   <Typography component="h2" sx={{ fontSize: 14, fontWeight: 700 }}>レビューの議論</Typography>
-                  <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.25 }}>解決・返信の状態もこの画面で確認できます。</Typography>
+                  <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.25 }}>解決・返信の状態もこの画面で確認できます。</Typography>
                 </Box>
                 <Chip icon={<CheckCircleOutlineOutlinedIcon />} label={`解決済み ${resolvedIds.length}`} size="small" variant="outlined" sx={{ fontSize: 'caption.fontSize' }} />
               </Stack>
@@ -275,14 +275,14 @@ function OverviewContent({
     <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: { xs: 1.25, md: 2.25 } }}>
       <Stack spacing={1.5} sx={{ maxWidth: 860, mx: 'auto' }}>
         <Paper component="section" variant="outlined" sx={{ bgcolor: 'background.paper', p: 1.5 }}>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>説明</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>説明</Typography>
           <Typography sx={{ fontSize: 'body2.fontSize', lineHeight: 1.75, mt: 0.6, whiteSpace: 'pre-wrap' }}>{mergeRequest.description}</Typography>
         </Paper>
 
         <Paper component="section" variant="outlined" sx={{ bgcolor: 'background.paper', p: 1.25 }}>
           <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', rowGap: 0.75 }}>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
-            <Typography color="text.disabled" sx={{ display: { xs: 'none', sm: 'block' }, fontSize: 'caption.fontSize' }}>·</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
+            <Typography color="textDisabled" sx={{ display: { xs: 'none', sm: 'block' }, fontSize: 'caption.fontSize' }}>·</Typography>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
               {mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" sx={{ fontSize: 'caption.fontSize', height: 22 }} />)}
             </Stack>
@@ -290,14 +290,14 @@ function OverviewContent({
         </Paper>
 
         <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 0.25, rowGap: 0.5 }}>
-          <Typography color={mergeRequest.checksPassed === mergeRequest.checksTotal ? 'success.main' : 'warning.main'} sx={{ fontSize: 'caption.fontSize', fontWeight: 700 }}>
+          <Typography color={mergeRequest.checksPassed === mergeRequest.checksTotal ? 'success' : 'warning'} sx={{ fontSize: 'caption.fontSize', fontWeight: 700 }}>
             Checks {mergeRequest.checksPassed}/{mergeRequest.checksTotal}
           </Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>変更 {mergeRequest.files.length}ファイル</Typography>
-          <Typography color={openDiscussionCount > 0 ? 'primary.main' : 'text.secondary'} sx={{ fontSize: 'caption.fontSize', fontWeight: openDiscussionCount > 0 ? 700 : undefined }}>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>変更 {mergeRequest.files.length}ファイル</Typography>
+          <Typography color={openDiscussionCount > 0 ? 'primary' : 'textSecondary'} sx={{ fontSize: 'caption.fontSize', fontWeight: openDiscussionCount > 0 ? 700 : undefined }}>
             未解決 {openDiscussionCount}件
           </Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>承認 {mergeRequest.approvals}/{mergeRequest.requiredApprovals}</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>承認 {mergeRequest.approvals}/{mergeRequest.requiredApprovals}</Typography>
           <Box sx={{ flex: 1, minWidth: 12 }} />
           <Button onClick={() => onSelectTab('discussion')} size="small" sx={{ fontSize: 'caption.fontSize', minWidth: 0, px: 0.75 }} variant="text">議論に戻る</Button>
           <Button onClick={() => onSelectTab('changes')} size="small" sx={{ fontSize: 'caption.fontSize', minWidth: 0, px: 0.75 }} variant="outlined">変更を見る</Button>

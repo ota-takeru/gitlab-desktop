@@ -465,7 +465,7 @@ export function MockApp({ mode, onModeChange, onBackToFoundation }: MockAppProps
           component="footer"
           sx={{ alignItems: 'center', borderTop: 1, borderColor: 'divider', display: 'flex', flexShrink: 0, height: 24, minHeight: 24, px: 1.5 }}
         >
-          <Typography color="text.secondary" noWrap sx={{ fontSize: 'caption.fontSize', lineHeight: 1 }}>UIモック · サンプルデータ / 未接続</Typography>
+          <Typography color="textSecondary" noWrap sx={{ fontSize: 'caption.fontSize', lineHeight: 1 }}>UIモック · サンプルデータ / 未接続</Typography>
         </Box>
       </Box>
     </Box>
@@ -479,7 +479,7 @@ function ProjectScopeBar({ onBack, project }: { onBack: () => void; project?: (t
       <Button aria-label={`${project.name} に戻る`} onClick={onBack} size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ flexShrink: 0, fontSize: 'caption.fontSize', minWidth: 0, px: 0.5, textTransform: 'none' }}>
         {project.name} に戻る
       </Button>
-      <Typography color="text.secondary" noWrap sx={{ fontSize: 'caption.fontSize', ml: 0.75, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <Typography color="textSecondary" noWrap sx={{ fontSize: 'caption.fontSize', ml: 0.75, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
         · {project.path}
       </Typography>
     </Box>
@@ -493,15 +493,15 @@ function ProjectsView({ favoriteOverrides, onOpenProject, onToggleFavorite, proj
       <Stack spacing={2.25} sx={{ maxWidth: 1080, mx: 'auto' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: { md: 'end' }, justifyContent: 'space-between' }}>
           <Box>
-            <Typography color="primary.main" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Projects</Typography>
+            <Typography color="primary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Projects</Typography>
             <Typography component="h1" sx={{ fontSize: 24, fontWeight: 'fontWeightBold', letterSpacing: '-0.03em', mt: 0.5 }}>プロジェクトを選ぶ</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'body2.fontSize', mt: 0.5 }}>お気に入りと最近の活動から、レビュー対象を切り替えます。</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'body2.fontSize', mt: 0.5 }}>お気に入りと最近の活動から、レビュー対象を切り替えます。</Typography>
           </Box>
           <TextField onChange={(event) => setProjectQuery(event.target.value)} placeholder="プロジェクトを検索" value={projectQuery} slotProps={{ htmlInput: { 'aria-label': 'プロジェクトを検索' }, input: { startAdornment: <InputAdornment position="start"><SearchOutlinedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment> } }} sx={{ minWidth: 280, '& .MuiInputBase-root': { fontSize: 'body2.fontSize' } }} />
         </Stack>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Chip label={`${projects.length} projects`} size="small" variant="outlined" />
-          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>保存済みの表示例 · 実通信なし</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>保存済みの表示例 · 実通信なし</Typography>
         </Stack>
         <Box sx={{ display: 'grid', gap: 1.25, gridTemplateColumns: { md: 'repeat(2, minmax(0, 1fr))', xs: '1fr' } }}>
           {projects.map((project) => {
@@ -516,15 +516,15 @@ function ProjectsView({ favoriteOverrides, onOpenProject, onToggleFavorite, proj
                         <Avatar sx={{ bgcolor: 'action.selected', color: 'primary.main', fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold', height: 34, width: 34 }}>{project.name.slice(0, 1)}</Avatar>
                         <Box sx={{ flex: 1, minWidth: 0, ml: 1.25 }}>
                           <Typography sx={{ fontSize: 14, fontWeight: 'fontWeightBold' }}>{project.name}</Typography>
-                          <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.25 }}>{project.path}</Typography>
+                          <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.25 }}>{project.path}</Typography>
                         </Box>
                       </Stack>
-                      <Typography color="text.secondary" sx={{ fontSize: 'body2.fontSize', lineHeight: 1.65 }}>{project.description}</Typography>
+                      <Typography color="textSecondary" sx={{ fontSize: 'body2.fontSize', lineHeight: 1.65 }}>{project.description}</Typography>
                       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                         <Chip label={`${openMrCount}件のオープンMR`} color="primary" size="small" variant="outlined" sx={{ fontSize: 'caption.fontSize' }} />
-                        <Typography color="text.disabled" sx={{ fontSize: 'caption.fontSize' }}>{project.activity}</Typography>
+                        <Typography color="textDisabled" sx={{ fontSize: 'caption.fontSize' }}>{project.activity}</Typography>
                         <Box sx={{ flex: 1 }} />
-                        <Typography color="primary.main" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold' }}>プロジェクトを開く →</Typography>
+                        <Typography color="primary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold' }}>プロジェクトを開く →</Typography>
                       </Stack>
                     </Stack>
                   </CardContent>
@@ -554,9 +554,9 @@ function HistoricalSearchView({ historicalFilter, historicalQuery, onFilterChang
     <Box component="main" sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: { xs: 2, md: 3.5 } }}>
       <Stack spacing={2} sx={{ maxWidth: 960, mx: 'auto' }}>
         <Box>
-          <Typography color="primary.main" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>History</Typography>
+          <Typography color="primary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>History</Typography>
           <Typography component="h1" sx={{ fontSize: 24, fontWeight: 'fontWeightBold', letterSpacing: '-0.03em', mt: 0.5 }}>過去のMRを検索</Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 'body2.fontSize', mt: 0.5 }}>タイトルと説明だけを検索対象にした、読み返しやすい履歴ビューです。</Typography>
+          <Typography color="textSecondary" sx={{ fontSize: 'body2.fontSize', mt: 0.5 }}>タイトルと説明だけを検索対象にした、読み返しやすい履歴ビューです。</Typography>
         </Box>
         <Paper variant="outlined" sx={{ bgcolor: 'background.paper', p: 1.5 }}>
           <Stack spacing={1.25}>
@@ -565,7 +565,7 @@ function HistoricalSearchView({ historicalFilter, historicalQuery, onFilterChang
               <Tabs aria-label="過去MRの状態" onChange={(_, value: HistoricalFilter) => onFilterChange(value)} sx={{ minHeight: 32, '& .MuiTab-root': { minHeight: 32, minWidth: 0, px: 1, fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold' } }} value={historicalFilter}>
                 {tabs.map(({ key, label }) => <Tab key={key} label={label} value={key} />)}
               </Tabs>
-              <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{results.length}件 · 保存済みの表示例</Typography>
+              <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{results.length}件 · 保存済みの表示例</Typography>
             </Stack>
           </Stack>
         </Paper>
@@ -574,12 +574,12 @@ function HistoricalSearchView({ historicalFilter, historicalQuery, onFilterChang
             <ListItemButton key={mergeRequest.id} onClick={() => onOpenMr(mergeRequest.id)} sx={{ alignItems: 'start', bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 1, px: 1.5, py: 1.1 }}>
               <ListItemText
                 primary={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Typography sx={{ fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold' }}>{mergeRequest.title}</Typography><Chip label={mergeRequest.state} size="small" variant="outlined" sx={{ fontSize: 'caption.fontSize', height: 21 }} /></Stack>}
-                secondary={<Typography color="text.secondary" sx={{ display: 'block', fontSize: 'caption.fontSize', lineHeight: 1.6, mt: 0.35 }}>{mergeRequest.projectPath} · !{mergeRequest.iid} · {mergeRequest.description}</Typography>}
+                secondary={<Typography color="textSecondary" sx={{ display: 'block', fontSize: 'caption.fontSize', lineHeight: 1.6, mt: 0.35 }}>{mergeRequest.projectPath} · !{mergeRequest.iid} · {mergeRequest.description}</Typography>}
               />
-              <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', ml: 2, mt: 0.25 }}><TextSnippetOutlinedIcon sx={{ color: 'text.disabled', fontSize: 15 }} /><Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.files.length}</Typography><HistoryOutlinedIcon sx={{ color: 'text.disabled', fontSize: 15 }} /><Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography></Stack>
+              <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', ml: 2, mt: 0.25 }}><TextSnippetOutlinedIcon sx={{ color: 'text.disabled', fontSize: 15 }} /><Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.files.length}</Typography><HistoryOutlinedIcon sx={{ color: 'text.disabled', fontSize: 15 }} /><Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize' }}>{mergeRequest.updatedAt}</Typography></Stack>
             </ListItemButton>
           ))}
-          {results.length === 0 ? <Paper variant="outlined" sx={{ bgcolor: 'background.paper', p: 4, textAlign: 'center' }}><FilterAltOutlinedIcon sx={{ color: 'text.disabled', fontSize: 26 }} /><Typography sx={{ fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold', mt: 1 }}>検索結果がありません</Typography><Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.5 }}>タイトル・説明・状態を変えて試してください。</Typography></Paper> : null}
+          {results.length === 0 ? <Paper variant="outlined" sx={{ bgcolor: 'background.paper', p: 4, textAlign: 'center' }}><FilterAltOutlinedIcon sx={{ color: 'text.disabled', fontSize: 26 }} /><Typography sx={{ fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold', mt: 1 }}>検索結果がありません</Typography><Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.5 }}>タイトル・説明・状態を変えて試してください。</Typography></Paper> : null}
         </Stack>
       </Stack>
     </Box>
@@ -592,16 +592,16 @@ function MockCatalogView({ onBackToReview }: { onBackToReview: () => void }) {
       <Stack spacing={2.25} sx={{ maxWidth: 1040, mx: 'auto' }}>
         <Stack direction="row" sx={{ alignItems: 'end', justifyContent: 'space-between' }}>
           <Box>
-            <Typography color="primary.main" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Reference</Typography>
+            <Typography color="primary" sx={{ fontSize: 'caption.fontSize', fontWeight: 'fontWeightBold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Reference</Typography>
             <Typography component="h1" sx={{ fontSize: 24, fontWeight: 'fontWeightBold', letterSpacing: '-0.03em', mt: 0.5 }}>レビューUIカタログ</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'body2.fontSize', mt: 0.5 }}>モックで使う状態と密度を揃えるための、共有パターンの確認画面です。</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'body2.fontSize', mt: 0.5 }}>モックで使う状態と密度を揃えるための、共有パターンの確認画面です。</Typography>
           </Box>
           <Button onClick={onBackToReview} size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ fontSize: 'caption.fontSize' }} variant="outlined">レビューに戻る</Button>
         </Stack>
         <Box sx={{ display: 'grid', gap: 1.25, gridTemplateColumns: { md: 'repeat(2, minmax(0, 1fr))', xs: '1fr' } }}>
           <Paper variant="outlined" sx={{ bgcolor: 'background.paper', p: 1.75 }}>
             <Typography sx={{ fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold' }}>状態ラベル</Typography>
-            <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>一覧と詳細で同じ意味を使います。</Typography>
+            <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>一覧と詳細で同じ意味を使います。</Typography>
             <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75, mt: 1.25 }}>
               <StatusPill tone="warning" label="要レビュー" subtle /><StatusPill tone="error" label="要修正" subtle /><StatusPill tone="success" label="承認済み" subtle /><StatusPill tone="info" label="Merged" subtle />
             </Stack>
@@ -625,7 +625,7 @@ function MockCatalogView({ onBackToReview }: { onBackToReview: () => void }) {
             <Stack sx={{ alignItems: 'center', bgcolor: 'action.hover', borderRadius: 1, mt: 1.25, p: 2, textAlign: 'center' }}>
               <FolderOpenOutlinedIcon sx={{ color: 'text.disabled', fontSize: 25 }} />
               <Typography sx={{ fontSize: 'body2.fontSize', fontWeight: 'fontWeightBold', mt: 0.5 }}>表示する議論がありません</Typography>
-              <Typography color="text.secondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>最初のコメントを下書きできます。</Typography>
+              <Typography color="textSecondary" sx={{ fontSize: 'caption.fontSize', mt: 0.35 }}>最初のコメントを下書きできます。</Typography>
             </Stack>
           </Paper>
         </Box>

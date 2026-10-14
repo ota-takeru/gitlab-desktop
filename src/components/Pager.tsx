@@ -18,10 +18,10 @@ export function Pager({ page, hasPrevious, hasNext, onPrevious, onNext, disabled
   if (!hasPrevious && !hasNext && !summary) return null
   return (
     <Stack component="nav" aria-label="ページ移動" direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end', minHeight: 32 }}>
-      {summary ? <Typography color="text.secondary" sx={{ mr: 'auto' }} variant="caption">{summary}</Typography> : null}
+      {summary ? <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{summary}</Typography> : null}
       {hasPrevious || hasNext ? <>
         <Button disabled={disabled || !hasPrevious} onClick={onPrevious} size="small">前へ</Button>
-        <Typography color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">ページ {page}</Typography>
+        <Typography color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">ページ {page}</Typography>
         <Button disabled={disabled || !hasNext} onClick={onNext} size="small">次へ</Button>
       </> : null}
     </Stack>
