@@ -11,6 +11,8 @@ Working contract for the implementation. Credentials never return over IPC. The 
 - `mutate_gitlab({input:{sessionId,requestId,action}})` -> void
 - `clear_gitlab_cache({sessionId})` -> void
 - `open_gitlab_url({sessionId,url})` -> void (Rust validates registered instance)
+- `reauthenticate_gitlab({token})` -> Session; uses the saved instance, refuses a token of another user (INVALID_INPUT) and keeps cache, drafts and receipts
+- `open_token_creation_page({instanceUrl})` -> void; validates the instance like connect and opens only its personal access token page
 - `get_local_draft({sessionId,key})` -> {body,updatedAt}|null; `set_local_draft({sessionId,key,body})` -> void; `clear_local_drafts({sessionId})` -> void
 - `get_pending_operation({sessionId,projectId,iid})` -> {id,action,startedAt}|null; `acknowledge_pending_operation({sessionId,projectId,iid,receiptId})` -> void
 - `set_window_close_guard({unsafeToClose})` -> void; `close_app_window()` -> void. Listen to `app-close-blocked` before activating the guard; always flush pending local saves before explicit close.
@@ -65,7 +67,7 @@ Unsupported server API => UNSUPPORTED/NOT_FOUND, no synthetic success. Mutations
 
 - frontend worker: src/types/gitlab.ts, src/lib/gitlab.ts, src/features/**, App routing and behavior tests. Uses typed wrappers and current components/theme; no frontend HTTP. Keep #mock accessible and sample data isolated. Default opens working client, #foundation retains original foundation.
 - API worker: src-tauri/src/gitlab_api.rs and dto.rs only. Exposes public `fetch(client:&reqwest::Client, api_base:&url::Url, query:&Query) -> Result<ApiResult,AppError>` and `mutate(client,api_base,action,user_id:&str) -> Result<(),AppError>`. Client already has private-token sensitive header, timeout, redirect policy; no tokens exposed here. `ApiResult={data:serde_json::Value,next_page:Option<u32>,truncated:bool}`. `dto.rs` owns Session/User/AppError/Query/Action/Position; derive Serde with camelCase fields and internally tagged enums kind (camelCase variant names).
-- distribution worker: .github/**, scripts/release*.mjs, docs/distribution.md, src/lib/updater.ts, src/components/UpdatePanel.tsx. Dependencies and Rust plugin integration owned by main. Updater Rust custom commands `check_app_update` -> {configured:boolean,version:string|null,notes:string|null}; `install_app_update` -> void. Endpoint/public key supplied at build through generated Tauri config; no arbitrary frontend endpoint input.
+- distribution worker: .github/**, scripts/release*.mjs, docs/distribution.md, src/lib/updater.ts, src/components/UpdatePanel.tsx. Dependencies and Rust plugin integration owned by main. Updater Rust custom commands `check_app_update` -> {configured:boolean,version:string|null,notes:string|null,downloaded:boolean}; `download_app_update` -> void (downloads and verifies one pending update, never installs); `install_app_update` -> void (applies the downloaded update and restarts; user action only). Endpoint/public key supplied at build through generated Tauri config; no arbitrary frontend endpoint input.
 
 ## Acceptance
 
