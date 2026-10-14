@@ -5,7 +5,7 @@
  */
 import { getMockCommitsForMergeRequest } from './commits'
 import { mockMergeRequests, mockProjects, type MockAuthor, type MockChangedFile, type MockDiscussion, type MockMergeRequest } from './fixtures'
-import type { Commit, Diff, Discussion, GitLabSession, GitLabUser, MergeRequest, Note, Position, Project } from '../types/gitlab'
+import type { Commit, Diff, Discussion, GitLabGroup, GitLabSession, GitLabUser, MergeRequest, Note, Position, Project } from '../types/gitlab'
 
 export const fixtureUser: GitLabUser = { id: '9000', name: '固定データの利用者', username: 'fixture-user' }
 
@@ -186,6 +186,8 @@ function toFixtureMergeRequest(mock: MockMergeRequest, now: number): FixtureMerg
       targetBranch: mock.targetBranch,
       title: mock.title,
       updatedAt: fixtureTime(mock.updatedAt, now),
+      // Opened a few days before the last update, so creation order differs from update order.
+      createdAt: new Date(Date.parse(fixtureTime(mock.updatedAt, now)) - (2 + (mock.iid % 5)) * 86_400_000).toISOString(),
       webUrl: `${fixtureSession.instanceUrl}/${mock.projectPath}/-/merge_requests/${mock.iid}`,
     },
   }
@@ -200,10 +202,22 @@ export function createFixtureData(now: number) {
     pathWithNamespace: project.path,
     webUrl: `${fixtureSession.instanceUrl}/${project.path}`,
   }))
+  // Every namespace above a fixture project, e.g. `platform` and `platform/desktop`.
+  const groupPaths = [...new Set(projects.flatMap((project) => {
+    const segments = project.pathWithNamespace.split('/').slice(0, -1)
+    return segments.map((_, index) => segments.slice(0, index + 1).join('/'))
+  }))]
+  const groups: GitLabGroup[] = groupPaths.map((fullPath, index) => ({
+    fullName: fullPath.split('/').join(' / '),
+    fullPath,
+    id: String(300 + index),
+    name: fullPath.split('/').at(-1) ?? fullPath,
+    webUrl: `${fixtureSession.instanceUrl}/groups/${fullPath}`,
+  }))
   const mergeRequests = mockMergeRequests.map((mock) => toFixtureMergeRequest(mock, now))
   const users = [fixtureUser, ...mergeRequests.flatMap((item) => [item.mergeRequest.author, ...item.discussions.flatMap((discussion) => discussion.notes.map((note) => note.author))])]
     .filter((user, index, all) => all.findIndex((candidate) => candidate.id === user.id) === index)
-  return { mergeRequests, projects, users }
+  return { groups, mergeRequests, projects, users }
 }
 
 export type FixtureData = ReturnType<typeof createFixtureData>

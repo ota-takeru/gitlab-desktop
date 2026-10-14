@@ -93,6 +93,13 @@ describe('ReviewComposer', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveFocus())
   })
 
+  it('names the submit button of a reply 「返信」', () => {
+    render(<ReviewComposer onCancelReply={() => undefined} onChange={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} replyDiscussionId="discussion-1" value="返信本文" />)
+
+    expect(screen.getByRole('button', { name: '返信' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'コメントを投稿' })).not.toBeInTheDocument()
+  })
+
   it('closes the reply with Esc', () => {
     const onCancelReply = vi.fn()
     render(<ReviewComposer onCancelReply={onCancelReply} onChange={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} replyAuthor="Colleague" replyDiscussionId="discussion-1" value="途中の返信" />)
@@ -113,7 +120,7 @@ describe('ReviewComposer', () => {
     fireEvent.click(textbox)
     await act(async () => { await new Promise((resolve) => globalThis.setTimeout(resolve, 400)) })
 
-    fireEvent.click(screen.getByRole('button', { name: '@aliceを挿入' }))
+    fireEvent.click(screen.getByRole('option', { name: /@alice$/u }))
 
     expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('hello @alice tail')
     expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveFocus()
@@ -132,6 +139,11 @@ describe('ReviewComposer', () => {
     fireEvent.click(textbox)
     await act(async () => { await new Promise((resolve) => globalThis.setTimeout(resolve, 400)) })
     fireEvent.keyDown(textbox, { key: 'ArrowDown' })
+    // The editor keeps the focus and points at the highlighted candidate.
+    const highlighted = screen.getByRole('option', { name: /@alicia$/u })
+    expect(highlighted).toHaveAttribute('aria-selected', 'true')
+    expect(textbox).toHaveAttribute('aria-activedescendant', highlighted.id)
+    expect(textbox).toHaveAttribute('aria-controls', screen.getByRole('listbox', { name: 'メンション候補' }).id)
     fireEvent.keyDown(textbox, { key: 'Enter' })
 
     expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('@alicia ')

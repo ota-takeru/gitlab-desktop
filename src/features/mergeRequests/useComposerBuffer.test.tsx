@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 
 import type { GitLabSession, Position } from '../../types/gitlab'
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed, useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
-import { appendComposerBuffer, clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, useComposerBuffer, useRetainedComposerUnsafe } from './useComposerBuffer'
+import { appendComposerBuffer, clearComposerBuffer, clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, listUnsafeComposerTargets, rememberComposerTarget, seedComposerBuffer, useComposerBuffer, useRetainedComposerUnsafe } from './useComposerBuffer'
 
 const { getLocalDraftMock, isDesktopRuntimeMock, setLocalDraftMock } = vi.hoisted(() => ({
   getLocalDraftMock: vi.fn(),
@@ -276,5 +276,26 @@ afterEach(() => {
     expect(keyAAfterReauth).toBe(keyA)
     expect(keyB).not.toBe(keyA)
     expect(createComposerBackendKey(keyAAfterReauth)).toBe(createComposerBackendKey(keyB))
+  })
+
+  it('lists each MR with unsent text once, named by the title remembered for it', () => {
+    rememberComposerTarget(sessionA, 'project-1', '7', { projectPath: 'group/app', title: '検索を速くする' })
+    appendComposerBuffer(createComposerBufferKey(sessionA, 'project-1', '7', 'new'), '本文')
+    appendComposerBuffer(createComposerBufferKey(sessionA, 'project-1', '7', 'new', position), '行への指摘')
+    seedComposerBuffer(createComposerBufferKey(sessionA, 'project-2', '3', 'draft-edit:9'), '下書きの編集')
+    // An emptied input and an opaque memory-only key are not MRs with unsent text.
+    appendComposerBuffer(createComposerBufferKey(sessionA, 'project-3', '1', 'new'), '消す')
+    clearComposerBuffer(createComposerBufferKey(sessionA, 'project-3', '1', 'new'))
+    appendComposerBuffer('opaque-key', 'メモ')
+
+    expect(listUnsafeComposerTargets()).toEqual([
+      { iid: '7', projectId: 'project-1', projectPath: 'group/app', title: '検索を速くする' },
+      { iid: '3', projectId: 'project-2' },
+    ])
+
+    clearComposerBufferStore()
+    appendComposerBuffer(createComposerBufferKey(sessionA, 'project-1', '7', 'new'), '本文')
+    // Logging out forgets the titles too.
+    expect(listUnsafeComposerTargets()).toEqual([{ iid: '7', projectId: 'project-1' }])
   })
 })

@@ -1,12 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { AutoUpdateSafetyProvider, useAutoUpdateSafety } from '../features/shared/AutoUpdateSafety'
+import { FeedbackProvider } from './Feedback'
 import { WindowCloseProtection } from './WindowCloseProtection'
 
-const { flushMock, invokeMock, isTauriMock, listenMock, retainedComposerUnsafeMock } = vi.hoisted(() => ({
+const { flushMock, invokeMock, isTauriMock, listenMock, listTargetsMock, retainedComposerUnsafeMock } = vi.hoisted(() => ({
   flushMock: vi.fn(),
+  listTargetsMock: vi.fn(),
   invokeMock: vi.fn(),
   isTauriMock: vi.fn(),
   listenMock: vi.fn(),
@@ -21,6 +23,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }))
 vi.mock('../features/mergeRequests/useComposerBuffer', () => ({
   flushComposerBuffers: flushMock,
+  listUnsafeComposerTargets: listTargetsMock,
   useRetainedComposerUnsafe: () => retainedComposerUnsafeMock.value,
 }))
 
@@ -49,6 +52,7 @@ describe('WindowCloseProtection', () => {
     retainedComposerUnsafeMock.value = false
     invokeMock.mockReset().mockResolvedValue(undefined)
     flushMock.mockReset().mockResolvedValue(true)
+    listTargetsMock.mockReset().mockReturnValue([])
     isTauriMock.mockReset().mockReturnValue(true)
     listenMock.mockReset().mockImplementation(async (_event: string, callback: CloseCallback) => {
       closeCallback = callback
@@ -97,7 +101,8 @@ describe('WindowCloseProtection', () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_window_close_guard', { unsafeToClose: true }))
 
     await emitClose(true)
-    expect(globalThis.confirm).toHaveBeenCalledWith('未送信の入力、編集中の内容、または結果未確認の投稿があります。端末への保存を待って終了しますか？保存済みの未送信コメントは次回復元されます。')
+    // Without the app's dialog provider the browser's confirm carries the same question.
+    expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('未送信の内容があります'))
     expect(flushMock).not.toHaveBeenCalled()
     expect(invokeMock).not.toHaveBeenCalledWith('close_app_window')
   })
@@ -122,7 +127,7 @@ describe('WindowCloseProtection', () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_window_close_guard', { unsafeToClose: false }))
 
     await emitClose(false)
-    await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith('未保存の内容を保存できませんでした。内容を失って終了しますか？'))
+    await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('入力を保存できませんでした')))
     expect(invokeMock).not.toHaveBeenCalledWith('close_app_window')
   })
 
@@ -149,6 +154,40 @@ describe('WindowCloseProtection', () => {
     await emitClose(true)
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('close_app_window'))
     expect(listenMock).toHaveBeenCalledTimes(listenerCallsBefore)
+  })
+
+  it('asks with the app dialog when one is mounted', async () => {
+    render(<FeedbackProvider><AutoUpdateSafetyProvider><SafetyHarness unsafe /></AutoUpdateSafetyProvider></FeedbackProvider>)
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_window_close_guard', { unsafeToClose: true }))
+
+    await emitClose(true)
+    const dialog = await screen.findByRole('dialog', { name: '未送信の内容があります' })
+    expect(globalThis.confirm).not.toHaveBeenCalled()
+    expect(flushMock).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存して終了' }))
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('close_app_window'))
+    expect(flushMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the MRs with unsent input in the app dialog, ten at most', async () => {
+    listTargetsMock.mockReturnValue([
+      { iid: '12', projectId: '7', projectPath: 'group/app', title: '検索を速くする' },
+      { iid: '3', projectId: '8' },
+      ...Array.from({ length: 10 }, (_, index) => ({ iid: String(100 + index), projectId: '9', projectPath: 'group/other', title: `MR ${index}` })),
+    ])
+    render(<FeedbackProvider><AutoUpdateSafetyProvider><SafetyHarness unsafe /></AutoUpdateSafetyProvider></FeedbackProvider>)
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_window_close_guard', { unsafeToClose: true }))
+
+    await emitClose(true)
+    const dialog = await screen.findByRole('dialog', { name: '未送信の内容があります' })
+    const items = within(within(dialog).getByRole('list', { name: '未送信の入力があるMR' })).getAllByRole('listitem').map((item) => item.textContent)
+    expect(items).toHaveLength(11)
+    expect(items.slice(0, 2)).toEqual(['group/app !12 検索を速くする', 'プロジェクト 8 !3'])
+    expect(items.at(-1)).toBe('ほか2件')
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(flushMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('close_app_window')
   })
 
   it('does not call Tauri APIs in the browser preview', async () => {

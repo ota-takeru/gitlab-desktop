@@ -1,6 +1,6 @@
 import { ThemeProvider } from '@mui/material/styles'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
@@ -96,4 +96,31 @@ it('shows an outdated comment in the file as it was at the commented commit', ()
 it('shows nothing for a comment on a whole file', () => {
   const { container } = renderWith(new QueryClient(), [discussionAt(position({ positionType: 'file' }))])
   expect(container.firstElementChild).toBeEmptyDOMElement()
+})
+
+it('follows diff pages added later without updating itself while another component renders', async () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  try {
+    const client = new QueryClient()
+    const discussions = [discussionAt(position({ newLine: 4 }))]
+    // A component that adds a diff page query while rendering, as the changes tab does.
+    function AddsQuery({ name }: { name: string }) {
+      const query: DiffsQuery = { headSha: head, iid: '3', kind: 'diffs', page: Number(name), projectId: '7' }
+      useQuery({ queryFn: () => new Promise<never>(() => undefined), queryKey: ['gitlab', 's1', JSON.stringify(query)] })
+      return null
+    }
+    const tree = (extra: string[]) => <QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><Harness discussions={discussions} headSha={head} /><Harness discussions={discussions} headSha={head} />{extra.map((name) => <AddsQuery key={name} name={name} />)}</ThemeProvider></QueryClientProvider>
+    const view = render(tree([]))
+    view.rerender(tree(['2', '3']))
+    await act(async () => { await Promise.resolve() })
+    expect(errors.mock.calls.filter(([message]) => String(message).includes('Cannot update a component'))).toEqual([])
+
+    // A diff page read later still reaches both consumers.
+    const page: DiffsQuery = { headSha: head, iid: '3', kind: 'diffs', page: 1, projectId: '7' }
+    const snapshot: GitLabSnapshot<Diff[]> = { completeness: 'complete', data: [diff], fetchedAt: 1, nextPage: null, source: 'network' }
+    await act(async () => { client.setQueryData(['gitlab', 's1', JSON.stringify(page)], { error: null, snapshot }) })
+    expect(screen.getAllByRole('group', { name: 'コメント対象の差分' })).toHaveLength(2)
+  } finally {
+    errors.mockRestore()
+  }
 })

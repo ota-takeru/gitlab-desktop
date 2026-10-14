@@ -485,7 +485,7 @@ describe('GitLab connection IPC and lifecycle', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '切断' }))
 
-    expect(globalThis.confirm).toHaveBeenCalledWith('切断すると、GitLabの資格情報、キャッシュ、この端末に保存された未送信コメント、結果未確認の投稿記録が削除されます。切断しますか？')
+    await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('未送信コメント、結果未確認の投稿記録が削除されます')))
     expect(invokeMock).not.toHaveBeenCalledWith('disconnect_gitlab', { sessionId: gitlabComSession.id })
     expect(screen.getByText('GitLab接続済み')).toBeInTheDocument()
   })
@@ -510,6 +510,97 @@ describe('GitLab connection IPC and lifecycle', () => {
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
     expect(logoutListener).toHaveBeenCalledTimes(1)
     window.removeEventListener('gitlab-explicit-logout', logoutListener)
+  })
+
+  it('reconnects an expired account in place with Enter, keeping its instance URL', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'reauthenticate_gitlab') return Promise.resolve({ ...gitlabComSession, id: 'session-renewed' })
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+    renderConnectionView()
+    await waitFor(() => expect(screen.getByText('GitLab接続済み')).toBeInTheDocument())
+    act(() => {
+      window.dispatchEvent(new CustomEvent('gitlab-auth-required', { detail: { sessionId: gitlabComSession.id } }))
+    })
+
+    expect(await screen.findByRole('heading', { name: '再認証が必要です' })).toBeInTheDocument()
+    expect(screen.getByLabelText('GitLab URL')).toHaveValue(gitlabComSession.instanceUrl)
+    fireEvent.change(screen.getByLabelText('Personal Access Token'), { target: { value: 'renewed-token' } })
+    fireEvent.submit(screen.getByLabelText('Personal Access Token').closest('form')!)
+
+    await waitFor(() => expect(screen.getByText('GitLab接続済み')).toBeInTheDocument())
+    expect(invokeMock).toHaveBeenCalledWith('reauthenticate_gitlab', { token: 'renewed-token' })
+    expect(invokeMock.mock.calls.some(([command]) => command === 'connect_gitlab' || command === 'disconnect_gitlab')).toBe(false)
+  })
+
+  it('replaces the token of a connected account without disconnecting and shows a refusal as given', async () => {
+    const refusal = '別のユーザーのトークンです。接続中のアカウントのトークンを入力してください。'
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'reauthenticate_gitlab') return Promise.reject({ code: 'INVALID_INPUT', message: refusal })
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+    renderConnectionView()
+    fireEvent.click(await screen.findByRole('button', { name: 'トークンを更新' }))
+    fireEvent.change(screen.getByLabelText('新しいPersonal Access Token'), { target: { value: 'other-token' } })
+    fireEvent.submit(screen.getByLabelText('新しいPersonal Access Token').closest('form')!)
+
+    expect(await screen.findByText(refusal)).toBeInTheDocument()
+    expect(invokeMock).toHaveBeenCalledWith('reauthenticate_gitlab', { token: 'other-token' })
+    expect(screen.getByText('GitLab接続済み')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('other-token')).not.toBeInTheDocument()
+    expect(invokeMock).not.toHaveBeenCalledWith('disconnect_gitlab', expect.anything())
+  })
+
+  it('opens the token creation page through Rust before connecting and shows a refused URL', async () => {
+    const refusal = 'HTTPSのGitLab URLを指定してください。資格情報・クエリ・フラグメントは指定できません。'
+    invokeMock.mockImplementation((command: string, args?: { instanceUrl?: string }) => {
+      if (command === 'restore_session') return Promise.resolve(null)
+      if (command === 'open_token_creation_page') return args?.instanceUrl === 'https://gitlab.example.com' ? Promise.resolve(undefined) : Promise.reject({ code: 'INVALID_INPUT', message: refusal })
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+    const clipboard = vi.fn()
+    Object.defineProperty(globalThis.navigator, 'clipboard', { configurable: true, value: { writeText: clipboard } })
+    renderConnectionView()
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
+
+    fireEvent.change(screen.getByLabelText('GitLab URL'), { target: { value: 'gitlab.example.com/' } })
+    fireEvent.click(screen.getByRole('button', { name: 'アクセストークンを作成' }))
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('open_token_creation_page', { instanceUrl: 'https://gitlab.example.com' }))
+
+    fireEvent.change(screen.getByLabelText('GitLab URL'), { target: { value: 'https://user:secret@gitlab.example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'アクセストークンを作成' }))
+    expect(await screen.findByText(refusal)).toBeInTheDocument()
+    expect(clipboard).not.toHaveBeenCalled()
+    expect(invokeMock.mock.calls.some(([command]) => command === 'open_gitlab_url')).toBe(false)
+    Reflect.deleteProperty(globalThis.navigator, 'clipboard')
+  })
+
+  it('opens the token creation page of the connected instance through the same command', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'open_token_creation_page') return Promise.resolve(undefined)
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+    renderConnectionView()
+    fireEvent.click(await screen.findByRole('button', { name: 'トークンを更新' }))
+    fireEvent.click(screen.getByRole('button', { name: 'アクセストークンを作成' }))
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('open_token_creation_page', { instanceUrl: 'https://gitlab.com' }))
+  })
+
+  it('takes a host without a scheme as HTTPS and remembers only the URL', async () => {
+    renderConnectionView()
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('restore_session'))
+    expect(screen.queryByRole('button', { name: '保存済みの接続を再試行' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('GitLab URL'), { target: { value: 'gitlab.example.com/' } })
+    fireEvent.change(screen.getByLabelText('Personal Access Token'), { target: { value: 'fixture-token' } })
+    fireEvent.submit(screen.getByLabelText('Personal Access Token').closest('form')!)
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('connect_gitlab', { input: { token: 'fixture-token', url: 'https://gitlab.example.com' } }))
+    await waitFor(() => expect(localStorage.getItem('gitlab-desktop:last-instance-url')).toBe('https://gitlab.example.com'))
+    expect(Object.values(localStorage).join(' ')).not.toContain('fixture-token')
   })
 
   it('clears the visible session and shows the storage error when disconnect fails', async () => {

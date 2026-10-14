@@ -6,21 +6,11 @@ import { ThemeProvider } from '@mui/material/styles'
 
 import { createAppTheme } from './theme'
 import { ClientApp } from './features/ClientApp'
+import { FeedbackProvider } from './components/Feedback'
+import { readColorPreference, saveColorPreference, useSystemColorMode, type ColorPreference } from './features/colorMode'
 
 const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./pages/DevelopmentApp')) : null
 const FixtureApp = import.meta.env.DEV ? lazy(() => import('./pages/FixtureApp')) : null
-
-const colorModeKey = 'gitlab-desktop:color-mode'
-
-function readInitialMode(): 'light' | 'dark' {
-  try {
-    const saved = globalThis.localStorage?.getItem(colorModeKey)
-    if (saved === 'light' || saved === 'dark') return saved
-  } catch {
-    // A locked down WebView falls back to the OS preference.
-  }
-  return globalThis.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
-}
 
 /** Development screens accept `theme=light|dark` (in the hash or the query) to open in a fixed theme without saving it. */
 function routeThemeOverride(route: string): 'light' | 'dark' | null {
@@ -29,23 +19,18 @@ function routeThemeOverride(route: string): 'light' | 'dark' | null {
   return theme === 'light' || theme === 'dark' ? theme : null
 }
 
-function saveMode(mode: 'light' | 'dark') {
-  try {
-    globalThis.localStorage?.setItem(colorModeKey, mode)
-  } catch {
-    // The choice still applies for this session.
-  }
-}
-
 export default function App() {
-  const [mode, setMode] = useState<'light' | 'dark'>(() => routeThemeOverride(window.location.hash.replace(/^#/u, '')) ?? readInitialMode())
+  const [preference, setPreference] = useState<ColorPreference>(readColorPreference)
+  const [routeOverride, setRouteOverride] = useState(() => routeThemeOverride(window.location.hash.replace(/^#/u, '')))
+  const systemMode = useSystemColorMode()
+  const mode = routeOverride ?? (preference === 'system' ? systemMode : preference)
   const [route, setRoute] = useState(() => window.location.hash.replace(/^#/u, ''))
   useEffect(() => {
     const handleHashChange = () => {
       const next = window.location.hash.replace(/^#/u, '')
       setRoute(next)
       const override = routeThemeOverride(next)
-      if (override) setMode(override)
+      if (override) setRouteOverride(override)
     }
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
@@ -54,14 +39,16 @@ export default function App() {
   // `?fixture=<state>` keeps the client's own hash routes working.
   const fixtureMode = FixtureApp && new URLSearchParams(window.location.search).has('fixture')
   const theme = useMemo(() => createAppTheme(mode), [mode])
-  const onModeChange = () => {
-    const next = mode === 'dark' ? 'light' : 'dark'
-    saveMode(next)
-    setMode(next)
+  const onColorPreferenceChange = (next: ColorPreference) => {
+    saveColorPreference(next)
+    setPreference(next)
+    setRouteOverride(null)
   }
+  const onModeChange = () => onColorPreferenceChange(mode === 'dark' ? 'light' : 'dark')
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <FeedbackProvider>
       {fixtureMode && FixtureApp ? (
         <Suspense fallback={<CatalogLoading />}>
           <FixtureApp mode={mode} onModeChange={onModeChange} />
@@ -70,7 +57,8 @@ export default function App() {
         <Suspense fallback={<CatalogLoading />}>
           <DevelopmentApp mode={mode} onModeChange={onModeChange} route={route} />
         </Suspense>
-      ) : <ClientApp mode={mode} onModeChange={onModeChange} />}
+      ) : <ClientApp colorPreference={preference} onColorPreferenceChange={onColorPreferenceChange} />}
+      </FeedbackProvider>
     </ThemeProvider>
   )
 }
@@ -78,7 +66,7 @@ export default function App() {
 function CatalogLoading() {
   return (
     <Box aria-live="polite" role="status" sx={{ py: 8, textAlign: 'center' }}>
-      <Typography color="text.secondary" variant="body2">
+      <Typography color="textSecondary" variant="body2">
         画面を読み込み中…
       </Typography>
     </Box>

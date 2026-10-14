@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useSyncExternalStore } from 'react'
 
 import { acknowledgePendingOperation, getPendingOperation, type PendingOperation } from '../../lib/pendingOperations'
 import { mutateGitLab, normalizeGitLabError } from '../../lib/gitlab'
+import { reportGitLabConnectivity } from '../connectivity'
 import { GitLabCommandError, type GitLabAction } from '../../types/gitlab'
 
 export type MutationStatus = 'idle' | 'pending' | 'success' | 'error' | 'unknown'
@@ -321,6 +322,7 @@ export function useGitLabMutation(
       } else {
         await mutateGitLab(localDraftKey === undefined ? { action, sessionId } : { action, localDraftKey, sessionId })
       }
+      reportGitLabConnectivity(null)
       if (!isActive(current)) {
         const error = new GitLabCommandError({ code: 'CANCELLED', message: '画面が閉じられたため投稿結果を適用できません。' })
         return { error, ok: false, status: 'error' }
@@ -330,6 +332,7 @@ export function useGitLabMutation(
     } catch (caught) {
       const error = normalizeGitLabError(caught)
       const status: MutationStatus = error.code === 'UNKNOWN_OUTCOME' ? 'unknown' : 'error'
+      reportGitLabConnectivity(error)
       if (isActive(current)) {
         if (status === 'unknown') {
           const receipt = await refreshReceiptAfterUnknown(current)

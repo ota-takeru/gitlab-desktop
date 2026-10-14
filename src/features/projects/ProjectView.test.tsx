@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { GitLabSession } from '../../types/gitlab'
+import type { GitLabSession, Project } from '../../types/gitlab'
+import { forgetRememberedListStates } from './listState'
 import { ProjectView } from './ProjectView'
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }))
@@ -34,6 +35,7 @@ const emptyResult = {
 describe('ProjectView', () => {
   beforeEach(() => {
     localStorage.clear()
+    forgetRememberedListStates()
     queryMock.mockReset()
     queryMock.mockReturnValue(emptyResult)
   })
@@ -59,9 +61,62 @@ describe('ProjectView', () => {
     const onOpenProjectId = vi.fn()
     render(<ProjectView onOpenProject={vi.fn()} onOpenProjectId={onOpenProjectId} />)
 
-    expect(screen.getByRole('button', { name: 'Project 9001' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Project 9002' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Project 9001' }))
+    expect(screen.getByRole('button', { name: 'プロジェクト 9001' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'プロジェクト 9002' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'プロジェクト 9001' }))
     expect(onOpenProjectId).toHaveBeenCalledWith('9001')
+  })
+
+  it('keeps the name of a pinned project, and learns it for ids pinned before names were kept', () => {
+    const desktop: Project = { archived: false, description: '', id: '77', name: 'Desktop', pathWithNamespace: 'team/desktop', webUrl: 'https://gitlab.example/team/desktop' }
+    localStorage.setItem('gitlab-desktop:preferences:https%3A%2F%2Fgitlab.example%2FGitLab:42:pinned', JSON.stringify(['77']))
+    queryMock.mockReturnValue({ ...emptyResult, data: [desktop] })
+    const view = render(<ProjectView onOpenProject={vi.fn()} />)
+    expect(within(screen.getByLabelText('プロジェクトへのショートカット')).getByRole('button', { name: 'Desktop（team/desktop）' })).toBeInTheDocument()
+
+    // The next visit shows the name although the project is not on the page.
+    view.unmount()
+    queryMock.mockReturnValue(emptyResult)
+    render(<ProjectView onOpenProject={vi.fn()} />)
+    expect(within(screen.getByLabelText('プロジェクトへのショートカット')).getByRole('button', { name: 'Desktop（team/desktop）' })).toBeInTheDocument()
+  })
+
+  it('keeps its conditions when it is left and opened again, and clears them back to the defaults', () => {
+    const view = render(<ProjectView onOpenProject={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'プロジェクトを検索' }), { target: { value: 'platform' } })
+    fireEvent.submit(screen.getByRole('button', { name: '検索' }).closest('form') as HTMLFormElement)
+    fireEvent.click(screen.getByRole('switch', { name: 'アーカイブ済みを含める' }))
+    view.unmount()
+
+    render(<ProjectView onOpenProject={vi.fn()} />)
+    expect(screen.getByRole('textbox', { name: 'プロジェクトを検索' })).toHaveValue('platform')
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: true, search: 'platform' }))
+    expect(screen.getByText(/適用中の条件: 検索語「platform」 · 参加中のみ · アーカイブ済みを含む/u)).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: '条件をクリア' })[0])
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: false, membership: true, page: 1, search: '' }))
+    expect(screen.queryByRole('button', { name: '条件をクリア' })).not.toBeInTheDocument()
+  })
+
+  it('names rows with their path, moves between them by keyboard, and retries a failed refresh', () => {
+    const refresh = vi.fn()
+    const projects: Project[] = [
+      { archived: false, description: '', id: '1', lastActivityAt: '2026-10-09T00:00:00.000Z', name: 'Web', pathWithNamespace: 'team/web', webUrl: '' },
+      { archived: false, description: '', id: '2', name: 'Web', pathWithNamespace: 'other/web', webUrl: '' },
+    ]
+    queryMock.mockReturnValue({ ...emptyResult, data: projects, error: new Error('offline'), refresh, stale: true })
+    render(<ProjectView onOpenProject={vi.fn()} />)
+
+    const first = screen.getByRole('button', { name: 'Web（team/web）' })
+    const second = screen.getByRole('button', { name: 'Web（other/web）' })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(second)
+    fireEvent.keyDown(second, { key: 'Home' })
+    expect(document.activeElement).toBe(first)
+
+    expect(within(first).getByText(/^活動 /u)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '再試行' }))
+    expect(refresh).toHaveBeenCalled()
   })
 })

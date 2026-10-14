@@ -59,7 +59,8 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'clear_local_drafts':
         localDrafts.clear()
         return null
-      case 'check_app_update': return { configured: false, notes: null, version: null }
+      case 'check_app_update': return { configured: false, downloaded: false, notes: null, version: null }
+      case 'download_app_update': return null
       case 'get_pending_operation':
       case 'get_gitlab_avatar': return null
       case 'plugin:notification|is_permission_granted': return false
@@ -69,6 +70,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'clear_gitlab_cache':
       case 'disconnect_gitlab':
       case 'open_gitlab_url':
+      case 'open_token_creation_page':
       case 'set_window_close_guard':
       case 'close_app_window':
       case 'plugin:notification|notify': return null
@@ -96,6 +98,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'projects': return data.projects.filter((project) => matches(`${project.name} ${project.pathWithNamespace}`, request.search))
       case 'project': return data.projects.find((project) => project.pathWithNamespace === request.path) ?? notFound()
       case 'users': return data.users.filter((user) => matches(`${user.name} ${user.username}`, request.search))
+      case 'groups': return data.groups.filter((group) => matches(`${group.name} ${group.fullPath}`, request.search))
       case 'todos': return data.mergeRequests.slice(0, 1).map(({ mergeRequest }) => ({
         actionName: 'review_requested',
         author: mergeRequest.author,
@@ -117,15 +120,16 @@ export function installFixtureIpc(state: FixtureState): void {
         ]
         return branches.filter((branch, index) => branches.findIndex((other) => other.name === branch.name) === index && matches(branch.name, request.search))
       }
-      case 'mrs': return data.mergeRequests.map((item) => item.mergeRequest).filter((mergeRequest) =>
+      case 'mrs': return data.mergeRequests.map((item) => item.mergeRequest).sort((left, right) => Number(numberMatch(right.iid, request.search, request.projectId)) - Number(numberMatch(left.iid, request.search, request.projectId))).filter((mergeRequest) =>
         (request.state === 'all' || mergeRequest.state === request.state)
         && (!request.projectId || mergeRequest.projectId === request.projectId)
+        && (!request.groupId || inGroup(mergeRequest.projectPath ?? '', request.groupId))
         && (!request.authorId || mergeRequest.author.id === request.authorId)
         && (!request.reviewerId || Boolean(mergeRequest.reviewers?.some((user) => user.id === request.reviewerId)))
         && (!request.assigneeId || Boolean(mergeRequest.assignees?.some((user) => user.id === request.assigneeId)))
         && (!request.labels?.length || request.labels.every((label) => mergeRequest.labels?.includes(label)))
         && (!request.sourceBranch || mergeRequest.sourceBranch === request.sourceBranch)
-        && matches(`${mergeRequest.title} ${mergeRequest.description}`, request.search))
+        && matchesMergeRequest(mergeRequest.iid, `${mergeRequest.title} ${mergeRequest.description}`, request.search, request.projectId))
       case 'mr': return find(request).mergeRequest
       case 'discussions': return find(request).discussions
       case 'notes': return find(request).discussions.flatMap((discussion) => discussion.notes)
@@ -209,6 +213,12 @@ export function installFixtureIpc(state: FixtureState): void {
     return null
   }
 
+  // GitLab accepts a group's ID or its path; the fixture resolves either.
+  function inGroup(projectPath: string, groupId: string): boolean {
+    const path = data.groups.find((group) => group.id === groupId)?.fullPath ?? groupId
+    return projectPath.startsWith(`${path}/`)
+  }
+
   function find(ref: { projectId: string; iid: string }): FixtureMergeRequest {
     return data.mergeRequests.find(({ mergeRequest }) => mergeRequest.projectId === ref.projectId && mergeRequest.iid === ref.iid) ?? notFound()
   }
@@ -233,6 +243,17 @@ function keyOf(ref: { projectId: string; iid: string }): string {
 
 function matches(text: string, search: string): boolean {
   return !search.trim() || text.toLowerCase().includes(search.trim().toLowerCase())
+}
+
+// Mirrors the Rust client: within a project, `!123` names the MR alone, while
+// `123` leads with that MR and also matches text. Elsewhere a number is text.
+function matchesMergeRequest(iid: string, text: string, search: string, projectId: string | undefined): boolean {
+  if (projectId && /^!\d+$/.test(search.trim())) return numberMatch(iid, search, projectId)
+  return numberMatch(iid, search, projectId) || matches(text, search)
+}
+
+function numberMatch(iid: string, search: string, projectId: string | undefined): boolean {
+  return Boolean(projectId) && /^!?\d+$/.test(search.trim()) && iid === search.trim().replace(/^!/, '')
 }
 
 function notFound(): never {

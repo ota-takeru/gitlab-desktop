@@ -87,6 +87,7 @@ export interface MergeRequestsQuery {
 }
 
 export interface UsersQuery { kind: 'users'; search: string; page: number }
+export interface GroupsQuery { kind: 'groups'; search: string; page: number }
 export interface ProjectLookupQuery { kind: 'project'; path: string }
 export interface TodosQuery { kind: 'todos'; page: number }
 export interface BranchesQuery { kind: 'branches'; projectId: string; search: string; page: number }
@@ -99,6 +100,14 @@ export interface GitLabBranch {
   webUrl: string
   /** The latest commit; null when GitLab omitted it. */
   commit: { id: string; shortId: string; title: string; authorName: string; committedDate: string } | null
+}
+export interface GitLabGroup {
+  id: string
+  name: string
+  /** The group's URL path, e.g. `team/platform`. */
+  fullPath: string
+  fullName: string
+  webUrl: string
 }
 export interface NotesQuery { kind: 'notes'; projectId: string; iid: string; page: number }
 
@@ -173,6 +182,7 @@ export interface MrApproval {
 export type GitLabQuery =
   | ProjectQuery
   | UsersQuery
+  | GroupsQuery
   | ProjectLookupQuery
   | TodosQuery
   | BranchesQuery
@@ -193,6 +203,8 @@ export interface Project {
   description: string
   webUrl: string
   archived: boolean
+  /** ISO time of the latest activity; absent when GitLab omitted it. */
+  lastActivityAt?: string
 }
 
 export interface DiffRefs {
@@ -213,6 +225,8 @@ export interface MergeRequest {
   sourceBranch: string
   targetBranch: string
   updatedAt: string
+  /** GitLab's creation time; absent when GitLab omitted it. */
+  createdAt?: string
   headSha: string | null
   diffRefs: DiffRefs | null
   projectPath?: string | null
@@ -289,6 +303,7 @@ export type QueryData =
   | Project[]
   | Project
   | GitLabUser[]
+  | GitLabGroup[]
   | GitLabTodo[]
   | GitLabBranch[]
   | Note[]
@@ -449,6 +464,7 @@ export type UploadAttachmentAction = {
 export type GitLabQueryData<Q extends GitLabQuery> =
   Q extends ProjectQuery ? Project[]
     : Q extends UsersQuery ? GitLabUser[]
+      : Q extends GroupsQuery ? GitLabGroup[]
       : Q extends ProjectLookupQuery ? Project
         : Q extends TodosQuery ? GitLabTodo[]
         : Q extends BranchesQuery ? GitLabBranch[]

@@ -5,6 +5,7 @@ import { ThemeProvider } from '@mui/material/styles'
 
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { readColorPreference, resolveColorMode } from './features/colorMode'
 import { createAppTheme } from './theme'
 
 const rootElement = document.getElementById('root')
@@ -25,7 +26,8 @@ createRoot(rootElement, {
   onUncaughtError: ignoreReactError,
 }).render(
   <StrictMode>
-    <ThemeProvider theme={createAppTheme('dark')}>
+    {/* The root error screen sits outside App's theme, so it reads the saved appearance itself. */}
+    <ThemeProvider theme={createAppTheme(resolveColorMode(readColorPreference()))}>
       <CssBaseline />
       <AppErrorBoundary>
         <App />

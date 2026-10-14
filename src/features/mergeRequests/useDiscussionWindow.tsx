@@ -30,6 +30,8 @@ export interface DiscussionWindow {
   /** Retries the older page that failed to load. */
   retryOlder: () => void
   refreshLatest: () => void
+  /** Refreshes every loaded page, while the window is active. */
+  refreshAll: () => void
   /** Refreshes the page holding the discussion (and the newest page for new threads). */
   refreshDiscussion: (discussionId: string | null) => void
   /** Renders the page observers; keep it mounted while discussions should stay live. */
@@ -113,6 +115,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
 
   const retryOlder = useCallback(() => { store.get(state.low)?.refresh() }, [state.low, store])
   const refreshLatest = useCallback(() => { store.get(state.latestPage)?.refresh() }, [state.latestPage, store])
+  const refreshAll = useCallback(() => { if (active) for (const page of state.observed) store.get(page)?.refresh() }, [active, state.observed, store])
   const refreshDiscussion = useCallback((discussionId: string | null) => {
     const holder = discussionId ? store.entries().find(([page, value]) => page >= state.low && value.data?.some((discussion) => discussion.id === discussionId)) : undefined
     if (holder && holder[0] !== state.latestPage) holder[1].refresh()
@@ -140,6 +143,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
     observers,
     olderError: state.olderError,
     ready: state.ready,
+    refreshAll,
     refreshDiscussion,
     refreshLatest,
     retryOlder,

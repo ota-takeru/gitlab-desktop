@@ -6,12 +6,15 @@ export interface AppUpdate {
   configured: boolean
   version: string | null
   notes: string | null
+  /** The signed package of `version` is already downloaded and verified. */
+  downloaded?: boolean
 }
 
 const NOT_CONFIGURED: AppUpdate = Object.freeze({
   configured: false,
   version: null,
   notes: null,
+  downloaded: false,
 })
 
 /**
@@ -26,7 +29,18 @@ export async function checkAppUpdate(): Promise<AppUpdate> {
 }
 
 /**
- * Installs the update selected by the Rust updater command and restarts the app.
+ * Downloads and verifies the update found by the last check, in the background.
+ * It never installs or restarts.
+ */
+export async function downloadAppUpdate(): Promise<void> {
+  if (!isTauri()) {
+    throw new Error('ブラウザプレビューではアプリを更新できません。')
+  }
+  await invoke<void>('download_app_update')
+}
+
+/**
+ * Installs the downloaded update (downloading it first if needed) and restarts the app.
  * The UI calls this only after an explicit user action.
  */
 export function installAppUpdate(): Promise<void> {

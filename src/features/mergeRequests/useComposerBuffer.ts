@@ -29,7 +29,19 @@ interface BufferEntry {
   status: ComposerPersistenceStatus
 }
 
+/** An MR that holds unsent text, named for the close confirmation. */
+export interface ComposerTarget {
+  projectId: string
+  iid: string
+  projectPath?: string
+  title?: string
+}
+
+const MAX_COMPOSER_TARGET_LABELS = 200
+
 const composerBuffers = new Map<string, BufferEntry>()
+/** Titles of opened MRs by account and MR, since buffer keys only hold their ids. */
+const composerTargetLabels = new Map<string, { projectPath: string; title: string }>()
 const composerStoreListeners = new Set<() => void>()
 let composerStoreGeneration = 0
 let retainedComposerUnsafe = false
@@ -95,8 +107,45 @@ export function createComposerBackendKey(bufferKey: string): string {
   }
 }
 
+/** Remember how an opened MR is named, so the close confirmation can list it. */
+export function rememberComposerTarget(session: GitLabSession | null, projectId: string, iid: string, label: { projectPath: string; title: string }): void {
+  const key = composerTargetLabelKey(session?.instanceUrl ?? '', projectId, iid)
+  composerTargetLabels.delete(key)
+  composerTargetLabels.set(key, label)
+  if (composerTargetLabels.size > MAX_COMPOSER_TARGET_LABELS) composerTargetLabels.delete(composerTargetLabels.keys().next().value!)
+}
+
+/** The MRs whose inputs or edits hold text not yet sent, in the order they were first written. */
+export function listUnsafeComposerTargets(): ComposerTarget[] {
+  const targets = new Map<string, ComposerTarget>()
+  for (const [bufferKey, entry] of composerBuffers) {
+    if (!entry.body) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(bufferKey)
+    } catch {
+      continue
+    }
+    if (!isRecord(parsed) || typeof parsed.projectId !== 'string' || typeof parsed.iid !== 'string') continue
+    const instanceUrl = isRecord(parsed.account) && typeof parsed.account.instanceUrl === 'string' ? parsed.account.instanceUrl : ''
+    const key = composerTargetLabelKey(instanceUrl, parsed.projectId, parsed.iid)
+    if (!targets.has(key)) targets.set(key, { iid: parsed.iid, projectId: parsed.projectId, ...composerTargetLabels.get(key) })
+  }
+  return [...targets.values()]
+}
+
+function composerTargetLabelKey(instanceUrl: string, projectId: string, iid: string): string {
+  return JSON.stringify([instanceUrl, projectId, iid])
+}
+
+/** Empty one input, such as the kept edit of a draft that was deleted. */
+export function clearComposerBuffer(bufferKey: string): boolean {
+  return composerBuffers.has(bufferKey) ? setComposerBody(bufferKey, '') : true
+}
+
 /** Clear all private in-memory review text when the user explicitly logs out. */
 export function clearComposerBufferStore(): void {
+  composerTargetLabels.clear()
   composerStoreGeneration += 1
   const entries = [...composerBuffers.entries()]
   for (const [key, entry] of entries) {
@@ -161,9 +210,12 @@ export function useComposerBuffer(bufferKey: string, sessionId: string | null = 
 
   const change = useCallback((nextBody: string): boolean => setComposerBody(bufferKey, nextBody), [bufferKey])
 
-  const discard = useCallback(() => {
+  /** Empties the input and returns what it held, so the caller can offer an undo. */
+  const discard = useCallback((): string => {
+    const previous = getOrCreateEntry(bufferKey).body
     change('')
-  }, [change])
+    return previous
+  }, [bufferKey, change])
 
   return {
     body: entry.body,
@@ -182,6 +234,20 @@ export function appendComposerBuffer(bufferKey: string, text: string): boolean {
   const current = composerBuffers.get(bufferKey)?.body ?? ''
   const separator = current && !current.endsWith('\n') ? '\n' : ''
   return setComposerBody(bufferKey, `${current}${separator}${text}`)
+}
+
+/**
+ * Puts discarded text back. Text typed since the discard is kept, with the
+ * restored text after it, so an undo never overwrites newer input.
+ */
+export function restoreComposerBuffer(bufferKey: string, text: string): boolean {
+  if (!text) return true
+  return composerBuffers.get(bufferKey)?.body ? appendComposerBuffer(bufferKey, text) : setComposerBody(bufferKey, text)
+}
+
+/** Sets the initial text of an input that starts from existing content, unless it already holds text. */
+export function seedComposerBuffer(bufferKey: string, text: string): boolean {
+  return composerBuffers.get(bufferKey)?.body ? true : setComposerBody(bufferKey, text)
 }
 
 function setComposerBody(bufferKey: string, nextBody: string): boolean {

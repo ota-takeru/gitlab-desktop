@@ -9,10 +9,18 @@ import {
   restoreGitLabSession,
   type ConnectGitLabInput,
 } from '../../lib/gitlab'
+import { reauthenticateGitLab } from '../../lib/session'
 import type { GitLabCommandError, GitLabSession } from '../../types/gitlab'
 import { clearPreferences } from '../shared/preferences'
+import { readLastInstanceUrl, writeLastInstanceUrl } from './lastInstance'
 
 export type ConnectionStatus = 'checking' | 'disconnected' | 'connected' | 'error' | 'unsupported'
+
+/** The saved account whose token stopped working; its username is known when it expired during use. */
+export interface ReauthAccount {
+  instanceUrl: string
+  username: string | null
+}
 
 interface ConnectionContextValue {
   session: GitLabSession | null
@@ -22,6 +30,12 @@ interface ConnectionContextValue {
   connectFromGlab: (url: string) => Promise<GitLabSession | null>
   disconnect: () => Promise<void>
   restore: () => Promise<GitLabSession | null>
+  /** Set after the token expired: the screen stays where it was until the user reconnects. */
+  reauthRequired: ReauthAccount | null
+  /** Restoring the saved connection failed, so retrying it can help. */
+  restoreFailed: boolean
+  /** A new token for the connected (or expired) account, keeping its unsent input and receipts. */
+  refreshToken: (token: string) => Promise<GitLabSession | null>
 }
 
 const ConnectionContext = createContext<ConnectionContextValue | null>(null)
@@ -35,6 +49,8 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<GitLabSession | null>(null)
   const [status, setStatus] = useState<ConnectionStatus>(() => (isTauri() ? 'checking' : 'unsupported'))
   const [error, setError] = useState<GitLabCommandError | null>(null)
+  const [reauthRequired, setReauthRequired] = useState<ReauthAccount | null>(null)
+  const [restoreFailed, setRestoreFailed] = useState(false)
   const operationRef = useRef(0)
   const lastKnownAccountRef = useRef<AccountIdentity | null>(null)
 
@@ -45,6 +61,9 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       globalThis.dispatchEvent(new Event('gitlab-account-replaced'))
     }
     lastKnownAccountRef.current = nextAccount
+    writeLastInstanceUrl(nextSession.instanceUrl)
+    setReauthRequired(null)
+    setRestoreFailed(false)
     setSession(nextSession)
     setStatus('connected')
   }, [])
@@ -64,6 +83,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       if (validSession) adoptSession(validSession)
       else {
         setSession(null)
+        setRestoreFailed(false)
         setStatus('disconnected')
       }
       return validSession
@@ -72,6 +92,10 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       const nextError = normalizeGitLabError(caught)
       setSession(null)
       setError(nextError)
+      setRestoreFailed(true)
+      // An expired saved token can be replaced in place; Rust knows the account.
+      const lastInstanceUrl = readLastInstanceUrl()
+      if (nextError.code === 'AUTH_REQUIRED' && lastInstanceUrl) setReauthRequired({ instanceUrl: lastInstanceUrl, username: null })
       setStatus(nextError.code === 'AUTH_REQUIRED' ? 'disconnected' : 'error')
       return null
     }
@@ -92,6 +116,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       if (!session || failedSessionId !== session.id) return
       if (session) clearPreferences({ instanceUrl: session.instanceUrl, userId: session.user.id })
       operationRef.current += 1
+      setReauthRequired({ instanceUrl: session.instanceUrl, username: session.user.username })
       setSession(null)
       setStatus('disconnected')
       setError(normalizeGitLabError({ code: 'AUTH_REQUIRED', message: 'GitLabの認証が必要です。再接続してください。' }))
@@ -130,6 +155,9 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback((input: ConnectGitLabInput) => connectWith(() => connectGitLab(input)), [connectWith])
   const connectFromGlab = useCallback((url: string) => connectWith(() => connectGitLabFromGlab(url)), [connectWith])
+  // Rust reconnects the saved account and refuses another user's token before
+  // changing anything, so unsent input and receipts are kept either way.
+  const refreshToken = useCallback((token: string) => connectWith(() => reauthenticateGitLab(token)), [connectWith])
 
   const disconnect = useCallback(async () => {
     const current = session
@@ -146,6 +174,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       await disconnectGitLab(current.id)
       logoutAccepted = true
       if (operation !== operationRef.current) return
+      setReauthRequired(null)
       clearPreferences(scope)
       setSession(null)
       setStatus('disconnected')
@@ -158,6 +187,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         return
       }
       logoutAccepted = true
+      setReauthRequired(null)
       clearPreferences(scope)
       setSession(null)
       setError(nextError)
@@ -177,10 +207,13 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     connectFromGlab,
     disconnect,
     error,
+    reauthRequired,
+    refreshToken,
     restore,
+    restoreFailed,
     session,
     status,
-  }), [connect, connectFromGlab, disconnect, error, restore, session, status])
+  }), [connect, connectFromGlab, disconnect, error, reauthRequired, refreshToken, restore, restoreFailed, session, status])
 
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>
 }

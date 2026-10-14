@@ -1,13 +1,15 @@
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useEffect, useState } from 'react'
 
 import { isTauri } from '../lib/runtime'
-import { ensureBeforeUnloadProtection, initializeWindowCloseProtection, queueWindowCloseGuard, setLatestWindowUnsafe } from '../lib/windowSafety'
+import { ensureBeforeUnloadProtection, initializeWindowCloseProtection, queueWindowCloseGuard, setCloseDialogs, setLatestWindowUnsafe } from '../lib/windowSafety'
 import { useRetainedComposerUnsafe } from '../features/mergeRequests/useComposerBuffer'
 import { useAutoUpdateAllowed, useAutoUpdateSafety } from '../features/shared/AutoUpdateSafety'
+import { useConfirm, useNotify } from './Feedback'
 
 type ProtectionStatus = 'starting' | 'ready' | 'failed'
 
@@ -27,6 +29,17 @@ export function WindowCloseProtection() {
   useEffect(() => {
     setRetainedComposerUnsafe(retainedComposerUnsafe)
   }, [retainedComposerUnsafe, setRetainedComposerUnsafe])
+
+  // While mounted, closing asks with the app's own dialogs instead of the browser's.
+  const confirm = useConfirm()
+  const notify = useNotify()
+  useEffect(() => setCloseDialogs({
+    confirm: ({ items, message, ...options }) => confirm({ ...options, message: items?.length ? <>
+      {message}
+      <Box aria-label="未送信の入力があるMR" component="ul" sx={{ m: 0, mt: 1, pl: 2.5 }}>{items.map((item) => <Typography component="li" key={item} noWrap title={item} variant="body2">{item}</Typography>)}</Box>
+    </> : message }),
+    notify: (message) => notify({ message, severity: 'error' }),
+  }), [confirm, notify])
 
   const [status, setStatus] = useState<ProtectionStatus>('starting')
   const [retry, setRetry] = useState(0)

@@ -1,9 +1,10 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 
 import type { Diff, DiffsQuery, Discussion, GitLabSnapshot, Position } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { DiscussionCode, type CurrentDiffs } from './DiscussionCode'
+import { useQueryCacheSubscription } from './useDiscussionPages'
 
 /** Diff pages read to find commented files; GitLab returns 30 files per page. */
 const MAX_DIFF_PAGES = 10
@@ -52,25 +53,32 @@ function nextUnreadPage(pages: Record<number, { nextPage: number | null }>): num
   return page <= MAX_DIFF_PAGES ? page : null
 }
 
+export type LoadedDiffPages = Record<number, { data: Diff[]; nextPage: number | null }>
+
 /** Diff pages of this MR head already in the query cache, by page number. */
-function useLoadedDiffPages(sessionId: string | null, projectId: string, iid: string, headSha: string | undefined): Record<number, { data: Diff[]; nextPage: number | null }> {
+function useLoadedDiffPages(sessionId: string | null, projectId: string, iid: string, headSha: string | undefined): LoadedDiffPages {
   const client = useQueryClient()
-  const matches = useCallback((queryKey: readonly unknown[]) => {
-    if (queryKey[0] !== 'gitlab' || queryKey[1] !== sessionId || typeof queryKey[2] !== 'string') return false
-    try {
-      const query = JSON.parse(queryKey[2]) as Partial<DiffsQuery>
-      return query.kind === 'diffs' && query.projectId === projectId && query.iid === iid && query.headSha === headSha
-    } catch {
-      return false
-    }
-  }, [headSha, iid, projectId, sessionId])
+  const matches = useCallback((queryKey: readonly unknown[]) => isDiffPageKey(queryKey, sessionId, projectId, iid, headSha), [headSha, iid, projectId, sessionId])
   const getVersion = useCallback(() => client.getQueryCache().findAll({ predicate: (query) => matches(query.queryKey) }).map((query) => `${query.queryHash}:${query.state.dataUpdateCount}`).join('|'), [client, matches])
-  const version = useSyncExternalStore((listener) => client.getQueryCache().subscribe(listener), getVersion, getVersion)
-  return useMemo(() => {
-    const pages: Record<number, { data: Diff[]; nextPage: number | null }> = {}
-    for (const [queryKey, result] of client.getQueriesData<{ snapshot: GitLabSnapshot<Diff[]> | null }>({ predicate: (query) => matches(query.queryKey) })) {
-      if (result?.snapshot) pages[(JSON.parse(queryKey[2] as string) as DiffsQuery).page] = { data: result.snapshot.data, nextPage: result.snapshot.nextPage }
-    }
-    return pages
-  }, [client, matches, version]) // eslint-disable-line react-hooks/exhaustive-deps
+  const version = useSyncExternalStore(useQueryCacheSubscription(), getVersion, getVersion)
+  return useMemo(() => readLoadedDiffPages(client, sessionId, projectId, iid, headSha), [client, headSha, iid, projectId, sessionId, version]) // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** The same pages read once, without following later changes. */
+export function readLoadedDiffPages(client: QueryClient, sessionId: string | null, projectId: string, iid: string, headSha: string | undefined): LoadedDiffPages {
+  const pages: LoadedDiffPages = {}
+  for (const [queryKey, result] of client.getQueriesData<{ snapshot: GitLabSnapshot<Diff[]> | null }>({ predicate: (query) => isDiffPageKey(query.queryKey, sessionId, projectId, iid, headSha) })) {
+    if (result?.snapshot) pages[(JSON.parse(queryKey[2] as string) as DiffsQuery).page] = { data: result.snapshot.data, nextPage: result.snapshot.nextPage }
+  }
+  return pages
+}
+
+function isDiffPageKey(queryKey: readonly unknown[], sessionId: string | null, projectId: string, iid: string, headSha: string | undefined): boolean {
+  if (queryKey[0] !== 'gitlab' || queryKey[1] !== sessionId || typeof queryKey[2] !== 'string') return false
+  try {
+    const query = JSON.parse(queryKey[2]) as Partial<DiffsQuery>
+    return query.kind === 'diffs' && query.projectId === projectId && query.iid === iid && query.headSha === headSha
+  } catch {
+    return false
+  }
 }

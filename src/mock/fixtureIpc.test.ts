@@ -20,6 +20,16 @@ describe('fixture IPC', () => {
     expect(await queryGitLab({ mode: 'cache', query: { kind: 'mr', ...mr }, sessionId: 'fixture-session' })).toBeNull()
   })
 
+  it('finds groups and narrows MR search to a chosen group', async () => {
+    installFixtureIpc('ready')
+    const groups = await queryGitLab({ mode: 'network', query: { kind: 'groups', page: 1, search: '' }, sessionId: 'fixture-session' })
+    const group = groups!.data.find((item) => item.fullPath === 'platform')
+    expect(group).toMatchObject({ fullPath: 'platform', name: 'platform' })
+    const list = await queryGitLab({ mode: 'network', query: { groupId: group!.id, kind: 'mrs', page: 1, search: '', state: 'all' }, sessionId: 'fixture-session' })
+    expect(list!.data.length).toBeGreaterThan(0)
+    expect(list!.data.every((item) => item.projectPath?.startsWith('platform/'))).toBe(true)
+  })
+
   it('keeps a reply in memory so the refreshed thread shows it', async () => {
     installFixtureIpc('ready')
     const query = { kind: 'discussions' as const, page: 1, ...mr }

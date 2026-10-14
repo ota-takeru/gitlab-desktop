@@ -186,6 +186,17 @@ function workspaceApi(scope: PreferenceScope, connected: boolean, data: Workspac
       current.open = [{ iid: ref.iid, projectId: ref.projectId }, ...current.open.filter((item) => mrRefKey(item) !== mrRefKey(ref))].slice(0, MAX_OPEN_TABS)
       save(scope, current)
     },
+    /** Moves a tab within its own section, pinned or open. */
+    moveTab: (ref: MrRef, toIndex: number) => {
+      if (!connected) return
+      const current = readWorkspace(scope)
+      const section = current.pinned.some((item) => mrRefKey(item) === mrRefKey(ref)) ? 'pinned' : 'open'
+      const items = current[section].filter((item) => mrRefKey(item) !== mrRefKey(ref))
+      if (items.length === current[section].length) return
+      items.splice(Math.max(0, Math.min(items.length, toIndex)), 0, { iid: ref.iid, projectId: ref.projectId })
+      current[section] = items
+      save(scope, current)
+    },
     closeTab: (ref: MrRef) => {
       if (!connected) return
       const current = readWorkspace(scope)

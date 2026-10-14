@@ -254,6 +254,66 @@ describe('DiffViewer', () => {
     expect(screen.getByRole('button', { name: '次の一致ファイル' })).toBeDisabled()
   })
 
+  it('shows changed files as a folder tree that folds, keeping the shown file visible, and as a flat list', () => {
+    const change = '@@ -1 +1 @@\n-old\n+new\n'
+    const first = makeDiff(change, 'src/feature/a.ts')
+    const second = makeDiff(change, 'src/feature/b.ts')
+    const third = makeDiff(change, 'docs/readme.md')
+    renderMany([first, second, third], { initialFile: 'docs/readme.md' })
+
+    const navigation = screen.getByRole('navigation', { hidden: true })
+    // A folder holding only one folder is one row; folders come before files.
+    const feature = within(navigation).getByRole('button', { name: 'フォルダ src/feature', hidden: true })
+    expect(feature).toHaveTextContent('src/feature')
+    expect(within(navigation).getByRole('button', { name: 'フォルダ docs', hidden: true })).toBeInTheDocument()
+    fireEvent.click(feature)
+    expect(feature).toHaveAttribute('aria-expanded', 'false')
+    expect(within(navigation).queryByRole('button', { name: 'src/feature/a.ts', hidden: true })).not.toBeInTheDocument()
+    // The folder of the shown file stays open.
+    fireEvent.click(within(navigation).getByRole('button', { name: 'フォルダ docs', hidden: true }))
+    expect(within(navigation).getByRole('button', { name: 'docs/readme.md', hidden: true })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '一覧表示', hidden: true }))
+    expect(within(navigation).queryByRole('button', { name: /^フォルダ/u, hidden: true })).not.toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: 'src/feature/a.ts', hidden: true })).toBeInTheDocument()
+    expect(localStorage.getItem('gitlab-desktop:diff-file-list')).toBe('list')
+  })
+
+  it('shows the tree with its file search only when the diff keeps room beside it, and lets the reader hide it', () => {
+    let width = 1000
+    const observers: Array<() => void> = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private readonly callback: (entries: Array<{ contentRect: { width: number } }>) => void) {}
+      observe() { const report = () => this.callback([{ contentRect: { width } }]); observers.push(report); report() }
+      disconnect() {}
+    })
+    try {
+      const change = '@@ -1 +1 @@\n-old\n+new\n'
+      renderMany([makeDiff(change, 'src/a.ts'), makeDiff(change, 'src/b.ts')])
+
+      const tree = screen.getByRole('navigation', { name: '変更ファイル' })
+      expect(within(tree).getByRole('textbox', { name: 'ファイル名を検索' })).toBeInTheDocument()
+
+      // Side by side needs more room, so at this width the tree steps aside and its search moves to the diff.
+      fireEvent.click(screen.getByRole('button', { name: '左右に並べて比較' }))
+      expect(screen.queryByRole('navigation', { name: '変更ファイル' })).not.toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'ファイル名を検索' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '統合表示' }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'ファイルツリーを隠す' }))
+      expect(screen.queryByRole('navigation', { name: '変更ファイル' })).not.toBeInTheDocument()
+      expect(localStorage.getItem('gitlab-desktop:diff-file-tree-hidden')).toBe('true')
+      fireEvent.click(screen.getByRole('button', { name: 'ファイルツリーを表示' }))
+      expect(screen.getByRole('navigation', { name: '変更ファイル' })).toBeInTheDocument()
+
+      width = 700
+      act(() => observers.forEach((report) => report()))
+      expect(screen.queryByRole('button', { name: /ファイルツリーを/u })).not.toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('persists per-file review marks by account and invalidates them when the diff or head changes', () => {
     const diff = makeDiff('@@ -1 +1 @@\n-old\n+new\n')
     const context: ReviewedFileContext = { instanceUrl: 'https://gitlab.example', userId: '7', projectId: '15', mergeRequestIid: '42', revision: 'head-a' }

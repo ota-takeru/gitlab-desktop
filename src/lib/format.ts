@@ -27,6 +27,12 @@ export function formatAbsoluteTime(value: string | number): string {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(timestamp)
 }
 
+/** Time a saved list was fetched, for the 「保存済み · 時刻」 status shown while it is stale. */
+export function formatFetchedAt(timestamp?: number): string {
+  if (!timestamp) return '時刻不明'
+  return new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit' }).format(timestamp)
+}
+
 function formatCalendarDate(timestamp: number, now: number): string {
   const sameYear = new Date(timestamp).getFullYear() === new Date(now).getFullYear()
   return new Intl.DateTimeFormat('ja-JP', sameYear ? { month: 'numeric', day: 'numeric' } : { year: 'numeric', month: 'numeric', day: 'numeric' }).format(timestamp)

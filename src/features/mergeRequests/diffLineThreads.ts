@@ -36,3 +36,35 @@ export function threadsByLine(discussions: Discussion[] | undefined, diff: Diff 
   }
   return { byLine, outdated }
 }
+
+export interface FileThreadCount { total: number; unresolved: number }
+
+/** Comment threads on each changed file, current or on an older version, and how many still need resolving. */
+export function threadCountsByFile(discussions: Discussion[] | undefined, diffs: Diff[]): Map<string, FileThreadCount> {
+  const counts = new Map<string, FileThreadCount>()
+  if (!discussions?.length) return counts
+  const byPath = new Map<string, string>()
+  for (const diff of diffs) {
+    const path = diff.newPath || diff.oldPath
+    if (diff.oldPath) byPath.set(`o:${diff.oldPath}`, path)
+    if (diff.newPath) byPath.set(`n:${diff.newPath}`, path)
+  }
+  for (const discussion of discussions) {
+    const position = discussion.notes.find((note) => !note.system && note.position)?.position
+    const path = position ? byPath.get(`n:${position.newPath}`) ?? byPath.get(`o:${position.oldPath}`) : undefined
+    if (!path) continue
+    const current = counts.get(path) ?? { total: 0, unresolved: 0 }
+    const unresolved = discussion.notes.some((note) => note.resolvable && !note.resolved)
+    counts.set(path, { total: current.total + 1, unresolved: current.unresolved + (unresolved ? 1 : 0) })
+  }
+  return counts
+}
+
+/** The row's name carries its review state, which the marks show only visually. */
+export function fileRowLabel(path: string, threads: FileThreadCount | undefined, reviewed: boolean): string {
+  return [path, threads?.total ? threadLabel(threads) : null, reviewed ? '確認済み' : null].filter(Boolean).join('、')
+}
+
+export function threadLabel({ total, unresolved }: FileThreadCount): string {
+  return unresolved ? `スレッド${total}件（未解決${unresolved}件）` : `スレッド${total}件（すべて解決済み）`
+}

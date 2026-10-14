@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 
 import type { GitLabBranch, GitLabSession } from '../../types/gitlab'
 import { BranchList } from './BranchList'
+import { forgetRememberedListStates } from './listState'
 
 const { openGitLabUrlMock, queryMock } = vi.hoisted(() => ({ openGitLabUrlMock: vi.fn(), queryMock: vi.fn() }))
 
@@ -28,6 +29,7 @@ function result(data: GitLabBranch[] | null, extra: object = {}) {
 }
 
 beforeEach(() => {
+  forgetRememberedListStates()
   queryMock.mockReset().mockReturnValue(result([feature, main]))
   openGitLabUrlMock.mockReset().mockResolvedValue(undefined)
 })
@@ -69,10 +71,27 @@ it('tells an empty project from an unmatched search, and shows a failed fetch wi
   fireEvent.change(screen.getByRole('textbox', { name: 'ブランチを検索' }), { target: { value: 'nothing' } })
   fireEvent.click(screen.getByRole('button', { name: '検索' }))
   expect(screen.getByText('一致するブランチがありません')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '検索をクリア' }))
+  expect(screen.getByText('ブランチはありません')).toBeInTheDocument()
 
   view.unmount()
   queryMock.mockReturnValue(result(null, { error: { code: 'NETWORK', message: '接続できません' } }))
   render(<BranchList onShowMergeRequests={vi.fn()} projectId="7" projectName="group/project" />)
   expect(screen.getByText('接続できません')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '再試行' })).toBeInTheDocument()
+})
+
+it('keeps the search of each project when its branches are opened again', () => {
+  const view = render(<BranchList onShowMergeRequests={vi.fn()} projectId="7" projectName="group/project" />)
+  fireEvent.change(screen.getByRole('textbox', { name: 'ブランチを検索' }), { target: { value: 'feat' } })
+  fireEvent.click(screen.getByRole('button', { name: '検索' }))
+  view.unmount()
+
+  const other = render(<BranchList onShowMergeRequests={vi.fn()} projectId="8" projectName="group/other" />)
+  expect(screen.getByRole('textbox', { name: 'ブランチを検索' })).toHaveValue('')
+  other.unmount()
+
+  render(<BranchList onShowMergeRequests={vi.fn()} projectId="7" projectName="group/project" />)
+  expect(screen.getByRole('textbox', { name: 'ブランチを検索' })).toHaveValue('feat')
+  expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: 'feat' })
 })

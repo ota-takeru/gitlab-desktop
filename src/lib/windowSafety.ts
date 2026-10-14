@@ -1,11 +1,13 @@
 import { invoke, isTauri as tauriIsTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-import { flushComposerBuffers } from '../features/mergeRequests/useComposerBuffer'
+import { flushComposerBuffers, listUnsafeComposerTargets } from '../features/mergeRequests/useComposerBuffer'
 
 const CLOSE_EVENT = 'app-close-blocked'
 const GUARD_COMMAND = 'set_window_close_guard'
 const CLOSE_COMMAND = 'close_app_window'
+/** The close confirmation names at most this many MRs with unsent input. */
+const MAX_LISTED_TARGETS = 10
 
 let latestUnsafe = false
 let listenerPromise: Promise<void> | null = null
@@ -13,6 +15,39 @@ let initializationPromise: Promise<void> | null = null
 let guardWriteTail: Promise<void> = Promise.resolve()
 let closeRequest: Promise<void> | null = null
 let beforeUnloadRegistered = false
+
+export interface CloseConfirmation {
+  title: string
+  message?: string
+  /** Lines listed under the message, such as the MRs that hold unsent input. */
+  items?: string[]
+  confirmLabel: string
+  cancelLabel?: string
+  destructive?: boolean
+}
+
+export interface CloseDialogs {
+  confirm: (options: CloseConfirmation) => Promise<boolean>
+  notify: (message: string) => void
+}
+
+/** The browser's own dialogs until the themed ones are mounted, and again after they unmount. */
+const nativeDialogs: CloseDialogs = {
+  confirm: async ({ items, message, title }) => globalThis.confirm([title, message, ...items ?? []].filter(Boolean).join('\n')),
+  notify: (message) => globalThis.alert(message),
+}
+let closeDialogs: CloseDialogs = nativeDialogs
+
+/**
+ * The close flow already runs asynchronously from the native event, so it can
+ * wait for themed dialogs. Returns the function that restores the browser's.
+ */
+export function setCloseDialogs(dialogs: CloseDialogs): () => void {
+  closeDialogs = dialogs
+  return () => {
+    if (closeDialogs === dialogs) closeDialogs = nativeDialogs
+  }
+}
 
 export function setLatestWindowUnsafe(unsafe: boolean): void {
   // This is intentionally a synchronous assignment. The native close event
@@ -81,15 +116,35 @@ export function requestClose(unsafeFromNative = false): void {
 }
 
 async function processCloseRequest(unsafe: boolean): Promise<void> {
-  if (unsafe && !globalThis.confirm('未送信の入力、編集中の内容、または結果未確認の投稿があります。端末への保存を待って終了しますか？保存済みの未送信コメントは次回復元されます。')) return
+  if (unsafe && !await closeDialogs.confirm({
+    cancelLabel: '戻る',
+    confirmLabel: '保存して終了',
+    items: unsentTargetLines(),
+    message: '未送信の入力、編集中の内容、または結果未確認の投稿があります。入力を端末に保存してから終了します。保存した未送信コメントは次回復元されます。',
+    title: '未送信の内容があります',
+  })) return
 
   const flushed = await flushComposerBuffers().catch(() => false)
 
-  if (!flushed && !globalThis.confirm('未保存の内容を保存できませんでした。内容を失って終了しますか？')) return
+  if (!flushed && !await closeDialogs.confirm({
+    cancelLabel: '戻る',
+    confirmLabel: '内容を失って終了',
+    destructive: true,
+    message: '未送信の入力を端末に保存できませんでした。このまま終了すると入力は失われます。',
+    title: '入力を保存できませんでした',
+  })) return
 
   try {
     await invoke<void>(CLOSE_COMMAND)
   } catch {
-    globalThis.alert('アプリを終了できませんでした。')
+    closeDialogs.notify('アプリを終了できませんでした。')
   }
+}
+
+/** 「group/project !12 タイトル」 for each MR with unsent input, then how many more there are. */
+function unsentTargetLines(): string[] | undefined {
+  const targets = listUnsafeComposerTargets()
+  if (!targets.length) return undefined
+  const lines = targets.slice(0, MAX_LISTED_TARGETS).map(({ iid, projectId, projectPath, title }) => [`${projectPath || `プロジェクト ${projectId}`} !${iid}`, title].filter(Boolean).join(' '))
+  return targets.length > MAX_LISTED_TARGETS ? [...lines, `ほか${targets.length - MAX_LISTED_TARGETS}件`] : lines
 }

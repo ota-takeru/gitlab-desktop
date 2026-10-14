@@ -162,6 +162,19 @@ export async function openGitLabUrl(sessionId: string, url: string): Promise<voi
 }
 
 /**
+ * Opens GitLab's page for a new token on the given instance, also before a
+ * connection exists. Rust validates the HTTPS origin and opens only that page.
+ */
+export async function openTokenCreationPage(instanceUrl: string): Promise<void> {
+  ensureDesktop()
+  try {
+    await invoke<void>('open_token_creation_page', { instanceUrl })
+  } catch (error) {
+    throw normalizeGitLabError(error)
+  }
+}
+
+/**
  * Returns a GitLab avatar as a `data:` URL, or null when Rust declines it
  * (external host, not an image, too large). The webview never loads GitLab
  * image URLs directly, so the strict `img-src` CSP stays unchanged.
