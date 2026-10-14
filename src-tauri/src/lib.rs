@@ -36,6 +36,15 @@ async fn connect_gitlab(
 ) -> Result<Session, AppError> {
     state.native()?.connect(input).await
 }
+/// Stores a new token for the saved connection's own user, keeping its drafts
+/// and write receipts.
+#[tauri::command]
+async fn reauthenticate_gitlab(
+    state: tauri::State<'_, ApplicationState>,
+    token: String,
+) -> Result<Session, AppError> {
+    state.native()?.reauthenticate(token).await
+}
 #[tauri::command]
 async fn list_glab_connections() -> Result<Vec<String>, AppError> {
     tauri::async_runtime::spawn_blocking(glab::list_connections)
@@ -114,6 +123,12 @@ fn open_gitlab_url(
     url: String,
 ) -> Result<(), AppError> {
     state.native()?.open_url(&session_id, &url)
+}
+/// Opens GitLab's token page before any connection exists; only the fixed
+/// token path on a validated HTTPS instance can be opened.
+#[tauri::command]
+fn open_token_creation_page(instance_url: String) -> Result<(), AppError> {
+    native::open_token_creation_page(&instance_url)
 }
 
 #[tauri::command]
@@ -245,6 +260,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime_info,
             connect_gitlab,
+            reauthenticate_gitlab,
             list_glab_connections,
             connect_gitlab_from_glab,
             restore_session,
@@ -255,6 +271,7 @@ pub fn run() {
             clear_gitlab_cache,
             cancel_gitlab_request,
             open_gitlab_url,
+            open_token_creation_page,
             get_gitlab_avatar,
             get_local_draft,
             set_local_draft,
@@ -264,6 +281,7 @@ pub fn run() {
             set_window_close_guard,
             close_app_window,
             updates::check_app_update,
+            updates::download_app_update,
             updates::install_app_update
         ])
         .run(tauri::generate_context!())

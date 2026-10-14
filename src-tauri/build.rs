@@ -3,6 +3,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "runtime_info",
             "connect_gitlab",
+            "reauthenticate_gitlab",
             "list_glab_connections",
             "connect_gitlab_from_glab",
             "restore_session",
@@ -13,6 +14,7 @@ fn main() {
             "clear_gitlab_cache",
             "cancel_gitlab_request",
             "open_gitlab_url",
+            "open_token_creation_page",
             "get_gitlab_avatar",
             "get_local_draft",
             "set_local_draft",
@@ -22,6 +24,7 @@ fn main() {
             "set_window_close_guard",
             "close_app_window",
             "check_app_update",
+            "download_app_update",
             "install_app_update",
         ]),
     ))

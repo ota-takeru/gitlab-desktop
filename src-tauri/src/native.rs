@@ -105,7 +105,21 @@ fn cancelled() -> AppError {
     )
 }
 fn auth_required() -> AppError {
-    AppError::new("AUTH_REQUIRED", "接続設定から認証してください。")
+    AppError::new(
+        "AUTH_REQUIRED",
+        "GitLabに接続されていません。再接続してください。",
+    )
+}
+/// A token rejected while the user is entering one on the connection form.
+fn invalid_token(from_glab: bool) -> AppError {
+    AppError::new(
+        "AUTH_REQUIRED",
+        if from_glab {
+            "glabのアクセストークンが無効か期限切れです。glab側で認証を更新するか、トークンを直接入力してください。"
+        } else {
+            "アクセストークンが無効か期限切れです。新しいトークンを入力してください。"
+        },
+    )
 }
 
 pub fn normalize_instance(input: &str) -> Result<Url, AppError> {
@@ -229,23 +243,23 @@ async fn small_json(client: &reqwest::Client, url: Url) -> Result<serde_json::Va
     })?;
     match response.status().as_u16() {
         200 => (),
-        401 => return Err(auth_required()),
+        401 | 429 => {
+            return Err(gitlab_api::status_error(
+                response.status(),
+                response.headers(),
+                false,
+            ))
+        }
         403 => {
             return Err(AppError::new(
                 "FORBIDDEN",
-                "このトークンではAPIを利用できません。権限を確認してください。",
+                "このトークンではGitLab APIを利用できません。api スコープ（閲覧のみなら read_api）のトークンを使用してください。",
             ))
         }
         404 => {
             return Err(AppError::new(
                 "NOT_FOUND",
                 "GitLab APIが見つかりません。URLのベースパスを確認してください。",
-            ))
-        }
-        429 => {
-            return Err(AppError::new(
-                "RATE_LIMITED",
-                "GitLabの要求制限に達しました。時間をおいて再試行してください。",
             ))
         }
         300..=399 => return Err(AppError::new(
@@ -360,7 +374,24 @@ impl NativeState {
 
     pub async fn connect(&self, input: ConnectInput) -> Result<Session, AppError> {
         let _lifecycle = self.lifecycle.lock().await;
-        self.connect_locked(input, false).await
+        self.connect_locked(input, false, None).await
+    }
+
+    /// Replaces the stored token of the saved connection without clearing its
+    /// cache, local drafts or write receipts. The token must authenticate the
+    /// same user on the same instance, so a token for another account cannot
+    /// replace (and thereby erase) this account's private data.
+    pub async fn reauthenticate(&self, token: String) -> Result<Session, AppError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let saved: Option<SavedConnection> = self
+            .blocking(|inner| inner.store.setting("connection"))
+            .await?;
+        let saved = saved.ok_or_else(auth_required)?;
+        let input = ConnectInput {
+            url: saved.instance_url,
+            token,
+        };
+        self.connect_locked(input, false, Some(saved.user)).await
     }
 
     pub async fn connect_from_glab(&self, url: String) -> Result<Session, AppError> {
@@ -368,10 +399,16 @@ impl NativeState {
         let instance = normalize_instance(&url)?;
         let token = crate::glab::read_token(&instance, &self.directory).await?;
         // Bearer accepts both PAT and OAuth access tokens. No token enters IPC.
-        self.connect_locked(ConnectInput { url, token }, true).await
+        self.connect_locked(ConnectInput { url, token }, true, None)
+            .await
     }
 
-    async fn connect_locked(&self, input: ConnectInput, bearer: bool) -> Result<Session, AppError> {
+    async fn connect_locked(
+        &self,
+        input: ConnectInput,
+        bearer: bool,
+        expected_user: Option<User>,
+    ) -> Result<Session, AppError> {
         let previous = self
             .inner
             .lock()
@@ -385,7 +422,22 @@ impl NativeState {
         let instance = normalize_instance(&input.url)?;
         let client = http_client(&input.token, bearer)?;
         let api = instance.join("api/v4/").map_err(|_| cancelled())?;
-        let user = identify(&client, &api).await?;
+        let user = identify(&client, &api).await.map_err(|error| {
+            if error.code == "AUTH_REQUIRED" {
+                invalid_token(bearer)
+            } else {
+                error
+            }
+        })?;
+        if let Some(expected) = expected_user.filter(|expected| expected.id != user.id) {
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                &format!(
+                    "このトークンは接続中のアカウント（@{}）のものではありません。同じアカウントのトークンを入力してください。",
+                    expected.username
+                ),
+            ));
+        }
         let version = small_json(&client, api.join("version").map_err(|_| cancelled())?)
             .await
             .ok()
@@ -1105,6 +1157,21 @@ impl NativeState {
     }
 }
 
+/// GitLab's page for a new token on the instance being connected, with this
+/// app's name and the api scope filled in. The instance is validated like a
+/// connection URL, so only a fixed path on an HTTPS GitLab is ever opened.
+pub fn token_creation_url(instance_url: &str) -> Result<Url, AppError> {
+    let base = normalize_instance(instance_url)?;
+    base.join("-/user_settings/personal_access_tokens?name=GitLab%20Desktop&scopes=api")
+        .map_err(|_| AppError::new("INVALID_INPUT", "GitLab URLが正しくありません。"))
+}
+
+pub fn open_token_creation_page(instance_url: &str) -> Result<(), AppError> {
+    let url = token_creation_url(instance_url)?;
+    open::that_detached(url.as_str())
+        .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
+}
+
 /// Accepts only uploads served by the connected instance (relative URLs are
 /// resolved against it). Credentials are sent to that origin only.
 fn instance_avatar_url(instance_url: &str, input: &str) -> Option<Url> {
@@ -1224,12 +1291,14 @@ fn ensure_active(inner: &Inner, session: &LiveSession) -> Result<(), AppError> {
 
 fn check_cooldown(session: &LiveSession) -> Result<(), AppError> {
     let retry_at = session.retry_at.load(Ordering::SeqCst);
-    if retry_at > now_ms() {
+    let now = now_ms();
+    if retry_at > now {
+        let wait = retry_at - now;
         let mut error = AppError::new(
             "RATE_LIMITED",
-            "GitLabの要求制限が解除されるまでお待ちください。",
+            &gitlab_api::rate_limited_message(Some(wait)),
         );
-        error.retry_after_ms = Some(retry_at - now_ms());
+        error.retry_after_ms = Some(wait);
         Err(error)
     } else {
         Ok(())
@@ -2103,6 +2172,37 @@ mod tests {
     }
 
     #[test]
+    fn token_creation_page_is_a_fixed_path_on_a_validated_instance() {
+        assert_eq!(
+            token_creation_url("https://gitlab.com").unwrap().as_str(),
+            "https://gitlab.com/-/user_settings/personal_access_tokens?name=GitLab%20Desktop&scopes=api"
+        );
+        assert_eq!(
+            token_creation_url(" https://Git.Local:443/gitlab/ ")
+                .unwrap()
+                .as_str(),
+            "https://git.local/gitlab/-/user_settings/personal_access_tokens?name=GitLab%20Desktop&scopes=api"
+        );
+        for invalid in [
+            "",
+            "gitlab.com",
+            "http://git.local",
+            "javascript:alert(1)",
+            "file:///C:/Windows",
+            "https://user:secret@git.local",
+            "https://git.local/?token=secret",
+            "https://git.local/#secret",
+            "https://git.local/git%2flab",
+        ] {
+            assert_eq!(
+                token_creation_url(invalid).unwrap_err().code,
+                "INVALID_INPUT",
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
     fn avatar_urls_are_limited_to_instance_uploads() {
         let instance = "https://gitlab.example/GitLab/";
         let accepted = instance_avatar_url(
@@ -2132,6 +2232,37 @@ mod tests {
         assert!(
             instance_avatar_url(instance, "https://secure.gravatar.com/avatar/abc?s=80").is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn reauthentication_needs_a_saved_connection_and_keeps_local_drafts_on_failure() {
+        let (state, session) = test_state(Url::parse("http://127.0.0.1:1/api/v4/").unwrap());
+        let missing = state.reauthenticate("token".into()).await.unwrap_err();
+        assert_eq!(missing.code, "AUTH_REQUIRED");
+
+        let saved = SavedConnection {
+            instance_url: "https://127.0.0.1:1/".into(),
+            user: session.public.user.clone(),
+            server_version: None,
+            credential_key: session.account.clone(),
+            bearer: false,
+        };
+        state
+            .blocking(move |inner| inner.store.set_setting("connection", &saved))
+            .await
+            .unwrap();
+        state
+            .save_local_draft(session.public.id.clone(), "composer".into(), "本文".into())
+            .await
+            .unwrap();
+        let unreachable = state.reauthenticate("token".into()).await.unwrap_err();
+        assert!(matches!(unreachable.code.as_str(), "NETWORK" | "TIMEOUT"));
+        let draft = state
+            .local_draft(session.public.id.clone(), "composer".into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(draft.body, "本文");
     }
 
     #[test]

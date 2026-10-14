@@ -102,6 +102,10 @@ pub enum Query {
         search: String,
         page: u32,
     },
+    Groups {
+        search: String,
+        page: u32,
+    },
     Project {
         path: String,
     },
@@ -372,6 +376,7 @@ mod tests {
         assert_eq!(wire["targetBranch"], "main");
         for value in [
             serde_json::json!({"kind": "users", "search": "alice", "page": 1}),
+            serde_json::json!({"kind": "groups", "search": "platform", "page": 1}),
             serde_json::json!({"kind": "project", "path": "group/project"}),
             serde_json::json!({"kind": "todos", "page": 2}),
             serde_json::json!({"kind": "branches", "projectId": "7", "search": "feat", "page": 1}),

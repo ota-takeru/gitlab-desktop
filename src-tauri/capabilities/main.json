@@ -8,6 +8,7 @@
   "permissions": [
     "allow-runtime-info",
     "allow-connect-gitlab",
+    "allow-reauthenticate-gitlab",
     "allow-list-glab-connections",
     "allow-connect-gitlab-from-glab",
     "allow-restore-session",
@@ -18,8 +19,10 @@
     "allow-clear-gitlab-cache",
     "allow-cancel-gitlab-request",
     "allow-open-gitlab-url",
+    "allow-open-token-creation-page",
     "allow-get-gitlab-avatar",
     "allow-check-app-update",
+    "allow-download-app-update",
     "allow-install-app-update",
     "allow-get-local-draft",
     "allow-set-local-draft",

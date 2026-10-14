@@ -13,6 +13,8 @@ pub const MAX_PAGE: u32 = 1_000_000;
 pub const MAX_ACTION_BODY_BYTES: usize = 64 * 1024;
 const MAX_GET_RETRIES: usize = 2;
 const PER_PAGE: u32 = 30;
+/// Group candidates for the search condition picker.
+const GROUP_PER_PAGE: u32 = 20;
 const MAX_PEOPLE: usize = 100;
 /// The description and the one it replaces are both kept in the send record, which holds 256 KiB.
 const MAX_DESCRIPTION_BYTES: usize = 96 * 1024;
@@ -32,6 +34,7 @@ pub struct ApiResult {
 #[derive(Debug, Clone, Copy)]
 enum ResponseKind {
     Users,
+    Groups,
     Project,
     Todos,
     Branches,
@@ -68,6 +71,14 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     if let Query::MrApprovals { items } = query {
         return fetch_mr_approvals(client, api_base, items).await;
     }
+    if let Query::Mrs {
+        search, project_id, ..
+    } = query
+    {
+        if let Some((iid, false)) = merge_request_number(search, project_id) {
+            return fetch_mrs_matching_number(client, api_base, query, iid).await;
+        }
+    }
     let (url, response_kind) = build_query_url(api_base, query)?;
 
     let diff_revision = match query {
@@ -88,7 +99,7 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         let content = String::from_utf8(bytes).map_err(|_| {
             AppError::new(
                 "UNSUPPORTED",
-                "GitLab returned file content that is not UTF-8.",
+                "GitLabから返されたファイルはUTF-8のテキストではないため表示できません。",
             )
         })?;
         return Ok(ApiResult {
@@ -103,15 +114,23 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     if let Some((project_id, iid, head_sha)) = diff_revision {
         ensure_head_sha(client, api_base, project_id, iid, head_sha).await?;
     }
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+    decode_page(response_kind, &bytes, &headers)
+}
+
+fn decode_page(
+    response_kind: ResponseKind,
+    bytes: &[u8],
+    headers: &HeaderMap,
+) -> Result<ApiResult, AppError> {
+    let value: Value = serde_json::from_slice(bytes).map_err(|_| {
         AppError::new(
             "UNSUPPORTED",
-            "GitLab returned an unsupported response format.",
+            "GitLabから対応していない形式の応答が返されました。",
         )
     })?;
     let data = normalize_response(response_kind, value)?;
-    let next_page = parse_next_page(&headers)?;
-    let total_pages = parse_total_pages(&headers);
+    let next_page = parse_next_page(headers)?;
+    let total_pages = parse_total_pages(headers);
     let truncated = contains_truncation_marker(&data);
 
     Ok(ApiResult {
@@ -120,6 +139,47 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         total_pages,
         truncated,
     })
+}
+
+/// Within a project, a bare number matches both the MR with that iid and titles
+/// or descriptions containing it. The iid match leads page 1 and is dropped from
+/// the text pages, which decide paging.
+async fn fetch_mrs_matching_number(
+    client: &Client,
+    api_base: &Url,
+    query: &Query,
+    iid: &str,
+) -> Result<ApiResult, AppError> {
+    let mut by_iid = query.clone();
+    let Query::Mrs { search, page, .. } = &mut by_iid else {
+        unreachable!("only merge request searches match MR numbers");
+    };
+    *search = format!("!{iid}");
+    let first_page = *page == 1;
+
+    let (url, response_kind) = build_query_url(api_base, query)?;
+    let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+    let mut result = decode_page(response_kind, &bytes, &headers)?;
+    let mut items: Vec<Value> = result
+        .data
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|item| item["iid"].as_str() != Some(iid))
+        .cloned()
+        .collect();
+    if first_page {
+        let (url, response_kind) = build_query_url(api_base, &by_iid)?;
+        let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+        let matches = decode_page(response_kind, &bytes, &headers)?;
+        result.truncated |= matches.truncated;
+        if let Value::Array(mut matched) = matches.data {
+            matched.append(&mut items);
+            items = matched;
+        }
+    }
+    result.data = Value::Array(items);
+    Ok(result)
 }
 
 /// Apply one mutation.  Writes are intentionally sent exactly once.  A
@@ -401,7 +461,7 @@ pub async fn mutate(
                 .map(|id| id.parse::<u64>().map(Value::from))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| {
-                    AppError::new("INVALID_INPUT", "userIds must be decimal identifiers.")
+                    AppError::new("INVALID_INPUT", "ユーザーIDの形式が正しくありません。")
                 })?;
             (
                 Method::PUT,
@@ -460,7 +520,7 @@ pub async fn mutate(
         if saved.as_ref() != Some(&user_ids.iter().cloned().collect()) {
             return Err(AppError::new(
                 "UNSUPPORTED",
-                "GitLab saved a different set of users than selected. A user may lack access, or the plan may allow only one. Refresh to see the saved users.",
+                "GitLabに保存されたユーザーが選択と異なります。アクセス権のないユーザーが含まれているか、プランで1人しか設定できない可能性があります。再読み込みして保存内容を確認してください。",
             ));
         }
     }
@@ -549,6 +609,21 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 ],
             )
         }
+        Query::Groups { search, page } => {
+            validate_page(*page)?;
+            // Every group the user can see, like the project picker; GitLab
+            // otherwise lists only groups the user is a member of.
+            (
+                endpoint(api_base, &["groups"])?,
+                ResponseKind::Groups,
+                vec![
+                    ("search".to_owned(), search.clone()),
+                    ("all_available".to_owned(), "true".to_owned()),
+                    ("page".to_owned(), page.to_string()),
+                    ("per_page".to_owned(), GROUP_PER_PAGE.to_string()),
+                ],
+            )
+        }
         Query::Project { path } => {
             validate_project_path(path)?;
             (
@@ -622,6 +697,8 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             validate_page(*page)?;
             let mut params = vec![
                 ("membership".to_owned(), membership.to_string()),
+                ("order_by".to_owned(), "last_activity_at".to_owned()),
+                ("sort".to_owned(), "desc".to_owned()),
                 ("page".to_owned(), page.to_string()),
                 ("per_page".to_owned(), PER_PAGE.to_string()),
             ];
@@ -630,6 +707,7 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             }
             if !search.is_empty() {
                 params.push(("search".to_owned(), search.clone()));
+                params.push(("search_namespaces".to_owned(), "true".to_owned()));
             }
             (
                 endpoint(api_base, &["projects"])?,
@@ -660,7 +738,7 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             if !matches!(order_by, "updated_at" | "created_at") || !matches!(sort, "asc" | "desc") {
                 return Err(AppError::new(
                     "INVALID_INPUT",
-                    "Invalid merge request ordering.",
+                    "MRの並び順の指定が正しくありません。",
                 ));
             }
             if let Some(project_id) = project_id {
@@ -669,7 +747,7 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             if project_id.is_some() && group_id.is_some() {
                 return Err(AppError::new(
                     "INVALID_INPUT",
-                    "A group and a project cannot both scope a merge request search.",
+                    "MR検索ではグループとプロジェクトを同時に指定できません。",
                 ));
             }
             if let Some(group_id) = group_id {
@@ -695,7 +773,9 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 ("page".to_owned(), page.to_string()),
                 ("per_page".to_owned(), PER_PAGE.to_string()),
             ];
-            if !search.is_empty() {
+            if let Some((iid, true)) = merge_request_number(search, project_id) {
+                params.push(("iids[]".to_owned(), iid.to_owned()));
+            } else if !search.is_empty() {
                 params.push(("search".to_owned(), search.clone()));
             }
             let url = if let Some(project_id) = project_id {
@@ -834,7 +914,7 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
         Query::MrApprovals { .. } => {
             return Err(AppError::new(
                 "INVALID_INPUT",
-                "Merge request approvals are not a REST query.",
+                "MRの承認状況はこの方法では取得できません。",
             ))
         }
     };
@@ -872,6 +952,24 @@ fn add_optional_param(params: &mut Vec<(String, String)>, name: &str, value: &Op
     }
 }
 
+/// A search of only an MR number, and whether it was written as `!123`, which
+/// names the MR alone, rather than `123`, which also matches text. GitLab
+/// filters by `iids[]` only in project lists; group and global lists ignore it,
+/// so there a number stays a text search.
+fn merge_request_number<'a>(
+    search: &'a str,
+    project_id: &Option<String>,
+) -> Option<(&'a str, bool)> {
+    project_id.as_ref()?;
+    let search = search.trim();
+    let (iid, explicit) = match search.strip_prefix('!') {
+        Some(iid) => (iid, true),
+        None => (search, false),
+    };
+    (!iid.is_empty() && iid.len() <= 18 && iid.bytes().all(|byte| byte.is_ascii_digit()))
+        .then_some((iid, explicit))
+}
+
 fn append_query(mut url: Url, params: Vec<(String, String)>) -> Url {
     if !params.is_empty() {
         let mut pairs = url.query_pairs_mut();
@@ -890,7 +988,7 @@ pub(crate) fn endpoint(api_base: &Url, segments: &[&str]) -> Result<Url, AppErro
     if api_base.host_str().is_none() || api_base.cannot_be_a_base() {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "The GitLab API base URL is invalid.",
+            "GitLab APIのURLが正しくありません。",
         ));
     }
 
@@ -909,7 +1007,7 @@ pub(crate) fn endpoint(api_base: &Url, segments: &[&str]) -> Result<Url, AppErro
     {
         let mut path_segments = url
             .path_segments_mut()
-            .map_err(|_| AppError::new("INVALID_INPUT", "The GitLab API base URL is invalid."))?;
+            .map_err(|_| AppError::new("INVALID_INPUT", "GitLab APIのURLが正しくありません。"))?;
         path_segments.pop_if_empty();
         for segment in segments {
             path_segments.push(segment);
@@ -950,13 +1048,12 @@ async fn get_bytes(
                 }
             }
             Err(error) => {
-                let is_timeout = error.is_timeout();
                 if retries < MAX_GET_RETRIES {
                     retries += 1;
                     wait_for_get_retry(retries).await;
                     continue;
                 }
-                return Err(transport_error(is_timeout));
+                return Err(transport_error(&error));
             }
         }
     }
@@ -973,7 +1070,7 @@ async fn fetch_mr_approvals(
     if items.is_empty() || items.len() > PER_PAGE as usize {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "Request approvals for one page of merge requests at a time.",
+            "承認状況は1ページ分のMRごとに取得してください。",
         ));
     }
     let mut declarations = Vec::new();
@@ -995,24 +1092,25 @@ async fn fetch_mr_approvals(
     });
     let url = api_base
         .join("../graphql")
-        .map_err(|_| AppError::new("INVALID_INPUT", "Invalid GitLab GraphQL URL."))?;
+        .map_err(|_| AppError::new("INVALID_INPUT", "GitLab GraphQLのURLが正しくありません。"))?;
     let response = client
         .post(url)
         .json(&body)
         .send()
         .await
-        .map_err(|error| transport_error(error.is_timeout()))?;
+        .map_err(|error| transport_error(&error))?;
     let status = response.status();
     if !status.is_success() {
         return Err(status_error(status, response.headers(), false));
     }
     let bytes = read_limited(response, MAX_RESPONSE_BYTES).await?;
-    let value: Value = serde_json::from_slice(&bytes)
-        .map_err(|_| unsupported_response("GitLab returned an unsupported approval response."))?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+        unsupported_response("GitLabから対応していない形式の承認情報が返されました。")
+    })?;
     let data = value
         .get("data")
         .filter(|data| data.is_object())
-        .ok_or_else(|| unsupported_response("GitLab did not return approval data."))?;
+        .ok_or_else(|| unsupported_response("GitLabから承認情報が返されませんでした。"))?;
     let results = items
         .iter()
         .enumerate()
@@ -1052,7 +1150,7 @@ async fn get_json_once(client: &Client, url: &Url) -> Result<Value, AppError> {
         .get(url.clone())
         .send()
         .await
-        .map_err(|error| transport_error(error.is_timeout()))?;
+        .map_err(|error| transport_error(&error))?;
     let status = response.status();
     if !status.is_success() {
         return Err(status_error(status, response.headers(), false));
@@ -1061,7 +1159,7 @@ async fn get_json_once(client: &Client, url: &Url) -> Result<Value, AppError> {
     serde_json::from_slice(&bytes).map_err(|_| {
         AppError::new(
             "UNSUPPORTED",
-            "GitLab returned an unsupported response format.",
+            "GitLabから対応していない形式の応答が返されました。",
         )
     })
 }
@@ -1111,7 +1209,7 @@ async fn send_mutation(
             if is_recoverable_server_error(status) || status == StatusCode::REQUEST_TIMEOUT {
                 Err(AppError::new(
                     "UNKNOWN_OUTCOME",
-                    "GitLab did not confirm the result of the change.",
+                    "GitLabから変更結果の確認が得られませんでした。",
                 ))
             } else {
                 Err(status_error(status, response.headers(), true))
@@ -1120,9 +1218,9 @@ async fn send_mutation(
         Err(error) => Err(AppError::new(
             "UNKNOWN_OUTCOME",
             if error.is_timeout() {
-                "The change may have reached GitLab, but the request timed out."
+                "変更がGitLabに届いた可能性がありますが、応答がタイムアウトしました。"
             } else {
-                "The change may have reached GitLab, but its result could not be confirmed."
+                "変更がGitLabに届いた可能性がありますが、結果を確認できませんでした。"
             },
         )),
     }
@@ -1131,7 +1229,7 @@ async fn send_mutation(
 fn unknown_mutation_result() -> AppError {
     AppError::new(
         "UNKNOWN_OUTCOME",
-        "GitLab did not confirm the result of the change. Verify it before sending again.",
+        "GitLabから変更結果の確認が得られませんでした。再送する前にGitLabで結果を確認してください。",
     )
 }
 
@@ -1145,7 +1243,7 @@ pub(crate) async fn read_limited(
     {
         return Err(AppError::new(
             "TOO_LARGE",
-            "The GitLab response is larger than the supported limit.",
+            "GitLabの応答が対応できるサイズの上限を超えています。",
         ));
     }
 
@@ -1153,12 +1251,12 @@ pub(crate) async fn read_limited(
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|error| transport_error(error.is_timeout()))?
+        .map_err(|error| transport_error(&error))?
     {
         if output.len().saturating_add(chunk.len()) > max_bytes {
             return Err(AppError::new(
                 "TOO_LARGE",
-                "The GitLab response is larger than the supported limit.",
+                "GitLabの応答が対応できるサイズの上限を超えています。",
             ));
         }
         output.extend_from_slice(&chunk);
@@ -1187,35 +1285,59 @@ pub(crate) fn status_error(status: StatusCode, headers: &HeaderMap, mutation: bo
     match status {
         StatusCode::UNAUTHORIZED => AppError::new(
             "AUTH_REQUIRED",
-            "GitLab requires authentication for this request.",
+            "GitLabの認証が切れました。再接続してください。",
         ),
-        StatusCode::FORBIDDEN => {
-            AppError::new("FORBIDDEN", "GitLab denied access to this resource.")
-        }
-        StatusCode::NOT_FOUND => AppError::new("NOT_FOUND", "GitLab could not find this resource."),
+        StatusCode::FORBIDDEN if mutation => AppError::new(
+            "FORBIDDEN",
+            "この操作の権限がありません。コメントや承認には api スコープのトークンが必要です。",
+        ),
+        StatusCode::FORBIDDEN => AppError::new("FORBIDDEN", "表示する権限がありません。"),
+        StatusCode::NOT_FOUND => AppError::new(
+            "NOT_FOUND",
+            "対象が見つからないか、表示する権限がありません。",
+        ),
         StatusCode::TOO_MANY_REQUESTS => {
-            let error = AppError::new("RATE_LIMITED", "GitLab rate limited this request.");
-            retry_after_ms(error, headers)
+            let mut error = retry_after_ms(AppError::new("RATE_LIMITED", ""), headers);
+            error.message = rate_limited_message(error.retry_after_ms);
+            error
         }
         StatusCode::METHOD_NOT_ALLOWED
         | StatusCode::NOT_IMPLEMENTED
-        | StatusCode::HTTP_VERSION_NOT_SUPPORTED => {
-            AppError::new("UNSUPPORTED", "This GitLab API operation is not supported.")
-        }
+        | StatusCode::HTTP_VERSION_NOT_SUPPORTED => AppError::new(
+            "UNSUPPORTED",
+            "この操作は接続先のGitLabでは利用できません。",
+        ),
         _ if status.is_server_error() && mutation => AppError::new(
             "UNKNOWN_OUTCOME",
-            "GitLab did not confirm the result of the change.",
+            "GitLabから変更結果の確認が得られませんでした。",
         ),
-        _ if status.is_server_error() => {
-            AppError::new("NETWORK", "GitLab returned a temporary server error.")
-        }
+        _ if status.is_server_error() => AppError::new(
+            "NETWORK",
+            "GitLabで一時的なサーバーエラーが発生しました。しばらくしてから再試行してください。",
+        ),
         StatusCode::BAD_REQUEST | StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY => {
-            AppError::new("INVALID_INPUT", "GitLab rejected the request.")
+            AppError::new(
+                "INVALID_INPUT",
+                "GitLabがリクエストを受け付けませんでした。入力内容を確認してください。",
+            )
         }
         StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => {
-            AppError::new("TIMEOUT", "The GitLab request timed out.")
+            AppError::new("TIMEOUT", TIMEOUT_MESSAGE)
         }
-        _ => AppError::new("UNSUPPORTED", "GitLab rejected the request."),
+        _ => AppError::new("UNSUPPORTED", "GitLabがリクエストを受け付けませんでした。"),
+    }
+}
+
+/// The message for a rate-limited request, naming the wait when GitLab gave one.
+pub(crate) fn rate_limited_message(retry_after_ms: Option<u64>) -> String {
+    match retry_after_ms {
+        Some(ms) => format!(
+            "GitLabのリクエスト制限に達しました。{}秒後に再試行してください。",
+            ms.div_ceil(1_000).max(1)
+        ),
+        None => {
+            "GitLabのリクエスト制限に達しました。しばらく待ってから再試行してください。".to_owned()
+        }
     }
 }
 
@@ -1243,11 +1365,19 @@ fn retry_after_ms(mut error: AppError, headers: &HeaderMap) -> AppError {
     error
 }
 
-fn transport_error(timeout: bool) -> AppError {
-    if timeout {
-        AppError::new("TIMEOUT", "The GitLab request timed out.")
+const TIMEOUT_MESSAGE: &str =
+    "GitLabからの応答がタイムアウトしました。しばらくしてから再試行してください。";
+
+fn transport_error(error: &reqwest::Error) -> AppError {
+    if error.is_timeout() {
+        AppError::new("TIMEOUT", TIMEOUT_MESSAGE)
+    } else if error.is_connect() {
+        AppError::new(
+            "NETWORK",
+            "GitLabに接続できません。ネットワーク接続を確認してください。",
+        )
     } else {
-        AppError::new("NETWORK", "The GitLab request could not be completed.")
+        AppError::new("NETWORK", "GitLabへのリクエストを完了できませんでした。")
     }
 }
 
@@ -1270,18 +1400,18 @@ fn parse_next_page(headers: &HeaderMap) -> Result<Option<u32>, AppError> {
     };
     let value = value
         .to_str()
-        .map_err(|_| AppError::new("UNSUPPORTED", "GitLab returned an invalid page header."))?;
+        .map_err(|_| AppError::new("UNSUPPORTED", "GitLabから不正なページ情報が返されました。"))?;
     let value = value.trim();
     if value.is_empty() {
         return Ok(None);
     }
     let page = value
         .parse::<u32>()
-        .map_err(|_| AppError::new("UNSUPPORTED", "GitLab returned an invalid page header."))?;
+        .map_err(|_| AppError::new("UNSUPPORTED", "GitLabから不正なページ情報が返されました。"))?;
     if page == 0 || page > MAX_PAGE {
         return Err(AppError::new(
             "UNSUPPORTED",
-            "GitLab returned an unsupported next page.",
+            "GitLabから対応していないページ番号が返されました。",
         ));
     }
     Ok(Some(page))
@@ -1290,6 +1420,7 @@ fn parse_next_page(headers: &HeaderMap) -> Result<Option<u32>, AppError> {
 fn normalize_response(kind: ResponseKind, value: Value) -> Result<Value, AppError> {
     match kind {
         ResponseKind::Users => normalize_array(value, None, normalize_user),
+        ResponseKind::Groups => normalize_array(value, None, normalize_group),
         ResponseKind::Project => normalize_project(&value),
         ResponseKind::Todos => normalize_todos(value),
         ResponseKind::Branches => normalize_array(value, None, normalize_branch),
@@ -1333,17 +1464,16 @@ fn normalize_array(
         if value.is_array() {
             value
         } else {
-            value
-                .get(wrapper)
-                .cloned()
-                .ok_or_else(|| unsupported_response("GitLab returned an unexpected list shape."))?
+            value.get(wrapper).cloned().ok_or_else(|| {
+                unsupported_response("GitLabから想定外の形式の一覧が返されました。")
+            })?
         }
     } else {
         value
     };
     let values = value
         .as_array()
-        .ok_or_else(|| unsupported_response("GitLab returned an unexpected list shape."))?;
+        .ok_or_else(|| unsupported_response("GitLabから想定外の形式の一覧が返されました。"))?;
     let mut normalized = Vec::with_capacity(values.len());
     for value in values {
         normalized.push(normalize_item(value)?);
@@ -1352,22 +1482,37 @@ fn normalize_array(
 }
 
 fn normalize_project(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLab returned an invalid project.")?;
+    require_object(value, "GitLabから不正なプロジェクト情報が返されました。")?;
     let id = required_id_field(value, "id", "project")?;
     let name = required_string_field(value, "name", "project")?;
     let path_with_namespace = required_string_field(value, "path_with_namespace", "project")?;
-    Ok(json!({
+    let mut project = json!({
         "id": id,
         "name": name,
         "pathWithNamespace": path_with_namespace,
         "description": string_field(value, "description"),
         "webUrl": string_field(value, "web_url"),
         "archived": bool_field(value, "archived"),
+    });
+    if let Some(last_activity_at) = value.get("last_activity_at").and_then(Value::as_str) {
+        project["lastActivityAt"] = last_activity_at.into();
+    }
+    Ok(project)
+}
+
+fn normalize_group(value: &Value) -> Result<Value, AppError> {
+    require_object(value, "GitLabから不正なグループ情報が返されました。")?;
+    Ok(json!({
+        "id": required_id_field(value, "id", "group")?,
+        "name": required_string_field(value, "name", "group")?,
+        "fullPath": required_string_field(value, "full_path", "group")?,
+        "fullName": string_field(value, "full_name"),
+        "webUrl": string_field(value, "web_url"),
     }))
 }
 
 fn normalize_branch(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLab returned an invalid branch.")?;
+    require_object(value, "GitLabから不正なブランチ情報が返されました。")?;
     let name = required_string_field(value, "name", "branch")?;
     let commit = value.get("commit").filter(|commit| commit.is_object());
     Ok(json!({
@@ -1389,7 +1534,7 @@ fn normalize_branch(value: &Value) -> Result<Value, AppError> {
 fn normalize_todos(value: Value) -> Result<Value, AppError> {
     let items = value
         .as_array()
-        .ok_or_else(|| unsupported_response("GitLab returned an invalid todo list."))?;
+        .ok_or_else(|| unsupported_response("GitLabから不正なToDo一覧が返されました。"))?;
     let mut normalized = Vec::new();
     for item in items {
         if item.get("target_type").and_then(Value::as_str) != Some("MergeRequest") {
@@ -1397,15 +1542,13 @@ fn normalize_todos(value: Value) -> Result<Value, AppError> {
         }
         let target = item
             .get("target")
-            .ok_or_else(|| unsupported_response("GitLab returned an invalid todo target."))?;
-        let project =
-            normalize_project(item.get("project").ok_or_else(|| {
-                unsupported_response("GitLab returned an invalid todo project.")
-            })?)?;
-        let author = normalize_user(
-            item.get("author")
-                .ok_or_else(|| unsupported_response("GitLab returned an invalid todo author."))?,
-        )?;
+            .ok_or_else(|| unsupported_response("GitLabから不正なToDoの対象が返されました。"))?;
+        let project = normalize_project(item.get("project").ok_or_else(|| {
+            unsupported_response("GitLabから不正なToDoのプロジェクト情報が返されました。")
+        })?)?;
+        let author = normalize_user(item.get("author").ok_or_else(|| {
+            unsupported_response("GitLabから不正なToDoの作成者情報が返されました。")
+        })?)?;
         normalized.push(json!({
             "id": required_id_field(item, "id", "todo")?,
             "actionName": required_string_field(item, "action_name", "todo")?,
@@ -1427,21 +1570,22 @@ fn optional_users(value: &Value, field: &str) -> Result<Vec<Value>, AppError> {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Array(users)) => users.iter().map(normalize_user).collect(),
         _ => Err(unsupported_response(
-            "GitLab returned an invalid user list.",
+            "GitLabから不正なユーザー一覧が返されました。",
         )),
     }
 }
 
 fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLab returned an invalid merge request.")?;
+    require_object(value, "GitLabから不正なMR情報が返されました。")?;
     let id = required_id_field(value, "id", "merge request")?;
     let iid = required_id_field(value, "iid", "merge request")?;
     let project_id = required_id_field(value, "project_id", "merge request")?;
     let title = required_string_field(value, "title", "merge request")?;
     let state = required_string_field(value, "state", "merge request")?;
-    let author = normalize_user(value.get("author").ok_or_else(|| {
-        unsupported_response("GitLab returned an invalid merge request author.")
-    })?)?;
+    let author =
+        normalize_user(value.get("author").ok_or_else(|| {
+            unsupported_response("GitLabから不正なMRの作成者情報が返されました。")
+        })?)?;
     let diff_refs = value.get("diff_refs").and_then(|diff_refs| {
         if diff_refs.is_null() {
             None
@@ -1468,10 +1612,14 @@ fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
                 label
                     .as_str()
                     .map(str::to_owned)
-                    .ok_or_else(|| unsupported_response("GitLab returned invalid labels."))
+                    .ok_or_else(|| unsupported_response("GitLabから不正なラベルが返されました。"))
             })
             .collect::<Result<Vec<_>, _>>()?,
-        _ => return Err(unsupported_response("GitLab returned invalid labels.")),
+        _ => {
+            return Err(unsupported_response(
+                "GitLabから不正なラベルが返されました。",
+            ))
+        }
     };
     let pipeline = value
         .get("head_pipeline")
@@ -1492,7 +1640,7 @@ fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
     } else {
         head_sha
     };
-    Ok(json!({
+    let mut merge_request = json!({
         "id": id,
         "iid": iid,
         "projectId": project_id,
@@ -1512,7 +1660,11 @@ fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
         "assignees": optional_users(value, "assignees")?,
         "reviewers": optional_users(value, "reviewers")?,
         "pipeline": pipeline,
-    }))
+    });
+    if let Some(created_at) = value.get("created_at").and_then(Value::as_str) {
+        merge_request["createdAt"] = created_at.into();
+    }
+    Ok(merge_request)
 }
 
 fn normalize_diff(value: &Value) -> Result<Value, AppError> {
@@ -1532,7 +1684,7 @@ fn normalize_discussion(value: &Value) -> Result<Value, AppError> {
     let notes = value
         .get("notes")
         .and_then(Value::as_array)
-        .ok_or_else(|| unsupported_response("GitLab returned an invalid discussion."))?;
+        .ok_or_else(|| unsupported_response("GitLabから不正なスレッドが返されました。"))?;
     let notes = notes
         .iter()
         .map(normalize_note)
@@ -1545,11 +1697,9 @@ fn normalize_discussion(value: &Value) -> Result<Value, AppError> {
 }
 
 fn normalize_note(value: &Value) -> Result<Value, AppError> {
-    let author = normalize_user(
-        value
-            .get("author")
-            .ok_or_else(|| unsupported_response("GitLab returned an invalid note author."))?,
-    )?;
+    let author = normalize_user(value.get("author").ok_or_else(|| {
+        unsupported_response("GitLabから不正なコメントの作成者情報が返されました。")
+    })?)?;
     Ok(json!({
         "id": string_field(value, "id"),
         "body": string_field(value, "body"),
@@ -1644,7 +1794,7 @@ fn normalize_approvals(value: &Value) -> Result<Value, AppError> {
     let approved_by = value
         .get("approved_by")
         .and_then(Value::as_array)
-        .ok_or_else(|| unsupported_response("GitLab returned an invalid approval response."))?;
+        .ok_or_else(|| unsupported_response("GitLabから不正な承認情報が返されました。"))?;
     let approved_by = approved_by
         .iter()
         .map(|item| normalize_user(item.get("user").unwrap_or(item)))
@@ -1656,7 +1806,7 @@ fn normalize_approvals(value: &Value) -> Result<Value, AppError> {
 }
 
 fn normalize_user(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLab returned an invalid user.")?;
+    require_object(value, "GitLabから不正なユーザー情報が返されました。")?;
     let mut user = json!({
         "id": required_id_field(value, "id", "user")?,
         "username": required_string_field(value, "username", "user")?,
@@ -1681,11 +1831,11 @@ fn require_object(value: &Value, message: &str) -> Result<(), AppError> {
 
 fn required_id_field(value: &Value, field: &str, resource: &str) -> Result<String, AppError> {
     let id = value.get(field).and_then(scalar_to_string).ok_or_else(|| {
-        unsupported_response(&format!("GitLab returned an invalid {resource} ID."))
+        unsupported_response(&format!("GitLabから不正なIDが返されました（{resource}）。"))
     })?;
     if !id.bytes().all(|byte| byte.is_ascii_digit()) || !id.parse::<u64>().is_ok_and(|id| id > 0) {
         return Err(unsupported_response(&format!(
-            "GitLab returned an invalid {resource} ID."
+            "GitLabから不正なIDが返されました（{resource}）。"
         )));
     }
     Ok(id)
@@ -1697,7 +1847,9 @@ fn required_string_field(value: &Value, field: &str, resource: &str) -> Result<S
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| {
-            unsupported_response(&format!("GitLab returned an invalid {resource} response."))
+            unsupported_response(&format!(
+                "GitLabから不正な応答が返されました（{resource}）。"
+            ))
         })?;
     Ok(string.to_owned())
 }
@@ -1844,7 +1996,7 @@ fn validate_position(position: &Position) -> Result<(), AppError> {
     if position.old_line == Some(0) || position.new_line == Some(0) {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "Line numbers must be greater than zero.",
+            "行番号は1以上で指定してください。",
         ));
     }
     if matches!(position.position_type, PositionType::Text)
@@ -1853,7 +2005,7 @@ fn validate_position(position: &Position) -> Result<(), AppError> {
     {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "A line position must include an oldLine or newLine.",
+            "行の位置には変更前または変更後の行番号が必要です。",
         ));
     }
     Ok(())
@@ -1863,7 +2015,7 @@ fn validate_description(value: &str) -> Result<(), AppError> {
     if value.len() > MAX_DESCRIPTION_BYTES {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "The description is larger than the supported limit.",
+            "説明が保存できるサイズの上限を超えています。",
         ));
     }
     Ok(())
@@ -1873,13 +2025,16 @@ fn validate_user_ids(ids: &[String]) -> Result<(), AppError> {
     if ids.len() > MAX_PEOPLE {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "Too many users were selected.",
+            "選択したユーザーが多すぎます。",
         ));
     }
     for (index, id) in ids.iter().enumerate() {
         validate_id(id, "userIds")?;
         if ids[..index].contains(id) {
-            return Err(AppError::new("INVALID_INPUT", "userIds must not repeat."));
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                "同じユーザーが重複して選択されています。",
+            ));
         }
     }
     Ok(())
@@ -1893,13 +2048,13 @@ fn validate_body(value: &str) -> Result<(), AppError> {
     if value.trim().is_empty() {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "The comment body must not be empty.",
+            "コメントを入力してください。",
         ));
     }
     if value.len() > MAX_ACTION_BODY_BYTES {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "The comment body is larger than the supported limit.",
+            "コメントが送信できるサイズの上限を超えています。",
         ));
     }
     Ok(())
@@ -1911,7 +2066,7 @@ pub(crate) fn validate_id(value: &str, field: &str) -> Result<(), AppError> {
     {
         return Err(AppError::new(
             "INVALID_INPUT",
-            &format!("{field} must be a decimal identifier."),
+            &format!("{field}は数値のIDで指定してください。"),
         ));
     }
     Ok(())
@@ -1930,7 +2085,7 @@ fn validate_group_id(value: &str) -> Result<(), AppError> {
     }) {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "groupId must be a decimal identifier or a group path.",
+            "groupIdは数値のIDまたはグループのパスで指定してください。",
         ));
     }
     Ok(())
@@ -1942,7 +2097,7 @@ fn validate_labels(labels: &[String]) -> Result<(), AppError> {
     }) {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "labels must contain non-empty label names without commas.",
+            "ラベル名は空にできず、カンマも含められません。",
         ));
     }
     Ok(())
@@ -1952,7 +2107,7 @@ fn validate_discussion_id(value: &str) -> Result<(), AppError> {
     if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "discussionId must be an opaque hexadecimal identifier.",
+            "discussionIdの形式が正しくありません。",
         ));
     }
     Ok(())
@@ -1962,7 +2117,7 @@ fn validate_sha(value: &str, field: &str) -> Result<(), AppError> {
     if !matches!(value.len(), 40 | 64) || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(AppError::new(
             "INVALID_INPUT",
-            &format!("{field} must be a full hexadecimal commit SHA."),
+            &format!("{field}は完全なコミットSHA（16進数）で指定してください。"),
         ));
     }
     Ok(())
@@ -1978,7 +2133,7 @@ fn validate_project_path(value: &str) -> Result<(), AppError> {
     {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "Invalid project namespace path.",
+            "プロジェクトのパスが正しくありません。",
         ));
     }
     Ok(())
@@ -1996,7 +2151,7 @@ fn validate_path(value: &str) -> Result<(), AppError> {
     {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "The repository file path is invalid.",
+            "リポジトリのファイルパスが正しくありません。",
         ));
     }
     Ok(())
@@ -2006,7 +2161,7 @@ fn validate_page(page: u32) -> Result<(), AppError> {
     if page == 0 || page > MAX_PAGE {
         return Err(AppError::new(
             "INVALID_INPUT",
-            "page must be between 1 and the supported maximum.",
+            "ページ番号が対応範囲外です。",
         ));
     }
     Ok(())
@@ -2164,7 +2319,7 @@ fn scalar_field(value: &Value, field: &str) -> Option<String> {
 fn stale_merge_request() -> AppError {
     AppError::new(
         "INVALID_INPUT",
-        "The merge request changed. Refresh it and try again.",
+        "MRが更新されています。再読み込みしてから再試行してください。",
     )
 }
 
@@ -2196,7 +2351,7 @@ async fn ensure_note_owner(
     if author_id.as_deref() != Some(user_id) {
         return Err(AppError::new(
             "FORBIDDEN",
-            "Only the comment author can change this note.",
+            "コメントを変更できるのは投稿者だけです。",
         ));
     }
     Ok(())
@@ -2307,7 +2462,7 @@ mod tests {
     fn normalizes_ids_and_pagination() {
         let fixture = Fixture::new(vec![response(
             "200 OK",
-            r#"[{"id":7,"name":"Demo","path_with_namespace":"group/demo","description":null,"web_url":"https://gitlab.example/group/demo","archived":false}]"#,
+            r#"[{"id":7,"name":"Demo","path_with_namespace":"group/demo","description":null,"web_url":"https://gitlab.example/group/demo","archived":false,"last_activity_at":"2026-10-01T09:00:00.000Z"},{"id":8,"name":"Quiet","path_with_namespace":"group/quiet","web_url":"https://gitlab.example/group/quiet","archived":false}]"#,
             "X-Next-Page: 2\r\n",
         )]);
         let client = Client::builder().build().unwrap();
@@ -2326,7 +2481,50 @@ mod tests {
         assert_eq!(result.next_page, Some(2));
         assert_eq!(result.data[0]["id"], "7");
         assert_eq!(result.data[0]["description"], "");
-        assert!(fixture.requests.lock().unwrap()[0].contains("/api/v4/projects?"));
+        assert_eq!(result.data[0]["lastActivityAt"], "2026-10-01T09:00:00.000Z");
+        assert!(result.data[1].get("lastActivityAt").is_none());
+        let request = &fixture.requests.lock().unwrap()[0];
+        assert!(request.contains("/api/v4/projects?"));
+        assert!(request.contains("order_by=last_activity_at") && request.contains("sort=desc"));
+        assert!(!request.contains("search_namespaces"));
+    }
+
+    #[test]
+    fn project_search_includes_namespaces() {
+        let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+        let (url, _) = build_query_url(
+            &api,
+            &Query::Projects {
+                search: "group/demo".to_owned(),
+                membership: false,
+                include_archived: true,
+                page: 1,
+            },
+        )
+        .unwrap();
+        let params = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(params.get("search").unwrap(), "group/demo");
+        assert_eq!(params.get("search_namespaces").unwrap(), "true");
+        assert_eq!(params.get("order_by").unwrap(), "last_activity_at");
+        assert_eq!(params.get("sort").unwrap(), "desc");
+    }
+
+    #[test]
+    fn forbidden_messages_distinguish_reads_from_writes() {
+        let headers = HeaderMap::new();
+        let read = status_error(StatusCode::FORBIDDEN, &headers, false);
+        let write = status_error(StatusCode::FORBIDDEN, &headers, true);
+        assert_eq!(
+            (read.code.as_str(), write.code.as_str()),
+            ("FORBIDDEN", "FORBIDDEN")
+        );
+        assert_eq!(read.message, "表示する権限がありません。");
+        assert!(write.message.contains("api スコープ"));
+        let limited = status_error(StatusCode::TOO_MANY_REQUESTS, &headers, false);
+        assert_eq!(limited.retry_after_ms, None);
+        assert!(limited.message.contains("しばらく待って"));
     }
 
     #[test]
@@ -2363,6 +2561,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.code, "RATE_LIMITED");
         assert_eq!(error.retry_after_ms, Some(4_000));
+        assert!(error.message.contains("4秒後に再試行"));
     }
 
     #[test]
@@ -2476,7 +2675,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error.code, "INVALID_INPUT");
-        assert!(error.message.contains("Refresh"));
+        assert!(error.message.contains("再読み込み"));
         assert_eq!(fixture.requests.lock().unwrap().len(), 3);
     }
 
@@ -2729,6 +2928,141 @@ mod tests {
     }
 
     #[test]
+    fn explicit_mr_number_search_filters_by_iid() {
+        let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+        let make_query = |search: &str| Query::Mrs {
+            search: search.to_owned(),
+            state: MergeRequestState::All,
+            project_id: Some("42".to_owned()),
+            group_id: None,
+            labels: None,
+            source_branch: None,
+            target_branch: None,
+            reviewer_id: None,
+            assignee_id: None,
+            author_id: None,
+            updated_after: None,
+            updated_before: None,
+            order_by: None,
+            sort: None,
+            page: 1,
+        };
+        let outside_project = |group_id: Option<&str>| Query::Mrs {
+            search: "!123".to_owned(),
+            state: MergeRequestState::All,
+            project_id: None,
+            group_id: group_id.map(str::to_owned),
+            labels: None,
+            source_branch: None,
+            target_branch: None,
+            reviewer_id: None,
+            assignee_id: None,
+            author_id: None,
+            updated_after: None,
+            updated_before: None,
+            order_by: None,
+            sort: None,
+            page: 1,
+        };
+        for search in ["!123", " !123 "] {
+            let (url, _) = build_query_url(&api, &make_query(search)).unwrap();
+            let params = url
+                .query_pairs()
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(params.get("iids[]").unwrap(), "123");
+            assert!(!params.contains_key("search"));
+        }
+        for search in ["123", "!", "12a", "v1.2"] {
+            let (url, _) = build_query_url(&api, &make_query(search)).unwrap();
+            let params = url
+                .query_pairs()
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(params.get("search").unwrap(), search);
+            assert!(!params.contains_key("iids[]"));
+        }
+        // Group and global lists ignore `iids[]`, so the number stays text.
+        for group_id in [None, Some("9")] {
+            let (url, _) = build_query_url(&api, &outside_project(group_id)).unwrap();
+            let params = url
+                .query_pairs()
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(params.get("search").unwrap(), "!123");
+            assert!(!params.contains_key("iids[]"));
+        }
+    }
+
+    #[test]
+    fn bare_mr_number_search_leads_with_iid_matches_then_text_matches() {
+        let user = r#"{"id":1,"username":"alice","name":"Alice"}"#;
+        let mr = |id: u32, iid: u32, title: &str| {
+            format!(
+                r#"{{"id":{id},"iid":{iid},"project_id":7,"title":"{title}","state":"opened","author":{user}}}"#
+            )
+        };
+        let fixture = Fixture::new(vec![
+            response(
+                "200 OK",
+                &format!(
+                    "[{},{}]",
+                    mr(1, 5, "Fix 123 errors"),
+                    mr(2, 123, "Numbered")
+                ),
+                "X-Next-Page: 2\r\n",
+            ),
+            response("200 OK", &format!("[{}]", mr(2, 123, "Numbered")), ""),
+            response(
+                "200 OK",
+                &format!("[{},{}]", mr(2, 123, "Numbered"), mr(4, 6, "Retry 123")),
+                "",
+            ),
+        ]);
+        let client = Client::builder().build().unwrap();
+        let query = |page| Query::Mrs {
+            search: "123".to_owned(),
+            state: MergeRequestState::All,
+            project_id: Some("7".to_owned()),
+            group_id: None,
+            labels: None,
+            source_branch: None,
+            target_branch: None,
+            reviewer_id: None,
+            assignee_id: None,
+            author_id: None,
+            updated_after: None,
+            updated_before: None,
+            order_by: None,
+            sort: None,
+            page,
+        };
+        let iids = |result: &ApiResult| {
+            result
+                .data
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["iid"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+
+        let first = runtime()
+            .block_on(fetch(&client, &fixture.url(), &query(1)))
+            .unwrap();
+        assert_eq!(iids(&first), ["123", "5"]);
+        assert_eq!(first.next_page, Some(2));
+        let second = runtime()
+            .block_on(fetch(&client, &fixture.url(), &query(2)))
+            .unwrap();
+        assert_eq!(iids(&second), ["6"]);
+
+        let requests = fixture.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[0].contains("/projects/7/merge_requests"));
+        assert!(requests[0].contains("search=123") && !requests[0].contains("iids"));
+        assert!(requests[1].contains("iids%5B%5D=123") && !requests[1].contains("search="));
+        assert!(requests[2].contains("search=123") && requests[2].contains("page=2"));
+    }
+
+    #[test]
     fn uses_project_scoped_mr_and_repository_commit_diff_routes() {
         let fixture = Fixture::new(vec![
             response("200 OK", "[]", ""),
@@ -2834,6 +3168,72 @@ mod tests {
         assert_eq!(params.get("state").unwrap(), "pending");
         assert_eq!(params.get("per_page").unwrap(), "30");
         assert!(build_query_url(&api, &Query::Todos { page: 0 }).is_err());
+    }
+
+    #[test]
+    fn groups_query_searches_visible_groups_and_normalizes_paths() {
+        let api = Url::parse("https://gitlab.example/prefix/api/v4/").unwrap();
+        let (url, kind) = build_query_url(
+            &api,
+            &Query::Groups {
+                search: "team/plat".to_owned(),
+                page: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(url.path(), "/prefix/api/v4/groups");
+        let params = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(params.get("search").unwrap(), "team/plat");
+        assert_eq!(params.get("all_available").unwrap(), "true");
+        assert_eq!(params.get("per_page").unwrap(), "20");
+        assert!(!params.contains_key("min_access_level"));
+        assert!(build_query_url(
+            &api,
+            &Query::Groups {
+                search: "team".to_owned(),
+                page: 0,
+            },
+        )
+        .is_err());
+
+        let groups = normalize_response(
+            kind,
+            json!([{"id": 12, "name": "Platform", "full_path": "team/platform", "full_name": "Team / Platform", "web_url": "https://gitlab.example/prefix/groups/team/platform"}]),
+        )
+        .unwrap();
+        assert_eq!(groups[0]["id"], "12");
+        assert_eq!(groups[0]["fullPath"], "team/platform");
+        assert_eq!(groups[0]["fullName"], "Team / Platform");
+        assert_eq!(
+            normalize_group(&json!({"id": 12, "name": "Platform"}))
+                .unwrap_err()
+                .code,
+            "UNSUPPORTED"
+        );
+    }
+
+    #[test]
+    fn merge_request_creation_time_is_returned_when_gitlab_sends_it() {
+        let base = json!({
+            "id": 1,
+            "iid": 2,
+            "project_id": 3,
+            "title": "Review",
+            "state": "opened",
+            "author": {"id": 4, "username": "alice", "name": "Alice"},
+            "updated_at": "2026-10-09T00:00:01Z",
+        });
+        assert!(normalize_merge_request(&base)
+            .unwrap()
+            .get("createdAt")
+            .is_none());
+        let mut created = base.clone();
+        created["created_at"] = "2026-10-01T00:00:00Z".into();
+        let merge_request = normalize_merge_request(&created).unwrap();
+        assert_eq!(merge_request["createdAt"], "2026-10-01T00:00:00Z");
+        assert_eq!(merge_request["updatedAt"], "2026-10-09T00:00:01Z");
     }
 
     #[test]
