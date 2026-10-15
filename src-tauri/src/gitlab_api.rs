@@ -176,12 +176,7 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
 
     if matches!(query, Query::File { .. }) {
         let (bytes, _headers) = get_bytes(client, &url, MAX_FILE_BYTES).await?;
-        let content = String::from_utf8(bytes).map_err(|_| {
-            AppError::new(
-                "UNSUPPORTED",
-                "GitLabから返されたファイルはUTF-8のテキストではないため表示できません。",
-            )
-        })?;
+        let content = decode_file_text(bytes)?;
         return Ok(ApiResult {
             data: json!({ "content": content }),
             next_page: None,
@@ -195,6 +190,26 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         ensure_head_sha(client, api_base, project_id, iid, head_sha).await?;
     }
     decode_page(response_kind, &bytes, &headers)
+}
+
+/// Repository files are shown as UTF-8, or as Shift_JIS (Windows-31J) when
+/// they are not valid UTF-8, which is common for older Japanese SQL files.
+fn decode_file_text(bytes: Vec<u8>) -> Result<String, AppError> {
+    let bytes = match String::from_utf8(bytes) {
+        Ok(text) => return Ok(text),
+        Err(error) => error.into_bytes(),
+    };
+    if !bytes.contains(&0) {
+        if let Some(text) =
+            encoding_rs::SHIFT_JIS.decode_without_bom_handling_and_without_replacement(&bytes)
+        {
+            return Ok(text.into_owned());
+        }
+    }
+    Err(AppError::new(
+        "UNSUPPORTED",
+        "GitLabから返されたファイルはUTF-8またはShift_JISのテキストではないため表示できません。",
+    ))
 }
 
 /// GitLab returns a comparison in one response, so its files are split into
@@ -4892,6 +4907,25 @@ mod tests {
         assert!(requests[0].contains(
             "/gitlab/api/v4/projects/42/repository/files/docs%2Fspec%20%231.md/raw?ref="
         ));
+    }
+
+    #[test]
+    fn decodes_shift_jis_file_when_not_utf8() {
+        let (bytes, _, _) = encoding_rs::SHIFT_JIS.encode("SELECT '日本語' -- 表示");
+        assert_eq!(
+            decode_file_text(bytes.into_owned()).unwrap(),
+            "SELECT '日本語' -- 表示"
+        );
+        assert_eq!(
+            decode_file_text("日本語".as_bytes().to_vec()).unwrap(),
+            "日本語"
+        );
+        assert_eq!(
+            decode_file_text(vec![0x89, b'P', b'N', b'G', 0, 0xff])
+                .unwrap_err()
+                .code,
+            "UNSUPPORTED"
+        );
     }
 
     #[test]
