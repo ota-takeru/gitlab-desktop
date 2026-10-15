@@ -4,11 +4,14 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import PublishRoundedIcon from '@mui/icons-material/PublishRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded'
+import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined'
+import ThumbUpRoundedIcon from '@mui/icons-material/ThumbUpRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
@@ -35,10 +38,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useConfirm, useNotify } from '../../components/Feedback'
 import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
 import { delayedRevealSx } from '../../components/paneSx'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { ReactionBar } from '../../components/ReactionBar'
 import { RelativeTime } from '../../components/RelativeTime'
+import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
 import { LabelChip } from '../../components/LabelChip'
 import { formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
@@ -848,14 +853,14 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         </Stack>
         {compactHeader ? null : <>
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
-          <StatusPill label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
-          {mergeRequest.draft ? <Chip label="Draft" size="small" variant="outlined" /> : null}
+          <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
+          {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label="Draft" size="small" variant="outlined" /> : null}
           <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}>{mergeRequest.author.name}</Box></Typography>
           <RelativeTime prefix="更新" value={mergeRequest.updatedAt} />
           <Tooltip title={`${mergeRequest.sourceBranch} → ${mergeRequest.targetBranch}`}><Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%', minWidth: 0 }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography></Tooltip>
           {mergeRequest.headSha ? <Tooltip title="headのSHAをコピー"><Chip icon={<ContentCopyRoundedIcon />} label={shortSha(mergeRequest.headSha)} onClick={() => void copyHeadSha(mergeRequest.headSha ?? '')} size="small" sx={{ fontFamily: 'code.fontFamily' }} variant="outlined" /></Tooltip> : null}
           {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
-          {approvedBy.length ? <Tooltip title={approvedBy.map((user) => user.name).join('、')}><Typography color="success" variant="caption">{approvedBy.length}人が承認済み</Typography></Tooltip> : null}
+          {approvedBy.length ? <StateIcon count={approvedBy.length} icon={myApproved ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={`${approvedBy.length}人が承認済み（${approvedBy.map((user) => user.name).join('、')}）`} tone="success" /> : null}
           <MergeStatusText mergeRequest={mergeRequest} />
         </Stack>
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 0.25, rowGap: 0 }}>

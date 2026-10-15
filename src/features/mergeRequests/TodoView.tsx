@@ -1,6 +1,15 @@
+import AlternateEmailRoundedIcon from '@mui/icons-material/AlternateEmailRounded'
+import AssignmentIndOutlinedIcon from '@mui/icons-material/AssignmentIndOutlined'
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
+import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded'
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded'
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
+import HowToRegOutlinedIcon from '@mui/icons-material/HowToRegOutlined'
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined'
+import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
+import PersonSearchOutlinedIcon from '@mui/icons-material/PersonSearchOutlined'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -9,7 +18,7 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import { useNotify } from '../../components/Feedback'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
@@ -17,7 +26,7 @@ import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
-import { StatusPill, type StatusTone } from '../../components/StatusPill'
+import { StateIcon, type StateIconTone } from '../../components/StateIcon'
 import { formatFetchedAt } from '../../lib/format'
 import type { GitLabTodo } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
@@ -28,7 +37,9 @@ import { forgetDoneTodo } from './todoCache'
 
 const actionLabels: Record<string, string> = { assigned: '担当依頼', mentioned: 'メンション', directly_addressed: '直接メンション', approval_required: '承認依頼', marked: 'To-Do', build_failed: 'CI失敗', unmergeable: 'マージ不可', merge_train_removed: 'マージトレイン解除', review_requested: 'レビュー依頼' }
 // What blocks the MR stands out from requests and mentions.
-const actionTones: Record<string, StatusTone> = { build_failed: 'error', unmergeable: 'error', merge_train_removed: 'warning' }
+const actionTones: Record<string, StateIconTone> = { build_failed: 'error', unmergeable: 'error', merge_train_removed: 'warning' }
+// Each request has its own shape, so a list of To-Dos can be scanned without reading; the name is the tooltip.
+const actionIcons: Record<string, ReactElement> = { assigned: <AssignmentIndOutlinedIcon fontSize="inherit" />, mentioned: <AlternateEmailRoundedIcon fontSize="inherit" />, directly_addressed: <AlternateEmailRoundedIcon fontSize="inherit" />, approval_required: <HowToRegOutlinedIcon fontSize="inherit" />, marked: <BookmarkBorderRoundedIcon fontSize="inherit" />, build_failed: <ErrorOutlineRoundedIcon fontSize="inherit" />, unmergeable: <BlockRoundedIcon fontSize="inherit" />, merge_train_removed: <WarningAmberRoundedIcon fontSize="inherit" />, review_requested: <PersonSearchOutlinedIcon fontSize="inherit" /> }
 
 export function TodoView({ navigation, onOpen, selected = null }: { navigation?: ReactNode; onOpen: (ref: MrRef) => void; selected?: MrRef | null }) {
   const { session } = useConnection()
@@ -52,7 +63,7 @@ export function TodoView({ navigation, onOpen, selected = null }: { navigation?:
         </Stack>
         <Typography sx={{ display: '-webkit-box', mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{todo.title}</Typography>
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, rowGap: 0.25 }}>
-          <StatusPill label={actionLabels[todo.actionName] ?? 'To-Do'} tone={actionTones[todo.actionName] ?? 'info'} />
+          <StateIcon icon={actionIcons[todo.actionName] ?? <NotificationsNoneRoundedIcon fontSize="inherit" />} label={actionLabels[todo.actionName] ?? 'To-Do'} tone={actionTones[todo.actionName] ?? 'info'} />
           <Typography sx={{ fontWeight: 500 }} variant="caption">{todo.author.name}</Typography>
         </Stack>
       </ListRow>)}</Box> : null}

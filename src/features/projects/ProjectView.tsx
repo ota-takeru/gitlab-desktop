@@ -1,5 +1,6 @@
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -24,6 +25,7 @@ import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
+import { StateIcon } from '../../components/StateIcon'
 import { formatFetchedAt } from '../../lib/format'
 import type { Project } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
@@ -156,7 +158,7 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
               >
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
                   <Tooltip enterDelay={600} title={project.name}><Typography noWrap sx={{ fontWeight: 600, minWidth: 0 }} variant="body2">{project.name}</Typography></Tooltip>
-                  {project.archived ? <Chip label="アーカイブ済み" size="small" variant="outlined" /> : null}
+                  {project.archived ? <StateIcon icon={<Inventory2OutlinedIcon fontSize="inherit" />} label="アーカイブ済み" /> : null}
                   {project.lastActivityAt ? <RelativeTime prefix="活動" value={project.lastActivityAt} /> : null}
                 </Stack>
                 <Tooltip enterDelay={600} title={project.pathWithNamespace}><Typography color="textSecondary" component="div" noWrap variant="caption">{project.pathWithNamespace}</Typography></Tooltip>

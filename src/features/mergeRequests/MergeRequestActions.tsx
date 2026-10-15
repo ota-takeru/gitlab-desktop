@@ -1,4 +1,7 @@
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Button from '@mui/material/Button'
@@ -24,6 +27,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useConfirm, useNotify } from '../../components/Feedback'
 import { LabelChip } from '../../components/LabelChip'
 import { PipelineStatus } from '../../components/PipelineStatus'
+import { StateIcon } from '../../components/StateIcon'
 import { shortSha } from '../../lib/format'
 import type { GitLabAction, GitLabLabel, LabelsQuery, MergeRequest, Milestone, MilestonesQuery, ProjectLookupQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
@@ -163,7 +167,9 @@ export function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefr
 export function MergeStatusText({ mergeRequest }: { mergeRequest: MergeRequest }) {
   if (mergeRequest.state !== 'opened') return null
   const readiness = mergeReadiness(mergeRequest)
-  return <Typography color={readiness.tone === 'success' ? 'success' : readiness.tone === 'warning' ? 'warning' : 'textSecondary'} variant="caption">{readiness.summary}</Typography>
+  const icon = readiness.tone === 'success' ? <CheckCircleOutlineRoundedIcon fontSize="inherit" /> : readiness.tone === 'warning' ? <WarningAmberRoundedIcon fontSize="inherit" /> : <InfoOutlinedIcon fontSize="inherit" />
+  // The icon tells mergeable, blocked and waiting apart at a glance; the reason is the tooltip.
+  return <StateIcon icon={icon} label={readiness.summary} tone={readiness.tone === 'success' ? 'success' : readiness.tone === 'warning' ? 'warning' : 'neutral'} />
 }
 
 interface MergeOptions {

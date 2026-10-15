@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { createTheme } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -38,8 +39,9 @@ it('marks blocking To-Dos apart from requests, names the time it arrived, and mo
   renderWithClient(<TodoView onOpen={vi.fn()} />)
 
   expect(screen.getByText('2件取得')).toBeInTheDocument()
-  expect(screen.getByLabelText('CI失敗')).toHaveClass('MuiChip-colorError')
-  expect(screen.getByLabelText('レビュー依頼')).toHaveClass('MuiChip-colorInfo')
+  const { palette } = createTheme()
+  expect(screen.getByRole('img', { name: 'CI失敗' })).toHaveStyle({ color: palette.error.main })
+  expect(screen.getByRole('img', { name: 'レビュー依頼' })).toHaveStyle({ color: palette.info.main })
   expect(screen.getAllByText(/^受信 /u)).toHaveLength(2)
 
   const rows = screen.getByRole('list', { name: 'To-Do' }).querySelectorAll<HTMLElement>('[data-list-row="true"]')

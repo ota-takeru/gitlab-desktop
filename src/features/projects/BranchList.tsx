@@ -1,12 +1,14 @@
 import AltRouteRoundedIcon from '@mui/icons-material/AltRouteRounded'
+import CallMergeRoundedIcon from '@mui/icons-material/CallMergeRounded'
+import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
+import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import Stack from '@mui/material/Stack'
@@ -21,6 +23,7 @@ import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
+import { StateIcon } from '../../components/StateIcon'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import type { BranchesQuery, GitLabBranch } from '../../types/gitlab'
@@ -107,9 +110,9 @@ function BranchRow({ branch, onOpenInGitLab, onShowMergeRequests }: { branch: Gi
   return <ListRow actions={actions} ariaLabel={`${branch.name}のMRを表示`} leading={<AltRouteRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
       <Tooltip enterDelay={600} title={branch.name}><Typography noWrap sx={{ flex: 1, fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{branch.name}</Typography></Tooltip>
-      {branch.default ? <Chip label="デフォルト" size="small" variant="outlined" /> : null}
-      {branch.protected ? <Chip label="保護" size="small" variant="outlined" /> : null}
-      {branch.merged ? <Chip label="マージ済み" size="small" variant="outlined" /> : null}
+      {branch.default ? <StateIcon icon={<HomeRoundedIcon fontSize="inherit" />} label="デフォルト" tone="info" /> : null}
+      {branch.protected ? <StateIcon icon={<LockRoundedIcon fontSize="inherit" />} label="保護" tone="warning" /> : null}
+      {branch.merged ? <StateIcon icon={<CallMergeRoundedIcon fontSize="inherit" />} label="マージ済み" tone="secondary" /> : null}
       {branch.commit?.committedDate ? <RelativeTime value={branch.commit.committedDate} /> : null}
     </Stack>
     {branch.commit ? <Typography color="textSecondary" component="div" noWrap sx={{ mt: 0.25 }} title={`${branch.commit.shortId} ${branch.commit.title}${branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}`} variant="caption">

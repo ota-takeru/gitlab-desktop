@@ -9,34 +9,41 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { ReactElement } from 'react'
 
-type Tone = 'success.main' | 'error.main' | 'info.main' | 'warning.main' | 'text.secondary'
+import { StateIcon } from './StateIcon'
+
+type Tone = 'success' | 'error' | 'info' | 'warning' | 'neutral'
 
 const statuses: Record<string, { label: string; tone: Tone; icon: ReactElement }> = {
-  success: { label: '成功', tone: 'success.main', icon: <CheckCircleOutlineRoundedIcon fontSize="inherit" /> },
-  failed: { label: '失敗', tone: 'error.main', icon: <HighlightOffRoundedIcon fontSize="inherit" /> },
-  running: { label: '実行中', tone: 'info.main', icon: <SyncRoundedIcon fontSize="inherit" /> },
-  pending: { label: '待機中', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  created: { label: '待機中', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  preparing: { label: '準備中', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  waiting_for_resource: { label: 'リソース待ち', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  scheduled: { label: '予約済み', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  waiting_for_callback: { label: '応答待ち', tone: 'info.main', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  canceling: { label: 'キャンセル中', tone: 'warning.main', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
-  manual: { label: '手動待ち', tone: 'warning.main', icon: <PauseCircleOutlineRoundedIcon fontSize="inherit" /> },
-  canceled: { label: 'キャンセル', tone: 'warning.main', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
-  skipped: { label: 'スキップ', tone: 'text.secondary', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
+  success: { label: '成功', tone: 'success', icon: <CheckCircleOutlineRoundedIcon fontSize="inherit" /> },
+  failed: { label: '失敗', tone: 'error', icon: <HighlightOffRoundedIcon fontSize="inherit" /> },
+  running: { label: '実行中', tone: 'info', icon: <SyncRoundedIcon fontSize="inherit" /> },
+  pending: { label: '待機中', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  created: { label: '待機中', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  preparing: { label: '準備中', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  waiting_for_resource: { label: 'リソース待ち', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  scheduled: { label: '予約済み', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  waiting_for_callback: { label: '応答待ち', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  canceling: { label: 'キャンセル中', tone: 'warning', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
+  manual: { label: '手動待ち', tone: 'warning', icon: <PauseCircleOutlineRoundedIcon fontSize="inherit" /> },
+  canceled: { label: 'キャンセル', tone: 'warning', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
+  skipped: { label: 'スキップ', tone: 'neutral', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
 }
 
 /**
  * Pipeline or job state as icon plus text, so the state never depends on color alone.
  * `prefix` names what the state belongs to; a job list leaves it empty.
+ * `compact` drops the text for dense rows: the icon's shape and colour carry the state,
+ * and the name stays in the tooltip and the accessible name.
  */
-export function PipelineStatus({ prefix = 'CI', status }: { prefix?: string; status: string | null }) {
+export function PipelineStatus({ compact = false, prefix = 'CI', status }: { compact?: boolean; prefix?: string; status: string | null }) {
   const known = status ? statuses[status] : undefined
   const label = `${prefix ? `${prefix} ` : ''}${known?.label ?? (status || '状態不明')}`
+  const icon = known?.icon ?? <HelpOutlineRoundedIcon fontSize="inherit" />
+  const tone = known?.tone ?? 'neutral'
+  if (compact) return <StateIcon icon={icon} label={label} spinning={status === 'running'} tone={tone} />
   return (
-    <Stack aria-label={label} component="span" direction="row" role="img" spacing={0.5} sx={{ alignItems: 'center', color: known?.tone ?? 'text.secondary', display: 'inline-flex', fontSize: 16, whiteSpace: 'nowrap' }}>
-      {known?.icon ?? <HelpOutlineRoundedIcon fontSize="inherit" />}
+    <Stack aria-label={label} component="span" direction="row" role="img" spacing={0.5} sx={{ alignItems: 'center', color: tone === 'neutral' ? 'text.secondary' : `${tone}.main`, display: 'inline-flex', fontSize: 16, whiteSpace: 'nowrap' }}>
+      {icon}
       <Typography aria-hidden color="inherit" component="span" variant="caption">{label}</Typography>
     </Stack>
   )

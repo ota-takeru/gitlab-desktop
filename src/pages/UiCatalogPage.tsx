@@ -1,11 +1,19 @@
+import CallMergeRoundedIcon from '@mui/icons-material/CallMergeRounded'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
+import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined'
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
+import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import MarkChatUnreadRoundedIcon from '@mui/icons-material/MarkChatUnreadRounded'
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import SourceOutlinedIcon from '@mui/icons-material/SourceOutlined'
+import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined'
+import ThumbUpRoundedIcon from '@mui/icons-material/ThumbUpRounded'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Chip from '@mui/material/Chip'
@@ -28,7 +36,7 @@ import { useConfirm, useNotify } from '../components/Feedback'
 import { AppErrorFallback } from '../components/AppErrorBoundary'
 import { LabelChip } from '../components/LabelChip'
 import { ListRow } from '../components/ListRow'
-import { MergeRequestStateIcon } from '../components/MergeRequestStateIcon'
+import { MergeRequestStateGlyph, MergeRequestStateIcon } from '../components/MergeRequestStateIcon'
 import { Kbd, PaneEmpty, PaneHeader, PaneStatus } from '../components/Pane'
 import { Pager } from '../components/Pager'
 import { PipelineStatus } from '../components/PipelineStatus'
@@ -36,6 +44,7 @@ import { RelativeTime } from '../components/RelativeTime'
 import { ReactionBar } from '../components/ReactionBar'
 import { ResolveToggle } from '../components/ResolveToggle'
 import { SettingsSection } from '../components/SettingsSection'
+import { StateIcon } from '../components/StateIcon'
 import { StatusBar } from '../components/StatusBar'
 import { StatusPill } from '../components/StatusPill'
 import { UserAvatar } from '../components/UserAvatar'
@@ -139,7 +148,7 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
               </Button>
             </Stack>
             <Autocomplete disabled getOptionLabel={(option) => option.name} options={[{ id: '42', name: '検証ユーザー @sample' }]} renderInput={(params) => <TextField {...params} label="ユーザー候補（サンプル）" />} size="small" />
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><Chip color="info" label="未読 3" size="small" variant="outlined" /><Chip label="Draft" size="small" variant="outlined" /><StatusPill label="Open" size="small" subtle tone="success" /></Stack>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><Chip aria-label="未読 3" color="primary" icon={<MarkChatUnreadRoundedIcon />} label={3} size="small" /><Chip icon={<EditNoteRoundedIcon />} label="Draft" size="small" variant="outlined" /><StatusPill icon={<MergeRequestStateGlyph state="opened" />} label="Open" size="small" subtle tone="success" /></Stack>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>{/* Label colours are GitLab data; theme colours stand in for them here. */}<LabelChip color={theme.palette.error.main} name="bug" /><LabelChip color={theme.palette.info.main} name="review" /><LabelChip name="色不明のラベル" /></Stack>
           </Stack>
         </CardContent>
@@ -186,6 +195,22 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
               <PipelineStatus status="manual" />
               <PipelineStatus status={null} />
               <PipelineStatus prefix="" status="canceled" />
+            </Stack>
+            <Typography color="textSecondary" variant="caption">一覧の行では状態を文字ではなく形・色・数で示す（名前はツールチップ）</Typography>
+            <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
+              <MergeRequestStateIcon state="opened" />
+              <StateIcon icon={<EditNoteRoundedIcon fontSize="inherit" />} label="Draft" />
+              <PipelineStatus compact status="success" />
+              <PipelineStatus compact status="failed" />
+              <PipelineStatus compact status="running" />
+              <PipelineStatus compact status="manual" />
+              <StateIcon count={0} icon={<ThumbUpOutlinedIcon fontSize="inherit" />} label="未承認" />
+              <StateIcon count={2} icon={<ThumbUpOutlinedIcon fontSize="inherit" />} label="2人が承認済み" tone="success" />
+              <StateIcon count={2} icon={<ThumbUpRoundedIcon fontSize="inherit" />} label="自分が承認済み" tone="success" />
+              <StateIcon icon={<HomeRoundedIcon fontSize="inherit" />} label="デフォルト" tone="info" />
+              <StateIcon icon={<LockRoundedIcon fontSize="inherit" />} label="保護" tone="warning" />
+              <StateIcon icon={<CallMergeRoundedIcon fontSize="inherit" />} label="マージ済み" tone="secondary" />
+              <StateIcon icon={<Inventory2OutlinedIcon fontSize="inherit" />} label="アーカイブ済み" />
             </Stack>
             <Pager hasNext hasPrevious onNext={() => undefined} onPrevious={() => undefined} page={2} summary="20件取得" />
           </Stack>

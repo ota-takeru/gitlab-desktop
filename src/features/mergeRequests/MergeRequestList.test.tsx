@@ -515,14 +515,14 @@ describe('MergeRequestList search filters', () => {
     }))
     render(<MergeRequestList onOpenMergeRequest={onOpenMergeRequest} />)
 
-    expect(screen.getByText('Draft')).toBeInTheDocument()
+    expect(screen.getByLabelText('Draft')).toBeInTheDocument()
     expect(screen.getByText('frontend')).toBeInTheDocument()
     expect(screen.getByText('ready')).toBeInTheDocument()
     // Rows name the author only; assignees and reviewers belong to the MR itself.
     expect(screen.queryByText(/担当 担当者|レビュー レビュアー/u)).not.toBeInTheDocument()
-    expect(within(screen.getByRole('list', { name: 'MR検索結果' })).getByText('Open')).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: 'MR検索結果' })).getByLabelText('Open')).toBeInTheDocument()
     expect(screen.getByLabelText('CI 成功')).toBeInTheDocument()
-    expect(screen.getByText('未読 1')).toBeInTheDocument()
+    expect(screen.getByLabelText('未読 1')).toBeInTheDocument()
 
     // A row pins its MR to the sidebar with the title it shows.
     fireEvent.click(screen.getByRole('button', { name: '!3をサイドバーに固定' }))
@@ -613,7 +613,7 @@ describe('MergeRequestList search filters', () => {
     expect(approved).toHaveTextContent('Approved by me')
     expect(screen.getByLabelText('自分が承認済み', { selector: '[role="img"]' })).toBeInTheDocument()
     expect(screen.getByLabelText('1人が承認済み')).toBeInTheDocument()
-    expect(screen.getByText('未承認')).toBeInTheDocument()
+    expect(screen.getByLabelText('未承認')).toBeInTheDocument()
   })
 
   it('shows rows while approvals load, groups them once approvals arrive, and falls back to a flat list when they fail', () => {

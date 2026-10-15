@@ -10,7 +10,10 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
+import MarkChatUnreadRoundedIcon from '@mui/icons-material/MarkChatUnreadRounded'
 import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined'
+import ThumbUpRoundedIcon from '@mui/icons-material/ThumbUpRounded'
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import Alert from '@mui/material/Alert'
@@ -35,15 +38,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { ListRow } from '../../components/ListRow'
+import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { delayedRevealSx, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
-import { StatusPill } from '../../components/StatusPill'
+import { StateIcon } from '../../components/StateIcon'
 import type { MergeRequest, MergeRequestState, MergeRequestsQuery, MrApprovalsQuery } from '../../types/gitlab'
-import { formatFetchedAt, formatMergeRequestState, mergeRequestStateTone } from '../../lib/format'
+import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, writeSavedSearches } from '../shared/preferences'
@@ -609,6 +613,8 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
         {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
         {pinned ? null : pinButton}
       </>}
+      // The state leads the row as an icon, so a list reads by shape and colour before words.
+      leading={<MergeRequestStateIcon state={mergeRequest.state} />}
       // A pinned row keeps its pin in view: the mark and the button to unpin are one control.
       stickyActions={pinned ? pinButton : undefined}
       mrId={`${mergeRequest.projectId}-${mergeRequest.iid}`}
@@ -628,12 +634,12 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
       </Stack>
       <Typography sx={{ display: '-webkit-box', mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{listTitle(mergeRequest)}</Typography>
       <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, pr: ROW_ACTIONS_SPACE, rowGap: 0.25 }}>
-        <StatusPill label={formatMergeRequestState(mergeRequest.state)} tone={mergeRequestStateTone(mergeRequest.state)} />
+        {/* States first, as icons with counts; their names are in the tooltips. */}
+        {mergeRequest.draft ? <StateIcon icon={<EditNoteRoundedIcon fontSize="inherit" />} label="Draft" /> : null}
+        {pipeline ? <PipelineStatus compact status={pipeline.status} /> : null}
         <ApprovalStatus approval={approval} pending={approvalPending} state={mergeRequest.state} />
+        {hasUnread ? <Tooltip title={`未読 ${unread}件（既知のコメントの未読数です。未取得のコメントは含みません）`}><Chip aria-label={`未読 ${unread}`} color="primary" icon={<MarkChatUnreadRoundedIcon />} label={unread} size="small" /></Tooltip> : null}
         <Typography sx={{ fontWeight: 500 }} variant="caption">{mergeRequest.author.name}</Typography>
-        {mergeRequest.draft ? <Chip label="Draft" size="small" variant="outlined" /> : null}
-        {pipeline ? <PipelineStatus status={pipeline.status} /> : null}
-        {hasUnread ? <Tooltip title="既知のコメントの未読数です。未取得のコメントは含みません。"><Chip color="primary" label={`未読 ${unread}`} size="small" /></Tooltip> : null}
         {labels.slice(0, ROW_LABELS).map((label) => <Chip key={label} label={label} size="small" sx={{ maxWidth: '100%' }} variant="outlined" />)}
         {hiddenLabels.length ? <Tooltip title={hiddenLabels.join(', ')}><Chip aria-label={`ほかのラベル ${hiddenLabels.length}件: ${hiddenLabels.join(', ')}`} label={`+${hiddenLabels.length}`} size="small" variant="outlined" /></Tooltip> : null}
       </Stack>
@@ -643,21 +649,15 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
 
 /** Approval beside the state: who approved, or that an open MR has none yet. A placeholder while loading; nothing when unknown. */
 function ApprovalStatus({ approval, pending, state }: { approval: RowApproval | null; pending: boolean; state: string }) {
-  if (!approval && pending) return <Box aria-label="承認状態を確認中" role="img" sx={{ bgcolor: 'action.hover', borderRadius: 1, flexShrink: 0, height: 10, width: 48 }} />
+  if (!approval && pending) return <Box aria-label="承認状態を確認中" role="img" sx={{ bgcolor: 'action.hover', borderRadius: 1, flexShrink: 0, height: 10, width: 24 }} />
   if (!approval) return null
   if (approval.count === 0) {
     if (state !== 'opened') return null
-    return <Typography color="textSecondary" variant="caption">未承認</Typography>
+    return <StateIcon count={0} icon={<ThumbUpOutlinedIcon fontSize="inherit" />} label="未承認" />
   }
   const label = approval.byMe ? '自分が承認済み' : `${approval.count}人が承認済み`
-  return (
-    <Tooltip title={approval.byMe && approval.count > 1 ? `自分を含む${approval.count}人が承認済み` : label}>
-      <Stack aria-label={label} direction="row" role="img" spacing={0.25} sx={{ alignItems: 'center', color: 'success.main', flexShrink: 0 }}>
-        <ThumbUpOutlinedIcon sx={{ fontSize: 16 }} />
-        <Typography color="inherit" sx={{ fontWeight: 500 }} variant="caption">{approval.byMe ? '承認済み（自分）' : `承認済み ${approval.count}`}</Typography>
-      </Stack>
-    </Tooltip>
-  )
+  // A filled thumb is the user's own approval; the count is everyone's.
+  return <StateIcon count={approval.count} icon={approval.byMe ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={label} tone="success" />
 }
 
 function LoadingRows() {

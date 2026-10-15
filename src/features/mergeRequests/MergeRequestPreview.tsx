@@ -10,6 +10,7 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StatusPill } from '../../components/StatusPill'
 import { formatMergeRequestState, mergeRequestStateTone } from '../../lib/format'
@@ -63,7 +64,7 @@ export function MergeRequestPreview({ approval, closeAt, mergeRequest, onClose, 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
         <Typography component="h2" sx={{ overflowWrap: 'anywhere' }} variant="h2">{mergeRequest.title}</Typography>
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
-          <StatusPill label={formatMergeRequestState(mergeRequest.state)} tone={mergeRequestStateTone(mergeRequest.state)} />
+          <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} tone={mergeRequestStateTone(mergeRequest.state)} />
           {approval ? <Typography color="textSecondary" variant="caption">{approval}</Typography> : null}
           <Typography sx={{ fontWeight: 500 }} variant="caption">{mergeRequest.author.name}</Typography>
           <RelativeTime prefix="更新" value={mergeRequest.updatedAt} />

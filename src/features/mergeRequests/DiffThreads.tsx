@@ -1,12 +1,13 @@
+import ScheduleSendOutlinedIcon from '@mui/icons-material/ScheduleSendOutlined'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 
 import { RelativeTime } from '../../components/RelativeTime'
 import { ResolveToggle } from '../../components/ResolveToggle'
+import { StateIcon } from '../../components/StateIcon'
 import type { Discussion, Draft, Note, Position } from '../../types/gitlab'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import type { ParsedLine } from './diffParser'
@@ -55,7 +56,7 @@ export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadVi
       {threads.map((discussion) => <DiffThread actions={view?.actions} discussion={discussion} key={discussion.id} onOpen={view?.onOpen} sessionId={view?.sessionId} suggestionActions={view?.suggestionActions} />)}
       {drafts.map((draft) => <Box aria-label="未公開のコメント" component="article" key={draft.id} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'warning.main', borderRadius: 1, borderStyle: 'dashed', px: 1.5, py: 1 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <Chip color="warning" label="未公開レビュー" size="small" variant="outlined" />
+          <StateIcon icon={<ScheduleSendOutlinedIcon fontSize="inherit" />} label="未公開レビュー" tone="warning" />
           {draft.position?.lineRange ? <Typography color="textSecondary" variant="caption">{positionLines(draft.position)}行目</Typography> : null}
         </Stack>
         <NoteBody note={{ body: draft.body }} size="body2" />
