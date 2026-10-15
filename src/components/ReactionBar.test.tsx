@@ -39,19 +39,27 @@ it('shows one chip per emoji, marks the own ones and toggles the own reaction', 
   expect(onToggle).toHaveBeenLastCalledWith('party_parrot', true)
 })
 
-it('offers the common reactions and removes one the user already gave', () => {
+it('opens the emoji picker and removes one the user already gave', async () => {
+  globalThis.localStorage.clear()
   const onToggle = vi.fn()
   render(<ReactionBar awards={awards} currentUserId="42" label="Aliceのコメント" onToggle={onToggle} />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Aliceのコメントにリアクションを追加' }))
-  const menu = screen.getByRole('menu')
-  expect(within(menu).getAllByRole('menuitem')).toHaveLength(8)
-  fireEvent.click(within(menu).getByRole('menuitem', { name: /rocket/u }))
+  const picker = screen.getByRole('dialog', { name: 'Aliceのコメントに付ける絵文字' })
+  fireEvent.click(await within(picker).findByRole('button', { name: /:rocket:/u }))
   expect(onToggle).toHaveBeenLastCalledWith('rocket', true)
 
   fireEvent.click(screen.getByRole('button', { name: 'Aliceのコメントにリアクションを追加' }))
-  fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /tada（付けています）/u }))
+  const tada = await within(screen.getByRole('dialog')).findByRole('button', { name: /:tada:）、付けています/u })
+  expect(tada).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.click(tada)
   expect(onToggle).toHaveBeenLastCalledWith('tada', false)
+})
+
+it('shows less common emoji others gave once the full list has loaded', async () => {
+  render(<ReactionBar awards={[{ name: 'flag_jp', user: alice }, { name: 'thumbsup_tone2', user: alice }]} currentUserId="42" label="このMR" onToggle={vi.fn()} />)
+  expect(await screen.findByRole('button', { name: '🇯🇵 1人' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '👍🏼 1人' })).toBeInTheDocument()
 })
 
 it('disables every control while writes are stopped', () => {

@@ -804,7 +804,7 @@ describe('reactions and To-Dos', () => {
 
     // Each comment by Colleague has its own add button; the first is the oldest.
     fireEvent.click(screen.getAllByRole('button', { name: 'Colleagueのコメントにリアクションを追加' })[0])
-    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /rocket/u }))
+    fireEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: /:rocket:/u }))
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'addAward', name: 'rocket' }), undefined))
   })
 

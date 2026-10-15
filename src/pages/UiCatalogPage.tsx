@@ -432,7 +432,7 @@ function CatalogFrameParts() {
           <CardContent sx={{ p: 2.5 }}>
             <Stack spacing={2}>
               <Typography component="h2" variant="h2">ReactionBar</Typography>
-              <Typography color="textSecondary" variant="caption">コメントとMR説明の絵文字リアクション。自分が付けたものは選択状態、ツールチップに付けた人（サンプル）</Typography>
+              <Typography color="textSecondary" variant="caption">コメントとMR説明の絵文字リアクション。自分が付けたものは選択状態、ツールチップに付けた人（サンプル）。＋で検索・分類・グリッドの絵文字ピッカーを開く</Typography>
               <Divider />
               <CatalogReactions />
               <ReactionBar awards={[]} currentUserId="42" disabled label="リアクションのないコメント" onToggle={() => undefined} />
@@ -467,6 +467,7 @@ function CatalogReactions() {
     { name: 'thumbsup', user: { id: '7', name: '佐藤', username: 'sato' } },
     { name: 'thumbsup', user: me },
     { name: 'eyes', user: { id: '8', name: '鈴木', username: 'suzuki' } },
+    { name: 'sushi', user: { id: '8', name: '鈴木', username: 'suzuki' } },
     { name: 'party_parrot', user: { id: '7', name: '佐藤', username: 'sato' } },
   ])
   return <ReactionBar awards={awards} currentUserId={me.id} label="サンプルのコメント" onToggle={(name, add) => setAwards((current) => add ? [...current, { name, user: me }] : current.filter((award) => !(award.name === name && award.user.id === me.id)))} />

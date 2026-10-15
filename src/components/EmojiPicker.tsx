@@ -1,0 +1,186 @@
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import Box from '@mui/material/Box'
+import CircularProgress from '@mui/material/CircularProgress'
+import InputAdornment from '@mui/material/InputAdornment'
+import Popover from '@mui/material/Popover'
+import Stack from '@mui/material/Stack'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+
+import { EMOJI_CATEGORIES, REACTION_CHOICES, readRecentReactions, rememberRecentReaction, searchEmoji, useEmojiCatalog, type EmojiChoice } from '../lib/awardEmoji'
+
+const COLUMNS = 9
+const CELL = 34
+/** One emoji per category for its tab, in EMOJI_CATEGORIES order. */
+const CATEGORY_ICONS = ['😀', '🙋', '🐱', '🍔', '🚗', '⚽', '💡', '💕']
+const RECENT = 'recent'
+
+/**
+ * Picks an emoji reaction: a search over GitLab's names and Japanese words,
+ * category tabs and a grid. The user's own reactions are marked; picking one
+ * of them asks the caller to remove it. Arrow keys move through the grid.
+ */
+export function EmojiPicker({ anchorEl, label, mine, onClose, onPick }: {
+  anchorEl: HTMLElement | null
+  /** What the reaction is for, for the dialog's accessible name. */
+  label: string
+  /** The names the user has already given. */
+  mine: ReadonlySet<string>
+  onClose: () => void
+  onPick: (name: string) => void
+}) {
+  return <Popover
+    anchorEl={anchorEl}
+    anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
+    onClose={onClose}
+    open={Boolean(anchorEl)}
+    slotProps={{ paper: { 'aria-label': `${label}に付ける絵文字`, role: 'dialog' } }}
+  >
+    {/* Mounted only while open, so the search and the tab start fresh each time. */}
+    {anchorEl ? <PickerBody mine={mine} onPick={(name) => {
+      rememberRecentReaction(name)
+      onPick(name)
+    }} /> : null}
+  </Popover>
+}
+
+function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name: string) => void }) {
+  const { catalog, failed } = useEmojiCatalog()
+  const [query, setQuery] = useState('')
+  const [tab, setTab] = useState<number | typeof RECENT>(RECENT)
+  const [active, setActive] = useState(0)
+  const [previewed, setPreviewed] = useState<EmojiChoice | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const recent = useMemo(() => [...new Set([...readRecentReactions(), ...REACTION_CHOICES])], [])
+
+  const searching = query.trim() !== ''
+  const shown = useMemo(() => {
+    if (!catalog) return []
+    if (searching) return searchEmoji(catalog.choices, query)
+    if (tab === RECENT) return recent.flatMap((name) => catalog.choiceByName.get(name) ?? [])
+    return catalog.choices.filter((choice) => choice.category === tab)
+  }, [catalog, query, recent, searching, tab])
+
+  const focusCell = (index: number) => {
+    const next = Math.max(0, Math.min(shown.length - 1, index))
+    setActive(next)
+    const cell = gridRef.current?.querySelectorAll<HTMLButtonElement>('button')[next]
+    cell?.focus()
+    cell?.scrollIntoView?.({ block: 'nearest' })
+  }
+  const moveInGrid = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowDown: COLUMNS, ArrowLeft: -1, ArrowRight: 1, ArrowUp: -COLUMNS, End: shown.length, Home: -shown.length }[event.key]
+    if (step === undefined) return
+    event.preventDefault()
+    if (event.key === 'ArrowUp' && active < COLUMNS) {
+      searchRef.current?.focus()
+      return
+    }
+    focusCell(active + step)
+  }
+  const leaveSearch = (event: KeyboardEvent<HTMLInputElement>) => {
+    // Enter while an IME is converting confirms the conversion, not a pick.
+    if (event.nativeEvent.isComposing) return
+    if (event.key === 'ArrowDown' && shown.length) {
+      event.preventDefault()
+      focusCell(0)
+    } else if (event.key === 'Enter' && searching && shown[0]) {
+      event.preventDefault()
+      onPick(shown[0].name)
+    }
+  }
+  const preview = previewed ?? shown[active] ?? null
+
+  return <Stack sx={{ width: COLUMNS * CELL + 40 }}>
+    <Box sx={{ pt: 1.5, px: 1.5 }}>
+      <TextField
+        autoFocus
+        fullWidth
+        inputRef={searchRef}
+        onChange={(event) => {
+          setQuery(event.target.value)
+          setActive(0)
+        }}
+        onKeyDown={leaveSearch}
+        placeholder="検索（いいね、thumbsup など）"
+        size="small"
+        slotProps={{
+          htmlInput: { 'aria-label': '絵文字を検索' },
+          input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> },
+        }}
+        value={query}
+      />
+    </Box>
+    <Tabs
+      aria-label="絵文字の分類"
+      onChange={(_, value: number | typeof RECENT) => {
+        setTab(value)
+        setQuery('')
+        setActive(0)
+      }}
+      sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, px: 1, '& .MuiTab-root': { fontSize: 18, minHeight: 36, minWidth: 0, px: 0 } }}
+      value={searching ? false : tab}
+      variant="fullWidth"
+    >
+      <Tab aria-label="よく使う" icon={<HistoryRoundedIcon fontSize="small" />} title="よく使う" value={RECENT} />
+      {EMOJI_CATEGORIES.map((name, index) => <Tab aria-label={name} key={name} label={CATEGORY_ICONS[index]} title={name} value={index} />)}
+    </Tabs>
+    <Box onKeyDown={moveInGrid} ref={gridRef} sx={{ height: CELL * 7 + 16, overflowY: 'auto', px: 1.5, py: 1, scrollbarGutter: 'stable' }}>
+      {!catalog ? <Stack spacing={1} sx={{ alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        {failed
+          ? <Typography color="error" variant="body2">絵文字の一覧を読み込めませんでした。閉じて開き直すと再試行します。</Typography>
+          : <><CircularProgress size={20} /><Typography color="textSecondary" variant="caption">絵文字を読み込み中…</Typography></>}
+      </Stack> : shown.length === 0 ? <Typography color="textSecondary" sx={{ pt: 2, textAlign: 'center' }} variant="body2">
+        「{query.trim()}」に一致する絵文字はありません
+      </Typography> : <Box aria-label={searching ? '検索結果' : tab === RECENT ? 'よく使う' : EMOJI_CATEGORIES[tab]} role="group" sx={{ display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, ${CELL}px)` }}>
+        {shown.map((choice, index) => {
+          const given = mine.has(choice.name)
+          return <Box
+            aria-label={`${choice.emoji} ${choice.label}（:${choice.name}:）${given ? '、付けています' : ''}`}
+            aria-pressed={given}
+            component="button"
+            key={choice.name}
+            onClick={() => onPick(choice.name)}
+            onFocus={() => setActive(index)}
+            onMouseEnter={() => setPreviewed(choice)}
+            onMouseLeave={() => setPreviewed(null)}
+            sx={{
+              alignItems: 'center',
+              bgcolor: given ? 'action.selected' : 'transparent',
+              border: 0,
+              borderRadius: 1,
+              boxShadow: (theme) => given ? `inset 0 0 0 1px ${theme.palette.primary.main}` : 'none',
+              color: 'text.primary',
+              cursor: 'pointer',
+              display: 'flex',
+              fontSize: 20,
+              height: CELL,
+              justifyContent: 'center',
+              p: 0,
+              width: CELL,
+              '&:hover': { bgcolor: 'action.hover' },
+              '&:focus': { outline: 'none' },
+              '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` },
+            }}
+            tabIndex={index === active ? 0 : -1}
+            type="button"
+          >{choice.emoji}</Box>
+        })}
+      </Box>}
+    </Box>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderColor: 'divider', borderTop: 1, minHeight: 48, px: 1.5, py: 0.5 }}>
+      {preview ? <>
+        <Box aria-hidden sx={{ fontSize: 28, lineHeight: 1 }}>{preview.emoji}</Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography noWrap variant="body2">{preview.label}{mine.has(preview.name) ? '（付けています）' : ''}</Typography>
+          <Typography color="textSecondary" noWrap sx={{ display: 'block', fontFamily: 'code.fontFamily' }} variant="caption">:{preview.name}:</Typography>
+        </Box>
+      </> : null}
+    </Stack>
+  </Stack>
+}
