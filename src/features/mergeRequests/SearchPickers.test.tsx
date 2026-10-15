@@ -30,7 +30,7 @@ describe('SearchPickers', () => {
     }))
   })
 
-  it('debounces user candidate search, requires two characters, and returns only the selected ID', async () => {
+  it('debounces user candidate search, requires two characters, and returns the selected ID with the name of the person', async () => {
     const onChange = vi.fn()
     render(<UserSearchPicker ariaLabel="MRの作者" label="作者" onChange={onChange} value="" />)
     const input = screen.getByRole('combobox', { name: 'MRの作者' })
@@ -43,7 +43,7 @@ describe('SearchPickers', () => {
     await waitFor(() => expect(queryMock).toHaveBeenCalledWith('session-1', expect.objectContaining({ kind: 'users', page: 1, search: 'Al' })))
     fireEvent.click(screen.getByRole('option', { name: /Alice Example/ }))
 
-    expect(onChange).toHaveBeenCalledWith('17')
+    expect(onChange).toHaveBeenCalledWith('17', 'Alice Example')
   })
 
   it('searches projects with unrestricted membership only when opened on an empty term', async () => {
@@ -61,7 +61,7 @@ describe('SearchPickers', () => {
     }))
     fireEvent.click(screen.getByRole('option', { name: /Desktop/ }))
 
-    expect(onChange).toHaveBeenCalledWith('77')
+    expect(onChange).toHaveBeenCalledWith('77', 'team/desktop')
   })
 
   it('debounces group candidate search, requires two characters, and returns the ID with the full path', async () => {

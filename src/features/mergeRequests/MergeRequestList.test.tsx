@@ -71,6 +71,16 @@ function latestHookMrsQuery(): MergeRequestsQuery | null {
   return latestMrsQuery(queryMock.mock.calls.map((call) => call[1]))
 }
 
+/** Opens the editor of one condition from 「＋条件を追加」. */
+function addCondition(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+  fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name }))
+}
+
+function conditionTags(): string[] {
+  return Array.from(screen.getByLabelText('適用中の条件').querySelectorAll('.MuiChip-label'), (label) => label.textContent ?? '')
+}
+
 describe('MergeRequestList search filters', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -99,17 +109,18 @@ describe('MergeRequestList search filters', () => {
     fireEvent.change(queueSearch, { target: { value: 'cache' } })
     fireEvent.click(screen.getByRole('button', { name: 'すべてのMRから「cache」を検索' }))
     expect(onSearchAll).toHaveBeenCalledWith('cache')
-    expect(screen.getByRole('combobox', { name: 'MRの状態' })).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'レビュー担当' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'MR担当者' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '詳細条件' })).not.toBeInTheDocument()
+    // The queue's person is a tag that cannot be removed, and only the state can be added.
+    expect(conditionTags()).toEqual(['自分がレビュアー（固定）', '状態: Open'])
+    expect(screen.queryByLabelText('固定の条件の絞り込みを解除')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['状態'])
     expect(screen.queryByRole('button', { name: /保存済み検索を管理/u })).not.toBeInTheDocument()
     expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42', state: 'opened' })
 
     view.unmount()
     render(<MergeRequestList initialParams={{ state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
-    expect(screen.getByRole('combobox', { name: 'レビュー担当' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '詳細条件' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['状態', 'レビュアー', '担当者', '作者', 'ラベル', 'ソースブランチ', 'ターゲットブランチ', '更新日', 'プロジェクト', 'グループ'])
   })
 
   it('shows a project branch as a chip that returns to all the project MRs when removed', () => {
@@ -118,8 +129,11 @@ describe('MergeRequestList search filters', () => {
 
     expect(screen.getByText('ブランチ: feature/search')).toBeInTheDocument()
     expect(latestHookMrsQuery()).toMatchObject({ projectId: '9', sourceBranch: 'feature/search' })
-    // The chip shows the branch, so the detailed conditions stay closed and unmarked.
-    expect(screen.getByRole('button', { name: '詳細条件' })).toHaveAttribute('aria-expanded', 'false')
+    // The project's own list keeps its project, so neither scope can be added.
+    fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'プロジェクト' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'グループ' })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
 
     fireEvent.click(screen.getByLabelText('ブランチの絞り込みを解除'))
     expect(screen.queryByText('ブランチ: feature/search')).not.toBeInTheDocument()
@@ -163,12 +177,15 @@ describe('MergeRequestList search filters', () => {
       state: 'opened',
       targetBranch: 'main',
     })
-    // Applied conditions show as chips; the form to edit them opens from a chip.
-    expect(within(screen.getByLabelText('適用中の条件')).getAllByRole('button').map((chip) => chip.textContent)).toEqual(['グループ: team/platform', 'ラベル: bug, ready', 'ブランチ: feature/search', 'ターゲット: main'])
+    // Every applied condition is a tag; a tag opens the editor of its condition.
+    expect(conditionTags()).toEqual(['状態: Open', 'グループ: team/platform', 'ラベル: bug, ready', 'ブランチ: feature/search', 'ターゲット: main'])
     fireEvent.click(screen.getByText('ラベル: bug, ready'))
+    expect(within(screen.getByRole('dialog', { name: 'ラベルの条件' })).getByRole('textbox', { name: 'MRのラベル' })).toHaveValue('bug, ready')
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    fireEvent.click(screen.getByText('グループ: team/platform'))
     // A path saved before groups were chosen from candidates stays selected as it is.
     expect(screen.getByRole('combobox', { name: 'MRのグループ' })).toHaveValue('team/platform · 保存済みのグループパス')
-    expect(screen.getByRole('textbox', { name: 'MRのラベル' })).toHaveValue('bug, ready')
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
 
     fireEvent.click(screen.getByRole('button', { name: '検索' }))
     expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -184,13 +201,12 @@ describe('MergeRequestList search filters', () => {
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'groups' ? { ...emptyResult, data: [groupCandidate] } : emptyResult)
     render(<MergeRequestList initialParams={{ projectId: '77', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '詳細条件' }))
+    addCondition('グループ')
     const picker = screen.getByRole('combobox', { name: 'MRのグループ' })
     fireEvent.change(picker, { target: { value: 'pl' } })
     await waitFor(() => expect(queryMock).toHaveBeenCalledWith('session-1', { kind: 'groups', page: 1, search: 'pl' }))
+    // Choosing the group applies it at once.
     fireEvent.click(await screen.findByRole('option', { name: /team\/platform/u }))
-    expect(picker).toHaveValue('Platform · team/platform · ID 12')
-    fireEvent.click(screen.getByRole('button', { name: '検索' }))
 
     expect(latestHookMrsQuery()).toMatchObject({ groupId: '12', state: 'opened' })
     expect(latestHookMrsQuery()).not.toHaveProperty('projectId')
@@ -237,13 +253,15 @@ describe('MergeRequestList search filters', () => {
   it('saves group, label, and branch filters with the current search', async () => {
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'groups' ? { ...emptyResult, data: [groupCandidate] } : emptyResult)
     render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: '詳細条件' }))
+    addCondition('グループ')
     fireEvent.change(screen.getByRole('combobox', { name: 'MRのグループ' }), { target: { value: 'plat' } })
     fireEvent.click(await screen.findByRole('option', { name: /team\/platform/u }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRのラベル' }), { target: { value: 'bug, ready' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRのソースブランチ' }), { target: { value: 'feature/cache' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRのターゲットブランチ' }), { target: { value: 'main' } })
-    fireEvent.click(screen.getByRole('button', { name: '検索' }))
+    for (const [name, value] of [['ラベル', 'bug, ready'], ['ソースブランチ', 'feature/cache'], ['ターゲットブランチ', 'main']]) {
+      addCondition(name)
+      fireEvent.change(screen.getByRole('textbox', { name: `MRの${name}` }), { target: { value } })
+      fireEvent.click(screen.getByRole('button', { name: '適用' }))
+    }
+    expect(conditionTags()).toEqual(['グループ: team/platform', 'ラベル: bug, ready', 'ブランチ: feature/cache', 'ターゲット: main'])
     fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/ }))
     fireEvent.click(screen.getByRole('button', { name: '検索を保存' }))
 
@@ -314,7 +332,7 @@ describe('MergeRequestList search filters', () => {
     expect(updated?.textContent).toMatch(/^更新 /u)
   })
 
-  it('applies sort and state pills at once, leaving typed text for Enter, and preserves them in URL state', () => {
+  it('applies the order and the state at once, leaving typed text for Enter, and preserves them in URL state', () => {
     const onSearchStateChange = vi.fn()
     render(<MergeRequestList onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
 
@@ -324,39 +342,44 @@ describe('MergeRequestList search filters', () => {
     expect(latestHookMrsQuery()).toMatchObject({ orderBy: 'created_at', search: '' })
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '並び順の方向' }))
     fireEvent.click(screen.getByRole('option', { name: '古い順' }))
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'MRの状態' }))
-    fireEvent.click(screen.getByRole('option', { name: 'Merged' }))
+    addCondition('状態')
+    fireEvent.click(within(screen.getByRole('dialog', { name: '状態の条件' })).getByRole('menuitem', { name: 'Merged' }))
+    expect(conditionTags()).toEqual(['状態: Merged'])
 
     expect(latestHookMrsQuery()).toMatchObject({ orderBy: 'created_at', search: '', sort: 'asc', state: 'merged' })
     expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ orderBy: 'created_at', sort: 'asc', state: 'merged' }))
     expect(onSearchStateChange.mock.lastCall?.[0]).not.toHaveProperty('search')
   })
 
-  it('opens the person picker without an ID until a person is chosen, then applies the person', async () => {
+  it('adds a reviewer only once a person is chosen, and names the person in the tag', async () => {
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'users'
       ? { ...emptyResult, data: [{ id: '17', name: 'Alice Example', username: 'alice' }] }
       : emptyResult)
     render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
 
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'レビュー担当' }))
-    fireEvent.click(screen.getByRole('option', { name: 'レビュアーを指定' }))
+    addCondition('レビュアー')
     const picker = screen.getByRole('combobox', { name: 'MRのレビュアー' })
     expect(picker).toHaveValue('')
     expect(latestHookMrsQuery()).not.toHaveProperty('reviewerId')
-    fireEvent.click(screen.getByRole('button', { name: '検索' }))
-    expect(screen.queryByText(/レビュー担当者ID/u)).not.toBeInTheDocument()
 
     fireEvent.change(picker, { target: { value: 'Al' } })
     await waitFor(() => expect(screen.getByRole('option', { name: /Alice Example/u })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('option', { name: /Alice Example/u }))
     expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '17' })
+    expect(conditionTags()).toEqual(['レビュアー: Alice Example'])
+
+    // 「自分」 sets the reviewer to the connected user.
+    fireEvent.click(screen.getByText('レビュアー: Alice Example'))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'レビュアーの条件' })).getByRole('button', { name: '自分' }))
+    expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42' })
+    expect(conditionTags()).toEqual(['レビュアー: 自分'])
   })
 
   it('passes an explicit assignee ID from the URL to the query', () => {
     render(<MergeRequestList initialParams={{ assignee: '17', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
 
     expect(latestHookMrsQuery()).toMatchObject({ assigneeId: '17', state: 'opened' })
-    expect(screen.getByRole('combobox', { name: 'MRの担当者' })).toHaveValue('ID 17 · 保存済みのID')
+    expect(conditionTags()).toEqual(['状態: Open', '担当者: ID 17'])
   })
 
   it('saves and reapplies the self-assignee filter', async () => {
@@ -429,7 +452,7 @@ describe('MergeRequestList search filters', () => {
     expect(latestHookMrsQuery()).toBeNull()
   })
 
-  it('retains selected project conditions when the filter panel is closed and search is applied', async () => {
+  it('applies a project chosen from candidates and names it in the tag', async () => {
     const onSearchStateChange = vi.fn()
     const seen: unknown[] = []
     queryMock.mockImplementation((_sessionId: string, query: unknown) => {
@@ -437,16 +460,15 @@ describe('MergeRequestList search filters', () => {
       return query && typeof query === 'object' && 'kind' in query && query.kind === 'projects' ? { ...emptyResult, data: [projectCandidate] } : emptyResult
     })
     render(<MergeRequestList onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
-    const advanced = screen.getByRole('button', { name: '詳細条件' })
-    expect(advanced).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(advanced)
+    addCondition('プロジェクト')
     fireEvent.change(screen.getByRole('combobox', { name: 'MRのプロジェクト' }), { target: { value: 'Desk' } })
     await waitFor(() => expect(screen.getByRole('option', { name: /Desktop/ })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('option', { name: /Desktop/ }))
-    fireEvent.click(screen.getByRole('button', { name: '詳細条件' }))
-    expect(advanced).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(screen.getByRole('button', { name: '検索' }))
     expect(onSearchStateChange).toHaveBeenCalledWith(expect.objectContaining({ projectId: '77' }))
+    expect(latestMrsQuery(seen)).toMatchObject({ projectId: '77' })
+    expect(conditionTags()).toEqual(['プロジェクト: team/desktop'])
+    // Typed text then searches within the project.
+    fireEvent.click(screen.getByRole('button', { name: '検索' }))
     expect(latestMrsQuery(seen)).toMatchObject({ projectId: '77' })
   })
 
@@ -695,7 +717,7 @@ describe('MergeRequestList search filters', () => {
     const onSearchStateChange = vi.fn()
     render(<MergeRequestList initialParams={{ labels: 'bug', search: 'cache', state: 'merged' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
     expect(screen.getByText('条件に一致するMRがありません')).toBeInTheDocument()
-    expect(screen.getByText(/適用中の条件: 状態: Merged · 検索語「cache」 · ラベル: bug/u)).toBeInTheDocument()
+    expect(screen.getByText(/適用中の条件: 検索語: cache · 状態: Merged · ラベル: bug/u)).toBeInTheDocument()
     const [headerReset, emptyReset] = screen.getAllByRole('button', { name: '条件をクリア' })
     expect(headerReset).toBeInTheDocument()
     fireEvent.click(emptyReset)
@@ -707,7 +729,7 @@ describe('MergeRequestList search filters', () => {
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'mrs' ? { ...emptyResult, data: [] } : emptyResult)
     render(<MergeRequestList initialParams={{ reviewer: 'self', search: 'cache', state: 'merged' }} onOpenMergeRequest={vi.fn()} />)
 
-    expect(screen.getByText(/自分がレビュアー（固定） · 状態: Merged · 検索語「cache」/u)).toBeInTheDocument()
+    expect(screen.getByText(/自分がレビュアー（固定） · 検索語: cache · 状態: Merged/u)).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: '条件をクリア' })[0])
     expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42', search: '', state: 'opened' })
   })
@@ -723,7 +745,7 @@ describe('MergeRequestList search filters', () => {
     expect(screen.queryByText('MR番号での検索はプロジェクト内で使えます')).not.toBeInTheDocument()
   })
 
-  it('offers a retry beside saved results whose refresh failed, and closes the detailed conditions once applied', () => {
+  it('offers a retry beside saved results whose refresh failed, and closes a condition editor once applied', () => {
     const refresh = vi.fn()
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'mrs'
       ? { ...emptyResult, data: [createMergeRequest()], error: new Error('offline'), refresh, stale: true }
@@ -733,11 +755,11 @@ describe('MergeRequestList search filters', () => {
     fireEvent.click(screen.getByRole('button', { name: '再試行' }))
     expect(refresh).toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: '詳細条件' }))
+    addCondition('ラベル')
     fireEvent.change(screen.getByRole('textbox', { name: 'MRのラベル' }), { target: { value: 'bug' } })
-    fireEvent.click(screen.getByRole('button', { name: '条件を適用' }))
+    fireEvent.submit(screen.getByRole('textbox', { name: 'MRのラベル' }).closest('form') as HTMLFormElement)
     expect(latestHookMrsQuery()).toMatchObject({ labels: ['bug'] })
-    expect(screen.getByRole('button', { name: '詳細条件' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('dialog', { name: 'ラベルの条件' })).not.toBeInTheDocument()
   })
 
   it('rejects a missing current user id rather than querying all merge requests', () => {

@@ -12,7 +12,9 @@ interface SearchPickerProps {
   ariaLabel: string
   label: string
   value: string
-  onChange: (id: string) => void
+  /** `label` is how the choice reads in a condition tag, or empty when it is cleared. */
+  onChange: (id: string, label: string) => void
+  autoFocus?: boolean
 }
 
 interface PickerOption {
@@ -69,6 +71,7 @@ export function ProjectSearchPicker(props: SearchPickerProps) {
     <CandidatePicker
       {...props}
       loading={result.loading || result.refreshing}
+      onChange={(id) => props.onChange(id, result.data?.find((project) => project.id === id)?.pathWithNamespace ?? '')}
       noOptionsText={result.error ? 'プロジェクト候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力するか、開いて候補を表示してください' : '候補がありません'}
       onClose={() => setOpen(false)}
       onOpen={() => { setOpen(true); if (!searchText.trim()) setBrowseEmpty(true) }}
@@ -115,7 +118,8 @@ export function GroupSearchPicker({ onChange, selectedPath, ...props }: Omit<Sea
   )
 }
 
-function CandidatePicker({ ariaLabel, fallback = savedIdOption, label, loading, noOptionsText, onChange, onClose, onOpen, onSearchTextChange, options, queryError, value }: SearchPickerProps & {
+function CandidatePicker({ ariaLabel, autoFocus, fallback = savedIdOption, label, loading, noOptionsText, onChange, onClose, onOpen, onSearchTextChange, options, queryError, value }: Omit<SearchPickerProps, 'onChange'> & {
+  onChange: (id: string, label: string) => void
   /** Stands in for a value whose candidate is not loaded. */
   fallback?: (value: string) => PickerOption | null
   loading: boolean
@@ -137,14 +141,14 @@ function CandidatePicker({ ariaLabel, fallback = savedIdOption, label, loading, 
       loading={loading}
       loadingText="検索中…"
       noOptionsText={noOptionsText}
-      onChange={(_, option) => onChange(option?.id ?? '')}
+      onChange={(_, option) => onChange(option?.id ?? '', option?.name ?? '')}
       onClose={onClose}
       onInputChange={(_, nextValue, reason) => {
         if (reason === 'input' || reason === 'clear') onSearchTextChange(nextValue, reason)
       }}
       onOpen={onOpen}
       options={pickerOptions}
-      renderInput={(params) => <TextField {...params} error={Boolean(queryError)} helperText={queryError ?? undefined} label={label} size="small" slotProps={{ ...params.slotProps, htmlInput: { ...params.slotProps.htmlInput, 'aria-label': ariaLabel } }} />}
+      renderInput={(params) => <TextField {...params} autoFocus={autoFocus} error={Boolean(queryError)} helperText={queryError ?? undefined} label={label} size="small" slotProps={{ ...params.slotProps, htmlInput: { ...params.slotProps.htmlInput, 'aria-label': ariaLabel } }} />}
       renderOption={(optionProps, option) => (
         <li {...optionProps}>
           <Stack spacing={0.25} sx={{ minWidth: 0 }}>
