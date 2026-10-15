@@ -17,7 +17,7 @@
 | レビュー破棄 | 確認後に選択MRの未公開分を削除 | サーバー下書きとローカル下書きの削除範囲を明示 |
 | Markdown | 強調・コード・引用・リスト・表等の入力欄内での表示と本文表示 | GitLab固有構文、参照解決はサーバー仕様に合わせる |
 
-絵文字リアクションは実装済み（MR本体と各コメント。追加は代表的な8種、既存チップで自分の分を付け外し）。REST Discussionsには含まれないため、コメント分は表示中の議論の最古コメントまでをGraphQL `MergeRequest.notes(filter: ONLY_COMMENTS)`の`awardEmoji`で100件ごとに1回取得し、MR本体はREST award_emojiで取得する。GraphQLのリアクションにはIDがないので、削除時はRESTの一覧から自分のリアクションIDを読み直す。[Emoji reactions API](https://docs.gitlab.com/api/emoji_reactions/)。
+絵文字リアクションは実装済み（MR本体と各コメント。追加は検索・分類つきの絵文字ピッカー（肌の色・カスタム絵文字・国旗は対象外）、既存チップで自分の分を付け外し）。REST Discussionsには含まれないため、コメント分は表示中の議論の最古コメントまでをGraphQL `MergeRequest.notes(filter: ONLY_COMMENTS)`の`awardEmoji`で100件ごとに1回取得し、MR本体はREST award_emojiで取得する。GraphQLのリアクションにはIDがないので、削除時はRESTの一覧から自分のリアクションIDを読み直す。[Emoji reactions API](https://docs.gitlab.com/api/emoji_reactions/)。
 
 入力途中の本文とレビューへ追加済みの未公開コメントを分ける。MR、返信先、ファイル、SHA、旧/新側、行ごとに入力を区別し、別MRへ移動しても混ぜない。公開ダイアログに追加していない入力途中の本文を暗黙に送らない。
 
