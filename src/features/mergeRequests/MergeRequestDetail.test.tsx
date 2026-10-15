@@ -528,6 +528,14 @@ describe('MergeRequestDetail header, results and pending review', () => {
     expect(detailMocks.refreshKinds).toEqual(expect.arrayContaining(['mr', 'approvals', 'drafts', 'discussions']))
   })
 
+  it('copies the MR link from the header', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    renderDetail('discussion')
+    fireEvent.click(await screen.findByRole('button', { name: 'リンクをコピー' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(detailMocks.mergeRequest.webUrl))
+  })
+
   it('names the write whose result is unknown, in the header', async () => {
     detailMocks.mutationState = { error: new Error('unknown'), status: 'unknown', unknownAction: { kind: 'approve' } }
     renderDetail('discussion')

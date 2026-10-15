@@ -7,6 +7,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import PublishRoundedIcon from '@mui/icons-material/PublishRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded'
@@ -614,6 +615,14 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       notify({ message: 'SHAをコピーできませんでした', severity: 'error' })
     }
   }
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(mergeRequest.webUrl)
+      notify({ message: 'MRのリンクをコピーしました', severity: 'success' })
+    } catch {
+      notify({ message: 'リンクをコピーできませんでした', severity: 'error' })
+    }
+  }
   const refetchQuery = async (query: GitLabQuery) => {
     if (session) await queryClient.refetchQueries({ exact: true, queryKey: ['gitlab', session.id, JSON.stringify(query)] })
   }
@@ -841,6 +850,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
           <Tooltip title={pinnedNow ? '固定を外す' : 'サイドバーに固定'}><IconButton aria-label={pinnedNow ? '固定を外す' : 'サイドバーに固定'} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid }, tabMeta ?? undefined)}>{pinnedNow ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
           <Tooltip title={refreshing ? '更新中…' : '最新の状態を取得'}><span><IconButton aria-label="更新" disabled={refreshing} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
           <Tooltip title="GitLabで開く"><IconButton aria-label="GitLabで開く" onClick={() => void openInGitLab()}><LaunchRoundedIcon /></IconButton></Tooltip>
+          <Tooltip title="リンクをコピー"><IconButton aria-label="リンクをコピー" onClick={() => void copyLink()}><LinkRoundedIcon /></IconButton></Tooltip>
           {session && mergeRequestTodos[0] ? <Tooltip title={mergeRequestTodos.length > 1 ? `このMRの未完了To-Do ${mergeRequestTodos.length}件のうち1件を完了にします` : 'このMRのTo-Doを完了にします'}><Box component="span" sx={{ pl: 1 }}><TodoDoneButton sessionId={session.id} todo={mergeRequestTodos[0]} variant="button" /></Box></Tooltip> : null}
           <Box sx={{ pl: 1 }}>
             {approvalsResult.error && !approvalWriting ? <Tooltip title={`承認状態を取得できませんでした: ${approvalsResult.error.message}`}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? '再取得中…' : '承認状態を再取得'}</Button></span></Tooltip>
