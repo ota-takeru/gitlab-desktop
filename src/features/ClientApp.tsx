@@ -103,10 +103,10 @@ type ClientRoute = 'projects' | 'mrs' | 'branches' | 'settings' | 'todos'
 type MergeRequestHubTab = 'waiting' | 'assigned' | 'created' | 'search'
 
 const hubTabs: Array<{ label: string; value: MergeRequestHubTab }> = [
+  { label: '検索', value: 'search' },
   { label: 'レビュー依頼', value: 'waiting' },
   { label: '担当', value: 'assigned' },
   { label: '作成', value: 'created' },
-  { label: '検索', value: 'search' },
 ]
 const HUB_TAB_ORDER_KEY = 'gitlab-desktop:mr-hub-tab-order'
 

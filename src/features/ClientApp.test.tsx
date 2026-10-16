@@ -113,38 +113,37 @@ it('waits for session restoration before choosing the default route', async () =
   connection.status = 'connected'
   view.rerender(app())
 
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
   expect(screen.getByRole('button', { name: 'MR一覧' })).toHaveAttribute('aria-current', 'page')
-  expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.queryByRole('button', { name: /UI catalog/u })).not.toBeInTheDocument()
   expect(screen.queryByText('GitLab workspace')).not.toBeInTheDocument()
   expect(screen.queryByText('自分の GitLab 作業を、軽く始める')).not.toBeInTheDocument()
 })
 
-it('maps a legacy home URL to the authenticated review queue', async () => {
+it('maps a legacy home URL to the MR search, the first tab by default', async () => {
   window.history.replaceState(null, '', '#client/home')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['検索', 'レビュー依頼', '担当', '作成'])
+  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.queryByRole('button', { name: /ホーム/u })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /UI catalog/u })).not.toBeInTheDocument()
 })
 
 it('starts the MR list at the first tab in the reader order and searches all MRs with Ctrl+K', async () => {
-  localStorage.setItem('gitlab-desktop:mr-hub-tab-order', JSON.stringify(['search', 'waiting']))
+  localStorage.setItem('gitlab-desktop:mr-hub-tab-order', JSON.stringify(['waiting', 'search']))
   try {
     window.history.replaceState(null, '', '#client/home')
     invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
     render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-    await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['検索', 'レビュー依頼', '担当', '作成'])
-    expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
-
-    fireEvent.click(screen.getByRole('tab', { name: 'レビュー依頼' }))
     await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['レビュー依頼', '検索', '担当', '作成'])
+    expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
+
     fireEvent.keyDown(window, { ctrlKey: true, key: 'k' })
     await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
   } finally {
@@ -152,7 +151,7 @@ it('starts the MR list at the first tab in the reader order and searches all MRs
   }
 })
 
-it('opens a legacy full-page MR link over the review queue', async () => {
+it('opens a legacy full-page MR link over the first MR list tab', async () => {
   window.history.replaceState(null, '', '#client/mr?iid=7&projectId=42')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
@@ -160,11 +159,11 @@ it('opens a legacy full-page MR link over the review queue', async () => {
     : emptyQueryResult())
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?mr=42-7'))
   expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /に戻る$/u }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
+  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('keeps the navigation as it is while an MR is open, and remembers one choice', async () => {
@@ -421,8 +420,8 @@ it.each(['#client/pinned', '#client/recent'])('starts the MR list for the former
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
+  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('moves back and forward with the mouse side buttons without moving twice', async () => {
@@ -461,7 +460,7 @@ it('keeps places in the navigation, the MR lists in tabs, and opening by URL bes
 
   const navigation = screen.getByRole('navigation', { name: 'GitLab client navigation' })
   expect(within(within(navigation).getAllByRole('list')[0]).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['MR一覧', 'To-Do', 'プロジェクト'])
-  expect(within(screen.getByRole('tablist', { name: 'MR一覧の切り替え' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['レビュー依頼', '担当', '作成', '検索'])
+  expect(within(screen.getByRole('tablist', { name: 'MR一覧の切り替え' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['検索', 'レビュー依頼', '担当', '作成'])
   expect(within(navigation).queryByRole('button', { name: 'MR検索' })).not.toBeInTheDocument()
   expect(within(navigation).queryByRole('button', { name: 'MR URLから開く' })).not.toBeInTheDocument()
 
