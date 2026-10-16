@@ -160,6 +160,30 @@ export interface FileQuery {
   sha: string
 }
 
+/** One folder of a repository; without `ref`, the default branch. `path` is '' for the top. */
+export interface TreeQuery {
+  kind: 'tree'
+  projectId: string
+  ref?: string
+  path: string
+  page: number
+}
+
+/** A file's text by the blob id from its folder listing. */
+export interface BlobQuery {
+  kind: 'blob'
+  projectId: string
+  sha: string
+}
+
+/** A folder entry: `tree` is a folder, `blob` a file and `commit` a submodule. */
+export interface TreeEntry {
+  id: string
+  name: string
+  path: string
+  type: 'tree' | 'blob' | 'commit'
+}
+
 export interface ApprovalsQuery {
   kind: 'approvals'
   projectId: string
@@ -305,6 +329,8 @@ export type GitLabQuery =
   | DiffsQuery
   | CommitDiffQuery
   | FileQuery
+  | TreeQuery
+  | BlobQuery
   | ApprovalsQuery
   | MrApprovalsQuery
   | MrAwardsQuery
@@ -516,6 +542,7 @@ export type QueryData =
   | Commit[]
   | Draft[]
   | FileContent
+  | TreeEntry[]
   | Approvals
   | AwardEmoji[]
   | NoteAwards[]
@@ -799,6 +826,8 @@ export type GitLabQueryData<Q extends GitLabQuery> =
                 : Draft[]
           : Q extends CommitDiffQuery ? Diff[]
             : Q extends FileQuery ? FileContent
+              : Q extends TreeQuery ? TreeEntry[]
+              : Q extends BlobQuery ? FileContent
               : Q extends ApprovalsQuery ? Approvals
                 : Q extends MrApprovalsQuery ? MrApproval[]
                 : Q extends MrAwardsQuery ? AwardEmoji[]

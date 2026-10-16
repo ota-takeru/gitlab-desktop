@@ -230,6 +230,19 @@ pub enum Query {
         path: String,
         sha: String,
     },
+    /// One folder of a repository; without `ref`, GitLab lists the default branch.
+    Tree {
+        project_id: String,
+        #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+        git_ref: Option<String>,
+        path: String,
+        page: u32,
+    },
+    /// A file's text by the blob id a tree entry gives, so its content never changes under one key.
+    Blob {
+        project_id: String,
+        sha: String,
+    },
     Approvals {
         project_id: String,
         iid: String,

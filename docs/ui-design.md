@@ -14,7 +14,7 @@
 
 追加方針（2026-09-30）:
 
-- プロジェクト一覧からも、MR詳細のプロジェクト名からも、そのプロジェクト専用の画面を開く。見出しのプロジェクト名の横に「MR」「ブランチ」のタブを置く。ブランチは更新の新しい順に、名前、デフォルト・保護・マージ済み、最新コミット（短いSHA・タイトル・作成者・時刻）を示し、行を選ぶとそのブランチをソースとするMRをプロジェクトのMR一覧に表示する（GitLabで開く操作は行の外）。絞り込んだブランチはMR一覧の条件のタグで示し、外すか「MR」タブを選び直すとプロジェクトのMR一覧の初期状態に戻る。ブランチからMR一覧への移動は履歴に残り、戻る操作でブランチ一覧へ戻れる。名称・namespace・説明を簡潔に示し、現在/過去のMRをプロジェクト内で検索する。MR詳細から戻っても対象プロジェクトと絞り込み条件を維持する。
+- プロジェクト一覧からも、MR詳細のプロジェクト名からも、そのプロジェクト専用の画面を開く。見出しのプロジェクト名の横に「MR」「ブランチ」「コード」のタブを置く。コードはブランチの選択（初期はデフォルトブランチ）と場所のパンくずの下に、フォルダを先に名前順で並べ、ファイルを選ぶと同じ場所に行番号とシンタックスハイライト付きで表示する。サブモジュールは開かずに名前と種類だけを示す。ブランチ・フォルダ・開いたファイルはURLに持ち、戻る操作で開いた元のフォルダへ戻る。ブランチは更新の新しい順に、名前、デフォルト・保護・マージ済み、最新コミット（短いSHA・タイトル・作成者・時刻）を示し、行を選ぶとそのブランチをソースとするMRをプロジェクトのMR一覧に表示する（GitLabで開く操作は行の外）。絞り込んだブランチはMR一覧の条件のタグで示し、外すか「MR」タブを選び直すとプロジェクトのMR一覧の初期状態に戻る。ブランチからMR一覧への移動は履歴に残り、戻る操作でブランチ一覧へ戻れる。名称・namespace・説明を簡潔に示し、現在/過去のMRをプロジェクト内で検索する。MR詳細から戻っても対象プロジェクトと絞り込み条件を維持する。
 - 変更タブの上部に、比較対象を選ぶ横向きのタイムラインを置く。先頭は「MR全体」、続いて古い順にコミットを並べる。コミットを選ぶと、その親からの変更だけを表示し、SHAと件名で対象を識別できるようにする。MR全体の行番号で付けた議論を、コミット差分へ誤って重ねない。
 - 議論を左端の既定タブとし、コメント本文と返信をすぐ読める領域を確保する。概要は必要なときに説明全文と付帯情報を確認する参照画面とする。CI・承認数・変更ファイル数は短い一列にまとめ、大きな統計カードを追加しない。
 - 返信・解決・コメント入力は議論タブにまとめる。返信欄は返信するスレッドの中に開き、下端の新規コメント欄とは本文を分けて保持する。Escまたは「閉じる」で閉じても本文は残る。概要に議論や入力欄を重複表示しない。新規コメント・下書きはMRごとに保持し、概要や変更を見て戻っても本文を失わない。コメント本文と返信本文は同じ可読性を確保する。
@@ -97,7 +97,7 @@
 | 動き | 必要な状態変化だけ、100〜160ms程度。reduced-motionに従う |
 | アイコン | 1つの意味に1つのアイコン、1つのアイコンに1つの意味。行内の状態アイコンは16px。対応表は下記 |
 
-アイコンの対応: プロジェクト`Source`、ディレクトリ`Folder`、ブランチ`AltRoute`、MR一覧`RateReview`、To-Do`Inbox`、設定`Settings`、URLから開く・リンク`Link`、GitLabに接続`Login`、トークンの更新`Key`、再取得`Refresh`、外部で開く`Launch`、固定（MRのみ）`PushPin`、お気に入り（プロジェクトのみ）`Star`、承認済み（状態）`ThumbUpOutlined`（自分の承認は塗りの`ThumbUp`）、Draft`EditNote`、未読`MarkChatUnread`、デフォルトブランチ`Home`、保護`Lock`、マージ済み`CallMerge`、アーカイブ済み`Inventory2`、未公開レビュー`ScheduleSend`、To-Doの種類（担当`AssignmentInd`、メンション`AlternateEmail`、承認依頼`HowToReg`、レビュー依頼`PersonSearch`、マーク`BookmarkBorder`、CI失敗`ErrorOutline`、マージ不可`Block`）、承認する（操作）`Check`、成功`CheckCircleOutline`、エラー`ErrorOutline`、警告`WarningAmber`、待機`Schedule`、中止・クローズ・ジョブの取消`DoNotDisturbAlt`、ジョブ・パイプラインの再実行`Replay`、手動ジョブの実行`PlayArrow`、ファイルツリーの表示切り替え`ViewSidebar`、ツリー表示`AccountTree`、前後のファイル`KeyboardArrowLeft/Right`、前後の未解決スレッド`KeyboardArrowUp/Down`。スレッドの解決状態は`ResolveToggle`（未解決`RadioButtonUnchecked`／解決済み`CheckCircle`）で表示と切り替えを兼ねる。
+アイコンの対応: プロジェクト`Source`、ディレクトリ`Folder`、ファイル`InsertDriveFile`、上のフォルダ`ArrowUpward`、ブランチ`AltRoute`、MR一覧`RateReview`、To-Do`Inbox`、設定`Settings`、URLから開く・リンク`Link`、GitLabに接続`Login`、トークンの更新`Key`、再取得`Refresh`、外部で開く`Launch`、固定（MRのみ）`PushPin`、お気に入り（プロジェクトのみ）`Star`、承認済み（状態）`ThumbUpOutlined`（自分の承認は塗りの`ThumbUp`）、Draft`EditNote`、未読`MarkChatUnread`、デフォルトブランチ`Home`、保護`Lock`、マージ済み`CallMerge`、アーカイブ済み`Inventory2`、未公開レビュー`ScheduleSend`、To-Doの種類（担当`AssignmentInd`、メンション`AlternateEmail`、承認依頼`HowToReg`、レビュー依頼`PersonSearch`、マーク`BookmarkBorder`、CI失敗`ErrorOutline`、マージ不可`Block`）、承認する（操作）`Check`、成功`CheckCircleOutline`、エラー`ErrorOutline`、警告`WarningAmber`、待機`Schedule`、中止・クローズ・ジョブの取消`DoNotDisturbAlt`、ジョブ・パイプラインの再実行`Replay`、手動ジョブの実行`PlayArrow`、ファイルツリーの表示切り替え`ViewSidebar`、ツリー表示`AccountTree`、前後のファイル`KeyboardArrowLeft/Right`、前後の未解決スレッド`KeyboardArrowUp/Down`。スレッドの解決状態は`ResolveToggle`（未解決`RadioButtonUnchecked`／解決済み`CheckCircle`）で表示と切り替えを兼ねる。
 
 **状態は文字より形と色で示す。** 認知負荷を下げるため、一覧の行に並ぶ状態（MR状態・Draft・CI・承認・未読・ブランチやプロジェクトの属性）は文字のチップにせず、`StateIcon`（16pxのアイコン、必要なら数だけを添える）で示す。状態名はツールチップと支援技術向けの名前に残し、色だけに頼らず形でも区別する（自分の承認は塗りのアイコン、CI実行中は回転、動きを減らす設定では止める）。To-Doの種類、差分上の未公開レビュー、MRヘッダーのマージ可否もアイコンだけにし、種類や理由はツールチップで示す。MR状態とDraftはヘッダー・プレビューではアイコンに短い文字を添える。
 

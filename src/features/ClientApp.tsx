@@ -49,6 +49,7 @@ import { clearComposerBufferStore, flushComposerBuffers } from './mergeRequests/
 import { WindowCloseProtection } from '../components/WindowCloseProtection'
 import { MergeRequestList } from './mergeRequests/MergeRequestList'
 import { BranchList } from './projects/BranchList'
+import { CodeBrowser, type CodeLocation } from './projects/CodeBrowser'
 import { ProjectView } from './projects/ProjectView'
 import { WorkspaceSettings } from './connections/WorkspaceSettings'
 import { TodoView } from './mergeRequests/TodoView'
@@ -98,7 +99,7 @@ function writeLayoutPreference(key: string, value: boolean): void {
   }
 }
 
-type ClientRoute = 'projects' | 'mrs' | 'branches' | 'settings' | 'todos'
+type ClientRoute = 'projects' | 'mrs' | 'branches' | 'code' | 'settings' | 'todos'
 /** The MR list's tabs are lists of MRs only; To-Do and the history are places of their own in the sidebar. */
 type MergeRequestHubTab = 'waiting' | 'assigned' | 'created' | 'search'
 
@@ -482,21 +483,22 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     </Tabs>
     <Tooltip title="MR URLから開く (Ctrl+O)"><IconButton aria-label="MR URLから開く" onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip>
   </Stack> : undefined
-  // A project's screen shows its name beside tabs for its MRs and its branches.
-  const projectTab = route === 'branches' ? 'branches' : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
+  // A project's screen shows its name beside tabs for its MRs, its branches and its code.
+  const projectTab = route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
   const projectNavigation = projectTab ? <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
     <Tooltip title={params.projectName ?? ''}><Typography component="div" noWrap sx={{ flexShrink: 1, minWidth: 0 }} variant="h1">{params.projectName}</Typography></Tooltip>
-    <Tabs aria-label="プロジェクトの表示" onChange={(_, value: 'mrs' | 'branches') => navigate(value, { projectId: params.projectId, projectName: params.projectName })} scrollButtons={false} sx={{ flexShrink: 0 }} value={projectTab} variant="scrollable">
+    <Tabs aria-label="プロジェクトの表示" onChange={(_, value: 'mrs' | 'branches' | 'code') => navigate(value, { projectId: params.projectId, projectName: params.projectName })} scrollButtons={false} sx={{ flexShrink: 0 }} value={projectTab} variant="scrollable">
       {/* Choosing MR again, e.g. after a branch's MRs, returns to all the project's MRs. */}
       <Tab label="MR" onClick={() => { if (projectTab === 'mrs' && Object.keys(listParams).some((key) => key !== 'projectId' && key !== 'projectName')) navigate('mrs', { projectId: params.projectId, projectName: params.projectName }) }} value="mrs" />
       <Tab label="ブランチ" value="branches" />
+      <Tab label="コード" value="code" />
     </Tabs>
   </Stack> : undefined
-  const backLabel = route === 'branches' && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'todos' ? 'To-Doに戻る' : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
+  const backLabel = (route === 'branches' || route === 'code') && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'todos' ? 'To-Doに戻る' : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
 
   // Places only; one-off actions such as opening a URL sit beside the search box.
   // An open MR is marked by its tab below, not by these places.
-  const projectsSelected = !selected && (route === 'projects' || route === 'branches' || (route === 'mrs' && hubTab === null))
+  const projectsSelected = !selected && (route === 'projects' || route === 'branches' || route === 'code' || (route === 'mrs' && hubTab === null))
 
   return (
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
@@ -562,6 +564,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
                 {route === 'mrs' ? <MergeRequestList key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={hubNavigation ?? projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchAll={personal ? (search) => { navigate('mrs', search ? { search } : {}); globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0) } : undefined} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
                 {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? `プロジェクト ${params.projectId}`, sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
+                {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
                 {route === 'todos' ? <TodoView onOpen={openMergeRequestRef} selected={selected} /> : null}
                 </AppErrorBoundary>
               </Box>
@@ -825,7 +828,7 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   let params = Object.fromEntries(new URLSearchParams(search ?? '').entries())
   // The former pinned list became the sidebar's pinned tabs; its links show the history.
   // The former pinned list and history are covered by the sidebar's tabs; their links start the MR list.
-  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'settings' || routeValue === 'todos' ? routeValue : null
+  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' || routeValue === 'todos' ? routeValue : null
   if (routeValue === 'mr' && params.projectId && params.iid) {
     // Older links opened a full-page detail; show it over the list the MR list starts with.
     route = start.route
@@ -834,7 +837,7 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   if (!route) {
     route = hasSession ? start.route : 'settings'
     params = hasSession ? start.params : {}
-  } else if (route === 'branches' && !params.projectId) {
+  } else if ((route === 'branches' || route === 'code') && !params.projectId) {
     route = 'projects'
     params = {}
   }
@@ -843,6 +846,22 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
     params = {}
   }
   return { params, raw, route }
+}
+
+/** The code browser's place, kept in the URL so Back returns to the folder a file was opened from. */
+function codeLocation(params: Record<string, string>): CodeLocation {
+  const file = params.file && /^[0-9a-f]{40}([0-9a-f]{24})?$/u.test(params.blob ?? '') ? { path: params.file, sha: params.blob } : undefined
+  return { path: params.path ?? '', ...(params.ref ? { ref: params.ref } : {}), ...(file ? { file } : {}) }
+}
+
+function codeParams(params: Record<string, string>, next: CodeLocation): Record<string, string> {
+  return {
+    projectId: params.projectId,
+    ...(params.projectName ? { projectName: params.projectName } : {}),
+    ...(next.ref ? { ref: next.ref } : {}),
+    ...(next.path ? { path: next.path } : {}),
+    ...(next.file ? { blob: next.file.sha, file: next.file.path } : {}),
+  }
 }
 
 interface MrHistoryState { list: string; depth: number }

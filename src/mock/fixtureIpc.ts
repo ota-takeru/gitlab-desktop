@@ -7,7 +7,7 @@ import { mockIPC } from '@tauri-apps/api/mocks'
 
 import { createFixtureData, fixtureSession, fixtureUser, type FixtureMergeRequest } from './gitlabFixtures'
 import { createPipelineFixtures } from './pipelineFixtures'
-import type { AwardEmoji, Discussion, Draft, GitLabAction, GitLabErrorShape, GitLabQuery, GitLabSnapshot, Note, QueryData } from '../types/gitlab'
+import type { AwardEmoji, Discussion, Draft, GitLabAction, GitLabErrorShape, GitLabQuery, GitLabSnapshot, Note, QueryData, TreeEntry } from '../types/gitlab'
 
 /**
  * - ready: network queries return the fixtures.
@@ -151,6 +151,22 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'file': {
         const content = data.mergeRequests.find((item) => item.mergeRequest.projectId === request.projectId && request.path in item.files)?.files[request.path]
         return content === undefined ? notFound() : { content }
+      }
+      case 'tree': {
+        // The project's repository is the files its fixture MRs touch.
+        const prefix = request.path ? `${request.path}/` : ''
+        const entries = new Map<string, TreeEntry>()
+        for (const path of Object.keys(projectFiles(request.projectId))) {
+          if (!path.startsWith(prefix)) continue
+          const [name, ...rest] = path.slice(prefix.length).split('/')
+          const entryPath = `${prefix}${name}`
+          entries.set(entryPath, rest.length ? { id: blobId(`${entryPath}/`), name, path: entryPath, type: 'tree' } : { id: blobId(entryPath), name, path: entryPath, type: 'blob' })
+        }
+        return entries.size || !request.path ? [...entries.values()] : notFound()
+      }
+      case 'blob': {
+        const entry = Object.entries(projectFiles(request.projectId)).find(([path]) => blobId(path) === request.sha)
+        return entry ? { content: entry[1] } : notFound()
       }
       case 'approvals': {
         const { approvedBy } = find(request)
@@ -321,6 +337,10 @@ export function installFixtureIpc(state: FixtureState): void {
     return projectPath.startsWith(`${path}/`)
   }
 
+  function projectFiles(projectId: string): Record<string, string> {
+    return Object.assign({}, ...data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === projectId).map((item) => item.files))
+  }
+
   function find(ref: { projectId: string; iid: string }): FixtureMergeRequest {
     return data.mergeRequests.find(({ mergeRequest }) => mergeRequest.projectId === ref.projectId && mergeRequest.iid === ref.iid) ?? notFound()
   }
@@ -356,6 +376,13 @@ function matchesMergeRequest(iid: string, text: string, search: string, projectI
 
 function numberMatch(iid: string, search: string, projectId: string | undefined): boolean {
   return Boolean(projectId) && /^!?\d+$/.test(search.trim()) && iid === search.trim().replace(/^!/, '')
+}
+
+/** A stable 40-digit id per path, standing in for GitLab's blob ids. */
+function blobId(path: string): string {
+  let hash = 0x811c9dc5
+  for (const char of path) hash = Math.imul(hash ^ char.codePointAt(0)!, 0x01000193) >>> 0
+  return hash.toString(16).padStart(8, '0').repeat(5)
 }
 
 function notFound(): never {

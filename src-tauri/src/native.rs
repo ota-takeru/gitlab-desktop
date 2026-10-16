@@ -819,9 +819,11 @@ impl NativeState {
                 Err(error) => {
                     // GitLab answers 404 for a job that has no log yet; that is
                     // not a lost permission, and job logs are never cached.
-                    let missing_log =
-                        error.code == "NOT_FOUND" && matches!(input.query, Query::JobTrace { .. });
-                    if !missing_log {
+                    // An empty repository or a deleted branch or folder is 404
+                    // too. The screen still hides a 404 answer's saved copy.
+                    let expected_missing = error.code == "NOT_FOUND"
+                        && matches!(input.query, Query::JobTrace { .. } | Query::Tree { .. });
+                    if !expected_missing {
                         self.record_error(&session, &error, Some(key.clone()))
                             .await?;
                     }

@@ -45,6 +45,8 @@ const CI_FORBIDDEN_MESSAGE: &str = "この操作の権限がありません。�
 const MAX_TITLE_CHARS: usize = 255;
 /// Labels are looked up for their colours too, so a page holds GitLab's maximum.
 const LABEL_PER_PAGE: u32 = 100;
+/// Entries of a repository folder per page; most folders fit on one.
+const TREE_PER_PAGE: u32 = 100;
 const MAX_LABEL_CHANGES: usize = 100;
 /// Suggestions applied together in one commit.
 const MAX_SUGGESTIONS: usize = 100;
@@ -86,6 +88,7 @@ enum ResponseKind {
     Milestones,
     Versions,
     Compare,
+    Tree,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -174,7 +177,7 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         ensure_head_sha(client, api_base, project_id, iid, head_sha).await?;
     }
 
-    if matches!(query, Query::File { .. }) {
+    if matches!(query, Query::File { .. } | Query::Blob { .. }) {
         let (bytes, _headers) = get_bytes(client, &url, MAX_FILE_BYTES).await?;
         let content = decode_file_text(bytes)?;
         return Ok(ApiResult {
@@ -1642,6 +1645,44 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 vec![("ref".to_owned(), sha.clone())],
             )
         }
+        Query::Tree {
+            project_id,
+            git_ref,
+            path,
+            page,
+        } => {
+            validate_id(project_id, "projectId")?;
+            validate_page(*page)?;
+            let mut params = vec![
+                ("page".to_owned(), page.to_string()),
+                ("per_page".to_owned(), TREE_PER_PAGE.to_string()),
+            ];
+            if !path.is_empty() {
+                validate_path(path)?;
+                params.push(("path".to_owned(), path.clone()));
+            }
+            if let Some(git_ref) = git_ref {
+                validate_ref(git_ref)?;
+                params.push(("ref".to_owned(), git_ref.clone()));
+            }
+            (
+                endpoint(api_base, &["projects", project_id, "repository", "tree"])?,
+                ResponseKind::Tree,
+                params,
+            )
+        }
+        Query::Blob { project_id, sha } => {
+            validate_id(project_id, "projectId")?;
+            validate_sha(sha, "sha")?;
+            (
+                endpoint(
+                    api_base,
+                    &["projects", project_id, "repository", "blobs", sha, "raw"],
+                )?,
+                ResponseKind::CommitDiff,
+                Vec::new(),
+            )
+        }
         Query::Approvals { project_id, iid } => {
             validate_id(project_id, "projectId")?;
             validate_id(iid, "iid")?;
@@ -2703,6 +2744,7 @@ fn normalize_response(kind: ResponseKind, value: Value) -> Result<Value, AppErro
         ResponseKind::Milestones => normalize_array(value, None, normalize_milestone),
         ResponseKind::Versions => normalize_array(value, None, normalize_version),
         ResponseKind::Compare => normalize_array(value, Some("diffs"), normalize_diff),
+        ResponseKind::Tree => normalize_array(value, None, normalize_tree_entry),
     }
 }
 
@@ -2836,6 +2878,23 @@ fn normalize_branch(value: &Value) -> Result<Value, AppError> {
             "authorName": string_field(commit, "author_name"),
             "committedDate": string_field(commit, "committed_date"),
         })),
+    }))
+}
+
+/// A folder entry: `tree` is a folder, `blob` a file and `commit` a submodule.
+fn normalize_tree_entry(value: &Value) -> Result<Value, AppError> {
+    require_object(value, "GitLabから不正なファイル一覧が返されました。")?;
+    let kind = required_string_field(value, "type", "tree entry")?;
+    if !matches!(kind.as_str(), "tree" | "blob" | "commit") {
+        return Err(unsupported_response(
+            "GitLabから対応していない種類のファイルが返されました。",
+        ));
+    }
+    Ok(json!({
+        "id": required_string_field(value, "id", "tree entry")?,
+        "name": required_string_field(value, "name", "tree entry")?,
+        "path": required_string_field(value, "path", "tree entry")?,
+        "type": kind,
     }))
 }
 
@@ -3922,6 +3981,24 @@ fn validate_sha(value: &str, field: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// A branch or tag name as Git allows it; it travels as a query parameter.
+fn validate_ref(value: &str) -> Result<(), AppError> {
+    if value.is_empty()
+        || value.len() > 255
+        || value.contains("..")
+        || value.contains('\\')
+        || value
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "ブランチ名が正しくありません。",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_project_path(value: &str) -> Result<(), AppError> {
     if value.chars().any(char::is_control)
         || value.contains('\\')
@@ -4877,6 +4954,79 @@ mod tests {
             ))
             .unwrap_err();
         assert_eq!(error.code, "INVALID_INPUT");
+        assert!(fixture.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn lists_a_repository_folder_at_a_branch_and_reads_a_blob() {
+        let fixture = Fixture::new(vec![
+            response(
+                "200 OK",
+                r#"[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"src","type":"tree","path":"docs/src","mode":"040000"},{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"a b.md","type":"blob","path":"docs/a b.md","mode":"100644"}]"#,
+                "Content-Type: application/json\r\nX-Next-Page: 2\r\n",
+            ),
+            response("200 OK", "text", "Content-Type: text/plain\r\n"),
+        ]);
+        let client = Client::builder().build().unwrap();
+        let tree = runtime()
+            .block_on(fetch(
+                &client,
+                &fixture.url(),
+                &Query::Tree {
+                    project_id: "42".to_owned(),
+                    git_ref: Some("feature/x".to_owned()),
+                    path: "docs".to_owned(),
+                    page: 1,
+                },
+            ))
+            .unwrap();
+        assert_eq!(tree.next_page, Some(2));
+        assert_eq!(tree.data[1]["type"], "blob");
+        assert_eq!(tree.data[1]["path"], "docs/a b.md");
+        let blob = runtime()
+            .block_on(fetch(
+                &client,
+                &fixture.url(),
+                &Query::Blob {
+                    project_id: "42".to_owned(),
+                    sha: "b".repeat(40),
+                },
+            ))
+            .unwrap();
+        assert_eq!(blob.data["content"], "text");
+        let requests = fixture.requests.lock().unwrap();
+        assert!(requests[0].starts_with(
+            "GET /api/v4/projects/42/repository/tree?page=1&per_page=100&path=docs&ref=feature%2Fx "
+        ));
+        assert!(requests[1].starts_with(&format!(
+            "GET /api/v4/projects/42/repository/blobs/{}/raw ",
+            "b".repeat(40)
+        )));
+    }
+
+    #[test]
+    fn rejects_unsafe_tree_paths_and_refs_before_requesting() {
+        let fixture = Fixture::new(Vec::new());
+        let client = Client::builder().build().unwrap();
+        for (git_ref, path) in [
+            (None, "../etc"),
+            (Some("a..b"), ""),
+            (Some("has space"), ""),
+        ] {
+            let error = runtime()
+                .block_on(fetch(
+                    &client,
+                    &fixture.url(),
+                    &Query::Tree {
+                        project_id: "42".to_owned(),
+                        git_ref: git_ref.map(str::to_owned),
+                        path: path.to_owned(),
+                        page: 1,
+                    },
+                ))
+                .unwrap_err();
+            assert_eq!(error.code, "INVALID_INPUT");
+        }
         assert!(fixture.requests.lock().unwrap().is_empty());
     }
 

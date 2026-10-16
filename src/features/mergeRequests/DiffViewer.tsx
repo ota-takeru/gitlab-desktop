@@ -828,7 +828,7 @@ function highlightDiffLines(lines: ParsedLine[], language: string | null): Synta
   return result
 }
 
-function FullFileView({ content, language, loading }: { content?: string | null; language: string | null; loading: boolean }) {
+export function FullFileView({ content, language, loading }: { content?: string | null; language: string | null; loading: boolean }) {
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
   const [filePaging, setFilePaging] = useState({ contentKey: '', offset: 0 })
