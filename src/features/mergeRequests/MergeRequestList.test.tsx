@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitLabGroup, GitLabSession, MergeRequest, MergeRequestsQuery, Project } from '../../types/gitlab'
@@ -300,21 +300,42 @@ describe('MergeRequestList search filters', () => {
     expect(latestMrsQuery(seen)).toMatchObject({ assigneeId: '42', orderBy: 'updated_at', projectId: '77', search: 'history', sort: 'desc', state: 'merged' })
   })
 
-  it('keeps the self-assignee URL filter through pagination', () => {
+  it('appends the next page below the rows with the same conditions, showing a row that moved pages once', () => {
     const onSearchStateChange = vi.fn()
-    const pageResult = {
-      ...emptyResult,
-      data: [],
-      snapshot: { completeness: 'complete' as const, data: [], fetchedAt: Date.now(), nextPage: 2, source: 'network' as const },
+    const first = createMergeRequest({ id: 'mr-3', iid: '3', title: 'First page MR' })
+    const pageResults: Record<number, object> = {
+      1: { ...emptyResult, data: [first], snapshot: { completeness: 'complete' as const, data: [first], fetchedAt: 1, nextPage: 2, source: 'network' as const } },
+      2: { ...emptyResult, data: [first, createMergeRequest({ id: 'mr-4', iid: '4', title: 'Second page MR' })], snapshot: { completeness: 'complete' as const, data: [], fetchedAt: 1, nextPage: null, source: 'network' as const } },
     }
-    queryMock.mockReturnValue(pageResult)
+    queryMock.mockImplementation((_sessionId: string, query: { kind?: string; page?: number } | null) => query?.kind === 'mrs' ? pageResults[query.page ?? 1] : emptyResult)
 
     render(<MergeRequestList initialParams={{ assignee: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
+    fireEvent.click(screen.getByRole('button', { name: 'さらに読み込む' }))
 
-    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    expect(latestHookMrsQuery()).toMatchObject({ assigneeId: '42', page: 2, state: 'opened' })
+    const rows = within(screen.getByRole('list', { name: 'MR検索結果' })).getAllByRole('listitem')
+    expect(rows.map((row) => row.textContent)).toEqual([expect.stringContaining('First page MR'), expect.stringContaining('Second page MR')])
+    expect(screen.getByText('すべて表示しました')).toBeInTheDocument()
+    // Scrolling is not a change of conditions, so the URL keeps the first page.
+    expect(onSearchStateChange).not.toHaveBeenCalled()
+  })
 
-    expect(onSearchStateChange).toHaveBeenCalledWith(expect.objectContaining({ assignee: 'self', page: '2', state: 'opened' }))
-    expect(latestHookMrsQuery()).toMatchObject({ assigneeId: '42', page: 2 })
+  it('loads the next page when the end of the list scrolls into view', () => {
+    const observers: Array<{ callback: IntersectionObserverCallback; disconnect: () => void }> = []
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(public callback: IntersectionObserverCallback) { observers.push(this) }
+      observe() {}
+      disconnect() {}
+    })
+    const first = createMergeRequest()
+    const page = { ...emptyResult, data: [first], snapshot: { completeness: 'complete' as const, data: [first], fetchedAt: 1, nextPage: 2, source: 'network' as const } }
+    queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'mrs' ? page : emptyResult)
+    render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
+
+    act(() => observers.at(-1)!.callback([{ isIntersecting: true } as IntersectionObserverEntry], observers.at(-1) as unknown as IntersectionObserver))
+
+    expect(latestHookMrsQuery()).toMatchObject({ page: 2 })
+    vi.unstubAllGlobals()
   })
 
   it('shows the creation time on rows when the list is ordered by creation', () => {
@@ -613,15 +634,16 @@ describe('MergeRequestList search filters', () => {
       createMergeRequest({ id: 'mr-5', iid: '5', projectPath: 'team/desktop', title: 'Not approved' }),
     ]
     const approvalQueries: unknown[] = []
+    const approvals = [
+      { approvedBy: ['42', '9'], iid: '3', projectPath: 'team/desktop' },
+      { approvedBy: ['9'], iid: '4', projectPath: 'team/desktop' },
+      { approvedBy: [], iid: '5', projectPath: 'team/desktop' },
+    ]
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => {
       if (query?.kind === 'mrs') return { ...emptyResult, data: mergeRequests }
       if (query?.kind === 'mrApprovals') {
         approvalQueries.push(query)
-        return { ...emptyResult, data: [
-          { approvedBy: ['42', '9'], iid: '3', projectPath: 'team/desktop' },
-          { approvedBy: ['9'], iid: '4', projectPath: 'team/desktop' },
-          { approvedBy: [], iid: '5', projectPath: 'team/desktop' },
-        ] }
+        return { ...emptyResult, data: approvals }
       }
       return emptyResult
     })

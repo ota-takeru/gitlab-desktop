@@ -35,18 +35,17 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent, ReactNode } from 'react'
+import type { MouseEvent, ReactNode, RefObject } from 'react'
 
 import { ListRow } from '../../components/ListRow'
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { delayedRevealSx, paneResultsSx } from '../../components/paneSx'
-import { Pager } from '../../components/Pager'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
-import type { MergeRequest, MergeRequestState, MergeRequestsQuery, MrApprovalsQuery } from '../../types/gitlab'
+import type { GitLabCommandError, MergeRequest, MergeRequestState, MergeRequestsQuery, MrApproval, MrApprovalsQuery } from '../../types/gitlab'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
@@ -125,6 +124,14 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   const [groupPaths, setGroupPaths] = useState<Record<string, string>>({})
   const query = useMemo<MergeRequestsQuery | null>(() => applied && session ? buildQuery(applied, session.user.id) : null, [applied, session])
   const result = useGitLabQuery(session?.id ?? null, query, { keepPrevious: true })
+  // Pages after the first are loaded as the list is scrolled, for the conditions they were loaded with.
+  const pagesKey = useMemo(() => query ? JSON.stringify(query) : '', [query])
+  const [more, setMore] = useState({ count: 0, key: '' })
+  const morePages = more.key === pagesKey ? more.count : 0
+  const [moreResults, setMoreResults] = useState<Record<string, PageResult>>({})
+  const reportPage = useCallback((entry: string, next: PageResult | null) => setMoreResults((current) => withEntry(current, entry, next)), [])
+  const [refreshes, setRefreshes] = useState(0)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const focus = () => searchInputRef.current?.focus()
@@ -275,12 +282,33 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   // belongs to MR search, so the queue's tab never changes under the reader.
   const fixedQueue = personalQueue !== null
   const title = projectName ?? (personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
-  const chips = applied ? conditionChips(applied, { conditionNames, currentUserId: session.user.id, fixedProjectId: projectId, groupPaths, personalQueue, rows: result.data ?? [] }) : []
+  const page = applied?.page ?? 1
+  const pageEntry = (number: number) => `${pagesKey}#${number}`
+  const loaded: Array<PageResult | undefined> = [
+    { data: result.data, error: result.error, loading: result.loading, nextPage: result.snapshot?.nextPage ?? null, refresh: result.refresh },
+    ...Array.from({ length: morePages }, (_, index) => moreResults[pageEntry(page + index + 1)]),
+  ]
+  // A row that moved to a later page while scrolling is shown once, where it was first seen.
+  const seen = new Set<string>()
+  const pages: MergeRequest[][] = []
+  for (const entry of loaded) {
+    if (!entry?.data) break
+    pages.push(entry.data.filter((mergeRequest) => {
+      const id = `${mergeRequest.projectId}:${mergeRequest.iid}`
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    }))
+  }
+  const rows = pages.flat()
+  const last = loaded.at(-1)
+  const hasNext = Boolean(last?.data && last.nextPage !== null)
+  const canLoadMore = hasNext && !result.previous && loaded.length < MAX_LOADED_PAGES
+  const chips = applied ? conditionChips(applied, { conditionNames, currentUserId: session.user.id, fixedProjectId: projectId, groupPaths, personalQueue, rows }) : []
   // A personal queue keeps its person, and a project's list keeps its project.
   const addableKinds = CONDITION_KINDS.filter((kind) => fixedQueue
     ? kind === 'state'
     : !(projectName && (kind === 'project' || kind === 'group')))
-  const page = applied?.page ?? 1
   const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
   // GitLab finds an MR by number (!123) only in a project's list.
   const projectScoped = Boolean(cleanOptional(draft.projectId))
@@ -309,7 +337,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
       <PaneHeader
         actions={<>
           {fixedQueue ? null : <Tooltip title="保存済み検索"><IconButton aria-label={`保存済み検索を管理（${savedSearches.length}）`} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>}
-          <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>
+          <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={() => { result.refresh(); setRefreshes((count) => count + 1) }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         </>}
         navigation={navigation}
         subtitle={projectName ? 'プロジェクトのマージリクエスト' : undefined}
@@ -414,21 +442,84 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
         <DialogActions><Button onClick={() => setSavedSearchesOpen(false)}>閉じる</Button></DialogActions>
       </Dialog>
 
-      <PaneStatus announcement={result.data && !result.previous ? `MR ${result.data.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{freshness ? ` · ${freshness}` : ''}</> : result.loading || result.previous ? 'MRを読み込み中…' : result.error ? '取得に失敗しました' : null}</PaneStatus>
+      <PaneStatus announcement={result.data && !result.previous ? `MR ${rows.length}件${page > 1 ? `（${page}ページ目から）` : ''}` : null}>{result.data && !result.previous ? <>{rows.length}件取得{page > 1 ? ` · ${page}ページ目から` : ''}{freshness ? ` · ${freshness}` : ''}</> : result.loading || result.previous ? 'MRを読み込み中…' : result.error ? '取得に失敗しました' : null}</PaneStatus>
       {/* The preview sits beside the results, so it hides none of them. */}
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
+      <Box aria-busy={result.previous} ref={resultsRef} sx={paneResultsSx(result.previous)}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの結果を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
         {pipelineOpenError ? <Alert onClose={() => setPipelineOpenError(null)} severity="error" sx={{ m: 1.5 }}>CIパイプラインを開けませんでした: {pipelineOpenError}</Alert> : null}
         {result.loading && !result.data ? <LoadingRows /> : null}
         {!result.loading && !result.data && !result.error && !filterError ? <PaneEmpty description={`検索語や状態を変えてください。${searchTarget}`} title="MRがありません" /> : null}
         {result.data && result.data.length === 0 ? <PaneEmpty description={<>適用中の条件: {chips.length ? chips.map((chip) => chip.label).join(' · ') : 'なし'}<br />{searchTarget}</>} title="条件に一致するMRがありません">{conditionsChanged ? <Button onClick={resetConditions} variant="outlined">条件をクリア</Button> : null}</PaneEmpty> : null}
-        {result.data?.length ? <MergeRequestResults currentUserId={session.user.id} grouping={personalQueue === 'waiting' ? 'mine' : personalQueue ? 'any' : null} mergeRequests={result.data} onFocusRow={(next) => setPreview((current) => current ? next : current)} onOpenMergeRequest={openMergeRequest} onOpenPipeline={openPipeline} onPreview={(next) => setPreview((current) => current?.mergeRequest.id === next.mergeRequest.id ? null : next)} orderBy={applied?.orderBy ?? 'updated_at'} personalWorkspace={personalWorkspace} previewing={preview?.mergeRequest ?? null} recentMrId={recentMrId} selected={selected ?? null} sessionId={session.id} showProject={!projectName} /> : null}
+        {page > 1 && rows.length ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Button onClick={() => updatePage(1)} size="small">1ページ目から表示</Button></Box> : null}
+        {rows.length ? <MergeRequestResults currentUserId={session.user.id} grouping={personalQueue === 'waiting' ? 'mine' : personalQueue ? 'any' : null} pages={pages} onFocusRow={(next) => setPreview((current) => current ? next : current)} onOpenMergeRequest={openMergeRequest} onOpenPipeline={openPipeline} onPreview={(next) => setPreview((current) => current?.mergeRequest.id === next.mergeRequest.id ? null : next)} orderBy={applied?.orderBy ?? 'updated_at'} personalWorkspace={personalWorkspace} previewing={preview?.mergeRequest ?? null} recentMrId={recentMrId} selected={selected ?? null} sessionId={session.id} showProject={!projectName} /> : null}
+        {rows.length && (morePages > 0 || hasNext) ? <MoreRows
+          capped={hasNext && loaded.length >= MAX_LOADED_PAGES}
+          count={rows.length}
+          error={last && !last.data ? last.error : null}
+          loading={!last || (last.loading && !last.data)}
+          onLoad={canLoadMore ? () => setMore({ count: morePages + 1, key: pagesKey }) : undefined}
+          onRetry={() => last?.refresh()}
+          rootRef={resultsRef}
+        /> : null}
+        {query ? Array.from({ length: morePages }, (_, index) => <MergeRequestPageLoader entry={pageEntry(page + index + 1)} key={pageEntry(page + index + 1)} onChange={reportPage} page={page + index + 1} query={query} refreshes={refreshes} sessionId={session.id} />) : null}
       </Box>
       {preview ? <MergeRequestPreview approval={preview.approval} closeAt={preview.closeAt} mergeRequest={preview.mergeRequest} onClose={closePreview} onOpen={() => openMergeRequest(preview.mergeRequest)} /> : null}
       </Box>
-      {result.data && (page > 1 || result.snapshot?.nextPage) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={(result.snapshot?.nextPage ?? null) !== null} hasPrevious={page > 1} onNext={() => updatePage(page + 1)} onPrevious={() => updatePage(Math.max(1, page - 1))} page={page} /></Box> : null}
+    </Box>
+  )
+}
+
+/**
+ * Pages kept by scrolling, the first included (300 rows). Each page and its
+ * approvals are one request; beyond this the conditions narrow the list instead.
+ */
+const MAX_LOADED_PAGES = 10
+
+/** One page of the list as far as it has loaded. */
+interface PageResult { data: MergeRequest[] | null; error: GitLabCommandError | null; loading: boolean; nextPage: number | null; refresh: () => void }
+
+/**
+ * A page after the first. It refreshes only with the 更新 button, like older
+ * discussion pages, so scrolling far does not add requests every minute.
+ */
+function MergeRequestPageLoader({ entry, onChange, page, query, refreshes, sessionId }: { entry: string; onChange: (entry: string, result: PageResult | null) => void; page: number; query: MergeRequestsQuery; refreshes: number; sessionId: string }) {
+  const pageQuery = useMemo(() => ({ ...query, page }), [page, query])
+  const { data, error, loading, refresh, snapshot } = useGitLabQuery(sessionId, pageQuery, { refreshIntervalMs: false })
+  const nextPage = snapshot?.nextPage ?? null
+  useEffect(() => onChange(entry, { data, error, loading, nextPage, refresh }), [data, entry, error, loading, nextPage, onChange, refresh])
+  useEffect(() => () => onChange(entry, null), [entry, onChange])
+  const refreshed = useRef(refreshes)
+  useEffect(() => {
+    if (refreshed.current === refreshes) return
+    refreshed.current = refreshes
+    refresh()
+  }, [refresh, refreshes])
+  return null
+}
+
+/**
+ * The end of the list: the next page loads when it comes near the bottom of
+ * the pane, or from the button for keyboard use. Its height stays the same
+ * while loading so the rows above do not move.
+ */
+function MoreRows({ capped, count, error, loading, onLoad, onRetry, rootRef }: { capped: boolean; count: number; error: GitLabCommandError | null; loading: boolean; onLoad?: () => void; onRetry: () => void; rootRef: RefObject<HTMLDivElement | null> }) {
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!onLoad || !sentinel || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoad() }, { root: rootRef.current, rootMargin: '0px 0px 480px 0px' })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [onLoad, rootRef])
+  return (
+    <Box ref={sentinelRef} sx={{ alignItems: 'center', display: 'flex', justifyContent: 'center', minHeight: 48, px: 1.5, py: 1 }}>
+      {error ? <Alert action={<Button color="inherit" onClick={onRetry}>再試行</Button>} severity="error" sx={{ flex: 1 }}>続きを取得できませんでした: {error.message}</Alert>
+        : loading ? <Typography color="textSecondary" role="status" variant="caption">続きを読み込み中…</Typography>
+          : capped ? <Typography color="textSecondary" variant="caption">{count}件まで表示しています。続きは条件を絞り込んで検索してください。</Typography>
+            : onLoad ? <Button onClick={onLoad} size="small">さらに読み込む</Button>
+              : <Typography color="textSecondary" variant="caption">すべて表示しました</Typography>}
     </Box>
   )
 }
@@ -511,22 +602,31 @@ interface RowApproval { byMe: boolean; count: number }
 /** `closeAt` is where the pointer opened the preview, so a second click there closes it. */
 interface RowPreview { approval: string | null; closeAt?: PointerSpot; mergeRequest: MergeRequest }
 
-function MergeRequestResults({ currentUserId, grouping, mergeRequests, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, personalWorkspace, previewing, recentMrId, selected, sessionId, showProject }: { currentUserId: string; grouping: 'mine' | 'any' | null; mergeRequests: MergeRequest[]; onFocusRow: (preview: RowPreview) => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: (preview: RowPreview) => void; orderBy: OrderBy; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: MergeRequest | null; recentMrId: string | null; selected: MrRef | null; sessionId: string; showProject: boolean }) {
-  const itemsKey = mergeRequests.filter((mergeRequest) => mergeRequest.projectPath).map((mergeRequest) => `${mergeRequest.projectPath}!${mergeRequest.iid}`).join(' ')
-  const approvalsQuery = useMemo<MrApprovalsQuery | null>(() => itemsKey
-    ? { items: itemsKey.split(' ').map((key) => { const at = key.lastIndexOf('!'); return { iid: key.slice(at + 1), projectPath: key.slice(0, at) } }), kind: 'mrApprovals' }
-    : null, [itemsKey])
-  const approvals = useGitLabQuery<MrApprovalsQuery>(sessionId, approvalsQuery)
+function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, pages, personalWorkspace, previewing, recentMrId, selected, sessionId, showProject }: { currentUserId: string; grouping: 'mine' | 'any' | null; onFocusRow: (preview: RowPreview) => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: (preview: RowPreview) => void; orderBy: OrderBy; pages: MergeRequest[][]; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: MergeRequest | null; recentMrId: string | null; selected: MrRef | null; sessionId: string; showProject: boolean }) {
+  // Approvals come in one request per loaded page, as GitLab is asked for at most a page at once.
+  const pageKeys = pages.map((items) => items.filter((mergeRequest) => mergeRequest.projectPath).map((mergeRequest) => `${mergeRequest.projectPath}!${mergeRequest.iid}`).join(' '))
+  const [approvalPages, setApprovalPages] = useState<Record<string, ApprovalsResult>>({})
+  const reportApprovals = useCallback((itemsKey: string, next: ApprovalsResult | null) => setApprovalPages((current) => withEntry(current, itemsKey, next)), [])
+  const approvedBy = new Map<string, string[] | null>()
+  const pendingRows = new Set<string>()
+  let approvalsError: GitLabCommandError | null = null
+  for (const itemsKey of pageKeys) {
+    if (!itemsKey) continue
+    const approvals = approvalPages[itemsKey]
+    for (const item of approvals?.data ?? []) approvedBy.set(`${item.projectPath}!${item.iid}`, item.approvedBy)
+    if (!approvals?.data && (!approvals || approvals.loading)) for (const key of itemsKey.split(' ')) pendingRows.add(key)
+    if (!approvals?.data && approvals?.error) approvalsError ??= approvals.error
+  }
   const approvalOf = (mergeRequest: MergeRequest): RowApproval | null => {
-    const approvedBy = approvals.data?.find((item) => item.projectPath === mergeRequest.projectPath && item.iid === mergeRequest.iid)?.approvedBy
-    return approvedBy ? { byMe: approvedBy.includes(currentUserId), count: approvedBy.length } : null
+    const users = approvedBy.get(`${mergeRequest.projectPath}!${mergeRequest.iid}`)
+    return users ? { byMe: users.includes(currentUserId), count: users.length } : null
   }
 
   // Rows show at once; only their approval mark waits for the approvals request.
-  const approvalPending = Boolean(approvalsQuery) && !approvals.data && approvals.loading
+  const approvalPending = (mergeRequest: MergeRequest) => pendingRows.has(`${mergeRequest.projectPath}!${mergeRequest.iid}`)
   const row = (mergeRequest: MergeRequest) => <MergeRequestResultRow
     approval={approvalOf(mergeRequest)}
-    approvalPending={approvalPending}
+    approvalPending={approvalPending(mergeRequest)}
     key={`${mergeRequest.projectId}:${mergeRequest.iid}`}
     onFocusRow={() => onFocusRow({ approval: approvalText(approvalOf(mergeRequest), mergeRequest.state), mergeRequest })}
     onPreview={(closeAt) => onPreview({ approval: approvalText(approvalOf(mergeRequest), mergeRequest.state), closeAt, mergeRequest })}
@@ -540,30 +640,65 @@ function MergeRequestResults({ currentUserId, grouping, mergeRequests, onFocusRo
     selected={(selected?.projectId === mergeRequest.projectId && selected.iid === mergeRequest.iid) || recentMrId === `${mergeRequest.projectId}-${mergeRequest.iid}`}
     showProject={showProject}
   />
-  if (!grouping || !approvals.data) {
+  const mergeRequests = pages.flat()
+  const loaders = pageKeys.map((itemsKey) => itemsKey ? <MergeRequestApprovalsLoader itemsKey={itemsKey} key={itemsKey} onChange={reportApprovals} sessionId={sessionId} /> : null)
+  // The queues group once the first page's approvals are known; until then, or when they fail, the list stays flat.
+  if (!grouping || !approvalPages[pageKeys[0]]?.data) {
     return <>
-      {approvals.error && !approvals.data ? <Typography color="textSecondary" component="div" sx={{ px: 1.5, py: 1 }} variant="caption">承認状態を取得できませんでした: {approvals.error.message}</Typography> : null}
-      <Box aria-label="MR検索結果" component="ul" onKeyDown={moveListRowFocus} role="list" sx={{ m: 0, p: 0 }}>{mergeRequests.map(row)}</Box>
+      {loaders}
+      {approvalsError ? <Typography color="textSecondary" component="div" sx={{ px: 1.5, py: 1 }} variant="caption">承認状態を取得できませんでした: {approvalsError.message}</Typography> : null}
+      <Box aria-label="MR検索結果" component="ul" onKeyDown={moveListRowFocus} role="list" sx={rowListSx}>{mergeRequests.map(row)}</Box>
     </>
   }
   const [waitingLabel, doneLabel] = grouping === 'mine' ? ['自分の承認待ち', '自分が承認済み'] : ['承認待ち', '承認あり']
-  const sections: Array<[string, MergeRequest[]]> = [[waitingLabel, []], [doneLabel, []], ['承認状態を確認できないMR', []]]
+  const sections: Array<[string, MergeRequest[]]> = [[waitingLabel, []], [doneLabel, []], ['承認状態を確認中のMR', []], ['承認状態を確認できないMR', []]]
   for (const mergeRequest of mergeRequests) {
     const approval = approvalOf(mergeRequest)
     const done = approval && (grouping === 'mine' ? approval.byMe : approval.count > 0)
-    sections[approval ? done ? 1 : 0 : 2][1].push(mergeRequest)
+    sections[approval ? done ? 1 : 0 : approvalPending(mergeRequest) ? 2 : 3][1].push(mergeRequest)
   }
   return (
     <Box aria-label="MR検索結果" onKeyDown={moveListRowFocus} role="group">
-      {sections.filter(([label, items]) => items.length > 0 || label !== '承認状態を確認できないMR').map(([label, items]) => (
+      {loaders}
+      {sections.filter(([label, items]) => items.length > 0 || label === waitingLabel || label === doneLabel).map(([label, items]) => (
         <Box aria-label={label} component="section" key={label}>
           <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', borderBottom: 1, borderColor: 'divider', display: 'block', px: 1.5, py: 0.5 }} variant="overline">{label} · {items.length}件</Typography>
-          {items.length ? <Box aria-label={label} component="ul" role="list" sx={{ m: 0, p: 0 }}>{items.map(row)}</Box> : null}
+          {items.length ? <Box aria-label={label} component="ul" role="list" sx={rowListSx}>{items.map(row)}</Box> : null}
         </Box>
       ))}
     </Box>
   )
 }
+
+/** Records what a loader reports, keeping the same state when nothing changed so its report causes no render. */
+function withEntry<T extends object>(current: Record<string, T>, key: string, next: T | null): Record<string, T> {
+  const shown = current[key]
+  if (!next) {
+    if (!shown) return current
+    const rest = { ...current }
+    delete rest[key]
+    return rest
+  }
+  if (shown && (Object.keys(next) as Array<keyof T>).every((field) => Object.is(shown[field], next[field]))) return current
+  return { ...current, [key]: next }
+}
+
+/** Who approved the MRs of one loaded page. */
+interface ApprovalsResult { data: MrApproval[] | null; error: GitLabCommandError | null; loading: boolean }
+
+function MergeRequestApprovalsLoader({ itemsKey, onChange, sessionId }: { itemsKey: string; onChange: (itemsKey: string, result: ApprovalsResult | null) => void; sessionId: string }) {
+  const query = useMemo<MrApprovalsQuery>(() => ({ items: itemsKey.split(' ').map((key) => { const at = key.lastIndexOf('!'); return { iid: key.slice(at + 1), projectPath: key.slice(0, at) } }), kind: 'mrApprovals' }), [itemsKey])
+  const { data, error, loading } = useGitLabQuery<MrApprovalsQuery>(sessionId, query)
+  useEffect(() => onChange(itemsKey, { data, error, loading }), [data, error, itemsKey, loading, onChange])
+  useEffect(() => () => onChange(itemsKey, null), [itemsKey, onChange])
+  return null
+}
+
+/**
+ * Rows far from the viewport skip layout and paint, so a list grown by
+ * scrolling stays as quick to scroll and resize as one page.
+ */
+const rowListSx = { m: 0, p: 0, '& > li': { containIntrinsicSize: 'auto 80px', contentVisibility: 'auto' } } as const
 
 /** Room on a row's last line for its buttons (preview, CI, pin), so they never cover a label. */
 const ROW_ACTIONS_SPACE = 12
