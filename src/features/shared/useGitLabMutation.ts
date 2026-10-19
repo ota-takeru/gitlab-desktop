@@ -42,6 +42,8 @@ interface MutationEntry {
   persistedReceipt: PendingOperation | null
   resetPromise: Promise<boolean> | null
   snapshot: MutationSnapshot
+  /** Settles when the write being sent has finished, whatever its outcome. */
+  inFlight: Promise<void> | null
   listeners: Set<() => void>
   safetyOwners: Map<string, SafetyOwner>
 }
@@ -63,6 +65,7 @@ function getEntry(sessionId: string | null, resourceKey: string): MutationEntry 
     durable,
     hydration: durable ? 'idle' : 'ready',
     hydrationPromise: null,
+    inFlight: null,
     listeners: new Set(),
     persistedReceipt: null,
     resetPromise: null,
@@ -94,6 +97,15 @@ function parseResourceIdentity(resourceKey: string): ResourceIdentity | null {
     // project-1:1. They intentionally remain memory-only.
     return null
   }
+}
+
+/**
+ * A reaction is shown as given at once and does not stop the screen while it
+ * is sent: other controls stay as they are, and a write started meanwhile is
+ * sent right after it instead of being refused.
+ */
+function isQuietWrite(action: GitLabAction | null): boolean {
+  return action?.kind === 'addAward' || action?.kind === 'removeAward'
 }
 
 function isUnsafe(entry: MutationEntry): boolean {
@@ -302,6 +314,10 @@ export function useGitLabMutation(
     if (current.durable && current.hydration !== 'ready') hydrated = await ensureHydrated(current)
     if (!isActive(current)) return { error: current.snapshot.error, ok: false, status: 'unknown' }
     if (!hydrated || current.hydration !== 'ready') return { error: current.snapshot.error, ok: false, status: 'unknown' }
+    while (current.snapshot.status === 'pending' && isQuietWrite(current.snapshot.action) && current.inFlight) {
+      await current.inFlight
+      if (!isActive(current)) return { error: current.snapshot.error, ok: false, status: 'unknown' }
+    }
     if (current.snapshot.status === 'pending' || current.snapshot.status === 'unknown') {
       return {
         error: current.snapshot.status === 'unknown' ? current.snapshot.error : null,
@@ -315,6 +331,9 @@ export function useGitLabMutation(
       return { error, ok: false, status: 'error' }
     }
 
+    let finished: () => void = () => undefined
+    const inFlight = new Promise<void>((resolve) => { finished = resolve })
+    current.inFlight = inFlight
     publish(current, { action, error: null, status: 'pending' })
     try {
       if (execute) {
@@ -342,6 +361,9 @@ export function useGitLabMutation(
         }
       }
       return { error, ok: false, status }
+    } finally {
+      if (current.inFlight === inFlight) current.inFlight = null
+      finished()
     }
   }, [resourceKey, sessionId])
 
@@ -403,7 +425,8 @@ export function useGitLabMutation(
   return {
     error: snapshot.error,
     isLocked: locked,
-    isPending: snapshot.status === 'pending',
+    // A reaction being sent does not disable the screen; it still blocks updates and closing.
+    isPending: snapshot.status === 'pending' && !isQuietWrite(snapshot.action),
     retryLookup,
     reset,
     run,

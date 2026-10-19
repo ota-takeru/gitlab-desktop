@@ -29,14 +29,14 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
   disabled?: boolean
   /** What the reactions belong to, for the add button's accessible name. */
   label: string
-  /** Resolves to whether GitLab accepted the change; until then the chip shows it as being sent. */
+  /** Resolves to whether GitLab accepted the change; until then the chip already shows it, and reverts if refused. */
   onToggle: (name: string, add: boolean) => Promise<boolean> | void
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [sending, setSending] = useState<SendingReaction | null>(null)
   // Loaded here too, so reactions others gave with less common emoji display as emoji.
   const { catalog } = useEmojiCatalog()
-  // The change being sent shows at once; the reactions read back from GitLab replace it.
+  // The change shows at once, like GitLab's own page; the reactions read back from GitLab replace it.
   const pending = sending?.base === awards ? sending : null
   const shown = pending ? applyOwnReaction(awards, pending.name, pending.add, { id: currentUserId, name: '自分', username: '' }) : awards
   const groups = groupReactions(shown, currentUserId)
@@ -56,7 +56,7 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
       const emoji = emojiForName(group.name, catalog)
       const names = group.users.map((user) => user.name).join('、')
       const isSending = pending?.name === group.name && !pending.accepted
-      return <Tooltip describeChild key={group.name} title={`${names}${isSending ? '（送信中）' : group.mine ? '（クリックで外す）' : '（クリックで付ける）'}`}>
+      return <Tooltip describeChild key={group.name} title={`${names}${group.mine ? '（クリックで外す）' : '（クリックで付ける）'}`}>
         <Chip
           aria-busy={isSending || undefined}
           aria-label={`${emoji} ${group.users.length}人`}

@@ -1,6 +1,6 @@
 use crate::dto::{Action, AppError, Query, Session, User};
 use crate::gitlab_api;
-use crate::storage::{now_ms, storage_error, LocalDraft, Snapshot, Store};
+use crate::storage::{now_ms, storage_error, CacheRule, LocalDraft, Snapshot, Store};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -927,7 +927,11 @@ impl NativeState {
             (None, _) => None,
         };
         let action_value = serde_json::to_value(&input.action).map_err(|_| storage_error())?;
-        let changed_queries = queries_changed_by(&input.action);
+        let changed_queries = queries_changed_by(
+            &input.action,
+            action_value["projectId"].as_str().unwrap_or_default(),
+            action_value["iid"].as_str().unwrap_or_default(),
+        );
         let resource = operation_resource(
             action_value["projectId"].as_str().unwrap_or_default(),
             action_value["iid"].as_str().unwrap_or_default(),
@@ -1041,10 +1045,10 @@ impl NativeState {
                 if self
                     .blocking(move |inner| {
                         ensure_active(inner, &cache_session)?;
-                        match changed_queries {
-                            Some(kinds) => inner
+                        match &changed_queries {
+                            Some(rules) => inner
                                 .store
-                                .clear_account_queries(&cache_session.account, kinds),
+                                .clear_account_queries(&cache_session.account, rules),
                             None => inner.store.clear_account(&cache_session.account),
                         }
                     })
@@ -1298,13 +1302,104 @@ fn unknown_write() -> AppError {
     )
 }
 
-/// The kinds of saved query answers a successful write can change, when those
-/// are the only ones; `None` means the write may change anything saved.
-fn queries_changed_by(action: &Action) -> Option<&'static [&'static str]> {
+/// The saved query answers a successful write to the merge request
+/// `project_id`!`iid` can change, when they are known; `None` means the write
+/// may change anything saved, and the account's whole cache is cleared.
+///
+/// A saved answer is only shown until the network refresh that always follows
+/// it, so these rules keep the written change from flashing back to its old
+/// state; other merge requests mentioned in a comment refresh as usual.
+fn queries_changed_by(action: &Action, project_id: &str, iid: &str) -> Option<Vec<CacheRule>> {
+    let rule = |kind: &'static str, project_id: Option<&str>, iid: Option<&str>| CacheRule {
+        kind,
+        project_id: project_id.map(str::to_owned),
+        iid: iid.map(str::to_owned),
+        pipeline_id: None,
+    };
+    // The merge request itself and every list that summarizes it: its title,
+    // state, people, labels, update time, approvals or To-Dos.
+    let merge_request = || {
+        let mut rules: Vec<CacheRule> = ["mr", "notes", "discussions", "drafts", "approvals"]
+            .into_iter()
+            .map(|kind| rule(kind, Some(project_id), Some(iid)))
+            .collect();
+        // Comment reactions are addressed by the project's path, which the write does not carry.
+        rules.push(rule("noteAwards", None, Some(iid)));
+        rules.extend(["mrs", "mrApprovals", "todos"].map(|kind| rule(kind, None, None)));
+        rules
+    };
     match action {
-        // Reactions are read only through the reaction queries.
-        Action::AddAward { .. } | Action::RemoveAward { .. } => Some(&["mrAwards", "noteAwards"]),
-        _ => None,
+        Action::AddAward { .. } | Action::RemoveAward { .. } => Some(vec![
+            rule("mrAwards", Some(project_id), Some(iid)),
+            rule("noteAwards", None, Some(iid)),
+        ]),
+        Action::MarkTodoDone { .. } => Some(vec![rule("todos", None, None)]),
+        Action::Comment { .. }
+        | Action::Reply { .. }
+        | Action::EditNote { .. }
+        | Action::DeleteNote { .. }
+        | Action::Resolve { .. }
+        | Action::SaveDraft { .. }
+        | Action::EditDraft { .. }
+        | Action::DeleteDraft { .. }
+        | Action::PublishDraft { .. }
+        | Action::Approve { .. }
+        | Action::Unapprove { .. }
+        | Action::SetAssignees { .. }
+        | Action::SetReviewers { .. }
+        | Action::SetDescription { .. }
+        | Action::CancelAutoMerge { .. }
+        | Action::SetState { .. }
+        | Action::SetTitle { .. }
+        | Action::SetMilestone { .. }
+        | Action::RequestChanges { .. }
+        | Action::RerequestReview { .. } => Some(merge_request()),
+        // A label given by name that the project lacks is created with it.
+        Action::SetLabels { .. } => {
+            let mut rules = merge_request();
+            rules.push(rule("labels", Some(project_id), None));
+            Some(rules)
+        }
+        Action::RetryJob {
+            pipeline_project_id,
+            ..
+        }
+        | Action::CancelJob {
+            pipeline_project_id,
+            ..
+        }
+        | Action::PlayJob {
+            pipeline_project_id,
+            ..
+        }
+        | Action::RetryPipeline {
+            pipeline_project_id,
+            ..
+        }
+        | Action::CancelPipeline {
+            pipeline_project_id,
+            ..
+        } => {
+            let pipeline_id = match action {
+                Action::RetryPipeline { pipeline_id, .. }
+                | Action::CancelPipeline { pipeline_id, .. } => Some(pipeline_id.clone()),
+                // A job's pipeline is not part of the write, so all of the project's pipelines go.
+                _ => None,
+            };
+            let mut rules = merge_request();
+            rules.push(rule("mrPipelines", Some(project_id), Some(iid)));
+            rules.extend(["pipeline", "pipelineJobs"].map(|kind| CacheRule {
+                pipeline_id: pipeline_id.clone(),
+                ..rule(kind, Some(pipeline_project_id), None)
+            }));
+            Some(rules)
+        }
+        // Merging, rebasing and applying suggestions change branches, commits
+        // and diffs; an upload changes nothing saved and is not cleared at all.
+        Action::Merge { .. }
+        | Action::Rebase { .. }
+        | Action::ApplySuggestions { .. }
+        | Action::UploadAttachment { .. } => None,
     }
 }
 
@@ -2113,6 +2208,78 @@ mod tests {
             .unwrap()
             .is_none());
         server.join().unwrap();
+    }
+
+    #[test]
+    fn a_write_clears_only_what_it_can_change() {
+        let kinds = |action: Action| {
+            queries_changed_by(&action, "7", "120").map(|rules| {
+                rules
+                    .into_iter()
+                    .map(|rule| {
+                        format!(
+                            "{}:{}:{}:{}",
+                            rule.kind,
+                            rule.project_id.unwrap_or_default(),
+                            rule.iid.unwrap_or_default(),
+                            rule.pipeline_id.unwrap_or_default()
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        let comment = kinds(Action::Comment {
+            project_id: "7".into(),
+            iid: "120".into(),
+            body: "LGTM".into(),
+            thread: false,
+            position: None,
+        })
+        .unwrap();
+        for expected in [
+            "discussions:7:120:",
+            "mr:7:120:",
+            "noteAwards::120:",
+            "mrs:::",
+            "todos:::",
+        ] {
+            assert!(comment.contains(&expected.to_owned()), "{expected}");
+        }
+        // The MR's diffs and other kinds of saved data stay.
+        assert!(!comment
+            .iter()
+            .any(|rule| rule.starts_with("diffs:") || rule.starts_with("projects:")));
+
+        assert_eq!(
+            kinds(Action::AddAward {
+                project_id: "7".into(),
+                iid: "120".into(),
+                note_id: Some("9".into()),
+                name: "tada".into(),
+            }),
+            Some(vec![
+                "mrAwards:7:120:".to_owned(),
+                "noteAwards::120:".to_owned()
+            ])
+        );
+        let retry = kinds(Action::RetryPipeline {
+            project_id: "7".into(),
+            iid: "120".into(),
+            pipeline_project_id: "8".into(),
+            pipeline_id: "55".into(),
+        })
+        .unwrap();
+        assert!(retry.contains(&"pipeline:8::55".to_owned()));
+        assert!(retry.contains(&"mrPipelines:7:120:".to_owned()));
+        // Branch and code changes still clear everything.
+        assert_eq!(
+            kinds(Action::Rebase {
+                project_id: "7".into(),
+                iid: "120".into(),
+                sha: "a".repeat(40),
+            }),
+            None
+        );
     }
 
     #[tokio::test]

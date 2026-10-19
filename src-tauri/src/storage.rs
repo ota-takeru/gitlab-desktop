@@ -55,6 +55,16 @@ pub struct LocalDraft {
     pub updated_at: u64,
 }
 
+/// Saved query answers of one kind to remove, optionally only those of one
+/// project, merge request or pipeline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CacheRule {
+    pub kind: &'static str,
+    pub project_id: Option<String>,
+    pub iid: Option<String>,
+    pub pipeline_id: Option<String>,
+}
+
 pub struct Store(Connection);
 
 impl Store {
@@ -225,19 +235,30 @@ impl Store {
         Ok(())
     }
 
-    /// Removes the account's saved answers of the given query kinds. Keys are
-    /// the query JSON, which starts with its kind.
-    pub fn clear_account_queries(&mut self, account: &str, kinds: &[&str]) -> Result<(), AppError> {
+    /// Removes the account's saved answers that `rules` select. Keys are the
+    /// query JSON, so a rule matches its kind and, when given, its project,
+    /// merge request or pipeline.
+    pub fn clear_account_queries(
+        &mut self,
+        account: &str,
+        rules: &[CacheRule],
+    ) -> Result<(), AppError> {
         let transaction = self.0.transaction().map_err(|_| storage_error())?;
-        for kind in kinds {
-            let prefix = serde_json::to_string(&serde_json::json!({ "kind": kind }))
-                .map_err(|_| storage_error())?;
-            // `{"kind":"x"}` without its closing brace, followed by the query's other fields or its end.
-            let prefix = &prefix[..prefix.len() - 1];
+        for rule in rules {
             transaction
                 .execute(
-                    "DELETE FROM cache WHERE account=?1 AND (key=?2 || '}' OR substr(key,1,length(?2)+1)=?2 || ',')",
-                    params![account, prefix],
+                    "DELETE FROM cache WHERE account=?1 AND json_valid(key) \
+                     AND json_extract(key,'$.kind')=?2 \
+                     AND (?3 IS NULL OR json_extract(key,'$.projectId')=?3) \
+                     AND (?4 IS NULL OR json_extract(key,'$.iid')=?4) \
+                     AND (?5 IS NULL OR json_extract(key,'$.pipelineId')=?5)",
+                    params![
+                        account,
+                        rule.kind,
+                        rule.project_id,
+                        rule.iid,
+                        rule.pipeline_id
+                    ],
                 )
                 .map_err(|_| storage_error())?;
         }
@@ -534,7 +555,7 @@ mod tests {
         assert!(store.get("a", "query").unwrap().is_none());
     }
     #[test]
-    fn clearing_query_kinds_keeps_the_other_answers() {
+    fn clearing_queries_keeps_the_answers_no_rule_selects() {
         let mut store = Store::init(Connection::open_in_memory().unwrap()).unwrap();
         let snapshot = Snapshot {
             data: serde_json::json!([]),
@@ -544,23 +565,59 @@ mod tests {
             total_pages: None,
             completeness: "complete".into(),
         };
-        let awards = r#"{"kind":"mrAwards","projectId":"1","iid":"2"}"#;
-        let note_awards =
-            r#"{"kind":"noteAwards","projectPath":"g/p","iid":"2","sinceNoteId":"3"}"#;
-        let similar = r#"{"kind":"mrAwardsOther","projectId":"1"}"#;
-        let discussions = r#"{"kind":"discussions","projectId":"1","iid":"2"}"#;
-        for key in [awards, note_awards, similar, discussions] {
+        let discussions = r#"{"kind":"discussions","projectId":"1","iid":"2","page":1}"#;
+        let other_mr = r#"{"kind":"discussions","projectId":"1","iid":"3","page":1}"#;
+        let other_project = r#"{"kind":"discussions","projectId":"9","iid":"2","page":1}"#;
+        let similar_kind = r#"{"kind":"discussionsOther","projectId":"1","iid":"2"}"#;
+        let list = r#"{"kind":"mrs","search":"","state":"opened","page":1}"#;
+        let pipeline = r#"{"kind":"pipeline","projectId":"5","pipelineId":"8"}"#;
+        let other_pipeline = r#"{"kind":"pipeline","projectId":"5","pipelineId":"9"}"#;
+        let not_json = "not json";
+        for key in [
+            discussions,
+            other_mr,
+            other_project,
+            similar_kind,
+            list,
+            pipeline,
+            other_pipeline,
+            not_json,
+        ] {
             store.put("a", key, &snapshot).unwrap();
         }
-        store.put("b", awards, &snapshot).unwrap();
+        store.put("b", discussions, &snapshot).unwrap();
+        let rule = |kind,
+                    project_id: Option<&str>,
+                    iid: Option<&str>,
+                    pipeline_id: Option<&str>| CacheRule {
+            kind,
+            project_id: project_id.map(str::to_owned),
+            iid: iid.map(str::to_owned),
+            pipeline_id: pipeline_id.map(str::to_owned),
+        };
         store
-            .clear_account_queries("a", &["mrAwards", "noteAwards"])
+            .clear_account_queries(
+                "a",
+                &[
+                    rule("discussions", Some("1"), Some("2"), None),
+                    rule("mrs", None, None, None),
+                    rule("pipeline", Some("5"), None, Some("8")),
+                ],
+            )
             .unwrap();
-        assert!(store.get("a", awards).unwrap().is_none());
-        assert!(store.get("a", note_awards).unwrap().is_none());
-        assert!(store.get("a", similar).unwrap().is_some());
-        assert!(store.get("a", discussions).unwrap().is_some());
-        assert!(store.get("b", awards).unwrap().is_some());
+        for removed in [discussions, list, pipeline] {
+            assert!(store.get("a", removed).unwrap().is_none(), "{removed}");
+        }
+        for kept in [
+            other_mr,
+            other_project,
+            similar_kind,
+            other_pipeline,
+            not_json,
+        ] {
+            assert!(store.get("a", kept).unwrap().is_some(), "{kept}");
+        }
+        assert!(store.get("b", discussions).unwrap().is_some());
     }
 
     #[test]

@@ -54,6 +54,30 @@ describe('useGitLabMutation', () => {
     expect(result.current.status).toBe('success')
   })
 
+  it('keeps the screen usable while a reaction is sent and sends a later write after it', async () => {
+    const sends: Array<() => void> = []
+    mutateGitLabMock.mockImplementation(() => new Promise<void>((done) => { sends.push(done) }))
+    const reaction = { iid: '1', kind: 'addAward' as const, name: 'tada', projectId: 'project-1' }
+    const { result } = renderHook(() => useGitLabMutation('session-1', 'project-1:1'), { wrapper })
+
+    let first!: Promise<boolean>
+    let second!: Promise<boolean>
+    act(() => { first = result.current.run(reaction) })
+    expect(result.current.status).toBe('pending')
+    expect(result.current.isPending).toBe(false)
+
+    act(() => { second = result.current.run(action) })
+    // The comment waits for the reaction instead of being refused or sent alongside it.
+    expect(mutateGitLabMock).toHaveBeenCalledTimes(1)
+    await act(async () => sends[0]())
+    await expect(first).resolves.toBe(true)
+    await waitFor(() => expect(mutateGitLabMock).toHaveBeenCalledTimes(2))
+    expect(mutateGitLabMock).toHaveBeenLastCalledWith({ action, sessionId: 'session-1' })
+    expect(result.current.isPending).toBe(true)
+    await act(async () => sends[1]())
+    await expect(second).resolves.toBe(true)
+  })
+
   it('forwards a local draft key only when a composer supplies one', async () => {
     mutateGitLabMock.mockResolvedValue(undefined)
     const view = renderHook(() => useGitLabMutation('session-1', 'project-1:1'))
