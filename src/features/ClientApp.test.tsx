@@ -233,12 +233,12 @@ it('keeps the list mounted and only toggles the selection parameter when opening
   })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  fireEvent.change(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' }), { target: { value: 'unsent draft' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' }), { target: { value: 'unsent draft' } })
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toHaveValue('unsent draft')
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('unsent draft')
 })
 
 it('returns to the list through history, so Back does not reopen the MR', async () => {
@@ -294,7 +294,7 @@ it('preserves MR search filters when returning from an opened request', async ()
 
   // Returning goes back through history, which completes after the click.
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&search=needle'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toHaveValue('needle')
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('needle')
   expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
 })
 
@@ -643,17 +643,17 @@ it('keeps the MR list mounted when it applies a search itself', async () => {
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })
+  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
   fireEvent.change(search, { target: { value: 'needle' } })
   fireEvent.submit(search.closest('form')!)
   await waitFor(() => expect(window.location.hash).toContain('search=needle'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toBe(search)
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBe(search)
 
   // Another list still starts fresh; the previous one stays mounted, hidden.
   fireEvent.click(screen.getByRole('tab', { name: '担当' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
   expect(screen.getByDisplayValue('needle')).not.toBeVisible()
-  expect(screen.getByRole('textbox', { name: '担当しているMRをタイトル・説明で検索' })).toHaveValue('')
+  expect(screen.getByRole('textbox', { name: '担当しているMRをタイトル・説明・MR番号で検索' })).toHaveValue('')
 })
 
 it('shows a list and an MR visited before as they were left, without building them again', async () => {
@@ -667,14 +667,14 @@ it('shows a list and an MR visited before as they were left, without building th
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   // Text typed but not applied survives a visit to another place.
-  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })
+  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
   fireEvent.change(search, { target: { value: 'typed' } })
   fireEvent.click(screen.getByRole('button', { name: 'To-Do' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/todos'))
   expect(search).not.toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toBe(search)
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBe(search)
   expect(search).toHaveValue('typed')
 
   // An MR opened again is the same rendered page.

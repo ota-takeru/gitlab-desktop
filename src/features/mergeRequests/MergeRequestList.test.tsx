@@ -104,7 +104,7 @@ describe('MergeRequestList search filters', () => {
     const onSearchAll = vi.fn()
     const view = render(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchAll={onSearchAll} />)
 
-    const queueSearch = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })
+    const queueSearch = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
     // Text typed in a queue can be searched for in all MRs instead.
     fireEvent.change(queueSearch, { target: { value: 'cache' } })
     fireEvent.click(screen.getByRole('button', { name: 'すべてのMRから「cache」を検索' }))
@@ -277,7 +277,7 @@ describe('MergeRequestList search filters', () => {
       return emptyResult
     })
     render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
-    const search = screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })
+    const search = screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' })
 
     fireEvent.change(search, { target: { value: 'without-submit' } })
     expect(latestMrsQuery(seen)).toMatchObject({ search: '' })
@@ -357,7 +357,7 @@ describe('MergeRequestList search filters', () => {
     const onSearchStateChange = vi.fn()
     render(<MergeRequestList onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' }), { target: { value: 'typed' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' }), { target: { value: 'typed' } })
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'MRの並び順' }))
     fireEvent.click(screen.getByRole('option', { name: '作成日時' }))
     expect(latestHookMrsQuery()).toMatchObject({ orderBy: 'created_at', search: '' })
@@ -417,12 +417,12 @@ describe('MergeRequestList search filters', () => {
     expect(savedSearches[0]).toMatchObject({ assignee: 'self', orderBy: 'updated_at', sort: 'desc' })
     expect(savedSearches[1]).toMatchObject({ assignee: '17' })
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' }), { target: { value: 'temporary' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' }), { target: { value: 'temporary' } })
     fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Other assignee' }))
     expect(latestHookMrsQuery()).toMatchObject({ assigneeId: '17', search: '' })
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' }), { target: { value: 'temporary' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' }), { target: { value: 'temporary' } })
     fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Open' }))
 
@@ -433,7 +433,7 @@ describe('MergeRequestList search filters', () => {
   it('saves the applied conditions rather than unsubmitted text, named in Japanese by default', () => {
     render(<MergeRequestList initialParams={{ search: 'cache', state: 'merged' }} onOpenMergeRequest={vi.fn()} />)
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' }), { target: { value: 'not submitted' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' }), { target: { value: 'not submitted' } })
     fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/ }))
     fireEvent.click(screen.getByRole('button', { name: '検索を保存' }))
 
@@ -689,7 +689,7 @@ describe('MergeRequestList search filters', () => {
       : emptyResult)
     render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
 
-    const search = screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' })
+    const search = screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' })
     search.focus()
     fireEvent.keyDown(search, { key: 'j' })
     expect(document.activeElement).toBe(search)
@@ -756,14 +756,10 @@ describe('MergeRequestList search filters', () => {
     expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42', search: '', state: 'opened' })
   })
 
-  it('offers MR number search only inside a project and says so for !123 elsewhere', () => {
-    const view = render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明で検索' }), { target: { value: '!123' } })
-    expect(screen.getByText('MR番号での検索はプロジェクト内で使えます')).toBeInTheDocument()
-
-    view.unmount()
-    render(<MergeRequestList initialParams={{ projectId: '77' }} onOpenMergeRequest={vi.fn()} projectId="77" projectName="team/desktop" />)
+  it('offers MR number search outside a project too', () => {
+    render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' }), { target: { value: '!123' } })
+    expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveAttribute('placeholder', 'タイトル・説明・MR番号（!123）を検索')
     expect(screen.queryByText('MR番号での検索はプロジェクト内で使えます')).not.toBeInTheDocument()
   })
 

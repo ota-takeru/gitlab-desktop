@@ -310,10 +310,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
     ? kind === 'state'
     : !(projectName && (kind === 'project' || kind === 'group')))
   const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
-  // GitLab finds an MR by number (!123) only in a project's list.
-  const projectScoped = Boolean(cleanOptional(draft.projectId))
-  const numberOutsideProject = !projectScoped && /^!\d+$/u.test(draft.search.trim())
-  const searchTarget = projectScoped ? '検索対象はタイトル・説明・MR番号（!123）です。' : '検索対象はタイトルと説明です。'
+  const searchTarget = '検索対象はタイトル・説明・MR番号（!123）です。'
   const defaults = defaultConditions(projectId, personalQueue, session.user.id)
   const conditionsChanged = !sameConditions(applied ?? draft, defaults) || !sameConditions(draft, defaults)
   const resetConditions = () => {
@@ -347,10 +344,9 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
           <TextField
             fullWidth
             onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))}
-            helperText={numberOutsideProject ? 'MR番号での検索はプロジェクト内で使えます' : undefined}
-            placeholder={fixedQueue ? `${title}の中を検索` : projectScoped ? 'タイトル・説明・MR番号（!123）を検索' : 'タイトル・説明を検索'}
+            placeholder={fixedQueue ? `${title}の中を検索` : 'タイトル・説明・MR番号（!123）を検索'}
             slotProps={{
-              htmlInput: { 'aria-label': fixedQueue ? `${title}をタイトル・説明で検索` : projectScoped ? 'MRをタイトル・説明・MR番号で検索' : 'MRをタイトル・説明で検索' },
+              htmlInput: { 'aria-label': fixedQueue ? `${title}をタイトル・説明・MR番号で検索` : 'MRをタイトル・説明・MR番号で検索' },
               input: {
                 startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>,
                 endAdornment: <InputAdornment position="end"><Tooltip title="検索 (Enter)"><IconButton aria-label="検索" edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,

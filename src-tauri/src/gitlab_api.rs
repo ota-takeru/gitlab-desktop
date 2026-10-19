@@ -152,11 +152,22 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         return fetch_job_trace(client, api_base, project_id, job_id).await;
     }
     if let Query::Mrs {
-        search, project_id, ..
+        search,
+        project_id,
+        page,
+        ..
     } = query
     {
-        if let Some((iid, false)) = merge_request_number(search, project_id) {
-            return fetch_mrs_matching_number(client, api_base, query, iid).await;
+        match merge_request_number(search) {
+            Some((iid, false)) => {
+                return fetch_mrs_matching_number(client, api_base, query, iid).await;
+            }
+            Some((iid, true)) if project_id.is_none() => {
+                build_query_url(api_base, query)?;
+                return fetch_mrs_numbered_outside_project(client, api_base, query, iid, *page)
+                    .await;
+            }
+            _ => {}
         }
     }
     if let Query::VersionCompare { page, .. } = query {
@@ -275,9 +286,9 @@ fn decode_page(
     })
 }
 
-/// Within a project, a bare number matches both the MR with that iid and titles
-/// or descriptions containing it. The iid match leads page 1 and is dropped from
-/// the text pages, which decide paging.
+/// A bare number matches both the MRs with that iid and titles or descriptions
+/// containing it. The iid matches lead page 1 and are dropped from the text
+/// pages, which decide paging.
 async fn fetch_mrs_matching_number(
     client: &Client,
     api_base: &Url,
@@ -285,11 +296,18 @@ async fn fetch_mrs_matching_number(
     iid: &str,
 ) -> Result<ApiResult, AppError> {
     let mut by_iid = query.clone();
-    let Query::Mrs { search, page, .. } = &mut by_iid else {
+    let Query::Mrs {
+        search,
+        page,
+        project_id,
+        ..
+    } = &mut by_iid
+    else {
         unreachable!("only merge request searches match MR numbers");
     };
     *search = format!("!{iid}");
     let first_page = *page == 1;
+    let in_project = project_id.is_some();
 
     let (url, response_kind) = build_query_url(api_base, query)?;
     let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
@@ -303,9 +321,13 @@ async fn fetch_mrs_matching_number(
         .cloned()
         .collect();
     if first_page {
-        let (url, response_kind) = build_query_url(api_base, &by_iid)?;
-        let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-        let matches = decode_page(response_kind, &bytes, &headers)?;
+        let matches = if in_project {
+            let (url, response_kind) = build_query_url(api_base, &by_iid)?;
+            let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+            decode_page(response_kind, &bytes, &headers)?
+        } else {
+            fetch_mrs_numbered_outside_project(client, api_base, query, iid, 1).await?
+        };
         result.truncated |= matches.truncated;
         if let Value::Array(mut matched) = matches.data {
             matched.append(&mut items);
@@ -314,6 +336,122 @@ async fn fetch_mrs_matching_number(
     }
     result.data = Value::Array(items);
     Ok(result)
+}
+
+/// How many MRs one page of an MR-number search outside a project reads. That
+/// search cannot filter by person, label or branch, so it reads a wide page
+/// before those conditions are applied here.
+const NUMBER_SEARCH_PER_PAGE: u32 = 100;
+
+/// Outside a project GitLab's MR lists ignore `iids[]`, but its search treats
+/// `#123` as an MR number in every project the user can see, or in a group and
+/// its subgroups. That search takes only the state, so the list's other
+/// conditions are applied to the page it returns.
+async fn fetch_mrs_numbered_outside_project(
+    client: &Client,
+    api_base: &Url,
+    query: &Query,
+    iid: &str,
+    page: u32,
+) -> Result<ApiResult, AppError> {
+    let Query::Mrs {
+        state, group_id, ..
+    } = query
+    else {
+        unreachable!("only merge request searches match MR numbers");
+    };
+    let url = match group_id {
+        Some(group_id) => endpoint(api_base, &["groups", group_id, "search"])?,
+        None => endpoint(api_base, &["search"])?,
+    };
+    let mut params = vec![
+        ("scope".to_owned(), "merge_requests".to_owned()),
+        ("search".to_owned(), format!("#{iid}")),
+        ("page".to_owned(), page.to_string()),
+        ("per_page".to_owned(), NUMBER_SEARCH_PER_PAGE.to_string()),
+    ];
+    if *state != MergeRequestState::All {
+        params.push(("state".to_owned(), state_to_string(state).to_owned()));
+    }
+    let url = append_query(url, params);
+    let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+    let mut result = decode_page(ResponseKind::Mrs, &bytes, &headers)?;
+    let mut items = Vec::new();
+    for item in result.data.as_array().into_iter().flatten() {
+        if item["iid"].as_str() == Some(iid) && meets_mr_conditions(item, query)? {
+            items.push(item.clone());
+        }
+    }
+    result.data = Value::Array(items);
+    // Filtered pages shrink, so GitLab's page count no longer applies.
+    result.total_pages = None;
+    Ok(result)
+}
+
+/// Whether a normalized MR meets the list conditions GitLab's search cannot apply.
+fn meets_mr_conditions(mr: &Value, query: &Query) -> Result<bool, AppError> {
+    let Query::Mrs {
+        state,
+        labels,
+        source_branch,
+        target_branch,
+        reviewer_id,
+        assignee_id,
+        author_id,
+        updated_after,
+        updated_before,
+        ..
+    } = query
+    else {
+        unreachable!("only merge request searches have list conditions");
+    };
+    let has_user = |field: &str, id: &str| {
+        mr[field]
+            .as_array()
+            .is_some_and(|users| users.iter().any(|user| user["id"].as_str() == Some(id)))
+    };
+    let timestamp = |value: &str| {
+        time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339).ok()
+    };
+    let updated = mr["updatedAt"].as_str().and_then(timestamp);
+    let within = |bound: &Option<String>, after: bool| -> Result<bool, AppError> {
+        let Some(bound) = bound else { return Ok(true) };
+        let bound = timestamp(bound).ok_or_else(|| {
+            AppError::new("INVALID_INPUT", "MRの更新日の指定が正しくありません。")
+        })?;
+        Ok(updated.is_some_and(|updated| {
+            if after {
+                updated >= bound
+            } else {
+                updated <= bound
+            }
+        }))
+    };
+    Ok(
+        (*state == MergeRequestState::All || mr["state"].as_str() == Some(state_to_string(state)))
+            && labels.iter().flatten().all(|label| {
+                mr["labels"]
+                    .as_array()
+                    .is_some_and(|labels| labels.iter().any(|value| value.as_str() == Some(label)))
+            })
+            && source_branch
+                .as_deref()
+                .is_none_or(|branch| mr["sourceBranch"].as_str() == Some(branch))
+            && target_branch
+                .as_deref()
+                .is_none_or(|branch| mr["targetBranch"].as_str() == Some(branch))
+            && author_id
+                .as_deref()
+                .is_none_or(|id| mr["author"]["id"].as_str() == Some(id))
+            && assignee_id
+                .as_deref()
+                .is_none_or(|id| has_user("assignees", id))
+            && reviewer_id
+                .as_deref()
+                .is_none_or(|id| has_user("reviewers", id))
+            && within(updated_after, true)?
+            && within(updated_before, false)?,
+    )
 }
 
 /// Apply one mutation.  Writes are intentionally sent exactly once.  A
@@ -1511,7 +1649,7 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 ("page".to_owned(), page.to_string()),
                 ("per_page".to_owned(), PER_PAGE.to_string()),
             ];
-            if let Some((iid, true)) = merge_request_number(search, project_id) {
+            if let (Some(_), Some((iid, true))) = (project_id, merge_request_number(search)) {
                 params.push(("iids[]".to_owned(), iid.to_owned()));
             } else if !search.is_empty() {
                 params.push(("search".to_owned(), search.clone()));
@@ -1872,13 +2010,9 @@ fn add_optional_param(params: &mut Vec<(String, String)>, name: &str, value: &Op
 
 /// A search of only an MR number, and whether it was written as `!123`, which
 /// names the MR alone, rather than `123`, which also matches text. GitLab
-/// filters by `iids[]` only in project lists; group and global lists ignore it,
-/// so there a number stays a text search.
-fn merge_request_number<'a>(
-    search: &'a str,
-    project_id: &Option<String>,
-) -> Option<(&'a str, bool)> {
-    project_id.as_ref()?;
+/// filters by `iids[]` only in project lists; group and global lists find the
+/// number through GitLab's search instead.
+fn merge_request_number(search: &str) -> Option<(&str, bool)> {
     let search = search.trim();
     let (iid, explicit) = match search.strip_prefix('!') {
         Some(iid) => (iid, true),
@@ -5447,7 +5581,7 @@ mod tests {
             assert_eq!(params.get("search").unwrap(), search);
             assert!(!params.contains_key("iids[]"));
         }
-        // Group and global lists ignore `iids[]`, so the number stays text.
+        // Group and global lists ignore `iids[]`; `fetch` searches the number instead.
         for group_id in [None, Some("9")] {
             let (url, _) = build_query_url(&api, &outside_project(group_id)).unwrap();
             let params = url
@@ -5527,6 +5661,79 @@ mod tests {
         assert!(requests[0].contains("search=123") && !requests[0].contains("iids"));
         assert!(requests[1].contains("iids%5B%5D=123") && !requests[1].contains("search="));
         assert!(requests[2].contains("search=123") && requests[2].contains("page=2"));
+    }
+
+    #[test]
+    fn mr_number_search_outside_a_project_uses_gitlab_search_and_keeps_the_list_conditions() {
+        let mr = |id: u32, iid: u32, project: u32, reviewer: u32, state: &str| {
+            format!(
+                r#"{{"id":{id},"iid":{iid},"project_id":{project},"title":"MR {id}","state":"{state}","updated_at":"2026-01-15T00:00:00Z","author":{{"id":1,"username":"alice","name":"Alice"}},"reviewers":[{{"id":{reviewer},"username":"r{reviewer}","name":"R"}}]}}"#
+            )
+        };
+        let found = format!(
+            "[{},{},{},{}]",
+            mr(1, 123, 7, 8, "opened"),
+            mr(2, 123, 9, 5, "opened"),
+            mr(3, 1234, 7, 8, "opened"),
+            mr(4, 123, 11, 8, "merged"),
+        );
+        let fixture = Fixture::new(vec![
+            response("200 OK", &found, "X-Next-Page: 2\r\nX-Total-Pages: 3\r\n"),
+            response("200 OK", &format!("[{}]", mr(5, 6, 7, 8, "opened")), ""),
+            response("200 OK", &found, ""),
+        ]);
+        let client = Client::builder().build().unwrap();
+        let query = |search: &str, group_id: Option<&str>| Query::Mrs {
+            search: search.to_owned(),
+            state: MergeRequestState::Opened,
+            project_id: None,
+            group_id: group_id.map(str::to_owned),
+            labels: None,
+            source_branch: None,
+            target_branch: None,
+            reviewer_id: Some("8".to_owned()),
+            assignee_id: None,
+            author_id: Some("1".to_owned()),
+            updated_after: Some("2026-01-01T00:00:00.000Z".to_owned()),
+            updated_before: None,
+            order_by: None,
+            sort: None,
+            page: 1,
+        };
+        let ids = |result: &ApiResult| {
+            result
+                .data
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item["id"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+
+        // `!123` lists only the MRs numbered 123 that meet the conditions.
+        let explicit = runtime()
+            .block_on(fetch(&client, &fixture.url(), &query("!123", None)))
+            .unwrap();
+        assert_eq!(ids(&explicit), ["1"]);
+        assert_eq!(explicit.next_page, Some(2));
+        assert_eq!(explicit.total_pages, None);
+        // `123` leads with those MRs, then the text matches.
+        let bare = runtime()
+            .block_on(fetch(&client, &fixture.url(), &query("123", Some("9"))))
+            .unwrap();
+        assert_eq!(ids(&bare), ["1", "5"]);
+
+        let requests = fixture.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[0].starts_with("GET /api/v4/search?"));
+        assert!(
+            requests[0].contains("scope=merge_requests") && requests[0].contains("search=%23123")
+        );
+        assert!(requests[0].contains("state=opened") && requests[0].contains("per_page=100"));
+        assert!(requests[1].starts_with("GET /api/v4/groups/9/merge_requests?"));
+        assert!(requests[1].contains("search=123") && requests[1].contains("reviewer_id=8"));
+        assert!(requests[2].starts_with("GET /api/v4/groups/9/search?"));
+        assert!(requests[2].contains("search=%23123"));
     }
 
     #[test]
