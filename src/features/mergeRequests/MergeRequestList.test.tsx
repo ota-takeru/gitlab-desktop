@@ -71,9 +71,14 @@ function latestHookMrsQuery(): MergeRequestsQuery | null {
   return latestMrsQuery(queryMock.mock.calls.map((call) => call[1]))
 }
 
-/** Opens the editor of one condition from 「＋条件を追加」. */
+/** Lists the conditions by clicking the search field. */
+function openSearchOptions() {
+  fireEvent.click(screen.getByRole('textbox', { name: /で検索$/u }))
+}
+
+/** Opens the editor of one condition from the search field's options. */
 function addCondition(name: string) {
-  fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+  openSearchOptions()
   fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name }))
 }
 
@@ -112,14 +117,14 @@ describe('MergeRequestList search filters', () => {
     // The queue's person is a tag that cannot be removed, and only the state can be added.
     expect(conditionTags()).toEqual(['自分がレビュアー（固定）', '状態: Open'])
     expect(screen.queryByLabelText('固定の条件の絞り込みを解除')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+    openSearchOptions()
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['状態'])
     expect(screen.queryByRole('button', { name: /保存済み検索を管理/u })).not.toBeInTheDocument()
     expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42', state: 'opened' })
 
     view.unmount()
     render(<MergeRequestList initialParams={{ state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+    openSearchOptions()
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['状態', 'レビュアー', '担当者', '作者', 'ラベル', 'ソースブランチ', 'ターゲットブランチ', '更新日', 'プロジェクト', 'グループ'])
   })
 
@@ -130,7 +135,7 @@ describe('MergeRequestList search filters', () => {
     expect(screen.getByText('ブランチ: feature/search')).toBeInTheDocument()
     expect(latestHookMrsQuery()).toMatchObject({ projectId: '9', sourceBranch: 'feature/search' })
     // The project's own list keeps its project, so neither scope can be added.
-    fireEvent.click(screen.getByRole('button', { name: '条件を追加' }))
+    openSearchOptions()
     expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'プロジェクト' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'グループ' })).not.toBeInTheDocument()
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
@@ -139,6 +144,34 @@ describe('MergeRequestList search filters', () => {
     expect(screen.queryByText('ブランチ: feature/search')).not.toBeInTheDocument()
     expect(latestHookMrsQuery()?.sourceBranch).toBeUndefined()
     expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.not.objectContaining({ sourceBranch: expect.anything() }))
+  })
+
+  it('lists the conditions from the search field and shows their values as tags inside it', () => {
+    render(<MergeRequestList initialParams={{ labels: 'bug', search: 'cache', state: 'merged' }} onOpenMergeRequest={vi.fn()} />)
+    const field = screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' })
+
+    // The values are tags inside the field; the search word is the field's own text.
+    const tags = screen.getByLabelText('適用中の条件')
+    expect(field.closest('.MuiInputBase-root')).toContainElement(tags)
+    expect(conditionTags()).toEqual(['状態: Merged', 'ラベル: bug'])
+    expect(field).toHaveValue('cache')
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    fireEvent.click(field)
+    expect(field).toHaveAttribute('aria-expanded', 'true')
+    expect(within(screen.getByRole('menu', { name: '検索条件' })).getAllByRole('menuitem')).toHaveLength(10)
+    // Typing hides the options; the arrow key lists them again and Escape closes them.
+    fireEvent.change(field, { target: { value: 'cache v2' } })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    // Clicking a tag edits that condition instead of listing the options.
+    fireEvent.click(screen.getByText('ラベル: bug'))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'ラベルの条件' })).toBeInTheDocument()
   })
 
   it('passes all applied filters to the typed query and maps self/date values', () => {

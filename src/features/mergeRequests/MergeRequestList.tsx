@@ -4,7 +4,6 @@ import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
@@ -27,15 +26,17 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
-import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import MenuList from '@mui/material/MenuList'
+import Paper from '@mui/material/Paper'
+import Popper from '@mui/material/Popper'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent, ReactNode, RefObject } from 'react'
+import type { FocusEvent, KeyboardEvent, MouseEvent, ReactNode, RefObject } from 'react'
 
 import { ListRow } from '../../components/ListRow'
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
@@ -107,8 +108,10 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   const searchInputRef = useRef<HTMLInputElement>(null)
   const initial = useMemo(() => makeInitialState(initialParams, initialQuery, projectId, session?.user.id), [initialParams, initialQuery, projectId, session?.user.id])
   const [draft, setDraft] = useState<SearchDraft>(initial.draft)
-  // Every condition is a tag; 「＋条件を追加」 and a tag open the same editor for one condition.
-  const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null)
+  // Every condition is a tag inside the search field; the field's options and a tag open the same editor for one condition.
+  const searchFieldRef = useRef<HTMLDivElement>(null)
+  const searchOptionsRef = useRef<HTMLDivElement>(null)
+  const [searchOptions, setSearchOptions] = useState<{ anchor: HTMLElement; keyboard: boolean; width: number } | null>(null)
   const [editing, setEditing] = useState<{ anchor: HTMLElement; kind: ConditionKind } | null>(null)
   // Names of people and projects chosen in the editor, keyed by `<kind>:<id>`; the condition keeps the ID.
   const [conditionNames, setConditionNames] = useState<Record<string, string>>({})
@@ -309,6 +312,8 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   const addableKinds = CONDITION_KINDS.filter((kind) => fixedQueue
     ? kind === 'state'
     : !(projectName && (kind === 'project' || kind === 'group')))
+  // The search word is the field's own text, so only the other conditions are tags in it.
+  const fieldChips = chips.filter((chip) => chip.kind !== 'search')
   const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
   const searchTarget = '検索対象はタイトル・説明・MR番号（!123）です。'
   const defaults = defaultConditions(projectId, personalQueue, session.user.id)
@@ -319,6 +324,20 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
     setFilterError(null)
     setApplied(next)
     emitApplied(next)
+  }
+  const openSearchOptions = (keyboard: boolean) => {
+    const anchor = searchFieldRef.current
+    if (anchor && addableKinds.length) setSearchOptions({ anchor, keyboard, width: anchor.clientWidth })
+  }
+  // The options close when focus leaves both the field and the options.
+  const closeSearchOptionsOnBlur = (event: FocusEvent) => {
+    const next = event.relatedTarget as Node | null
+    if (next && (searchFieldRef.current?.contains(next) || searchOptionsRef.current?.contains(next))) return
+    setSearchOptions(null)
+  }
+  const chooseSearchOption = (kind: ConditionKind) => {
+    setSearchOptions(null)
+    if (searchOptions) setEditing({ anchor: searchOptions.anchor, kind })
   }
   const applyEdited = (kind: ConditionKind, patch: Partial<SearchDraft>, name?: string) => {
     if (name) {
@@ -343,29 +362,70 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
         <Box component="form" onSubmit={(event) => { event.preventDefault(); applyDraft() }}>
           <TextField
             fullWidth
-            onChange={(event) => setDraft((current) => ({ ...current, search: event.target.value }))}
+            onChange={(event) => {
+              setSearchOptions(null)
+              setDraft((current) => ({ ...current, search: event.target.value }))
+            }}
             placeholder={fixedQueue ? `${title}の中を検索` : 'タイトル・説明・MR番号（!123）を検索'}
+            ref={searchFieldRef}
             slotProps={{
-              htmlInput: { 'aria-label': fixedQueue ? `${title}をタイトル・説明・MR番号で検索` : 'MRをタイトル・説明・MR番号で検索' },
+              htmlInput: {
+                'aria-controls': searchOptions ? 'mr-search-options' : undefined,
+                'aria-expanded': Boolean(searchOptions),
+                'aria-haspopup': 'menu',
+                'aria-label': fixedQueue ? `${title}をタイトル・説明・MR番号で検索` : 'MRをタイトル・説明・MR番号で検索',
+                onBlur: closeSearchOptionsOnBlur,
+                onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    openSearchOptions(true)
+                  } else if (event.key === 'Escape') setSearchOptions(null)
+                },
+              },
               input: {
-                startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>,
+                // Clicking the field, but not a tag in it, lists the conditions that can be added.
+                onClick: (event) => { if (!(event.target as Element).closest('.MuiChip-root, button')) openSearchOptions(false) },
+                startAdornment: <>
+                  <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>
+                  {/* Each applied condition shows its value as a tag in the field: a tag opens its editor, ✕ removes it. */}
+                  {fieldChips.length ? <Box aria-label="適用中の条件" role="group" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%', mr: 0.5, py: 0.5 }}>
+                    {fieldChips.map((chip) => {
+                      const { clear, kind } = chip
+                      const open = kind && kind !== 'search' ? (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind }) : undefined
+                      return <Chip color={clear ? 'primary' : 'default'} deleteIcon={clear ? <CancelRoundedIcon aria-label={`${chip.name}の絞り込みを解除`} /> : undefined} key={chip.name} label={chip.label} onClick={open} onDelete={clear ? () => applyConditions(clear) : undefined} size="small" sx={{ fontFamily: chip.code ? 'code.fontFamily' : undefined, maxWidth: '100%' }} variant="outlined" />
+                    })}
+                  </Box> : null}
+                </>,
                 endAdornment: <InputAdornment position="end"><Tooltip title="検索 (Enter)"><IconButton aria-label="検索" edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
+                sx: { flexWrap: 'wrap', '& .MuiInputBase-input': { flex: 1, minWidth: 160, width: 'auto' } },
               },
             }}
             inputRef={searchInputRef}
             value={draft.search}
           />
+          <Popper anchorEl={searchOptions?.anchor} open={Boolean(searchOptions)} placement="bottom-start" sx={{ width: searchOptions?.width, zIndex: 'modal' }}>
+            <Paper ref={searchOptionsRef} sx={{ border: 1, borderColor: 'divider', boxShadow: 8, mt: 0.5, py: 0.5 }}>
+              <Typography color="textSecondary" sx={{ display: 'block', px: 1.5 }} variant="overline">検索条件を追加</Typography>
+              <MenuList
+                aria-label="検索条件"
+                autoFocusItem={searchOptions?.keyboard}
+                dense
+                id="mr-search-options"
+                onBlur={closeSearchOptionsOnBlur}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return
+                  setSearchOptions(null)
+                  searchInputRef.current?.focus()
+                }}
+              >
+                {addableKinds.map((kind) => <MenuItem key={kind} onClick={() => chooseSearchOption(kind)}>{CONDITION_NAMES[kind]}</MenuItem>)}
+              </MenuList>
+            </Paper>
+          </Popper>
           <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            <Button aria-controls={addMenuAnchor ? 'mr-add-condition' : undefined} aria-expanded={Boolean(addMenuAnchor)} aria-haspopup="menu" onClick={(event) => setAddMenuAnchor(event.currentTarget)} startIcon={<AddRoundedIcon />} sx={{ px: 1 }}>条件を追加</Button>
-            <Menu anchorEl={addMenuAnchor} id="mr-add-condition" onClose={() => setAddMenuAnchor(null)} open={Boolean(addMenuAnchor)}>
-              {addableKinds.map((kind) => <MenuItem key={kind} onClick={() => {
-                const anchor = addMenuAnchor
-                setAddMenuAnchor(null)
-                if (anchor) setEditing({ anchor, kind })
-              }}>{CONDITION_NAMES[kind]}</MenuItem>)}
-            </Menu>
             {fixedQueue && onSearchAll ? <Button onClick={() => onSearchAll(draft.search.trim())} startIcon={<SearchRoundedIcon />} sx={{ px: 1 }}>{draft.search.trim() ? `すべてのMRから「${shorten(draft.search.trim(), 24)}」を検索` : 'すべてのMRから検索'}</Button> : null}
-            {/* The order is not a condition, so it stays a pull-down beside the tags. */}
+            {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>条件をクリア</Button> : null}
+            {/* The order is not a condition, so it stays a pull-down beside the field. */}
             <Stack direction="row" sx={{ gap: 0.5, ml: 'auto' }}>
               <Select aria-label="MRの並び順" displayEmpty onChange={(event) => applyConditions({ orderBy: event.target.value as OrderBy })} sx={pillSelectSx} value={draft.orderBy}>
                 <MenuItem value="updated_at">更新日時</MenuItem>
@@ -377,17 +437,6 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
               </Select>
             </Stack>
           </Stack>
-          {/* Every applied condition is a tag: a tag opens its editor, ✕ removes it. */}
-          {chips.length ? <Stack aria-label="適用中の条件" direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            {chips.map((chip) => {
-              const { clear, kind } = chip
-              const open = kind === 'search'
-                ? () => searchInputRef.current?.focus()
-                : kind ? (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind }) : undefined
-              return <Chip color={clear ? 'primary' : 'default'} deleteIcon={clear ? <CancelRoundedIcon aria-label={`${chip.name}の絞り込みを解除`} /> : undefined} key={chip.name} label={chip.label} onClick={open} onDelete={clear ? () => applyConditions(clear) : undefined} size="small" sx={{ fontFamily: chip.code ? 'code.fontFamily' : undefined, maxWidth: '100%' }} variant="outlined" />
-            })}
-            {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>条件をクリア</Button> : null}
-          </Stack> : null}
           <ConditionEditor
             anchorEl={editing?.anchor ?? null}
             currentUserId={session.user.id}
