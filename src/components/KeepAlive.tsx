@@ -11,6 +11,11 @@ interface KeepAliveProps {
   max: number
   component?: ElementType
   sx?: SxProps<Theme>
+  /**
+   * While set, the active screen renders again from here only when this
+   * changes, e.g. a list under an open MR that only needs to follow which MR is open.
+   */
+  renderKey?: string
 }
 
 interface KeptScreens {
@@ -28,7 +33,7 @@ interface KeptScreens {
  * Only the active screen's wrapper carries `data-screen-active="true"`, for
  * document queries that must ignore the hidden ones.
  */
-export function KeepAlive({ activeKey, children, component = 'div', max, sx }: KeepAliveProps) {
+export function KeepAlive({ activeKey, children, component = 'div', max, renderKey, sx }: KeepAliveProps) {
   const [screens, setScreens] = useState<KeptScreens>({ order: [], recent: [] })
   let current = screens
   if (activeKey !== null && screens.recent[0] !== activeKey) {
@@ -41,13 +46,17 @@ export function KeepAlive({ activeKey, children, component = 'div', max, sx }: K
     // The wrapper sits outside Activity: React defers updates inside a hidden subtree, the marker must change at once.
     return <Box component={component} data-screen-active={active ? 'true' : 'false'} key={key} sx={[...(Array.isArray(sx) ? sx : [sx]), !active && { display: 'none' }]}>
       <Activity mode={active ? 'visible' : 'hidden'}>
-        <LastContent hidden={!active}>{active ? children : null}</LastContent>
+        <LastContent hidden={!active} renderKey={active ? renderKey : undefined}>{active ? children : null}</LastContent>
       </Activity>
     </Box>
   })}</>
 }
 
-/** A hidden screen keeps what it rendered last: its new (empty) content is skipped until it shows again. */
-const LastContent = memo(function LastContent({ children }: { children: ReactNode; hidden: boolean }) {
+/**
+ * A hidden screen keeps what it rendered last: its new (empty) content is
+ * skipped until it shows again. Context values that change meanwhile still
+ * reach it, so callers provide frequently changing ones inside the content.
+ */
+const LastContent = memo(function LastContent({ children }: { children: ReactNode; hidden: boolean; renderKey?: string }) {
   return children
-}, (_previous, next) => next.hidden)
+}, (previous, next) => next.hidden || (!previous.hidden && next.renderKey !== undefined && next.renderKey === previous.renderKey))

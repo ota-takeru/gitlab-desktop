@@ -43,6 +43,7 @@ import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
 import { delayedRevealSx } from '../../components/paneSx'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { ReactionBar } from '../../components/ReactionBar'
+import { applyOwnReaction } from '../../lib/awardEmoji'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
@@ -52,6 +53,7 @@ import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import type {
   Approvals,
+  AwardEmoji,
   Commit,
   DiffsQuery,
   Diff,
@@ -83,9 +85,9 @@ import { useDiscussionWindow } from './useDiscussionWindow'
 import { positionAtLatest } from './discussionScroll'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { clearGitLabMutationStates, useGitLabMutation } from '../shared/useGitLabMutation'
-import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
 import { readLoadedDiffPages, useDiscussionCode } from './useDiscussionCode'
-import { DiscussionList, type OlderDiscussions } from './DiscussionList'
+import { DiscussionList, type NoteReactions, type OlderDiscussions } from './DiscussionList'
 import type { ThreadActions } from './DiffThreads'
 import { diffFileOrder, DiffViewer } from './DiffViewer'
 import { DiscussionLayout } from './DiscussionLayout'
@@ -515,9 +517,21 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const editNote = (note: Note, body: string) => runAction({ body, iid, kind: 'editNote', noteId: note.id, projectId: resourceId }, () => discussionWindow.refreshDiscussion(discussionIdForNote(note)))
   const deleteNote = (note: Note) => runAction({ iid, kind: 'deleteNote', noteId: note.id, projectId: resourceId }, () => discussionWindow.refreshDiscussion(discussionIdForNote(note)))
   const resolveDiscussion = (discussion: Discussion, resolved: boolean) => runAction({ discussionId: discussion.id, iid, kind: 'resolve', projectId: resourceId, resolved }, () => discussionWindow.refreshDiscussion(discussion.id))
-  const toggleReaction = (name: string, add: boolean, noteId?: string) => runAction({ iid, kind: add ? 'addAward' : 'removeAward', name, projectId: resourceId, ...(noteId ? { noteId } : {}) }, noteId ? noteAwardsResult.refresh : mrAwardsResult.refresh)
+  const toggleReaction = (name: string, add: boolean, noteId?: string) => runAction({ iid, kind: add ? 'addAward' : 'removeAward', name, projectId: resourceId, ...(noteId ? { noteId } : {}) }, () => {
+    // GitLab has accepted the change: show it at once instead of after reading all the reactions back.
+    if (session) {
+      const change = (awards: AwardEmoji[]) => applyOwnReaction(awards, name, add, session.user)
+      if (noteId && noteAwardsQuery) applyConfirmedGitLabChange(queryClient, session.id, noteAwardsQuery, (entries) => entries.some((entry) => entry.noteId === noteId)
+        ? entries.map((entry) => entry.noteId === noteId ? { ...entry, awards: change(entry.awards) } : entry)
+        : [...entries, { awards: change([]), noteId }])
+      if (!noteId && mrAwardsQuery) applyConfirmedGitLabChange(queryClient, session.id, mrAwardsQuery, change)
+    }
+    if (noteId) noteAwardsResult.refresh()
+    else mrAwardsResult.refresh()
+  })
   const reactionsDisabled = !session || mutation.isLocked || mutation.isPending
-  const renderNoteReactions = (note: Note) => <ReactionBar awards={awardsByNote.get(note.id) ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={`${note.author.name}のコメント`} onToggle={(name, add) => void toggleReaction(name, add, note.id)} />
+  const noteReactions: NoteReactions = { awardsByNote, disabled: reactionsDisabled, onToggle: (note, name, add) => toggleReaction(name, add, note.id) }
+  const renderNoteReactions = (note: Note) => <ReactionBar awards={awardsByNote.get(note.id) ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={`${note.author.name}のコメント`} onToggle={(name, add) => toggleReaction(name, add, note.id)} />
   // Applying commits to the source branch, so the MR, its diffs and the threads all change.
   const suggestionActions: SuggestionActions | undefined = session ? {
     currentUserId: session.user.id,
@@ -901,7 +915,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       <Stack spacing={1} sx={{ px: 2, py: 2 }}>
         {noteAwardsQuery && noteAwardsResult.error ? <Alert action={<Button color="inherit" onClick={noteAwardsResult.refresh}>再試行</Button>} severity="warning">{noteAwardsResult.data ? `保存済みのリアクションを表示中です。更新に失敗しました: ${noteAwardsResult.error.message}` : `コメントのリアクションを取得できませんでした: ${noteAwardsResult.error.message}`}</Alert> : null}
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">コメントが多いため、古いコメントのリアクションは表示していません。GitLabで確認してください。</Alert> : null}
-        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} renderReactions={renderNoteReactions} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
+        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {discussionWindow.observers}
         {activeTab === 'changes' && drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">議論タブで公開</Button>} severity="info">未公開レビューが{drafts.length}件あります。公開するまでMRには反映されません。</Alert> : null}
         {activeTab === 'changes' ? <ChangesTab fileSource={session && fileSha ? { projectId: resourceId, sessionId: session.id, sha: fileSha } : undefined} threadActions={readOnlyChanges ? undefined : {
@@ -913,7 +927,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
           replyComposer,
         }} pendingDrafts={readOnlyChanges ? undefined : drafts} lineComposer={lineComposer} discussions={readOnlyChanges ? undefined : discussions} compareBaseSha={mergeRequest.diffRefs?.baseSha} discussionHeadSha={mergeRequestHeadSha} discussionsIncomplete={discussionWindow.hasOlder} onOpenDiscussion={(discussionId) => { pendingThread.current = discussionId; setActiveTab('discussion') }} reviewContext={session && !readOnlyChanges && mergeRequestHeadSha ? { instanceUrl: session.instanceUrl, userId: session.user.id, projectId: resourceId, mergeRequestIid: iid, revision: mergeRequestHeadSha } : undefined} allowComments={!readOnlyChanges} changeNextPage={changesResult.snapshot?.nextPage ?? null} changePage={changePage} commitPage={commitPage} changesError={changesResult.error} changesLoading={Boolean(pendingFileTarget) || changesResult.loading} changesTruncated={comparing && changesResult.snapshot?.completeness === 'truncated'} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={fileView} onComment={commentOnLines} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onPrevChangePage={() => setChangePage((current) => Math.max(1, current - 1))} onPrevCommitPage={() => setCommitPage((current) => Math.max(1, current - 1))} onSelectCommit={(sha) => { setSelectedCommit(sha); setCompareVersion(null); setSelectedFile(null); setFileView('diff'); setChangePage(1) }} onSelectFile={setSelectedFile} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} suggestionActions={readOnlyChanges ? undefined : suggestionActions} versions={{ compareFrom: comparing ? compareVersion : null, error: versionsResult.error, headSha: mergeRequestHeadSha, items: (versionsResult.data ?? []) as MrVersion[], loading: versionsResult.loading, more: (versionsResult.snapshot?.nextPage ?? null) !== null, onSelect: (sha) => { setCompareVersion(sha); setSelectedCommit(null); setSelectedFile(null); setFileView('diff'); setChangePage(1) } }} /> : null}
         {activeTab === 'overview' ? <OverviewTab approvedBy={approvedBy} approvalsError={approvalsResult.error} approvalsLoading={approvalsResult.loading} description={mergeRequest.description} descriptionEdit={descriptionEdit} editDisabled={mutation.isLocked || mutation.isPending} mergeRequest={mergeRequest} onRerequestReview={(user) => void rerequestReview(user)} onCancelEdit={() => setDescriptionEdit(null)} onChangeEdit={(body) => setDescriptionEdit((current) => current ? { ...current, body } : current)} onSaveEdit={() => void saveDescription()} onStartEdit={() => setDescriptionEdit({ body: mergeRequest.description ?? '', expected: mergeRequest.description ?? '' })} reactions={<Stack spacing={0.5}>
-          <ReactionBar awards={mrAwardsResult.data ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label="このMR" onToggle={(name, add) => void toggleReaction(name, add)} />
+          <ReactionBar awards={mrAwardsResult.data ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label="このMR" onToggle={(name, add) => toggleReaction(name, add)} />
           {mrAwardsResult.loading ? <Typography color="textSecondary" role="status" variant="caption">リアクションを読み込み中…</Typography> : null}
           {mrAwardsResult.error ? <Typography color={mrAwardsResult.data ? 'textSecondary' : 'error'} variant="caption">{mrAwardsResult.data ? `保存済みのリアクションを表示中です。更新に失敗しました: ${mrAwardsResult.error.message}` : `リアクションを取得できませんでした: ${mrAwardsResult.error.message}`}</Typography> : null}
         </Stack>} /> : null}
@@ -923,7 +937,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   )
 }
 
-function DiscussionTab({ suggestionActions, renderCodeContext, renderReactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
+function DiscussionTab({ suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
   const openThread = (discussionId: string) => {
@@ -947,7 +961,7 @@ function DiscussionTab({ suggestionActions, renderCodeContext, renderReactions, 
         {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
         {discussionError && discussions.length ? <Alert severity="warning">保存済みの議論を表示中です。更新に失敗しました: {discussionError.message}</Alert> : null}
         {loading && !discussions.length ? <LoadingPanel label="議論を読み込み中…" /> : null}
-        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList renderReactions={renderReactions} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
+        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList reactions={reactions} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
       </>}
     />
   )
@@ -956,7 +970,7 @@ function DiscussionTab({ suggestionActions, renderCodeContext, renderReactions, 
 interface DiscussionTabProps {
   suggestionActions?: SuggestionActions
   renderCodeContext?: (position: Position) => React.ReactNode
-  renderReactions?: (note: Note) => React.ReactNode
+  reactions?: NoteReactions
   onUploadAttachment: (file: File) => Promise<string | null>
   attachmentTargetKey: string
   unreadNoteIds: string[]

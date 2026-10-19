@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
 import { emojiForName, groupReactions } from '../lib/awardEmoji'
@@ -66,4 +66,33 @@ it('disables every control while writes are stopped', () => {
   render(<ReactionBar awards={awards} currentUserId="42" disabled label="このMR" onToggle={vi.fn()} />)
   expect(screen.getByRole('button', { name: 'このMRにリアクションを追加' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '👍 2人' })).toHaveAttribute('aria-disabled', 'true')
+})
+
+it('shows a reaction being sent at once and drops it when GitLab refuses', async () => {
+  let settle: (accepted: boolean) => void = () => undefined
+  const onToggle = vi.fn(() => new Promise<boolean>((resolve) => { settle = resolve }))
+  render(<ReactionBar awards={awards} currentUserId="42" label="Aliceのコメント" onToggle={onToggle} />)
+
+  fireEvent.click(screen.getByRole('button', { name: ':party_parrot: 1人' }))
+  const sending = screen.getByRole('button', { name: ':party_parrot: 2人' })
+  expect(sending).toHaveAttribute('aria-pressed', 'true')
+  expect(sending).toHaveAttribute('aria-busy', 'true')
+
+  await act(async () => settle(false))
+  expect(screen.getByRole('button', { name: ':party_parrot: 1人' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+it('keeps an accepted reaction until the reactions read back replace it', async () => {
+  let settle: (accepted: boolean) => void = () => undefined
+  const onToggle = vi.fn(() => new Promise<boolean>((resolve) => { settle = resolve }))
+  const view = render(<ReactionBar awards={awards} currentUserId="42" label="Aliceのコメント" onToggle={onToggle} />)
+
+  fireEvent.click(screen.getByRole('button', { name: '👍 2人' }))
+  expect(screen.getByRole('button', { name: '👍 1人' })).toHaveAttribute('aria-busy', 'true')
+  await act(async () => settle(true))
+  expect(screen.getByRole('button', { name: '👍 1人' })).not.toHaveAttribute('aria-busy')
+
+  // GitLab's answer replaces the shown change, here with a reaction someone else added meanwhile.
+  view.rerender(<ReactionBar awards={[{ name: 'thumbsup', user: alice }, { name: 'thumbsup', user: { id: '9', name: 'Bob', username: 'bob' } }]} currentUserId="42" label="Aliceのコメント" onToggle={onToggle} />)
+  expect(screen.getByRole('button', { name: '👍 2人' })).toHaveAttribute('aria-pressed', 'false')
 })

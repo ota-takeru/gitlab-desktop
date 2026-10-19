@@ -59,7 +59,7 @@ import { OpenMergeRequestDialog } from './mergeRequests/OpenMergeRequestDialog'
 import { personalQueueFor } from './mergeRequests/personalQueue'
 import { openWorkspaceTab, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
-import { QueryRefreshPolicy } from './shared/QueryRefreshPolicy'
+import { QueryRefreshPolicy, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed } from './shared/AutoUpdateSafety'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
 import { clearGitLabMutationStates } from './shared/useGitLabMutation'
@@ -468,6 +468,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const mergeRequest = openedMergeRequest?.sessionKey === sessionKey ? openedMergeRequest.mergeRequest : null
   // Each list keeps its own mounted screen, so returning to it is immediate.
   const listScreenKey = route === 'mrs' ? `mrs:${listMount.key}` : route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
+  // Kept screens get the refresh policy inside their own content, so a hidden one does not render again when it changes.
+  const refreshAllowed = useQueryRefreshAllowed()
   // Only the first restore at startup: a later connect attempt keeps the form on screen.
   const [initialRestoreSettled, setInitialRestoreSettled] = useState(status !== 'checking')
   if (!initialRestoreSettled && status !== 'checking') setInitialRestoreSettled(true)
@@ -574,7 +576,9 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
               {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive.
                   Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once. */}
               <Box aria-label="一覧" component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={6} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy. */}
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={6} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
                 {route === 'mrs' ? <MergeRequestList key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={hubNavigation ?? projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchAll={personal ? (search) => { navigate('mrs', search ? { search } : {}); globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0) } : undefined} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
@@ -582,10 +586,11 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
                 {route === 'todos' ? <TodoView onOpen={openMergeRequestRef} selected={selected} /> : null}
                 </AppErrorBoundary>
+                </QueryRefreshPolicy>
                 </KeepAlive>
               </Box>
               <KeepAlive activeKey={selected && route !== 'settings' ? `${selected.projectId}:${selected.iid}` : null} component="main" max={5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-              {selected ? <AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
+              {selected ? <QueryRefreshPolicy value={refreshAllowed}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute
                   initialMergeRequest={mergeRequest}
                   key={`${selected.projectId}:${selected.iid}`}
@@ -596,7 +601,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                   selected={selected}
                   tab={parseTab(params.tab)}
                 />
-                </AppErrorBoundary> : null}
+                </AppErrorBoundary></QueryRefreshPolicy> : null}
               </KeepAlive>
             </> : null}
           </Box>

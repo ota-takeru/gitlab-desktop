@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import type { AwardEmoji } from '../types/gitlab'
+import type { AwardEmoji, GitLabUser } from '../types/gitlab'
 
 /** The reactions 「よく使う」 offers before the user has picked any. */
 export const REACTION_CHOICES = ['thumbsup', 'thumbsdown', 'smile', 'tada', 'confused', 'heart', 'rocket', 'eyes'] as const
@@ -151,4 +151,10 @@ export function groupReactions(awards: readonly AwardEmoji[], currentUserId: str
     groups.set(award.name, group)
   }
   return [...groups.values()]
+}
+
+/** The reactions after GitLab accepted the user adding or removing their own `name`. */
+export function applyOwnReaction(awards: readonly AwardEmoji[], name: string, add: boolean, user: GitLabUser): AwardEmoji[] {
+  const others = awards.filter((award) => !(award.name === name && award.user.id === user.id))
+  return add ? [...others, { name, user }] : others
 }

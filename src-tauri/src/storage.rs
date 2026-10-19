@@ -225,6 +225,25 @@ impl Store {
         Ok(())
     }
 
+    /// Removes the account's saved answers of the given query kinds. Keys are
+    /// the query JSON, which starts with its kind.
+    pub fn clear_account_queries(&mut self, account: &str, kinds: &[&str]) -> Result<(), AppError> {
+        let transaction = self.0.transaction().map_err(|_| storage_error())?;
+        for kind in kinds {
+            let prefix = serde_json::to_string(&serde_json::json!({ "kind": kind }))
+                .map_err(|_| storage_error())?;
+            // `{"kind":"x"}` without its closing brace, followed by the query's other fields or its end.
+            let prefix = &prefix[..prefix.len() - 1];
+            transaction
+                .execute(
+                    "DELETE FROM cache WHERE account=?1 AND (key=?2 || '}' OR substr(key,1,length(?2)+1)=?2 || ',')",
+                    params![account, prefix],
+                )
+                .map_err(|_| storage_error())?;
+        }
+        transaction.commit().map_err(|_| storage_error())
+    }
+
     pub fn draft(&self, account: &str, key: &str) -> Result<Option<LocalDraft>, AppError> {
         validate_draft_key(key)?;
         self.0
@@ -514,6 +533,36 @@ mod tests {
         store.clear_account("a").unwrap();
         assert!(store.get("a", "query").unwrap().is_none());
     }
+    #[test]
+    fn clearing_query_kinds_keeps_the_other_answers() {
+        let mut store = Store::init(Connection::open_in_memory().unwrap()).unwrap();
+        let snapshot = Snapshot {
+            data: serde_json::json!([]),
+            fetched_at: now_ms(),
+            source: "network".into(),
+            next_page: None,
+            total_pages: None,
+            completeness: "complete".into(),
+        };
+        let awards = r#"{"kind":"mrAwards","projectId":"1","iid":"2"}"#;
+        let note_awards =
+            r#"{"kind":"noteAwards","projectPath":"g/p","iid":"2","sinceNoteId":"3"}"#;
+        let similar = r#"{"kind":"mrAwardsOther","projectId":"1"}"#;
+        let discussions = r#"{"kind":"discussions","projectId":"1","iid":"2"}"#;
+        for key in [awards, note_awards, similar, discussions] {
+            store.put("a", key, &snapshot).unwrap();
+        }
+        store.put("b", awards, &snapshot).unwrap();
+        store
+            .clear_account_queries("a", &["mrAwards", "noteAwards"])
+            .unwrap();
+        assert!(store.get("a", awards).unwrap().is_none());
+        assert!(store.get("a", note_awards).unwrap().is_none());
+        assert!(store.get("a", similar).unwrap().is_some());
+        assert!(store.get("a", discussions).unwrap().is_some());
+        assert!(store.get("b", awards).unwrap().is_some());
+    }
+
     #[test]
     fn refuses_future_schema_without_overwriting_it() {
         let connection = Connection::open_in_memory().unwrap();

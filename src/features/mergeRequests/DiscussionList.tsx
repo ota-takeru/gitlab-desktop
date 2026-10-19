@@ -14,14 +14,16 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/Feedback'
 import { MarkdownEditor } from '../../components/MarkdownEditor'
+import { ReactionBar } from '../../components/ReactionBar'
 import { RelativeTime } from '../../components/RelativeTime'
 import { ResolveToggle } from '../../components/ResolveToggle'
-import type { Discussion, Note, Position } from '../../types/gitlab'
+import type { AwardEmoji, Discussion, Note, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
+import { useStableCallback } from '../shared/useStableCallback'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
 import { positionLabel as formatPositionLabel } from './diffLineThreads'
@@ -58,10 +60,18 @@ interface DiscussionListProps {
   onEditingNoteChange?: (noteId: string | null) => void
   /** Where an edit's text is kept, like new comments, so it survives leaving the tab. */
   noteEditBufferKey?: (note: Note) => string
-  /** The emoji reactions shown under a comment. */
-  renderReactions?: (note: Note) => React.ReactNode
+  /** The emoji reactions shown under each comment. */
+  reactions?: NoteReactions
   /** Applying the suggestions in the comments. */
   suggestionActions?: SuggestionActions
+}
+
+export interface NoteReactions {
+  /** Each comment's reactions; an entry keeps its identity while unchanged, so the other comments do not render again. */
+  awardsByNote: ReadonlyMap<string, readonly AwardEmoji[]>
+  disabled: boolean
+  /** Keeps one identity, like the other callbacks, so that the comments stay memoized. */
+  onToggle: (note: Note, name: string, add: boolean) => Promise<boolean> | void
 }
 
 export interface OlderDiscussions {
@@ -76,7 +86,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, renderCodeContext, renderReactions, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
   const setEditing = onEditingNoteChange ?? setLocalEditingId
@@ -90,6 +100,22 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
   const anchorRef = useRef<{ id: string; offset: number } | null>(null)
   const olderRef = useRef(older)
   const { setUnsafe } = useAutoUpdateSafety('note-edit')
+  // The comments are memoized; the callbacks they get keep one identity and run the caller's latest ones.
+  const deleteNote = useStableCallback((note: Note) => onDelete(note))
+  const editNote = useStableCallback((note: Note, body: string) => onEdit(note, body))
+  const toggleReaction = useStableCallback((note: Note, name: string, add: boolean) => reactions?.onToggle(note, name, add))
+  const applySuggestions = useStableCallback((suggestionIds: string[], commitMessage?: string) => suggestionActions?.onApply(suggestionIds, commitMessage) ?? Promise.resolve(false))
+  const openSuggestionInGitLab = useStableCallback(() => suggestionActions?.onOpenInGitLab?.())
+  const hasSuggestionActions = Boolean(suggestionActions)
+  const canOpenInGitLab = Boolean(suggestionActions?.onOpenInGitLab)
+  const { currentUserId: suggestionUserId, disabled: suggestionsDisabled, headSha: suggestionHeadSha } = suggestionActions ?? {}
+  const noteSuggestionActions = useMemo<SuggestionActions | undefined>(() => hasSuggestionActions ? {
+    currentUserId: suggestionUserId ?? '',
+    disabled: suggestionsDisabled ?? true,
+    headSha: suggestionHeadSha,
+    onApply: applySuggestions,
+    onOpenInGitLab: canOpenInGitLab ? openSuggestionInGitLab : undefined,
+  } : undefined, [applySuggestions, canOpenInGitLab, hasSuggestionActions, openSuggestionInGitLab, suggestionHeadSha, suggestionUserId, suggestionsDisabled])
   const commentDiscussions = useMemo(() => discussions
     .map((discussion) => ({ discussion, notes: discussion.notes.filter((note) => !note.system) }))
     .filter(({ notes }) => notes.length > 0), [discussions])
@@ -269,57 +295,24 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                 every thread starts and the code on their right, kept in view while reading. */}
             {codeContext ? <Box sx={{ borderBottom: 1, borderColor: 'divider', minWidth: 0, [THREAD_WITH_CODE_WIDE]: { alignSelf: 'start', borderBottom: 0, borderLeft: 1, gridColumn: 2, gridRow: 1, position: 'sticky', top: 'calc(var(--detail-header-height, 0px) + 8px)' } }}>{codeContext}</Box> : null}
             <Box component="ol" sx={{ listStyle: 'none', m: 0, minWidth: 0, p: 0, [THREAD_WITH_CODE_WIDE]: { gridColumn: 1, gridRow: 1 } }}>
-              {visibleNotes.map((note, index) => {
-                const unread = unreadIds.has(note.id)
-                const own = note.author.id === currentUserId
-                return (
-                  <Box
-                    component="li"
-                    key={note.id}
-                    data-note-id={note.id}
-                    tabIndex={-1}
-                    sx={{
-                      borderTop: index > 0 ? 1 : 0,
-                      borderColor: 'divider',
-                      display: 'grid',
-                      columnGap: 1.5,
-                      gridTemplateColumns: '28px minmax(0, 1fr)',
-                      minWidth: 0,
-                      position: 'relative',
-                      px: 2,
-                      py: 1.5,
-                      '&:focus': { outline: 'none' },
-                      '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` },
-                      '&:hover .note-actions, &:focus-within .note-actions': { opacity: 1 },
-                      '&::before': unread ? { bgcolor: 'primary.main', bottom: 0, content: '""', left: 0, position: 'absolute', top: 0, width: 3 } : undefined,
-                    }}
-                  >
-                    <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 26, minWidth: 0 }}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
-                          <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
-                          <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
-                          {own ? <Typography color="textSecondary" variant="caption">（自分）</Typography> : null}
-                          <RelativeTime value={note.createdAt} />
-                          {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">編集済み</Typography> : null}
-                          {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">未読</Typography> : null}
-                        </Stack>
-                        {own && !note.system ? (
-                          <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, mr: -1, opacity: editing === note.id ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
-                            <Tooltip title="コメントを編集"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を編集`} disabled={disabled} onClick={() => setEditing(note.id)}><EditOutlinedIcon /></IconButton></Tooltip>
-                            <Tooltip title="コメントを削除"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を削除`} disabled={disabled} onClick={() => void confirm({ cancelLabel: '残す', confirmLabel: '削除する', destructive: true, message: plainExcerpt(note.body, 120), title: 'このコメントを削除しますか？' }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
-                          </Stack>
-                        ) : null}
-                      </Stack>
-                      {editing === note.id ? (
-                        <NoteEditor bufferKey={noteEditBufferKey?.(note) ?? JSON.stringify({ noteEdit: note.id })} disabled={disabled} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
-                      ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
-                      {editing !== note.id && renderReactions ? <Box sx={{ mt: 1 }}>{renderReactions(note)}</Box> : null}
-                    </Box>
-                  </Box>
-                )
-              })}
+              {visibleNotes.map((note, index) => <NoteItem
+                awards={reactions?.awardsByNote.get(note.id)}
+                confirm={confirm}
+                currentUserId={currentUserId}
+                disabled={disabled}
+                divided={index > 0}
+                editBufferKey={editing === note.id ? noteEditBufferKey?.(note) ?? JSON.stringify({ noteEdit: note.id }) : null}
+                key={note.id}
+                note={note}
+                onDelete={deleteNote}
+                onEdit={editNote}
+                onToggleReaction={reactions ? toggleReaction : undefined}
+                reactionsDisabled={reactions?.disabled ?? true}
+                sessionId={sessionId}
+                setEditing={setEditing}
+                suggestionActions={noteSuggestionActions}
+                unread={unreadIds.has(note.id)}
+              />)}
             </Box>
             </Box></Box> : null}
             {/* A folded thread shows only its header; replying starts from the open thread. */}
@@ -343,6 +336,79 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
     </Stack>
   )
 }
+
+const noAwards: readonly AwardEmoji[] = []
+
+interface NoteItemProps {
+  awards?: readonly AwardEmoji[]
+  confirm: ReturnType<typeof useConfirm>
+  currentUserId: string
+  disabled: boolean
+  divided: boolean
+  /** Where the edit's text is kept while this comment is being edited; null otherwise. */
+  editBufferKey: string | null
+  note: Note
+  onDelete: (note: Note) => Promise<boolean>
+  onEdit: (note: Note, body: string) => Promise<boolean>
+  onToggleReaction?: (note: Note, name: string, add: boolean) => Promise<boolean> | void
+  reactionsDisabled: boolean
+  sessionId?: string | null
+  setEditing: (noteId: string | null) => void
+  suggestionActions?: SuggestionActions
+  unread: boolean
+}
+
+/** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
+const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, note, onDelete, onEdit, onToggleReaction, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+  const own = note.author.id === currentUserId
+  const editing = editBufferKey !== null
+  return (
+    <Box
+      component="li"
+      data-note-id={note.id}
+      tabIndex={-1}
+      sx={{
+        borderTop: divided ? 1 : 0,
+        borderColor: 'divider',
+        display: 'grid',
+        columnGap: 1.5,
+        gridTemplateColumns: '28px minmax(0, 1fr)',
+        minWidth: 0,
+        position: 'relative',
+        px: 2,
+        py: 1.5,
+        '&:focus': { outline: 'none' },
+        '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` },
+        '&:hover .note-actions, &:focus-within .note-actions': { opacity: 1 },
+        '&::before': unread ? { bgcolor: 'primary.main', bottom: 0, content: '""', left: 0, position: 'absolute', top: 0, width: 3 } : undefined,
+      }}
+    >
+      <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 26, minWidth: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
+            <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
+            <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
+            {own ? <Typography color="textSecondary" variant="caption">（自分）</Typography> : null}
+            <RelativeTime value={note.createdAt} />
+            {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">編集済み</Typography> : null}
+            {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">未読</Typography> : null}
+          </Stack>
+          {own && !note.system ? (
+            <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, mr: -1, opacity: editing ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
+              <Tooltip title="コメントを編集"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を編集`} disabled={disabled} onClick={() => setEditing(note.id)}><EditOutlinedIcon /></IconButton></Tooltip>
+              <Tooltip title="コメントを削除"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を削除`} disabled={disabled} onClick={() => void confirm({ cancelLabel: '残す', confirmLabel: '削除する', destructive: true, message: plainExcerpt(note.body, 120), title: 'このコメントを削除しますか？' }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
+            </Stack>
+          ) : null}
+        </Stack>
+        {editing ? (
+          <NoteEditor bufferKey={editBufferKey} disabled={disabled} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
+        ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
+        {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={`${note.author.name}のコメント`} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
+      </Box>
+    </Box>
+  )
+})
 
 /**
  * Edits an own comment. Its text is kept in the composer buffer, so closing

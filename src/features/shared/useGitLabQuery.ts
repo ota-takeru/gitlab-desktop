@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo } from 'react'
 import { useQueryRefreshAllowed } from './QueryRefreshPolicy'
 
@@ -111,6 +111,22 @@ export function useGitLabQuery<Q extends GitLabQuery>(
     snapshot,
     stale: Boolean(snapshot && (snapshot.source === 'cache' || queryError)),
   }
+}
+
+/**
+ * Applies a change GitLab has just confirmed (a successful write) to the data
+ * shown for `query`, so the screen follows at once; the caller still refreshes
+ * it from GitLab. `query` must be the object the screen reads with.
+ */
+export function applyConfirmedGitLabChange<Q extends GitLabQuery>(
+  queryClient: QueryClient,
+  sessionId: string,
+  query: Q,
+  update: (data: GitLabQueryData<Q>) => GitLabQueryData<Q>,
+): void {
+  queryClient.setQueryData<LoadedQuery<GitLabQueryData<Q>>>(['gitlab', sessionId, JSON.stringify(query)], (current) => current?.snapshot
+    ? { ...current, snapshot: { ...current.snapshot, data: update(current.snapshot.data) } }
+    : current)
 }
 
 async function fetchGitLabQuery<Q extends GitLabQuery>(

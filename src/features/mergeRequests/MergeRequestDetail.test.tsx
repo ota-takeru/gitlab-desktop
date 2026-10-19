@@ -32,6 +32,7 @@ const detailMocks = vi.hoisted(() => {
     openUrlMock: vi.fn(async () => undefined),
     queryGitLabMock: vi.fn(),
     refreshKinds: [] as unknown[],
+    applyConfirmedMock: vi.fn(),
     discussions: { 1: [discussion] } as Record<number, typeof discussion[]>,
     flushComposerBuffersMock: vi.fn(),
     markReadMock: vi.fn(),
@@ -86,6 +87,7 @@ vi.mock('../../lib/attachments', async () => ({
 }))
 
 vi.mock('../shared/useGitLabQuery', () => ({
+  applyConfirmedGitLabChange: detailMocks.applyConfirmedMock,
   useGitLabQuery: (_sessionId: string | null, query: { kind: string; page?: number; search?: string } | null) => {
     detailMocks.queryCalls.push(query)
     let data: unknown = null
@@ -801,6 +803,11 @@ describe('reactions and To-Dos', () => {
     fireEvent.click(own)
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ iid: '120', kind: 'removeAward', name: 'thumbsup', noteId: '1002', projectId: '7' }, undefined))
     expect(detailMocks.refreshKinds).toContain('noteAwards')
+    // The accepted change is shown at once on the comment's reactions, then read back.
+    const [, sessionId, awardsQuery, change] = detailMocks.applyConfirmedMock.mock.calls.at(-1) as [unknown, string, { kind: string }, (entries: Array<{ noteId: string; awards: Array<{ name: string; user: { id: string } }> }>) => Array<{ noteId: string; awards: unknown[] }>]
+    expect(sessionId).toBe('session-42')
+    expect(awardsQuery).toMatchObject({ kind: 'noteAwards', sinceNoteId: '1001' })
+    expect(change([{ awards: [{ name: 'thumbsup', user: { id: '42' } }, { name: 'thumbsup', user: { id: '99' } }], noteId: '1002' }])).toEqual([{ awards: [{ name: 'thumbsup', user: { id: '99' } }], noteId: '1002' }])
 
     // Each comment by Colleague has its own add button; the first is the oldest.
     fireEvent.click(screen.getAllByRole('button', { name: 'Colleagueのコメントにリアクションを追加' })[0])

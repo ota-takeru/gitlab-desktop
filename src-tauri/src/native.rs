@@ -927,6 +927,7 @@ impl NativeState {
             (None, _) => None,
         };
         let action_value = serde_json::to_value(&input.action).map_err(|_| storage_error())?;
+        let changed_queries = queries_changed_by(&input.action);
         let resource = operation_resource(
             action_value["projectId"].as_str().unwrap_or_default(),
             action_value["iid"].as_str().unwrap_or_default(),
@@ -1034,10 +1035,18 @@ impl NativeState {
                         .is_err_and(|error| error.code == "UNKNOWN_OUTCOME"))
             {
                 let cache_session = session.clone();
+                // A write known to change only some answers keeps the rest of the
+                // saved data; anything else, or an unknown outcome, clears it all.
+                let changed_queries = changed_queries.filter(|_| result.is_ok());
                 if self
                     .blocking(move |inner| {
                         ensure_active(inner, &cache_session)?;
-                        inner.store.clear_account(&cache_session.account)
+                        match changed_queries {
+                            Some(kinds) => inner
+                                .store
+                                .clear_account_queries(&cache_session.account, kinds),
+                            None => inner.store.clear_account(&cache_session.account),
+                        }
                     })
                     .await
                     .is_err()
@@ -1287,6 +1296,16 @@ fn unknown_write() -> AppError {
         "UNKNOWN_OUTCOME",
         "送信の確認を中断しました。GitLabで結果を確認してください。",
     )
+}
+
+/// The kinds of saved query answers a successful write can change, when those
+/// are the only ones; `None` means the write may change anything saved.
+fn queries_changed_by(action: &Action) -> Option<&'static [&'static str]> {
+    match action {
+        // Reactions are read only through the reaction queries.
+        Action::AddAward { .. } | Action::RemoveAward { .. } => Some(&["mrAwards", "noteAwards"]),
+        _ => None,
+    }
 }
 
 fn ensure_active(inner: &Inner, session: &LiveSession) -> Result<(), AppError> {

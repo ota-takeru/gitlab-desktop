@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitLabSnapshot, Project, ProjectQuery } from '../../types/gitlab'
-import { useGitLabQuery } from './useGitLabQuery'
+import { applyConfirmedGitLabChange, useGitLabQuery } from './useGitLabQuery'
 
 const { cancelMock, queryGitLabMock } = vi.hoisted(() => ({ cancelMock: vi.fn(), queryGitLabMock: vi.fn() }))
 
@@ -50,6 +50,24 @@ describe('useGitLabQuery', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(screen.getByTestId('other')).toHaveTextContent('ok')
     expect(queryGitLabMock).not.toHaveBeenCalled()
+  })
+
+  it('shows a change GitLab confirmed on the data on screen at once', async () => {
+    queryGitLabMock.mockImplementation(({ mode }: { mode: string }) => mode === 'cache' ? Promise.resolve(null) : Promise.resolve(snapshot('network')))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    function NameProbe() {
+      return <output data-testid="name">{useGitLabQuery('session-1', query).data?.[0]?.name ?? 'none'}</output>
+    }
+    render(<QueryClientProvider client={queryClient}><NameProbe /></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByTestId('name')).toHaveTextContent('One'))
+
+    act(() => applyConfirmedGitLabChange(queryClient, 'session-1', query, (projects) => projects.map((project) => ({ ...project, name: 'Renamed' }))))
+    await waitFor(() => expect(screen.getByTestId('name')).toHaveTextContent('Renamed'))
+    // Another session's or another query's data is not touched.
+    act(() => applyConfirmedGitLabChange(queryClient, 'session-2', query, () => []))
+    act(() => applyConfirmedGitLabChange(queryClient, 'session-1', { ...query, page: 2 }, () => []))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.getByTestId('name')).toHaveTextContent('Renamed')
   })
 
   it('hydrates a cache snapshot while the network refresh is in flight', async () => {
