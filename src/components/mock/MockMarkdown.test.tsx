@@ -17,4 +17,11 @@ describe('local Markdown preview', () => {
     expect(screen.queryByRole('link', { name: 'unsafe' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'docs' })).toHaveAttribute('rel', 'noopener noreferrer')
   })
+
+  it('shows GitLab emoji names as emoji, but not in code or when the name is unknown', async () => {
+    const { container } = render(<MockMarkdown body={':red_circle: :white_circle: :large_blue_circle: :+1: :no_such_emoji: 10:30:00\n\n`:red_circle:`\n\n```\n:black_circle:\n```'} />)
+    expect(await screen.findByText('🔴 ⚪ 🔵 👍 :no_such_emoji: 10:30:00')).toBeInTheDocument()
+    expect(container.querySelector('p > code')).toHaveTextContent(':red_circle:')
+    expect(container.querySelector('pre code')).toHaveTextContent(':black_circle:')
+  })
 })
