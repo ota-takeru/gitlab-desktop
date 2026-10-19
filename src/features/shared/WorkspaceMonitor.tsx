@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useConnection } from '../connections/ConnectionProvider'
+import { isNotificationTodo } from '../mergeRequests/todoCache'
 import { usePersonalWorkspace } from './personalWorkspace'
 import { useGitLabQuery } from './useGitLabQuery'
 import type { MergeRequest } from '../../types/gitlab'
@@ -22,8 +23,8 @@ export function WorkspaceMonitor() {
     if (!result.data || result.snapshot?.source !== 'network' || result.error) return
     const current = seen.current
     if (current?.sessionId === session.id) {
-      const added = result.data.filter((todo) => !current.ids.has(todo.id))
-      if (added.length) void notifyWorkspace(`新しいMR To-Doが${added.length}件あります。`).catch(() => undefined)
+      const added = result.data.filter((todo) => isNotificationTodo(todo) && !current.ids.has(todo.id))
+      if (added.length) void notifyWorkspace(`新しい通知が${added.length}件あります。`).catch(() => undefined)
     }
     seen.current = { sessionId: session.id, ids: new Set([...(current?.sessionId === session.id ? current.ids : []), ...result.data.map((todo) => todo.id)].slice(-1000)) }
   }, [result.data, result.error, result.snapshot?.source, session, settings.notifyTodos])

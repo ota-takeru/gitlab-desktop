@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GitLabCommandError } from '../../types/gitlab'
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed, useAutoUpdateSafety } from './AutoUpdateSafety'
-import { clearGitLabMutationStates, useGitLabMutation } from './useGitLabMutation'
+import { clearGitLabMutationStates, runGitLabMutation, useGitLabMutation } from './useGitLabMutation'
 
 const { acknowledgePendingOperationMock, getPendingOperationMock, isTauriMock, mutateGitLabMock } = vi.hoisted(() => ({ acknowledgePendingOperationMock: vi.fn(), getPendingOperationMock: vi.fn(), isTauriMock: vi.fn(() => false), mutateGitLabMock: vi.fn() }))
 
@@ -76,6 +76,17 @@ describe('useGitLabMutation', () => {
     expect(result.current.isPending).toBe(true)
     await act(async () => sends[1]())
     await expect(second).resolves.toBe(true)
+  })
+
+  it('sends a write that nothing on screen follows, after checking the saved record of its MR', async () => {
+    isTauriMock.mockReturnValue(true)
+    getPendingOperationMock.mockResolvedValue(null)
+    mutateGitLabMock.mockResolvedValue(undefined)
+    const read = { iid: '1', kind: 'markTodoDone' as const, projectId: 'project-1', todoId: '9' }
+
+    await expect(runGitLabMutation('session-1', nativeResource, read)).resolves.toEqual({ error: null, ok: true, status: 'success' })
+    expect(getPendingOperationMock).toHaveBeenCalledWith({ iid: '1', projectId: 'project-1', sessionId: 'session-1' })
+    expect(mutateGitLabMock).toHaveBeenCalledWith({ action: read, sessionId: 'session-1' })
   })
 
   it('forwards a local draft key only when a composer supplies one', async () => {

@@ -3,16 +3,21 @@ import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Tooltip from '@mui/material/Tooltip'
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 
-/** A place in the client's navigation: icon and label, or the icon alone with a tooltip while collapsed. */
-export function ClientNavItem({ collapsed, disabled = false, icon, label, onClick, selected, title }: { collapsed: boolean; disabled?: boolean; icon: ReactNode; label: string; onClick: () => void; selected: boolean; title: string }) {
+/**
+ * A place in the client's navigation: icon and label, or the icon alone with a tooltip while collapsed.
+ * With `expanded` it opens a panel over the page instead of going to a place.
+ * `trailing` sits at the end of the row while the label shows, such as a count.
+ */
+export function ClientNavItem({ collapsed, disabled = false, expanded, icon, label, onClick, selected, title, trailing }: { collapsed: boolean; disabled?: boolean; expanded?: boolean; icon: ReactNode; label: string; onClick: (event: MouseEvent<HTMLElement>) => void; selected: boolean; title: string; trailing?: ReactNode }) {
   // A disabled button gets no pointer events, so the tooltip listens on a wrapper.
   return <Tooltip placement="right" title={disabled ? 'GitLabに接続すると使えます' : collapsed || title !== label ? title : ''}>
     <Box component="span" sx={{ display: 'block' }}>
-    <ListItemButton aria-current={selected ? 'page' : undefined} aria-label={title} disabled={disabled} onClick={onClick} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', justifyContent: collapsed ? 'center' : 'initial', minHeight: 32, px: collapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' }, '&.Mui-selected .MuiListItemIcon-root': { color: 'primary.main' } }}>
+    <ListItemButton aria-current={selected && expanded === undefined ? 'page' : undefined} aria-expanded={expanded} aria-haspopup={expanded === undefined ? undefined : 'dialog'} aria-label={title} disabled={disabled} onClick={onClick} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', justifyContent: collapsed ? 'center' : 'initial', minHeight: 32, px: collapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' }, '&.Mui-selected .MuiListItemIcon-root': { color: 'primary.main' } }}>
       <ListItemIcon sx={{ justifyContent: 'center', minWidth: collapsed ? 0 : 30, '& .MuiSvgIcon-root': { fontSize: 18 } }}>{icon}</ListItemIcon>
       {collapsed ? null : <ListItemText primary={label} slotProps={{ primary: { noWrap: true, sx: { fontWeight: selected ? 600 : 500 }, variant: 'body2' } }} sx={{ m: 0 }} />}
+      {collapsed || !trailing ? null : <Box component="span" sx={{ display: 'flex', flexShrink: 0, ml: 1 }}>{trailing}</Box>}
     </ListItemButton>
     </Box>
   </Tooltip>

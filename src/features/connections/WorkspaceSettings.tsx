@@ -38,11 +38,11 @@ export function WorkspaceSettings() {
     finally { setBusy(false) }
   }
   return <Box><Stack spacing={0.5}>
-    <FormControlLabel control={<Checkbox checked={workspace.settings.autoRefresh} disabled={!session} onChange={(_, value) => workspace.setSettings({ autoRefresh: value })} size="small" />} label="表示中のMR・コメント・To-Doを1分ごとに更新" />
+    <FormControlLabel control={<Checkbox checked={workspace.settings.autoRefresh} disabled={!session} onChange={(_, value) => workspace.setSettings({ autoRefresh: value })} size="small" />} label="表示中のMR・コメントと通知を1分ごとに更新" />
     <Typography color="textSecondary" sx={{ mb: 1, mt: -0.5, pl: 4 }} variant="caption">入力・編集中、送信中、アプリが非表示の間は自動更新を一時停止します。</Typography>
     <FormControlLabel control={<Checkbox checked={workspace.settings.notifyComments} disabled={!session || busy} onChange={(_, value) => void toggleNotification('notifyComments', value)} size="small" />} label="担当・レビューMRへの新着コメントをデスクトップ通知" />
-    <FormControlLabel control={<Checkbox checked={workspace.settings.notifyTodos} disabled={!session || busy} onChange={(_, value) => void toggleNotification('notifyTodos', value)} size="small" />} label="メンション・承認依頼などの新しいTo-Doをデスクトップ通知" />
-    <Typography color="textSecondary" sx={{ mt: -0.5, pl: 4 }} variant="caption">開いているMRと、担当・レビュー待ちの更新順先頭10件の最新30コメントを確認します。To-Doは先頭ページが対象です。通知にはMRタイトルやコメント本文を含めません。アプリが表示中で自動更新が有効な間に確認します。</Typography>
+    <FormControlLabel control={<Checkbox checked={workspace.settings.notifyTodos} disabled={!session || busy} onChange={(_, value) => void toggleNotification('notifyTodos', value)} size="small" />} label="メンション・CI失敗などの新しい通知をデスクトップ通知" />
+    <Typography color="textSecondary" sx={{ mt: -0.5, pl: 4 }} variant="caption">開いているMRと、担当・レビュー待ちの更新順先頭10件の最新30コメントを確認します。通知は新しい順の先頭100件が対象です。通知にはMRタイトルやコメント本文を含めません。アプリが表示中で自動更新が有効な間に確認します。</Typography>
     {error ? <Alert severity="warning">{error}</Alert> : null}
   </Stack></Box>
 }

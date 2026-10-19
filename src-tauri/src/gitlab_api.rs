@@ -47,6 +47,8 @@ const MAX_TITLE_CHARS: usize = 255;
 const LABEL_PER_PAGE: u32 = 100;
 /// Entries of a repository folder per page; most folders fit on one.
 const TREE_PER_PAGE: u32 = 100;
+/// GitLab's largest page, so the notification count covers most pending To-Dos in one request.
+const TODO_PER_PAGE: u32 = 100;
 const MAX_LABEL_CHANGES: usize = 100;
 /// Suggestions applied together in one commit.
 const MAX_SUGGESTIONS: usize = 100;
@@ -1517,7 +1519,7 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                     ("type".to_owned(), "MergeRequest".to_owned()),
                     ("state".to_owned(), "pending".to_owned()),
                     ("page".to_owned(), page.to_string()),
-                    ("per_page".to_owned(), PER_PAGE.to_string()),
+                    ("per_page".to_owned(), TODO_PER_PAGE.to_string()),
                 ],
             )
         }
@@ -5840,7 +5842,7 @@ mod tests {
             .collect::<std::collections::HashMap<_, _>>();
         assert_eq!(params.get("type").unwrap(), "MergeRequest");
         assert_eq!(params.get("state").unwrap(), "pending");
-        assert_eq!(params.get("per_page").unwrap(), "30");
+        assert_eq!(params.get("per_page").unwrap(), "100");
         assert!(build_query_url(&api, &Query::Todos { page: 0 }).is_err());
     }
 

@@ -340,9 +340,9 @@ it('returns to the last MR list tab from the navigation', async () => {
 
   fireEvent.click(screen.getByRole('tab', { name: '担当' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
-  // To-Do is a place of its own, without the MR list's tabs.
-  fireEvent.click(screen.getByRole('button', { name: 'To-Do' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/todos'))
+  // Projects are a place of their own, without the MR list's tabs.
+  fireEvent.click(screen.getByRole('button', { name: 'プロジェクト' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/projects'))
   expect(screen.queryByRole('tablist', { name: 'MR一覧の切り替え' })).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
@@ -455,13 +455,44 @@ it('keeps the collapsed navigation controls accessible', () => {
   expect(screen.getByRole('button', { name: 'プロジェクト' })).toBeInTheDocument()
 })
 
+it('keeps the navigation folded while the notifications are open', async () => {
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' }))
+  const aside = screen.getByRole('complementary')
+  const peekDelay = () => act(() => new Promise((resolve) => globalThis.setTimeout(resolve, 400)))
+
+  // Resting on the notification button does not unfold the navigation; resting elsewhere in it does.
+  fireEvent.mouseOver(screen.getByRole('button', { name: '通知' }))
+  await peekDelay()
+  expect(screen.queryByText('GitLab Desktop')).not.toBeInTheDocument()
+  fireEvent.mouseOver(screen.getByRole('button', { name: 'MR一覧' }))
+  await peekDelay()
+  expect(screen.getByText('GitLab Desktop')).toBeInTheDocument()
+
+  // Opening the notifications folds it, and the panel's own pointer events (a portal's still
+  // reach the navigation) do not unfold it while they are open.
+  fireEvent.click(screen.getByRole('button', { name: '通知' }))
+  expect(screen.queryByText('GitLab Desktop')).not.toBeInTheDocument()
+  fireEvent.mouseOver(screen.getByRole('dialog', { name: '通知' }))
+  await peekDelay()
+  expect(screen.queryByText('GitLab Desktop')).not.toBeInTheDocument()
+  fireEvent.keyDown(screen.getByRole('dialog', { name: '通知' }), { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '通知' })).not.toBeInTheDocument())
+  fireEvent.mouseLeave(aside)
+  localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
+})
+
 it('keeps places in the navigation, the MR lists in tabs, and opening by URL beside the tabs', () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   const navigation = screen.getByRole('navigation', { name: 'GitLab client navigation' })
-  expect(within(within(navigation).getAllByRole('list')[0]).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['MR一覧', 'To-Do', 'プロジェクト'])
+  expect(within(within(navigation).getAllByRole('list')[0]).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['MR一覧', 'プロジェクト'])
+  // Notifications open over the page from their own button, not as a place.
+  expect(screen.getByRole('button', { name: '通知' })).toHaveAttribute('aria-haspopup', 'dialog')
   expect(within(screen.getByRole('tablist', { name: 'MR一覧の切り替え' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['検索', 'レビュー依頼', '担当', '作成'])
   expect(within(navigation).queryByRole('button', { name: 'MR検索' })).not.toBeInTheDocument()
   expect(within(navigation).queryByRole('button', { name: 'MR URLから開く' })).not.toBeInTheDocument()
@@ -669,8 +700,8 @@ it('shows a list and an MR visited before as they were left, without building th
   // Text typed but not applied survives a visit to another place.
   const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
   fireEvent.change(search, { target: { value: 'typed' } })
-  fireEvent.click(screen.getByRole('button', { name: 'To-Do' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/todos'))
+  fireEvent.click(screen.getByRole('button', { name: /設定$/u }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/settings'))
   expect(search).not.toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))

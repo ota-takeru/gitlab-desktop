@@ -59,7 +59,7 @@ describe('WorkspaceSettings account lifecycle', () => {
     mocks.enableDesktopNotifications.mockResolvedValue(true)
     render(<WorkspaceSettings />)
 
-    fireEvent.click(screen.getByLabelText('メンション・承認依頼などの新しいTo-Doをデスクトップ通知'))
+    fireEvent.click(screen.getByLabelText('メンション・CI失敗などの新しい通知をデスクトップ通知'))
 
     await waitFor(() => expect(mocks.setSettings).toHaveBeenCalledWith({ notifyTodos: true }))
   })

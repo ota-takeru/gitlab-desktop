@@ -8,15 +8,24 @@ interface LoadedTodos {
   error: unknown
 }
 
+/**
+ * GitLab's To-Dos about one event (a mention, a failed pipeline...) are the notifications.
+ * Being assigned or asked to review is a standing state that the MR list's tabs already show,
+ * and that To-Do stays until the MR closes, so it is left out.
+ */
+export function isNotificationTodo(todo: GitLabTodo): boolean {
+  return todo.actionName !== 'assigned' && todo.actionName !== 'review_requested'
+}
+
 function isTodosKey(key: readonly unknown[], sessionId: string): boolean {
   return key[0] === 'gitlab' && key[1] === sessionId && typeof key[2] === 'string' && key[2].includes('"kind":"todos"')
 }
 
 /**
- * The pending To-Dos of one merge request among the To-Do pages already
- * loaded (the To-Do list, the notification monitor). It never asks GitLab.
+ * The pending notifications of one merge request among the To-Do pages already
+ * loaded (the notification panel and its count). It never asks GitLab.
  */
-export function useLoadedMergeRequestTodos(sessionId: string | null, projectId: string, iid: string): GitLabTodo[] {
+export function useLoadedMergeRequestNotifications(sessionId: string | null, projectId: string, iid: string): GitLabTodo[] {
   const cache = useQueryClient().getQueryCache()
   const subscribe = useCallback((listener: () => void) => cache.subscribe(listener), [cache])
   const getSnapshot = useCallback(() => {
@@ -25,7 +34,7 @@ export function useLoadedMergeRequestTodos(sessionId: string | null, projectId: 
     for (const query of cache.findAll({ queryKey: ['gitlab', sessionId] })) {
       if (!isTodosKey(query.queryKey, sessionId)) continue
       for (const todo of (query.state.data as LoadedTodos | undefined)?.snapshot?.data ?? []) {
-        if (todo.projectId === projectId && todo.iid === iid) found.set(todo.id, todo)
+        if (todo.projectId === projectId && todo.iid === iid && isNotificationTodo(todo)) found.set(todo.id, todo)
       }
     }
     return JSON.stringify([...found.values()])
@@ -35,14 +44,16 @@ export function useLoadedMergeRequestTodos(sessionId: string | null, projectId: 
 }
 
 /**
- * Drops a To-Do marked done from every loaded To-Do page, then lets them
- * reload. The notification monitor keeps the IDs it has seen, so a done
+ * Drops To-Dos marked done from every loaded To-Do page, then lets them
+ * reload once. The notification monitor keeps the IDs it has seen, so a done
  * To-Do never comes back as new.
  */
-export function forgetDoneTodo(queryClient: QueryClient, sessionId: string, todoId: string): void {
+export function forgetDoneTodos(queryClient: QueryClient, sessionId: string, todoIds: string[]): void {
+  if (!todoIds.length) return
+  const done = new Set(todoIds)
   const predicate = (query: { queryKey: readonly unknown[] }) => isTodosKey(query.queryKey, sessionId)
   queryClient.setQueriesData<LoadedTodos>({ predicate }, (current) => current?.snapshot
-    ? { ...current, snapshot: { ...current.snapshot, data: current.snapshot.data.filter((todo) => todo.id !== todoId) } }
+    ? { ...current, snapshot: { ...current.snapshot, data: current.snapshot.data.filter((todo) => !done.has(todo.id)) } }
     : current)
   void queryClient.invalidateQueries({ predicate })
 }

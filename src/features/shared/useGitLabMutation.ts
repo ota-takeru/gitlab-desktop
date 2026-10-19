@@ -100,12 +100,13 @@ function parseResourceIdentity(resourceKey: string): ResourceIdentity | null {
 }
 
 /**
- * A reaction is shown as given at once and does not stop the screen while it
- * is sent: other controls stay as they are, and a write started meanwhile is
- * sent right after it instead of being refused.
+ * A reaction is shown as given at once, and a notification is marked read as
+ * its MR opens; neither stops the screen while it is sent: other controls stay
+ * as they are, and a write started meanwhile is sent right after it instead of
+ * being refused.
  */
 function isQuietWrite(action: GitLabAction | null): boolean {
-  return action?.kind === 'addAward' || action?.kind === 'removeAward'
+  return action?.kind === 'addAward' || action?.kind === 'removeAward' || action?.kind === 'markTodoDone'
 }
 
 function isUnsafe(entry: MutationEntry): boolean {
@@ -270,6 +271,82 @@ export function clearGitLabMutationStates(sessionId?: string): void {
   }
 }
 
+/**
+ * Sends one write for a resource, under the same lock and unknown-outcome record as
+ * `useGitLabMutation`. It also serves writes started where no component stays mounted,
+ * such as marking many notifications read.
+ */
+export async function runGitLabMutation(sessionId: string | null, resourceKey: string, action: GitLabAction, localDraftKey?: string, execute?: () => Promise<void>): Promise<MutationResult> {
+  const current = getEntry(sessionId, resourceKey)
+  // Held for the whole run, so an entry nothing on screen listens to is not pruned between its steps.
+  const hold = () => undefined
+  current.listeners.add(hold)
+  try {
+    return await sendWrite(current, sessionId, action, localDraftKey, execute)
+  } finally {
+    current.listeners.delete(hold)
+    pruneEntry(current)
+  }
+}
+
+async function sendWrite(current: MutationEntry, sessionId: string | null, action: GitLabAction, localDraftKey?: string, execute?: () => Promise<void>): Promise<MutationResult> {
+  let hydrated = true
+  if (current.durable && current.hydration !== 'ready') hydrated = await ensureHydrated(current)
+  if (!isActive(current)) return { error: current.snapshot.error, ok: false, status: 'unknown' }
+  if (!hydrated || current.hydration !== 'ready') return { error: current.snapshot.error, ok: false, status: 'unknown' }
+  while (current.snapshot.status === 'pending' && isQuietWrite(current.snapshot.action) && current.inFlight) {
+    await current.inFlight
+    if (!isActive(current)) return { error: current.snapshot.error, ok: false, status: 'unknown' }
+  }
+  if (current.snapshot.status === 'pending' || current.snapshot.status === 'unknown') {
+    return {
+      error: current.snapshot.status === 'unknown' ? current.snapshot.error : null,
+      ok: false,
+      status: current.snapshot.status,
+    }
+  }
+  if (!sessionId) {
+    const error = normalizeGitLabError({ code: 'AUTH_REQUIRED', message: 'GitLabに接続してください。' })
+    publish(current, { action, error, status: 'error' })
+    return { error, ok: false, status: 'error' }
+  }
+
+  let finished: () => void = () => undefined
+  const inFlight = new Promise<void>((resolve) => { finished = resolve })
+  current.inFlight = inFlight
+  publish(current, { action, error: null, status: 'pending' })
+  try {
+    if (execute) {
+      await execute()
+    } else {
+      await mutateGitLab(localDraftKey === undefined ? { action, sessionId } : { action, localDraftKey, sessionId })
+    }
+    reportGitLabConnectivity(null)
+    if (!isActive(current)) {
+      const error = new GitLabCommandError({ code: 'CANCELLED', message: '画面が閉じられたため投稿結果を適用できません。' })
+      return { error, ok: false, status: 'error' }
+    }
+    publish(current, { action: null, error: null, status: 'success' })
+    return { error: null, ok: true, status: 'success' }
+  } catch (caught) {
+    const error = normalizeGitLabError(caught)
+    const status: MutationStatus = error.code === 'UNKNOWN_OUTCOME' ? 'unknown' : 'error'
+    reportGitLabConnectivity(error)
+    if (isActive(current)) {
+      if (status === 'unknown') {
+        const receipt = await refreshReceiptAfterUnknown(current)
+        if (isActive(current)) publish(current, { action: receipt?.action ?? action, error, status })
+      } else {
+        publish(current, { action, error, status })
+      }
+    }
+    return { error, ok: false, status }
+  } finally {
+    if (current.inFlight === inFlight) current.inFlight = null
+    finished()
+  }
+}
+
 export function useGitLabMutation(
   sessionId: string | null,
   resourceKey: string,
@@ -308,64 +385,7 @@ export function useGitLabMutation(
     }
   }, [onUnsafeChange, ownerId, resourceKey, sessionId])
 
-  const runDetailed = useCallback(async (action: GitLabAction, localDraftKey?: string, execute?: () => Promise<void>): Promise<MutationResult> => {
-    const current = getEntry(sessionId, resourceKey)
-    let hydrated = true
-    if (current.durable && current.hydration !== 'ready') hydrated = await ensureHydrated(current)
-    if (!isActive(current)) return { error: current.snapshot.error, ok: false, status: 'unknown' }
-    if (!hydrated || current.hydration !== 'ready') return { error: current.snapshot.error, ok: false, status: 'unknown' }
-    while (current.snapshot.status === 'pending' && isQuietWrite(current.snapshot.action) && current.inFlight) {
-      await current.inFlight
-      if (!isActive(current)) return { error: current.snapshot.error, ok: false, status: 'unknown' }
-    }
-    if (current.snapshot.status === 'pending' || current.snapshot.status === 'unknown') {
-      return {
-        error: current.snapshot.status === 'unknown' ? current.snapshot.error : null,
-        ok: false,
-        status: current.snapshot.status,
-      }
-    }
-    if (!sessionId) {
-      const error = normalizeGitLabError({ code: 'AUTH_REQUIRED', message: 'GitLabに接続してください。' })
-      publish(current, { action, error, status: 'error' })
-      return { error, ok: false, status: 'error' }
-    }
-
-    let finished: () => void = () => undefined
-    const inFlight = new Promise<void>((resolve) => { finished = resolve })
-    current.inFlight = inFlight
-    publish(current, { action, error: null, status: 'pending' })
-    try {
-      if (execute) {
-        await execute()
-      } else {
-        await mutateGitLab(localDraftKey === undefined ? { action, sessionId } : { action, localDraftKey, sessionId })
-      }
-      reportGitLabConnectivity(null)
-      if (!isActive(current)) {
-        const error = new GitLabCommandError({ code: 'CANCELLED', message: '画面が閉じられたため投稿結果を適用できません。' })
-        return { error, ok: false, status: 'error' }
-      }
-      publish(current, { action: null, error: null, status: 'success' })
-      return { error: null, ok: true, status: 'success' }
-    } catch (caught) {
-      const error = normalizeGitLabError(caught)
-      const status: MutationStatus = error.code === 'UNKNOWN_OUTCOME' ? 'unknown' : 'error'
-      reportGitLabConnectivity(error)
-      if (isActive(current)) {
-        if (status === 'unknown') {
-          const receipt = await refreshReceiptAfterUnknown(current)
-          if (isActive(current)) publish(current, { action: receipt?.action ?? action, error, status })
-        } else {
-          publish(current, { action, error, status })
-        }
-      }
-      return { error, ok: false, status }
-    } finally {
-      if (current.inFlight === inFlight) current.inFlight = null
-      finished()
-    }
-  }, [resourceKey, sessionId])
+  const runDetailed = useCallback((action: GitLabAction, localDraftKey?: string, execute?: () => Promise<void>): Promise<MutationResult> => runGitLabMutation(sessionId, resourceKey, action, localDraftKey, execute), [resourceKey, sessionId])
 
   const run = useCallback(async (action: GitLabAction, localDraftKey?: string): Promise<boolean> => (await runDetailed(action, localDraftKey)).ok, [runDetailed])
 

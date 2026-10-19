@@ -90,10 +90,10 @@ function noteQuery(iid: string): GitLabQuery {
   return { kind: 'notes', projectId: '7', iid, page: 1 }
 }
 
-function todo(id: string, body = `todo ${id}`): GitLabTodo {
+function todo(id: string, body = `todo ${id}`, actionName = 'mentioned'): GitLabTodo {
   return {
     id,
-    actionName: 'assigned',
+    actionName,
     body,
     createdAt: '2026-10-01T09:00:00Z',
     projectId: '7',
@@ -167,12 +167,13 @@ describe('WorkspaceMonitor', () => {
     view.rerender(<WorkspaceMonitor />)
     expect(mocks.notifyWorkspace).not.toHaveBeenCalled()
 
-    setResult(todosQuery, [todo('todo-1', 'edited existing todo'), todo('todo-2')], 'network')
+    // Being assigned is shown by the MR list's tabs, not as a notification.
+    setResult(todosQuery, [todo('todo-1', 'edited existing todo'), todo('todo-2'), todo('todo-3', undefined, 'assigned')], 'network')
     setResult(noteQuery('120'), nextNotes, 'network')
     await act(async () => view.rerender(<WorkspaceMonitor />))
 
     expect(mocks.notifyWorkspace).toHaveBeenCalledTimes(2)
-    expect(mocks.notifyWorkspace).toHaveBeenCalledWith('新しいMR To-Doが1件あります。')
+    expect(mocks.notifyWorkspace).toHaveBeenCalledWith('新しい通知が1件あります。')
     expect(mocks.notifyWorkspace).toHaveBeenCalledWith('担当・レビューMRに新着コメントが2件あります。')
   })
 

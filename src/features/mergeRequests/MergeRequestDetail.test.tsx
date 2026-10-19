@@ -130,6 +130,7 @@ vi.mock('../shared/useGitLabQuery', () => ({
 
 vi.mock('../shared/useGitLabMutation', () => ({
   clearGitLabMutationStates: vi.fn(),
+  runGitLabMutation: (_sessionId: string, _key: string, action: unknown) => detailMocks.mutationDetailedMock(action),
   useGitLabMutation: () => ({
     ...detailMocks.mutationState,
     isLocked: detailMocks.mutationState.status === 'unknown',
@@ -868,16 +869,18 @@ describe('reactions and To-Dos', () => {
     expect(detailMocks.refreshKinds).toContain('mrAwards')
   })
 
-  it('offers to finish the MR\'s pending To-Do from the loaded To-Do pages only', async () => {
+  it('offers to mark the MR\'s notification read from the loaded To-Do pages only', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const todo = { actionName: 'review_requested', author: colleague, body: '', createdAt: '2026-10-09T00:00:00.000Z', id: '501', iid: '120', projectId: '7', projectName: 'Project', title: 'Read-only integration sample', webUrl: '' }
+    const todo = { actionName: 'mentioned', author: colleague, body: '', createdAt: '2026-10-09T00:00:00.000Z', id: '501', iid: '120', projectId: '7', projectName: 'Project', title: 'Read-only integration sample', webUrl: '' }
     const other = { ...todo, id: '502', iid: '121' }
-    client.setQueryData(['gitlab', 'session-42', JSON.stringify({ kind: 'todos', page: 1 })], { error: null, snapshot: { completeness: 'complete', data: [other, todo], fetchedAt: 1, nextPage: null, source: 'network' } })
+    // Being asked to review is not a notification, so it offers nothing.
+    const requested = { ...todo, actionName: 'review_requested', id: '503' }
+    client.setQueryData(['gitlab', 'session-42', JSON.stringify({ kind: 'todos', page: 1 })], { error: null, snapshot: { completeness: 'complete', data: [other, requested, todo], fetchedAt: 1, nextPage: null, source: 'network' } })
     renderDetail('discussion', client)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'To-Doを完了' }))
+    fireEvent.click(await screen.findByRole('button', { name: '通知を既読にする' }))
     await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ iid: '120', kind: 'markTodoDone', projectId: '7', todoId: '501' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'To-Doを完了' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('button', { name: '通知を既読にする' })).not.toBeInTheDocument())
     expect(detailMocks.queryCalls).not.toContainEqual(expect.objectContaining({ kind: 'todos' }))
   })
 })

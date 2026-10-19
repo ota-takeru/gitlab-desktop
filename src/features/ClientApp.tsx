@@ -1,5 +1,4 @@
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined'
@@ -24,7 +23,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { ClientNavItem } from '../components/ClientNavItem'
@@ -53,7 +52,7 @@ import { BranchList } from './projects/BranchList'
 import { CodeBrowser, type CodeLocation } from './projects/CodeBrowser'
 import { ProjectView } from './projects/ProjectView'
 import { WorkspaceSettings } from './connections/WorkspaceSettings'
-import { TodoView } from './mergeRequests/TodoView'
+import { NotificationNavItem } from './mergeRequests/NotificationPanel'
 import { MergeRequestTabs } from './mergeRequests/MergeRequestTabs'
 import { OpenMergeRequestDialog } from './mergeRequests/OpenMergeRequestDialog'
 import { personalQueueFor } from './mergeRequests/personalQueue'
@@ -100,8 +99,8 @@ function writeLayoutPreference(key: string, value: boolean): void {
   }
 }
 
-type ClientRoute = 'projects' | 'mrs' | 'branches' | 'code' | 'settings' | 'todos'
-/** The MR list's tabs are lists of MRs only; To-Do and the history are places of their own in the sidebar. */
+type ClientRoute = 'projects' | 'mrs' | 'branches' | 'code' | 'settings'
+/** The MR list's tabs are lists of MRs only; notifications open from their own button in the sidebar. */
 type MergeRequestHubTab = 'waiting' | 'assigned' | 'created' | 'search'
 
 const hubTabs: Array<{ label: string; value: MergeRequestHubTab }> = [
@@ -221,21 +220,6 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const sidebarIsCollapsed = isNarrowNav ? !narrowSidebarExpanded : sidebarCollapsedBrowsing
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth)
   const [resizing, setResizing] = useState(false)
-  const [peeking, setPeeking] = useState(false)
-  const peekTimer = useRef<ReturnType<typeof globalThis.setTimeout> | undefined>(undefined)
-  const startPeek = () => {
-    if (!sidebarIsCollapsed) return
-    globalThis.clearTimeout(peekTimer.current)
-    peekTimer.current = globalThis.setTimeout(() => setPeeking(true), 300)
-  }
-  const endPeek = () => {
-    globalThis.clearTimeout(peekTimer.current)
-    setPeeking(false)
-  }
-  useEffect(() => () => globalThis.clearTimeout(peekTimer.current), [])
-  const navCollapsed = sidebarIsCollapsed && !peeking
-  // In a narrow window an expanded navigation lies over the page, like the peek, instead of taking its width.
-  const navOverlays = peeking || (isNarrowNav && !sidebarIsCollapsed)
   const toggleSidebar = () => {
     if (isNarrowNav) {
       setNarrowSidebarExpanded((current) => !current)
@@ -451,7 +435,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }, [instanceUrl, selectedIid, selectedPinned, selectedProjectId, userId])
 
   const personal = personalQueueFor(listParams, session?.user.id)
-  // The personal queues, To-Do, history and search share one list screen with tabs.
+  // The personal queues and search share one list screen with tabs.
   const hubTab: MergeRequestHubTab | null = route === 'mrs' ? personal ?? (params.projectName ? null : 'search') : null
   const [hubOrder, setHubOrder] = useState(readHubTabOrder)
   const hubReorder = useReorder({ axis: 'x', keys: hubOrder, onMove: (key, toIndex) => {
@@ -509,7 +493,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
       <Tab label="コード" value="code" />
     </Tabs>
   </Stack> : undefined
-  const backLabel = (route === 'branches' || route === 'code') && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'todos' ? 'To-Doに戻る' : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
+  const backLabel = (route === 'branches' || route === 'code') && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
 
   // Places only; one-off actions such as opening a URL sit beside the search box.
   // An open MR is marked by its tab below, not by these places.
@@ -518,15 +502,15 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   return (
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* Collapsed, the navigation shows in full over the page while the pointer rests on it. */}
-        <Box onMouseEnter={startPeek} onMouseLeave={endPeek} sx={{ flexShrink: 0, position: 'relative', transition: resizing ? 'none' : 'width 120ms', width: sidebarIsCollapsed || isNarrowNav ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth, zIndex: navOverlays ? 'drawer' : 'auto', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
-        <Box component="aside" sx={{ bgcolor: 'surface.nav', borderRight: 1, borderColor: 'divider', bottom: 0, boxShadow: navOverlays ? 8 : 'none', display: 'flex', flexDirection: 'column', left: 0, overflow: 'hidden', position: 'absolute', px: 1, py: 1, top: 0, transition: resizing ? 'none' : 'width 120ms', width: navCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+        {/* In a narrow window an expanded navigation lies over the page, like the peek, instead of taking its width. */}
+        <PeekingNavigation collapsed={sidebarIsCollapsed} overlays={isNarrowNav && !sidebarIsCollapsed} resizeHandle={sidebarIsCollapsed || isNarrowNav ? null : <SidebarResizeHandle onResize={setSidebarWidth} onResizingChange={setResizing} width={sidebarWidth} />} resizing={resizing} slotWidth={sidebarIsCollapsed || isNarrowNav ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} width={sidebarWidth}>
+        {({ collapsed: navCollapsed, foldForNotifications, stopPeek }) => <>
           <Stack direction="row" sx={{ alignItems: 'center', justifyContent: navCollapsed ? 'center' : 'space-between', minHeight: 36, mb: 1, pl: navCollapsed ? 0 : 1 }}>
             {navCollapsed ? null : <Typography component="div" noWrap variant="h3">GitLab Desktop</Typography>}
             <Tooltip placement="right" title={sidebarIsCollapsed ? 'ナビゲーションを展開' : 'ナビゲーションを折りたたむ'}>
               <IconButton
                 aria-label={sidebarIsCollapsed ? 'ナビゲーションを展開' : 'ナビゲーションを折りたたむ'}
-                onClick={() => { setPeeking(false); toggleSidebar() }}
+                onClick={() => { stopPeek(); toggleSidebar() }}
               >
                 {sidebarIsCollapsed ? <MenuRoundedIcon /> : <MenuOpenRoundedIcon />}
               </IconButton>
@@ -536,11 +520,12 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           <Box component="nav" aria-label="GitLab client navigation" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
             <List disablePadding>
               <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<RateReviewOutlinedIcon />} label="MR一覧" onClick={openLastHub} selected={!selected && hubTab !== null} title="MR一覧" />
-              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<InboxOutlinedIcon />} label="To-Do" onClick={() => navigate('todos')} selected={!selected && route === 'todos'} title="To-Do" />
               <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<SourceOutlinedIcon />} label="プロジェクト" onClick={() => navigate('projects')} selected={projectsSelected} title="プロジェクト" />
             </List>
             <MergeRequestTabs collapsed={navCollapsed} onOpen={openMergeRequestRef} selected={selected} />
           </Box>
+          {/* Notifications are not a place: they open over the page, from beside the settings. */}
+          <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={openMergeRequestRef} onOpenChange={foldForNotifications} /></List>
           <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? `設定 · ${session ? `${session.user.name} @${session.user.username}` : '未接続'}` : ''}>
@@ -550,9 +535,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
               {navCollapsed || !session ? null : <SettingsOutlinedIcon sx={{ fontSize: 18 }} />}
             </ListItemButton>
           </Tooltip>
-        </Box>
-        {sidebarIsCollapsed || isNarrowNav ? null : <SidebarResizeHandle onResize={setSidebarWidth} onResizingChange={setResizing} width={sidebarWidth} />}
-        </Box>
+        </>}
+        </PeekingNavigation>
         <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0 }}>
           {awaitingReauth ? <Alert action={<Button color="inherit" onClick={() => setReconnectOpen(true)} size="small" variant="outlined">再接続</Button>} severity="warning" sx={{ borderRadius: 0, flexShrink: 0 }}>
             再認証が必要です。GitLabのトークンが使えなくなりました。未送信コメントは保持しています。
@@ -585,7 +569,6 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 {route === 'mrs' ? <MergeRequestList key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={hubNavigation ?? projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchAll={personal ? (search) => { navigate('mrs', search ? { search } : {}); globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0) } : undefined} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
                 {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? `プロジェクト ${params.projectId}`, sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
                 {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
-                {route === 'todos' ? <TodoView onOpen={openMergeRequestRef} selected={selected} /> : null}
                 </AppErrorBoundary>
                 </QueryRefreshPolicy>
                 </KeepAlive>
@@ -613,6 +596,63 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
         <UpdatePanel autoInstallAllowed={autoInstallAllowed} notificationOnly />
         <AppVersionLabel />
       </>} />
+    </Box>
+  )
+}
+
+/**
+ * The navigation's place in the layout. Collapsed, it shows in full over the page while
+ * the pointer rests on it (the peek). The peek is kept here, so unfolding renders only the
+ * navigation and not the screens beside it.
+ */
+function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizing, slotWidth, width }: {
+  children: (navigation: { collapsed: boolean; foldForNotifications: (open: boolean) => void; stopPeek: () => void }) => ReactNode
+  collapsed: boolean
+  /** An expanded navigation that lies over the page, in a narrow window. */
+  overlays: boolean
+  resizeHandle: ReactNode
+  resizing: boolean
+  /** The width the navigation takes from the page. */
+  slotWidth: number
+  width: number
+}) {
+  const [peeking, setPeeking] = useState(false)
+  // Resting on the navigation, except on the notification button: that unfolds it after a moment.
+  const [resting, setResting] = useState(false)
+  // Opening the notifications folds a peeked navigation, and it stays folded while they are open,
+  // so the panel sits against the narrow edge. The panel is a portal whose pointer events still
+  // reach the navigation's handlers, so they are not followed while it is open.
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  useEffect(() => {
+    if (!collapsed || !resting || notificationsOpen || peeking) return
+    const timer = globalThis.setTimeout(() => setPeeking(true), 300)
+    return () => globalThis.clearTimeout(timer)
+  }, [collapsed, notificationsOpen, peeking, resting])
+  // Followed per element rather than on entering, so moving onto or off the notification button counts.
+  const follow = (event: ReactMouseEvent<HTMLElement>) => {
+    if (notificationsOpen) return
+    setResting(!(event.target instanceof Element && event.target.closest('[data-no-peek]')))
+  }
+  const leave = () => {
+    setResting(false)
+    if (!notificationsOpen) setPeeking(false)
+  }
+  const stopPeek = () => {
+    setResting(false)
+    setPeeking(false)
+  }
+  const foldForNotifications = (open: boolean) => {
+    setNotificationsOpen(open)
+    stopPeek()
+  }
+  const navCollapsed = collapsed && !peeking
+  const lies = peeking || overlays
+  return (
+    <Box onMouseLeave={leave} onMouseOver={follow} sx={{ flexShrink: 0, position: 'relative', transition: resizing ? 'none' : 'width 120ms', width: slotWidth, zIndex: lies ? 'drawer' : 'auto', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+      <Box component="aside" sx={{ bgcolor: 'surface.nav', borderRight: 1, borderColor: 'divider', bottom: 0, boxShadow: lies ? 8 : 'none', display: 'flex', flexDirection: 'column', left: 0, overflow: 'hidden', position: 'absolute', px: 1, py: 1, top: 0, transition: resizing ? 'none' : 'width 120ms', width: navCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+        {children({ collapsed: navCollapsed, foldForNotifications, stopPeek })}
+      </Box>
+      {resizeHandle}
     </Box>
   )
 }
@@ -850,7 +890,8 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   let params = Object.fromEntries(new URLSearchParams(search ?? '').entries())
   // The former pinned list became the sidebar's pinned tabs; its links show the history.
   // The former pinned list and history are covered by the sidebar's tabs; their links start the MR list.
-  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' || routeValue === 'todos' ? routeValue : null
+  // So do links to the former To-Do place, now the notification button.
+  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' ? routeValue : null
   if (routeValue === 'mr' && params.projectId && params.iid) {
     // Older links opened a full-page detail; show it over the list the MR list starts with.
     route = start.route

@@ -67,16 +67,20 @@ declare module '@mui/material/styles' {
 
   interface TypographyVariants {
     code: React.CSSProperties
+    /** A count shown with an icon, such as the notification bell's. */
+    iconCount: React.CSSProperties
   }
 
   interface TypographyVariantsOptions {
     code?: React.CSSProperties
+    iconCount?: React.CSSProperties
   }
 }
 
 declare module '@mui/material/Typography' {
   interface TypographyPropsVariantOverrides {
     code: true
+    iconCount: true
   }
 }
 
@@ -231,6 +235,7 @@ export function createAppTheme(mode: PaletteMode) {
       subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.45 },
       caption: { fontSize: '0.75rem', lineHeight: 1.45, letterSpacing: 0 },
       overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: 1.6 },
+      iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: 1 },
     },
     // Radii are 4 (small) or 8 (standard): `borderRadius: 1` or `2` in sx.
     shape: {

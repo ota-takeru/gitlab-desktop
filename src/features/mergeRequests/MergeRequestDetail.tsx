@@ -103,8 +103,8 @@ import { MergeRequestActions, MergeStatusText } from './MergeRequestActions'
 import { ReviewComposer } from './ReviewComposer'
 import type { SuggestionActions } from './SuggestionBlock'
 import { suggestionSourceLines } from './suggestions'
-import { useLoadedMergeRequestTodos } from './todoCache'
-import { TodoDoneButton } from './TodoView'
+import { MarkNotificationReadButton } from './NotificationPanel'
+import { useLoadedMergeRequestNotifications } from './todoCache'
 import { appendComposerBuffer, clearComposerBuffer, clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, moveComposerBuffer, rememberComposerTarget, restoreComposerBuffer, seedComposerBuffer, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
 
 export type ReviewTab = 'discussion' | 'changes' | 'overview' | 'pipelines'
@@ -284,7 +284,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const awardsByNote = useMemo(() => new Map((noteAwardsResult.data ?? []).map((entry) => [entry.noteId, entry.awards])), [noteAwardsResult.data])
   const mrAwardsQuery = useMemo<MrAwardsQuery | null>(() => activeTab === 'overview' ? { iid, kind: 'mrAwards', projectId: resourceId } : null, [activeTab, iid, resourceId])
   const mrAwardsResult = useGitLabQuery<MrAwardsQuery>(session?.id ?? null, mrAwardsQuery)
-  const mergeRequestTodos = useLoadedMergeRequestTodos(session?.id ?? null, resourceId, iid)
+  const mergeRequestNotifications = useLoadedMergeRequestNotifications(session?.id ?? null, resourceId, iid)
   useEffect(() => { if (session && mergeRequest) workspace.recordRecent({ projectId: resourceId, iid }) }, [session?.id, resourceId, iid, Boolean(mergeRequest)]) // eslint-disable-line react-hooks/exhaustive-deps
   // The sidebar tab shows the title and state as last seen here.
   const tabMeta = mergeRequest ? { projectPath: mergeRequest.projectPath ?? '', state: mergeRequest.state, title: mergeRequest.title } : null
@@ -869,7 +869,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
           <Tooltip title={refreshing ? '更新中…' : '最新の状態を取得'}><span><IconButton aria-label="更新" disabled={refreshing} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
           <Tooltip title="GitLabで開く"><IconButton aria-label="GitLabで開く" onClick={() => void openInGitLab()}><LaunchRoundedIcon /></IconButton></Tooltip>
           <Tooltip title="リンクをコピー"><IconButton aria-label="リンクをコピー" onClick={() => void copyLink()}><LinkRoundedIcon /></IconButton></Tooltip>
-          {session && mergeRequestTodos[0] ? <Tooltip title={mergeRequestTodos.length > 1 ? `このMRの未完了To-Do ${mergeRequestTodos.length}件のうち1件を完了にします` : 'このMRのTo-Doを完了にします'}><Box component="span" sx={{ pl: 1 }}><TodoDoneButton sessionId={session.id} todo={mergeRequestTodos[0]} variant="button" /></Box></Tooltip> : null}
+          {session && mergeRequestNotifications[0] ? <Tooltip title={mergeRequestNotifications.length > 1 ? `このMRの未読の通知 ${mergeRequestNotifications.length}件のうち1件を既読にします` : 'このMRの通知を既読にします'}><Box component="span" sx={{ pl: 1 }}><MarkNotificationReadButton sessionId={session.id} todo={mergeRequestNotifications[0]} /></Box></Tooltip> : null}
           <Box sx={{ pl: 1 }}>
             {approvalsResult.error && !approvalWriting ? <Tooltip title={`承認状態を取得できませんでした: ${approvalsResult.error.message}`}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? '再取得中…' : '承認状態を再取得'}</Button></span></Tooltip>
               : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? '承認中…' : approvalWriting === 'unapprove' ? '取り消し中…' : approvalsResult.loading && !approvals ? '確認中…' : myApproved ? '自分の承認を取り消す' : '承認する'}</Button>}
@@ -1383,7 +1383,7 @@ function actionLabel(action: GitLabAction | null): string {
     case 'uploadAttachment': return '添付ファイルのアップロード'
     case 'addAward': return 'リアクションの追加'
     case 'removeAward': return 'リアクションの取り消し'
-    case 'markTodoDone': return 'To-Doの完了'
+    case 'markTodoDone': return '通知の既読'
     case 'retryJob': return 'ジョブの再実行'
     case 'cancelJob': return 'ジョブのキャンセル'
     case 'playJob': return '手動ジョブの実行'

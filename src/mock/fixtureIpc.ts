@@ -151,12 +151,14 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'project': return data.projects.find((project) => project.pathWithNamespace === request.path) ?? notFound()
       case 'users': return data.users.filter((user) => matches(`${user.name} ${user.username}`, request.search))
       case 'groups': return data.groups.filter((group) => matches(`${group.name} ${group.fullPath}`, request.search))
-      case 'todos': return data.mergeRequests.slice(0, 1).filter(({ mergeRequest }) => !doneTodos.has(`todo-${mergeRequest.id}`)).map(({ mergeRequest }) => ({
-        actionName: 'review_requested',
+      // A mention and a direct mention of one MR stack into one notification, a failed pipeline is another,
+      // and a review request is left out of them.
+      case 'todos': return [...data.mergeRequests.slice(0, 3).map(({ mergeRequest }, index) => ({ actionName: ['mentioned', 'build_failed', 'review_requested'][index], id: `todo-${mergeRequest.id}`, mergeRequest })), ...data.mergeRequests.slice(0, 1).map(({ mergeRequest }) => ({ actionName: 'directly_addressed', id: `todo-${mergeRequest.id}-2`, mergeRequest }))].filter(({ id }) => !doneTodos.has(id)).map(({ actionName, id, mergeRequest }) => ({
+        actionName,
         author: mergeRequest.author,
         body: mergeRequest.title,
         createdAt: mergeRequest.updatedAt,
-        id: `todo-${mergeRequest.id}`,
+        id,
         iid: mergeRequest.iid,
         projectId: mergeRequest.projectId,
         projectName: mergeRequest.projectPath ?? '',
