@@ -138,7 +138,8 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
     report(mention?.query ?? null)
   }
 
-  const editor = useEditor({
+  // Null between TipTap destroying the editor of a screen kept hidden for a while and creating it again when the screen shows.
+  const editor: Editor | null = useEditor({
     autofocus: autoFocus ? 'end' : false,
     content: value,
     contentType: 'markdown',
@@ -179,7 +180,7 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
   }, [editor, editorRef])
 
   useEffect(() => {
-    editor.setEditable(!disabled, false)
+    editor?.setEditable(!disabled, false)
   }, [disabled, editor])
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -189,11 +190,11 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
     if (!dom) return
     setOptionalAttribute(dom, 'aria-activedescendant', activeDescendantId)
     setOptionalAttribute(dom, 'aria-controls', controlsId)
-  }, [activeDescendantId, controlsId])
+  }, [activeDescendantId, controlsId, editor])
 
   useEffect(() => {
     // Follow changes made outside the editor: clearing after submit, restored or appended text.
-    if (value === lastValueRef.current) return
+    if (!editor || value === lastValueRef.current) return
     lastValueRef.current = value
     if (!canEditAsRichText(value)) {
       onUnsupported()
@@ -204,11 +205,11 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
 
   useImperativeHandle(handleRef, () => ({
     // Effects can run again after the editor is destroyed (StrictMode, remounts); there is nothing to focus then.
-    focus: () => { if (!editor.isDestroyed) editor.commands.focus('end') },
-    insertBlock: (markdown) => { editor.chain().focus().insertContent(markdown, { contentType: 'markdown' }).run() },
+    focus: () => { if (editor && !editor.isDestroyed) editor.commands.focus('end') },
+    insertBlock: (markdown) => { editor?.chain().focus().insertContent(markdown, { contentType: 'markdown' }).run() },
     insertMention: (text) => {
       const range = mentionRef.current
-      if (!range) return
+      if (!range || !editor) return
       const tail = editor.state.doc.textBetween(range.to, Math.min(range.to + 1, editor.state.selection.$from.end()), undefined, '￼')
       const separator = tail && /^[\s.,!?)]/.test(tail) ? '' : ' '
       editor.chain().focus().insertContentAt(range, { text: `${text}${separator}`, type: 'text' }).run()

@@ -24,12 +24,13 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { ClientNavItem } from '../components/ClientNavItem'
 import { useConfirm } from '../components/Feedback'
 import { PaneEmpty } from '../components/Pane'
+import { KeepAlive } from '../components/KeepAlive'
 import { delayedRevealSx } from '../components/paneSx'
 import { useReorder } from '../components/useReorder'
 import { SettingsSection } from '../components/SettingsSection'
@@ -214,7 +215,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const [sidebarCollapsedBrowsing, setSidebarCollapsedBrowsing] = useState(() => readLayoutPreference(SIDEBAR_COLLAPSED_BROWSING_KEY, false))
   const [narrowSidebarExpanded, setNarrowSidebarExpanded] = useState(false)
   const { route, params } = location
-  const selected = parseSelection(params.mr)
+  // The same MR keeps one object, so its kept screen is not rendered again for nothing.
+  const selected = useMemo(() => parseSelection(params.mr), [params.mr])
   // An open MR keeps the navigation as it is: the MR already has the whole width beside it.
   const sidebarIsCollapsed = isNarrowNav ? !narrowSidebarExpanded : sidebarCollapsedBrowsing
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth)
@@ -317,7 +319,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     previousSelectedMrId.current = selectedMrId
     if (!returnedFrom || selectedMrId || !recentMrId || !parseSelection(recentMrId)) return
     // The list is visible again in this commit; the id only holds digits and a dash.
-    const row = document.querySelector<HTMLElement>(`[data-list-pane] [data-mr-id="${recentMrId}"]`)
+    const row = document.querySelector<HTMLElement>(`[data-list-pane] [data-screen-active="true"] [data-mr-id="${recentMrId}"]`)
     if (!row) return
     row.focus()
     row.scrollIntoView?.({ block: 'nearest' })
@@ -374,7 +376,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
         return
       }
       if (event.key === 'j' || event.key === 'k') {
-        const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-list-pane] [data-list-row="true"]'))
+        const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-list-pane] [data-screen-active="true"] [data-list-row="true"]'))
         if (rows.length === 0) return
         event.preventDefault()
         // On the list J/K move the focus; on an open MR they open the next or
@@ -402,9 +404,18 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     navigate('mrs', { projectId: nextProject.id, projectName: nextProject.name })
   }
 
-  const openProjectId = (nextProjectId: string, name?: string) => {
+  const openProjectId = useCallback((nextProjectId: string, name?: string) => {
     navigate('mrs', { projectId: nextProjectId, projectName: name || `プロジェクト ${nextProjectId}` })
-  }
+  }, [navigate])
+
+  // Each tab of an MR is a history entry, so Back returns to the previous tab.
+  const changeMergeRequestTab = useCallback((tab: ReviewTab) => {
+    const current = readClientLocation(true)
+    const next = { ...current.params }
+    if (tab === 'discussion') delete next.tab
+    else next.tab = tab
+    navigate(current.route, next)
+  }, [navigate])
 
   const updateMergeRequestLocation = (nextParams: Record<string, string>) => {
     const current = readClientLocation(Boolean(session))
@@ -455,6 +466,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     if (hubTab) lastHubLocation.current = { params: listParams, route }
   }, [hubTab, listParams, route])
   const mergeRequest = openedMergeRequest?.sessionKey === sessionKey ? openedMergeRequest.mergeRequest : null
+  // Each list keeps its own mounted screen, so returning to it is immediate.
+  const listScreenKey = route === 'mrs' ? `mrs:${listMount.key}` : route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
   // Only the first restore at startup: a later connect attempt keeps the form on screen.
   const [initialRestoreSettled, setInitialRestoreSettled] = useState(status !== 'checking')
   if (!initialRestoreSettled && status !== 'checking') setInitialRestoreSettled(true)
@@ -557,9 +570,11 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             {!waitingForSessionRestore && route !== 'settings' && awaitingReauth ? <Box aria-label="一覧" component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}>
               <PaneEmpty description="再接続すると、この画面に戻ります。" title="再認証が必要です" />
             </Box> : null}
-            {!waitingForSessionRestore && route !== 'settings' && !awaitingReauth ? <>
-              {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive. */}
-              <Box aria-label="一覧" component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+            {!waitingForSessionRestore && !awaitingReauth ? <>
+              {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive.
+                  Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once. */}
+              <Box aria-label="一覧" component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={6} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
                 {route === 'mrs' ? <MergeRequestList key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={hubNavigation ?? projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchAll={personal ? (search) => { navigate('mrs', search ? { search } : {}); globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0) } : undefined} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
@@ -567,27 +582,22 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
                 {route === 'todos' ? <TodoView onOpen={openMergeRequestRef} selected={selected} /> : null}
                 </AppErrorBoundary>
+                </KeepAlive>
               </Box>
-              {selected ? <Box component="main" sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-                <AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
+              <KeepAlive activeKey={selected && route !== 'settings' ? `${selected.projectId}:${selected.iid}` : null} component="main" max={5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              {selected ? <AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute
                   initialMergeRequest={mergeRequest}
                   key={`${selected.projectId}:${selected.iid}`}
                   backLabel={backLabel}
                   onBack={returnToList}
-                  onOpenProject={(projectPath) => openProjectId(selected.projectId, projectPath)}
-                  onTabChange={(tab) => {
-                    // Each tab is a history entry, so Back returns to the previous tab.
-                    const next = { ...params }
-                    if (tab === 'discussion') delete next.tab
-                    else next.tab = tab
-                    navigate(route, next)
-                  }}
+                  onOpenProject={openProjectId}
+                  onTabChange={changeMergeRequestTab}
                   selected={selected}
                   tab={parseTab(params.tab)}
                 />
-                </AppErrorBoundary>
-              </Box> : null}
+                </AppErrorBoundary> : null}
+              </KeepAlive>
             </> : null}
           </Box>
         </Box>
@@ -753,13 +763,16 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
   </Stack>
 }
 
-function MergeRequestRoute({ backLabel, initialMergeRequest, onBack, onOpenProject, onTabChange, selected, tab }: { backLabel: string; initialMergeRequest: MergeRequest | null; onBack: () => void; onOpenProject: (projectPath?: string) => void; onTabChange: (tab: ReviewTab) => void; selected: MrRef; tab: ReviewTab }) {
+/** Memoized with stable props: showing a kept MR again only reconnects it instead of rendering the whole review again. */
+const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMergeRequest, onBack, onOpenProject, onTabChange, selected, tab }: { backLabel: string; initialMergeRequest: MergeRequest | null; onBack: () => void; onOpenProject: (projectId: string, projectPath?: string) => void; onTabChange: (tab: ReviewTab) => void; selected: MrRef; tab: ReviewTab }) {
   const { session } = useConnection()
   const query = useMemo(() => ({ iid: selected.iid, kind: 'mr' as const, projectId: selected.projectId }), [selected.iid, selected.projectId])
   const lookup = useGitLabQuery(session?.id ?? null, query)
   const accessDenied = lookup.error?.code === 'AUTH_REQUIRED' || lookup.error?.code === 'FORBIDDEN' || lookup.error?.code === 'NOT_FOUND'
   const initialMatchesRoute = Boolean(initialMergeRequest && selected.projectId === initialMergeRequest.projectId && selected.iid === initialMergeRequest.iid)
   const mergeRequest = accessDenied ? null : lookup.data ?? (initialMatchesRoute ? initialMergeRequest : null)
+  const projectPath = mergeRequest?.projectPath ?? undefined
+  const openProject = useCallback(() => onOpenProject(selected.projectId, projectPath), [onOpenProject, projectPath, selected.projectId])
   if (!mergeRequest) {
     if (lookup.loading) return <MergeRequestSkeleton />
     const failure = describeMergeRequestFailure(lookup.error)
@@ -770,8 +783,11 @@ function MergeRequestRoute({ backLabel, initialMergeRequest, onBack, onOpenProje
       </Stack>
     </PaneEmpty>
   }
-  return <MergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onOpenProject={() => onOpenProject(mergeRequest.projectPath ?? undefined)} onTabChange={onTabChange} tab={tab} />
-}
+  return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onOpenProject={openProject} onTabChange={onTabChange} tab={tab} />
+})
+
+/** A refresh of the MR that returns the same data (as when a kept MR shows again) does not render the review again. */
+const MemoizedMergeRequestDetail = memo(MergeRequestDetail)
 
 /** Why an MR could not be shown, in the reader's terms; GitLab's own message is kept for anything else. */
 function describeMergeRequestFailure(error: GitLabCommandError | null): { title: string; description: string; retry: boolean } {

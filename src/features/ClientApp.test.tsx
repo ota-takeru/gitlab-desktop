@@ -321,7 +321,8 @@ it.each([
   expect(screen.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
   expect(gitlabQueryMock.mock.calls.some(([, query]) => query?.[queryKey] === '1')).toBe(true)
 
-  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
+  // The list just left stays mounted, hidden, so only the shown one is searched.
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' }).querySelector<HTMLElement>('[data-screen-active="true"]')!).findByText('Add searchable list'))
   // The open MR is marked by its sidebar tab, not by the list's place.
   expect(screen.getByRole('button', { name: 'MR一覧' })).not.toHaveAttribute('aria-current', 'page')
 
@@ -389,7 +390,8 @@ it('switches a project screen between its MRs and branches, and shows the MRs of
   // Choosing MR again returns to all the project's MRs.
   fireEvent.click(screen.getByRole('tab', { name: 'MR' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject'))
-  expect(screen.queryByText('ブランチ: feature/search')).not.toBeInTheDocument()
+  // The branch's MRs stay mounted for a quick return, hidden.
+  expect(screen.getByText('ブランチ: feature/search')).not.toBeVisible()
 })
 
 it('keeps the account, theme and connection in one settings entry', async () => {
@@ -647,8 +649,40 @@ it('keeps the MR list mounted when it applies a search itself', async () => {
   await waitFor(() => expect(window.location.hash).toContain('search=needle'))
   expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toBe(search)
 
-  // Another list still starts fresh.
+  // Another list still starts fresh; the previous one stays mounted, hidden.
   fireEvent.click(screen.getByRole('tab', { name: '担当' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
-  expect(screen.queryByDisplayValue('needle')).not.toBeInTheDocument()
+  expect(screen.getByDisplayValue('needle')).not.toBeVisible()
+  expect(screen.getByRole('textbox', { name: '担当しているMRをタイトル・説明で検索' })).toHaveValue('')
+})
+
+it('shows a list and an MR visited before as they were left, without building them again', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => {
+    if (query?.kind === 'mrs') return { ...emptyQueryResult(), data: [mergeRequestFixture], snapshot: snapshot([mergeRequestFixture]) }
+    if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    return emptyQueryResult()
+  })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+
+  // Text typed but not applied survives a visit to another place.
+  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })
+  fireEvent.change(search, { target: { value: 'typed' } })
+  fireEvent.click(screen.getByRole('button', { name: 'To-Do' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/todos'))
+  expect(search).not.toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明で検索' })).toBe(search)
+  expect(search).toHaveValue('typed')
+
+  // An MR opened again is the same rendered page.
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
+  const heading = await screen.findByRole('heading', { level: 1, name: 'Add searchable list' })
+  fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
+  await waitFor(() => expect(heading).not.toBeVisible())
+  fireEvent.click(within(screen.getByRole('region', { name: '一覧' })).getByText('Add searchable list'))
+  await waitFor(() => expect(heading).toBeVisible())
+  expect(screen.getByRole('heading', { level: 1, name: 'Add searchable list' })).toBe(heading)
 })
