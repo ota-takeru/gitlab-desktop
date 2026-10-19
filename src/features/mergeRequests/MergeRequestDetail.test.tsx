@@ -80,6 +80,19 @@ vi.mock('../shared/personalWorkspace', () => ({
   }),
 }))
 
+const localMocks = vi.hoisted(() => ({
+  getLocalChanges: vi.fn(),
+  getLocalRepository: vi.fn(),
+}))
+vi.mock('../../lib/localRepository', () => ({
+  getLocalChanges: localMocks.getLocalChanges,
+  getLocalFile: vi.fn(() => new Promise(() => undefined)),
+  getLocalRepository: localMocks.getLocalRepository,
+  pickLocalRepositoryFolder: vi.fn(),
+  linkLocalRepository: vi.fn(),
+  unlinkLocalRepository: vi.fn(),
+}))
+
 vi.mock('../../lib/notifications', () => ({ notifyWorkspace: detailMocks.notifyWorkspaceMock }))
 vi.mock('../../lib/attachments', async () => ({
   ...await vi.importActual<typeof import('../../lib/attachments')>('../../lib/attachments'),
@@ -464,6 +477,39 @@ describe('suggestions and versions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'MR全体' }))
     expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
+  })
+
+  it('shows the linked clone against the MR head read-only, without loading the MR diff', async () => {
+    localMocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/project', projectPath: 'group/project' })
+    localMocks.getLocalChanges.mockResolvedValue({ aheadCount: 1, branch: 'feature', comparedSha: 'head-abc', containsMrHead: true, diffs: [{ ...detailMocks.diff, diff: '@@ -1,2 +1,3 @@\n line one\n line two\n+local line\n' }], localHead: 'c'.repeat(40), repositoryPath: 'C:/repos/project', truncated: false, untrackedCount: 2, untrackedIncluded: 0, untrackedMore: false })
+    renderDetail('changes')
+    await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })
+    detailMocks.queryCalls.length = 0
+
+    fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更' }))
+
+    expect(await screen.findByText('local line')).toBeInTheDocument()
+    expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc')
+    expect(screen.getByRole('button', { name: 'ローカルの変更' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('ローカルの作業ツリー')).toBeInTheDocument()
+    expect(screen.getByText(/MRの最新より1コミット先（未push）/u)).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent(/ローカルの作業ツリーまでの変更です/u)
+    expect(screen.getByText(/未追跡のファイルのうち2件は/u)).toBeInTheDocument()
+    expect(detailMocks.queryCalls.filter((query) => (query as { kind?: string } | null)?.kind === 'diffs')).toEqual([])
+    expect(screen.queryByRole('button', { name: 'src/example.tsの2行にコメント' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Colleagueのスレッド' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '確認済みにする' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'MR全体' }))
+    expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
+
+    // The button toggles: pressing it again returns to the whole MR.
+    fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更' }))
+    expect(await screen.findByText('local line')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更' }))
+    expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ローカルの変更' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'MR全体' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
 

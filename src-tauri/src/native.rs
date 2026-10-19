@@ -1,5 +1,6 @@
 use crate::dto::{Action, AppError, Query, Session, User};
 use crate::gitlab_api;
+use crate::local_git;
 use crate::storage::{now_ms, storage_error, CacheRule, LocalDraft, Snapshot, Store};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -599,6 +600,7 @@ impl NativeState {
         self.blocking(move |inner| {
             inner.active = None;
             inner.store.clear_private_account(&clear_session.account)?;
+            inner.store.delete_setting(&local_repositories_key(&clear_session.account))?;
             inner.store.delete_setting("connection")?;
             match credential_entry(&clear_session.account)?.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -1181,6 +1183,216 @@ impl NativeState {
         open::that_detached(url.as_str())
             .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
     }
+
+    pub async fn local_repository(
+        &self,
+        id: String,
+        project: String,
+    ) -> Result<Option<LocalRepository>, AppError> {
+        validate_project_id(&project)?;
+        let session = self.active(&id)?;
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            Ok(local_repositories(&inner.store, &session.account)?.remove(&project))
+        })
+        .await
+    }
+
+    /// Links a folder to a project after checking that it is a clone of that
+    /// project on the connected instance. The folder is read, never changed.
+    pub async fn link_local_repository(
+        &self,
+        id: String,
+        project: String,
+        project_path: String,
+        path: String,
+    ) -> Result<LocalRepository, AppError> {
+        validate_project_id(&project)?;
+        let session = self.active(&id)?;
+        let root = local_git::repository_root(&path).await?;
+        let remotes = local_git::remote_urls(&root).await?;
+        // The project's path comes from GitLab, so a stale or wrong path from
+        // the screen cannot link a clone of another project.
+        let fetched = gitlab_api::fetch(
+            &session.client,
+            &session.api_base,
+            &Query::Project { path: project_path },
+        )
+        .await?;
+        let project_path = fetched.data["pathWithNamespace"]
+            .as_str()
+            .filter(|_| fetched.data["id"].as_str() == Some(project.as_str()))
+            .ok_or_else(|| {
+                AppError::new("NOT_FOUND", "プロジェクトをGitLabで確認できませんでした。")
+            })?
+            .to_owned();
+        let instance = normalize_instance(&session.public.instance_url)?;
+        if !remotes
+            .iter()
+            .any(|remote| local_git::remote_matches(remote, &instance, &project_path))
+        {
+            return Err(AppError::new("INVALID_INPUT", &format!("このフォルダのgitリモートは {project_path} を指していません。このプロジェクトをcloneしたフォルダを指定してください（SSHの別名ホストは照合できないため、HTTPSかホスト名どおりのリモートが必要です）。")));
+        }
+        let linked = LocalRepository {
+            path: root.to_string_lossy().into_owned(),
+            project_path,
+        };
+        let saved = linked.clone();
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            let mut repositories = local_repositories(&inner.store, &session.account)?;
+            if !repositories.contains_key(&project) && repositories.len() >= MAX_LOCAL_REPOSITORIES
+            {
+                return Err(AppError::new(
+                    "TOO_LARGE",
+                    "紐付けたローカルリポジトリが多すぎます。使わない紐付けを解除してください。",
+                ));
+            }
+            repositories.insert(project, saved);
+            inner
+                .store
+                .set_setting(&local_repositories_key(&session.account), &repositories)
+        })
+        .await?;
+        Ok(linked)
+    }
+
+    pub async fn unlink_local_repository(
+        &self,
+        id: String,
+        project: String,
+    ) -> Result<(), AppError> {
+        validate_project_id(&project)?;
+        let session = self.active(&id)?;
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            let mut repositories = local_repositories(&inner.store, &session.account)?;
+            repositories.remove(&project);
+            inner
+                .store
+                .set_setting(&local_repositories_key(&session.account), &repositories)
+        })
+        .await
+    }
+
+    /// The linked clone's working tree against the MR head. It is read fresh
+    /// each time and never saved: it is the user's local source, not GitLab data.
+    pub async fn local_changes(
+        &self,
+        id: String,
+        project: String,
+        head_sha: String,
+    ) -> Result<serde_json::Value, AppError> {
+        let linked = self
+            .local_repository(id.clone(), project)
+            .await?
+            .ok_or_else(|| {
+                AppError::new(
+                    "NOT_FOUND",
+                    "このプロジェクトにはローカルリポジトリが紐付けられていません。",
+                )
+            })?;
+        let session = self.active(&id)?;
+        let _pending = session
+            .pending
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        let root = PathBuf::from(&linked.path);
+        // The folder may have been re-pointed since it was linked.
+        let instance = normalize_instance(&session.public.instance_url)?;
+        let remotes = local_git::remote_urls(&root).await?;
+        if !remotes
+            .iter()
+            .any(|remote| local_git::remote_matches(remote, &instance, &linked.project_path))
+        {
+            return Err(AppError::new("INVALID_INPUT", &format!("紐付けたフォルダのgitリモートが {} を指していません。紐付けをやり直してください。", linked.project_path)));
+        }
+        tokio::select! {
+            result = local_git::local_changes(&root, &head_sha) => result,
+            _ = session.cancelled.cancelled() => Err(cancelled()),
+        }
+    }
+}
+
+impl NativeState {
+    /// One file of the linked clone's working tree, for the whole-file view and
+    /// for opening unchanged lines between hunks. Read fresh, never saved.
+    pub async fn local_file(
+        &self,
+        id: String,
+        project: String,
+        path: String,
+    ) -> Result<serde_json::Value, AppError> {
+        let linked = self
+            .local_repository(id.clone(), project)
+            .await?
+            .ok_or_else(|| {
+                AppError::new(
+                    "NOT_FOUND",
+                    "このプロジェクトにはローカルリポジトリが紐付けられていません。",
+                )
+            })?;
+        let session = self.active(&id)?;
+        let _pending = session
+            .pending
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        let file = tauri::async_runtime::spawn_blocking(move || {
+            local_git::read_worktree_file(Path::new(&linked.path), &path)
+        })
+        .await
+        .map_err(|_| storage_error())??;
+        match file {
+            local_git::WorktreeFile::Text(content) => Ok(serde_json::json!({ "content": content })),
+            local_git::WorktreeFile::Binary => Err(AppError::new(
+                "UNSUPPORTED",
+                "このファイルはUTF-8またはShift_JISのテキストではないため表示できません。",
+            )),
+            local_git::WorktreeFile::TooLarge => Err(AppError::new(
+                "TOO_LARGE",
+                "1MiBを超えるファイルは表示できません。",
+            )),
+        }
+    }
+}
+
+const MAX_LOCAL_REPOSITORIES: usize = 500;
+
+/// A project's clone on this computer, as linked by the user.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRepository {
+    pub path: String,
+    pub project_path: String,
+}
+
+fn validate_project_id(project: &str) -> Result<(), AppError> {
+    if project.is_empty()
+        || project.len() > 20
+        || !project.bytes().all(|byte| byte.is_ascii_digit())
+        || project.bytes().all(|byte| byte == b'0')
+    {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "有効なプロジェクトIDを指定してください。",
+        ));
+    }
+    Ok(())
+}
+
+fn local_repositories_key(account: &str) -> String {
+    format!("local_repositories:{account}")
+}
+
+fn local_repositories(
+    store: &Store,
+    account: &str,
+) -> Result<HashMap<String, LocalRepository>, AppError> {
+    Ok(store
+        .setting(&local_repositories_key(account))?
+        .unwrap_or_default())
 }
 
 /// GitLab's page for a new token on the instance being connected, with this

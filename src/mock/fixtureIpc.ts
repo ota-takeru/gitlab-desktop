@@ -36,6 +36,12 @@ export function installFixtureIpc(state: FixtureState): void {
   const pipelines = createPipelineFixtures()
   const drafts = new Map<string, Draft[]>()
   const localDrafts = new Map<string, { body: string; updatedAt: number }>()
+  // Linked clones by project ID; the fixture never reads a real folder.
+  const localRepositories = new Map<string, { path: string; projectPath: string }>()
+  const localFiles: Record<string, string> = {
+    'notes/todo.md': '# 手元のメモ\n未追跡のファイルです。\n',
+    'src/config.ts': '// 固定データ: ローカルの作業ツリー\nexport const name = \'fixture\'\nexport const region = \'jp\'\nexport const debug = false\n\nexport const enabled = true\nexport const limit = 20\nexport const local = true\nexport const retries = 3\n',
+  }
   // Reactions by `<projectId>-<iid>` (the MR) or `<projectId>-<iid>:<noteId>` (a comment).
   const awards = new Map<string, AwardEmoji[]>()
   const doneTodos = new Set<string>()
@@ -70,6 +76,41 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'clear_local_drafts':
         localDrafts.clear()
         return null
+      case 'get_local_repository': return localRepositories.get(String(payload.projectId)) ?? null
+      case 'link_local_repository': {
+        const linked = { path: String(payload.path).trim().replace(/^"|"$/gu, ''), projectPath: String(payload.projectPath) }
+        localRepositories.set(String(payload.projectId), linked)
+        return linked
+      }
+      case 'unlink_local_repository':
+        localRepositories.delete(String(payload.projectId))
+        return null
+      case 'get_local_changes': {
+        const linked = localRepositories.get(String(payload.projectId))
+        if (!linked) throw { code: 'NOT_FOUND', message: 'このプロジェクトにはローカルリポジトリが紐付けられていません。' } satisfies GitLabErrorShape
+        return {
+          aheadCount: 1,
+          branch: 'feature/local-fixture',
+          comparedSha: String(payload.headSha),
+          containsMrHead: true,
+          diffs: [
+            { collapsed: false, deletedFile: false, diff: '@@ -0,0 +1,2 @@\n+# 手元のメモ\n+未追跡のファイルです。\n', newFile: true, newPath: 'notes/todo.md', oldPath: 'notes/todo.md', renamedFile: false, tooLarge: false, untracked: true },
+            { collapsed: false, deletedFile: false, diff: '@@ -6,3 +6,4 @@\n export const enabled = true\n-export const limit = 10\n+export const limit = 20\n+export const local = true\n export const retries = 3\n', newFile: false, newPath: 'src/config.ts', oldPath: 'src/config.ts', renamedFile: false, tooLarge: false },
+          ],
+          localHead: 'f'.repeat(40),
+          repositoryPath: linked.path,
+          truncated: false,
+          untrackedCount: 1,
+          untrackedIncluded: 1,
+          untrackedMore: false,
+        }
+      }
+      case 'get_local_file': {
+        const content = localFiles[String(payload.path)]
+        if (content === undefined) throw { code: 'NOT_FOUND', message: '作業ツリーにこのファイルがありません。' } satisfies GitLabErrorShape
+        return { content }
+      }
+      case 'pick_local_repository_folder': return 'C:\\repos\\fixture-project'
       case 'check_app_update': return { configured: false, downloaded: false, notes: null, version: null }
       case 'download_app_update': return null
       case 'get_pending_operation':

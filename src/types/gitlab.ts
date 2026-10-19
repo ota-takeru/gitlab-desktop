@@ -439,6 +439,8 @@ export interface Diff {
   renamedFile: boolean
   tooLarge: boolean
   collapsed: boolean
+  /** A file git does not track yet; only in a local clone's changes. */
+  untracked?: boolean
 }
 
 export interface Position {

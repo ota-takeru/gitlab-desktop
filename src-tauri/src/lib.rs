@@ -6,12 +6,16 @@ mod attachments;
 mod dto;
 mod gitlab_api;
 mod glab;
+mod local_git;
 mod native;
 mod storage;
 mod updates;
 
 use dto::{AppError, Session};
-use native::{ConnectInput, MutationInput, NativeState, PendingOperation, QueryInput, UploadInput};
+use native::{
+    ConnectInput, LocalRepository, MutationInput, NativeState, PendingOperation, QueryInput,
+    UploadInput,
+};
 use storage::{LocalDraft, Snapshot};
 
 // A damaged/newer database must leave a usable error screen instead of
@@ -184,6 +188,84 @@ async fn acknowledge_pending_operation(
         .await
 }
 #[tauri::command]
+async fn get_local_repository(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    project_id: String,
+) -> Result<Option<LocalRepository>, AppError> {
+    state
+        .native()?
+        .local_repository(session_id, project_id)
+        .await
+}
+#[tauri::command]
+async fn link_local_repository(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    project_id: String,
+    project_path: String,
+    path: String,
+) -> Result<LocalRepository, AppError> {
+    state
+        .native()?
+        .link_local_repository(session_id, project_id, project_path, path)
+        .await
+}
+#[tauri::command]
+async fn unlink_local_repository(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    project_id: String,
+) -> Result<(), AppError> {
+    state
+        .native()?
+        .unlink_local_repository(session_id, project_id)
+        .await
+}
+#[tauri::command]
+async fn get_local_changes(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    project_id: String,
+    head_sha: String,
+) -> Result<serde_json::Value, AppError> {
+    state
+        .native()?
+        .local_changes(session_id, project_id, head_sha)
+        .await
+}
+#[tauri::command]
+async fn get_local_file(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    project_id: String,
+    path: String,
+) -> Result<serde_json::Value, AppError> {
+    state
+        .native()?
+        .local_file(session_id, project_id, path)
+        .await
+}
+/// Shows the system folder picker. The dialog plugin's own commands are not
+/// granted to the window; only this fixed folder choice is.
+#[tauri::command]
+async fn pick_local_repository_folder(app: tauri::AppHandle) -> Result<Option<String>, AppError> {
+    use tauri_plugin_dialog::DialogExt;
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("ローカルリポジトリのフォルダを選択")
+        .pick_folder(move |folder| {
+            let _ = sender.send(folder);
+        });
+    let folder = receiver
+        .await
+        .map_err(|_| AppError::new("UNSUPPORTED", "フォルダ選択を開けませんでした。"))?;
+    Ok(folder
+        .and_then(|folder| folder.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned()))
+}
+#[tauri::command]
 fn set_window_close_guard(state: tauri::State<'_, CloseGuard>, unsafe_to_close: bool) {
     state
         .unsafe_to_close
@@ -230,6 +312,7 @@ fn runtime_info() -> RuntimeInfo {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(updates::UpdateState::default())
         .manage(CloseGuard::default())
         .on_window_event(|window, event| {
@@ -278,6 +361,12 @@ pub fn run() {
             clear_local_drafts,
             get_pending_operation,
             acknowledge_pending_operation,
+            get_local_repository,
+            link_local_repository,
+            unlink_local_repository,
+            get_local_changes,
+            get_local_file,
+            pick_local_repository_folder,
             set_window_close_guard,
             close_app_window,
             updates::check_app_update,
