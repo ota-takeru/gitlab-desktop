@@ -22,8 +22,11 @@ import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import { flushComposerBuffers } from '../features/mergeRequests/useComposerBuffer'
 import { RelativeTime } from './RelativeTime'
 import { StatusPill, type StatusTone } from './StatusPill'
+import { UpdateNavButton } from './UpdateNavButton'
 
-export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+/** Returning to the window checks again once the last check is this old. */
+const RETURN_CHECK_AFTER_MS = 15 * 60 * 1000
 /** A dismissed check failure stays out of the footer this long, also across launches. */
 const CHECK_ERROR_DISMISS_MS = 24 * 60 * 60 * 1000
 const CHECK_ERROR_DISMISSED_KEY = 'gitlab-desktop:update-check-error-dismissed-at'
@@ -86,7 +89,8 @@ function subscribeToUpdates(listener: () => void) {
     if (isTauri()) {
       initialCheck = globalThis.setTimeout(() => void checkForUpdate(), 0)
       periodicCheck = globalThis.setInterval(() => void checkForUpdate(), UPDATE_CHECK_INTERVAL_MS)
-      document.addEventListener('visibilitychange', checkWhenFirstVisible)
+      document.addEventListener('visibilitychange', checkOnReturn)
+      globalThis.addEventListener('focus', checkOnReturn)
     }
   }
   return () => {
@@ -95,7 +99,8 @@ function subscribeToUpdates(listener: () => void) {
     if (subscribers === 0) {
       globalThis.clearTimeout(initialCheck)
       globalThis.clearInterval(periodicCheck)
-      document.removeEventListener('visibilitychange', checkWhenFirstVisible)
+      document.removeEventListener('visibilitychange', checkOnReturn)
+      globalThis.removeEventListener('focus', checkOnReturn)
       resetUpdater()
     }
   }
@@ -103,9 +108,12 @@ function subscribeToUpdates(listener: () => void) {
 
 function getUpdateSnapshot() { return snapshot }
 
-/** The first check is skipped while the window is hidden; without this the status would stay 「確認中」. */
-function checkWhenFirstVisible() {
-  if (snapshot.lastCheckedAt === null && snapshot.state.status === 'pending') void checkForUpdate()
+/**
+ * The first check is skipped while the window is hidden; without this the status would stay 「確認中」.
+ * Coming back to the window also finds a release published meanwhile, without waiting for the interval.
+ */
+function checkOnReturn() {
+  if (snapshot.lastCheckedAt === null ? snapshot.state.status === 'pending' : Date.now() - snapshot.lastCheckedAt >= RETURN_CHECK_AFTER_MS) void checkForUpdate()
 }
 
 async function checkForUpdate() {
@@ -114,7 +122,9 @@ async function checkForUpdate() {
   busy = true
   const current = generation
   let download = false
-  if (snapshot.state.status !== 'installing') publish({ state: { status: 'pending' } })
+  // A found update stays offered while it is checked again, so its install button does not blink.
+  const found = snapshot.state.status === 'available' ? snapshot.state : null
+  if (snapshot.state.status !== 'installing' && !found) publish({ state: { status: 'pending' } })
   try {
     const result = await checkAppUpdate()
     if (current !== generation) return
@@ -125,7 +135,8 @@ async function checkForUpdate() {
     })
   } catch (error) {
     if (current !== generation) return
-    publish({ lastCheckedAt: Date.now(), state: { message: errorMessage(error, '更新を確認できませんでした。'), source: 'check', status: 'error' } })
+    // A failed re-check does not take back an update that was already found.
+    publish({ lastCheckedAt: Date.now(), state: found ?? { message: errorMessage(error, '更新を確認できませんでした。'), source: 'check', status: 'error' } })
   } finally {
     if (current === generation) busy = false
   }
@@ -180,6 +191,16 @@ function checkErrorDismissedRecently(): boolean {
 
 function rememberCheckErrorDismissed() {
   try { globalThis.localStorage?.setItem(CHECK_ERROR_DISMISSED_KEY, String(Date.now())) } catch { /* Dismissed for this session only. */ }
+}
+
+/**
+ * Shows the navigation's install button only while an update is available.
+ * The always-mounted footer panel owns the installing dialog.
+ */
+export function UpdateSidebarButton({ autoInstallAllowed = false, collapsed }: { autoInstallAllowed?: boolean; collapsed: boolean }) {
+  const { state } = useSyncExternalStore(subscribeToUpdates, getUpdateSnapshot, getUpdateSnapshot)
+  if (state.status !== 'available' || !state.update.version) return null
+  return <UpdateNavButton collapsed={collapsed} disabledReason={autoInstallAllowed ? undefined : WAITING_FOR_SAFE_STATE} onClick={() => { if (autoInstallAllowed) void installUpdate() }} version={state.update.version} />
 }
 
 export interface UpdatePanelProps {

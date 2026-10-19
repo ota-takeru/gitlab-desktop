@@ -47,6 +47,7 @@ import { SettingsSection } from '../components/SettingsSection'
 import { StateIcon } from '../components/StateIcon'
 import { StatusBar } from '../components/StatusBar'
 import { StatusPill } from '../components/StatusPill'
+import { UpdateNavButton } from '../components/UpdateNavButton'
 import { UserAvatar } from '../components/UserAvatar'
 import { DiscussionLayout } from '../features/mergeRequests/DiscussionLayout'
 import { DiscussionList } from '../features/mergeRequests/DiscussionList'
@@ -317,13 +318,15 @@ function CatalogFrameParts() {
         <CardContent sx={{ p: 2.5 }}>
           <Stack spacing={2}>
             <Typography component="h2" variant="h2">サイドバーの項目</Typography>
-            <Typography color="textSecondary" variant="caption">場所の項目（選択中・通常・未接続で無効）、折りたたみ時のアイコン表示、下端のアカウントと設定（サンプル）</Typography>
+            <Typography color="textSecondary" variant="caption">場所の項目（選択中・通常・未接続で無効）、折りたたみ時のアイコン表示、更新があるときだけ出る更新ボタン（入力の保存待ちで無効）、下端のアカウントと設定（サンプル）</Typography>
             <Divider />
             <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
               <Box sx={{ bgcolor: 'surface.nav', border: 1, borderColor: 'divider', borderRadius: 1, p: 1, width: 208 }}>
                 <ClientNavItem collapsed={false} icon={<RateReviewOutlinedIcon />} label="MR一覧" onClick={() => undefined} selected title="MR一覧" />
                 <ClientNavItem collapsed={false} icon={<InboxOutlinedIcon />} label="To-Do" onClick={() => undefined} selected={false} title="To-Do" />
                 <ClientNavItem collapsed={false} disabled icon={<SourceOutlinedIcon />} label="プロジェクト" onClick={() => undefined} selected={false} title="プロジェクト" />
+                <UpdateNavButton collapsed={false} onClick={() => undefined} version="0.8.0" />
+                <UpdateNavButton collapsed={false} disabledReason="入力の保存または破棄と送信処理の確認が済むと更新できます。" onClick={() => undefined} version="0.8.0" />
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderTop: 1, borderColor: 'divider', color: 'text.secondary', minHeight: 40, mt: 1, px: 1 }}>
                   <UserAvatar id="a" name="Reviewer" size={24} />
                   <Typography color="inherit" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">@reviewer</Typography>
@@ -334,6 +337,7 @@ function CatalogFrameParts() {
                 <ClientNavItem collapsed icon={<RateReviewOutlinedIcon />} label="MR一覧" onClick={() => undefined} selected title="MR一覧" />
                 <ClientNavItem collapsed icon={<InboxOutlinedIcon />} label="To-Do" onClick={() => undefined} selected={false} title="To-Do" />
                 <ClientNavItem collapsed icon={<SourceOutlinedIcon />} label="プロジェクト" onClick={() => undefined} selected={false} title="プロジェクト" />
+                <UpdateNavButton collapsed onClick={() => undefined} version="0.8.0" />
                 <Stack sx={{ alignItems: 'center', borderTop: 1, borderColor: 'divider', color: 'text.secondary', justifyContent: 'center', minHeight: 40, mt: 1 }}>
                   <SettingsOutlinedIcon sx={{ fontSize: 20 }} />
                 </Stack>

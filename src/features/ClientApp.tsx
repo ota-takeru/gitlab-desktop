@@ -35,7 +35,7 @@ import { delayedRevealSx } from '../components/paneSx'
 import { useReorder } from '../components/useReorder'
 import { SettingsSection } from '../components/SettingsSection'
 import { StatusBar } from '../components/StatusBar'
-import { UpdatePanel } from '../components/UpdatePanel'
+import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
 import { clearLocalDrafts } from '../lib/localDrafts'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { GitLabCommandError, GitLabSnapshot, MergeRequest, Project } from '../types/gitlab'
@@ -541,6 +541,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             </List>
             <MergeRequestTabs collapsed={navCollapsed} onOpen={openMergeRequestRef} selected={selected} />
           </Box>
+          <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? `設定 · ${session ? `${session.user.name} @${session.user.username}` : '未接続'}` : ''}>
             <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? `@${session.user.username} · 設定` : '設定'} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ borderTop: 1, borderColor: 'divider', color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>

@@ -3,7 +3,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../theme'
-import { UpdatePanel } from './UpdatePanel'
+import { UpdatePanel, UpdateSidebarButton } from './UpdatePanel'
 
 const { invokeMock, flushMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), flushMock: vi.fn() }))
 vi.mock('../features/mergeRequests/useComposerBuffer', () => ({ flushComposerBuffers: flushMock }))
@@ -272,5 +272,55 @@ describe('UpdatePanel', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(screen.getByRole('textbox', { name: 'background input' })).toBeInTheDocument()
     expect(screen.getByText('download failed')).toBeInTheDocument()
+  })
+
+  it('shows the sidebar button only while an update is available and installs from it', async () => {
+    invokeMock.mockResolvedValue({ configured: true, version: '0.2.0', notes: null, downloaded: true })
+    render(<ThemeProvider theme={createAppTheme('dark')}><UpdatePanel notificationOnly autoInstallAllowed /><UpdateSidebarButton autoInstallAllowed collapsed={false} /></ThemeProvider>)
+
+    const button = await screen.findByRole('button', { name: '再起動して v0.2.0 に更新' })
+    expect(button).toHaveTextContent('v0.2.0 に更新')
+    fireEvent.click(button)
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('install_app_update'))
+    await waitFor(() => expect(screen.queryByRole('button', { name: '再起動して v0.2.0 に更新' })).not.toBeInTheDocument())
+  })
+
+  it('keeps the sidebar button visible but disabled until the window is safe to restart', async () => {
+    invokeMock.mockResolvedValue({ configured: true, version: '0.2.0', notes: null, downloaded: true })
+    render(<ThemeProvider theme={createAppTheme('dark')}><UpdateSidebarButton collapsed /></ThemeProvider>)
+
+    expect(await screen.findByRole('button', { name: '再起動して v0.2.0 に更新' })).toBeDisabled()
+  })
+
+  it('hides the sidebar button when the app is current', async () => {
+    invokeMock.mockResolvedValue({ configured: true, version: null, notes: null })
+    render(<ThemeProvider theme={createAppTheme('dark')}><UpdateSidebarButton autoInstallAllowed collapsed={false} /></ThemeProvider>)
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('check_app_update'))
+    expect(screen.queryByRole('button', { name: /に更新$/u })).not.toBeInTheDocument()
+  })
+
+  it('checks again when the window regains focus after a while, keeping the found update meanwhile', async () => {
+    vi.useFakeTimers()
+    const recheck = createDeferred<unknown>()
+    invokeMock
+      .mockResolvedValueOnce({ configured: true, version: '0.2.0', notes: null, downloaded: true })
+      .mockReturnValueOnce(recheck.promise)
+    render(<ThemeProvider theme={createAppTheme('dark')}><UpdateSidebarButton autoInstallAllowed collapsed={false} /></ThemeProvider>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByRole('button', { name: '再起動して v0.2.0 に更新' })).toBeInTheDocument()
+
+    // A quick return does not check again.
+    act(() => { globalThis.dispatchEvent(new Event('focus')) })
+    expect(invokeMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(15 * 60 * 1000) })
+    act(() => { globalThis.dispatchEvent(new Event('focus')) })
+    expect(invokeMock).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: '再起動して v0.2.0 に更新' })).toBeInTheDocument()
+
+    // A failed re-check keeps the update offered.
+    await act(async () => { recheck.reject(new Error('offline')); await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByRole('button', { name: '再起動して v0.2.0 に更新' })).toBeInTheDocument()
   })
 })
