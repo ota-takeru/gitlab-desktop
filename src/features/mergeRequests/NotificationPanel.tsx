@@ -16,6 +16,8 @@ import ButtonBase from '@mui/material/ButtonBase'
 import IconButton from '@mui/material/IconButton'
 import Popover, { type PopoverVirtualElement } from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -119,15 +121,27 @@ interface PageResult {
   refresh: () => void
 }
 
+/** GitLab's pending To-Dos are the unread notifications and its done To-Dos the read ones. */
+function todosQuery(page: number, read: boolean): TodosQuery {
+  return read ? { kind: 'todos', page, done: true } : { kind: 'todos', page }
+}
+
 function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void; sessionId: string }) {
   const queryClient = useQueryClient()
   const notify = useNotify()
   const [marking, setMarking] = useState<{ done: number; total: number | null } | null>(null)
-  const query = useMemo(() => ({ kind: 'todos' as const, page: 1 }), [])
+  // Read notifications stay in GitLab as done To-Dos, so they can be looked back on.
+  const [read, setRead] = useState(false)
+  const query = useMemo(() => todosQuery(1, read), [read])
   const result = useGitLabQuery(sessionId, query)
   // The pages after the first, loaded as the stack is scrolled to its end.
   const [morePages, setMorePages] = useState(0)
   const [loadedPages, setLoadedPages] = useState<Record<number, PageResult>>({})
+  const showRead = (next: boolean) => {
+    setRead(next)
+    setMorePages(0)
+    setLoadedPages({})
+  }
   const reportPage = useCallback((page: number, loaded: PageResult | null) => setLoadedPages((current) => {
     const next = { ...current }
     if (loaded) next[page] = loaded
@@ -150,6 +164,7 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
   const scrollRef = useRef<HTMLDivElement>(null)
   // Opening a notification reads it, with the others of its MR: the MR opens at once and the reads are sent behind it.
   const open = (group: NotificationGroup) => {
+    if (read) { onOpen(group.todos[0]); return }
     void (async () => {
       const read: string[] = []
       for (const todo of group.todos) if (await markNotificationRead(notify, sessionId, todo, false)) read.push(todo.id)
@@ -165,7 +180,7 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
     try {
       let next: number | null = 1
       for (let walked = 0; next !== null && walked < MAX_PAGES; walked += 1) {
-        const pageQuery: TodosQuery = { kind: 'todos', page: next }
+        const pageQuery: TodosQuery = todosQuery(next, false)
         const snapshot = await queryGitLab({ mode: 'network', query: pageQuery, sessionId })
         targets.push(...(snapshot?.data ?? []).filter(isNotificationTodo))
         next = snapshot?.nextPage ?? null
@@ -198,27 +213,33 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
   return <>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
       <Typography component="h2" variant="h2">通知</Typography>
+      <ToggleButtonGroup aria-label="表示する通知" disabled={marking !== null} exclusive onChange={(_, next: 'unread' | 'read' | null) => { if (next) showRead(next === 'read') }} size="small" value={read ? 'read' : 'unread'}>
+        <ToggleButton sx={{ px: 1, py: 0.25 }} value="unread">未読</ToggleButton>
+        <ToggleButton sx={{ px: 1, py: 0.25 }} value="read">既読</ToggleButton>
+      </ToggleButtonGroup>
       <Typography aria-live="polite" color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">
         {shown ? <>{notifications.length}{nextPage !== null ? '件以上' : '件'}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}</> : result.loading ? '読み込み中…' : null}
       </Typography>
-      <Button disabled={!shown || !notifications.length || marking !== null} onClick={() => void markAllRead()} size="small">{marking ? marking.total === null ? '通知を確認中…' : `既読にしています… ${marking.done}/${marking.total}` : 'すべて既読'}</Button>
+      {read ? null : <Button disabled={!shown || !notifications.length || marking !== null} onClick={() => void markAllRead()} size="small">{marking ? marking.total === null ? '通知を確認中…' : `既読にしています… ${marking.done}/${marking.total}` : 'すべて既読'}</Button>}
       <Tooltip title="更新"><span><IconButton aria-label="通知を更新" disabled={result.loading || result.refreshing} onClick={() => { setMorePages(0); result.refresh() }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
     </Stack>
     <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
       {result.error ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity={result.data ? 'warning' : 'error'} sx={{ m: 1 }}>{result.data ? `保存済みの通知を表示中です。更新に失敗しました: ${result.error.message}` : result.error.message}</Alert> : null}
-      {shown && notifications.length === 0 && nextPage === null ? <PaneEmpty description="メンションやCI失敗などがあるとここに表示します。" icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title="通知はありません" /> : null}
+      {shown && notifications.length === 0 && nextPage === null ? read
+        ? <PaneEmpty description="既読にした通知をここで見返せます。" icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title="既読の通知はありません" />
+        : <PaneEmpty description="メンションやCI失敗などがあるとここに表示します。" icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title="通知はありません" /> : null}
       {groups.length ? <Stack aria-label="通知" component="ul" onKeyDown={moveListRowFocus} spacing={1} sx={{ m: 0, p: 1 }}>
         {groups.map((group) => <NotificationCard disabled={marking !== null} group={group} key={group.key} onOpen={() => open(group)} />)}
       </Stack> : null}
-      {shown && (nextPage !== null || morePages > 0) ? <MoreNotifications capped={nextPage !== null && morePages + 1 >= MAX_PAGES} error={last?.error ?? null} loading={loadingMore} onLoad={loadMore} onRetry={() => last?.refresh()} rootRef={scrollRef} /> : null}
+      {shown && (nextPage !== null || morePages > 0) ? <MoreNotifications capped={nextPage !== null && morePages + 1 >= MAX_PAGES} cappedNote={read ? '' : '既読にすると続きが表示されます。'} error={last?.error ?? null} loading={loadingMore} onLoad={loadMore} onRetry={() => last?.refresh()} rootRef={scrollRef} /> : null}
     </Box>
-    {Array.from({ length: morePages }, (_, index) => <NotificationPageLoader key={index + 2} onChange={reportPage} page={index + 2} sessionId={sessionId} />)}
+    {Array.from({ length: morePages }, (_, index) => <NotificationPageLoader key={`${read}:${index + 2}`} onChange={reportPage} page={index + 2} read={read} sessionId={sessionId} />)}
   </>
 }
 
 /** One later page of the stack. It refreshes with the first page's reload rather than every minute on its own. */
-function NotificationPageLoader({ onChange, page, sessionId }: { onChange: (page: number, result: PageResult | null) => void; page: number; sessionId: string }) {
-  const query = useMemo(() => ({ kind: 'todos' as const, page }), [page])
+function NotificationPageLoader({ onChange, page, read, sessionId }: { onChange: (page: number, result: PageResult | null) => void; page: number; read: boolean; sessionId: string }) {
+  const query = useMemo(() => todosQuery(page, read), [page, read])
   const { data, error, loading, refresh, snapshot } = useGitLabQuery(sessionId, query, { refreshIntervalMs: false })
   const nextPage = snapshot?.nextPage ?? null
   useEffect(() => onChange(page, { data, error, loading, nextPage, refresh }), [data, error, loading, nextPage, onChange, page, refresh])
@@ -230,7 +251,7 @@ function NotificationPageLoader({ onChange, page, sessionId }: { onChange: (page
  * The end of the stack: the next page loads when it comes near the bottom of the panel, or
  * from the button for keyboard use. Its height stays the same while loading so the cards do not move.
  */
-function MoreNotifications({ capped, error, loading, onLoad, onRetry, rootRef }: { capped: boolean; error: GitLabCommandError | null; loading: boolean; onLoad?: () => void; onRetry: () => void; rootRef: RefObject<HTMLDivElement | null> }) {
+function MoreNotifications({ capped, cappedNote, error, loading, onLoad, onRetry, rootRef }: { capped: boolean; cappedNote: string; error: GitLabCommandError | null; loading: boolean; onLoad?: () => void; onRetry: () => void; rootRef: RefObject<HTMLDivElement | null> }) {
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -243,7 +264,7 @@ function MoreNotifications({ capped, error, loading, onLoad, onRetry, rootRef }:
     <Box ref={sentinelRef} sx={{ alignItems: 'center', display: 'flex', justifyContent: 'center', minHeight: 48, px: 1, pb: 1 }}>
       {error ? <Alert action={<Button color="inherit" onClick={onRetry}>再試行</Button>} severity="error" sx={{ flex: 1 }}>続きを取得できませんでした: {error.message}</Alert>
         : loading ? <Typography color="textSecondary" role="status" variant="caption">続きを読み込み中…</Typography>
-          : capped ? <Typography color="textSecondary" variant="caption">{MAX_PAGES * 100}件分まで表示しています。既読にすると続きが表示されます。</Typography>
+          : capped ? <Typography color="textSecondary" variant="caption">{MAX_PAGES * 100}件分まで表示しています。{cappedNote}</Typography>
             : onLoad ? <Button onClick={onLoad} size="small">さらに読み込む</Button>
               : <Typography color="textSecondary" variant="caption">すべて表示しました</Typography>}
     </Box>

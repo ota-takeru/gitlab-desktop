@@ -72,10 +72,10 @@ export interface MergeRequestListProps {
   initialParams?: Record<string, string>
   onOpenMergeRequest: (mergeRequest: MergeRequest) => void
   onSearchStateChange?: (params: Record<string, string>) => void
-  /** Leaves a personal queue for the search of all MRs, keeping the text typed so far. */
-  onSearchAll?: (search: string) => void
   /** Tabs to the sibling lists, shown in place of the title. */
   navigation?: ReactNode
+  /** One-off actions of the screen, beside the list's own. */
+  actions?: ReactNode
   /** The MR just returned from, as `<projectId>-<iid>`; its row keeps the selected look. */
   recentMrId?: string | null
 }
@@ -101,7 +101,7 @@ interface AppliedSearch extends SearchDraft {
   page: number
 }
 
-export function MergeRequestList({ initialQuery = '', initialParams = {}, navigation, onOpenMergeRequest, onSearchAll, onSearchStateChange, projectId, projectName, recentMrId = null, selected }: MergeRequestListProps) {
+export function MergeRequestList({ actions, initialQuery = '', initialParams = {}, navigation, onOpenMergeRequest, onSearchStateChange, projectId, projectName, recentMrId = null, selected }: MergeRequestListProps) {
   const { session } = useConnection()
   const personalWorkspace = usePersonalWorkspace(session)
   const scope = useMemo(() => preferenceScope(session?.instanceUrl ?? 'anonymous', session?.user.id ?? 'anonymous'), [session?.instanceUrl, session?.user.id])
@@ -280,10 +280,8 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
     return <PaneEmpty description="GitLabに接続すると、レビュー対象を検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
   }
 
-  const personalQueue = personalQueueFor(initialParams, session.user.id)
-  // A personal queue keeps its people condition; changing who is involved
-  // belongs to MR search, so the queue's tab never changes under the reader.
-  const fixedQueue = personalQueue !== null
+  // Exactly one condition on the reader (with text, state and order) is a personal queue: it gets its title and grouping.
+  const personalQueue = personalQueueFor(applied ? serializeSearch(applied) : initialParams, session.user.id)
   const title = projectName ?? (personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
   const page = applied?.page ?? 1
   const pageEntry = (number: number) => `${pagesKey}#${number}`
@@ -307,16 +305,25 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
   const last = loaded.at(-1)
   const hasNext = Boolean(last?.data && last.nextPage !== null)
   const canLoadMore = hasNext && !result.previous && loaded.length < MAX_LOADED_PAGES
-  const chips = applied ? conditionChips(applied, { conditionNames, currentUserId: session.user.id, fixedProjectId: projectId, groupPaths, personalQueue, rows }) : []
-  // A personal queue keeps its person, and a project's list keeps its project.
-  const addableKinds = CONDITION_KINDS.filter((kind) => fixedQueue
-    ? kind === 'state'
-    : !(projectName && (kind === 'project' || kind === 'group')))
+  const chips = applied ? conditionChips(applied, { conditionNames, currentUserId: session.user.id, fixedProjectId: projectId, groupPaths, rows }) : []
+  // A project's list keeps its project.
+  const addableKinds = CONDITION_KINDS.filter((kind) => !(projectName && (kind === 'project' || kind === 'group')))
+  const shown = applied ?? draft
+  // The chips switch between the reader's own MRs: one replaces another, and choosing the one shown removes it.
+  const queueSwitches = projectName ? [] : QUEUE_SWITCHES.map(({ label, queue }) => {
+    const own = ownCondition(queue, session.user.id)
+    const active = shown[own.key] === own.value
+    const others = QUEUE_SWITCHES.map((other) => ownCondition(other.queue, session.user.id)).filter((other) => other.key !== own.key && shown[other.key] === other.value)
+    const patch: Partial<SearchDraft> = active
+      ? { [own.key]: '' }
+      : { ...Object.fromEntries(others.map((other) => [other.key, ''])), [own.key]: own.value, ...(shown.state === 'all' ? { state: 'opened' as const } : {}) }
+    return { active, label, patch }
+  })
   // The search word is the field's own text, so only the other conditions are tags in it.
   const fieldChips = chips.filter((chip) => chip.kind !== 'search')
   const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
   const searchTarget = '検索対象はタイトル・説明・MR番号（!123）です。'
-  const defaults = defaultConditions(projectId, personalQueue, session.user.id)
+  const defaults = defaultConditions(projectId)
   const conditionsChanged = !sameConditions(applied ?? draft, defaults) || !sameConditions(draft, defaults)
   const resetConditions = () => {
     const next: AppliedSearch = { ...defaults, page: 1 }
@@ -352,7 +359,8 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader
         actions={<>
-          {fixedQueue ? null : <Tooltip title="保存済み検索"><IconButton aria-label={`保存済み検索を管理（${savedSearches.length}）`} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>}
+          {actions}
+          <Tooltip title="保存済み検索"><IconButton aria-label={`保存済み検索を管理（${savedSearches.length}）`} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>
           <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={() => { result.refresh(); setRefreshes((count) => count + 1) }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         </>}
         navigation={navigation}
@@ -366,14 +374,14 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
               setSearchOptions(null)
               setDraft((current) => ({ ...current, search: event.target.value }))
             }}
-            placeholder={fixedQueue ? `${title}の中を検索` : 'タイトル・説明・MR番号（!123）を検索'}
+            placeholder={personalQueue ? `${title}の中を検索` : 'タイトル・説明・MR番号（!123）を検索'}
             ref={searchFieldRef}
             slotProps={{
               htmlInput: {
                 'aria-controls': searchOptions ? 'mr-search-options' : undefined,
                 'aria-expanded': Boolean(searchOptions),
                 'aria-haspopup': 'menu',
-                'aria-label': fixedQueue ? `${title}をタイトル・説明・MR番号で検索` : 'MRをタイトル・説明・MR番号で検索',
+                'aria-label': personalQueue ? `${title}をタイトル・説明・MR番号で検索` : 'MRをタイトル・説明・MR番号で検索',
                 onBlur: closeSearchOptionsOnBlur,
                 onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
                   if (event.key === 'ArrowDown') {
@@ -423,7 +431,9 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
             </Paper>
           </Popper>
           <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            {fixedQueue && onSearchAll ? <Button onClick={() => onSearchAll(draft.search.trim())} startIcon={<SearchRoundedIcon />} sx={{ px: 1 }}>{draft.search.trim() ? `すべてのMRから「${shorten(draft.search.trim(), 24)}」を検索` : 'すべてのMRから検索'}</Button> : null}
+            {queueSwitches.length ? <Stack aria-label="自分のMR" direction="row" role="group" sx={{ gap: 0.5, mr: 0.5 }}>
+              {queueSwitches.map(({ active, label, patch }) => <Chip aria-pressed={active} color={active ? 'primary' : 'default'} key={label} label={label} onClick={() => applyConditions(patch)} size="small" variant={active ? 'filled' : 'outlined'} />)}
+            </Stack> : null}
             {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>条件をクリア</Button> : null}
             {/* The order is not a condition, so it stays a pull-down beside the field. */}
             <Stack direction="row" sx={{ gap: 0.5, ml: 'auto' }}>
@@ -442,6 +452,7 @@ export function MergeRequestList({ initialQuery = '', initialParams = {}, naviga
             currentUserId={session.user.id}
             groupPath={groupPaths[draft.groupId]}
             kind={editing?.kind ?? null}
+            nameOf={(kind, id) => conditionName(kind, id, conditionNames, rows)}
             onApply={(patch, name) => { if (editing) applyEdited(editing.kind, patch, name) }}
             onClose={() => setEditing(null)}
             values={applied ?? draft}
@@ -580,7 +591,7 @@ function approvalText(approval: RowApproval | null, state: string): string | nul
   return approval.byMe ? `自分を含む${approval.count}人が承認済み` : `${approval.count}人が承認済み`
 }
 
-/** A tag without `clear` is a condition the list keeps, such as a personal queue's person. */
+/** A tag without `clear` is a condition the list keeps. */
 interface ConditionChip { name: string; label: string; clear?: Partial<SearchDraft>; kind?: ConditionKind | 'search'; code?: boolean }
 
 interface ChipContext {
@@ -588,7 +599,6 @@ interface ChipContext {
   currentUserId: string
   fixedProjectId: string | undefined
   groupPaths: Record<string, string>
-  personalQueue: PersonalQueue | null
   rows: MergeRequest[]
 }
 
@@ -596,19 +606,16 @@ interface ChipContext {
  * Every applied condition except the order, as tags. IDs are named from the
  * editor's choices or from the fetched rows when they say who or what the ID is.
  */
-function conditionChips(applied: AppliedSearch, { conditionNames, currentUserId, fixedProjectId, groupPaths, personalQueue, rows }: ChipContext): ConditionChip[] {
+function conditionChips(applied: AppliedSearch, { conditionNames, currentUserId, fixedProjectId, groupPaths, rows }: ChipContext): ConditionChip[] {
   const chips: ConditionChip[] = []
-  const person = (kind: 'reviewer' | 'assignee' | 'author', id: string, fromRows: string | undefined) => id === 'self' || id === currentUserId ? '自分' : conditionNames[`${kind}:${id}`] ?? fromRows ?? `ID ${id}`
-  if (personalQueue) chips.push({ label: queueConditions[personalQueue], name: '固定の条件' })
+  const person = (kind: 'reviewer' | 'assignee' | 'author', id: string) => id === 'self' || id === currentUserId ? '自分' : conditionName(kind, id, conditionNames, rows) ?? `ID ${id}`
   if (applied.search.trim()) chips.push({ clear: { search: '' }, kind: 'search', label: `検索語: ${applied.search.trim()}`, name: '検索語' })
   if (applied.state !== 'all') chips.push({ clear: { state: 'all' }, kind: 'state', label: `状態: ${STATE_NAMES[applied.state]}`, name: '状態' })
-  if (!personalQueue) {
-    if (applied.reviewer) chips.push({ clear: { reviewer: '' }, kind: 'reviewer', label: `レビュアー: ${person('reviewer', applied.reviewer, rows.flatMap((row) => row.reviewers ?? []).find((user) => user.id === applied.reviewer)?.name)}`, name: 'レビュアー' })
-    if (applied.assignee) chips.push({ clear: { assignee: '' }, kind: 'assignee', label: `担当者: ${person('assignee', applied.assignee, rows.flatMap((row) => row.assignees ?? []).find((user) => user.id === applied.assignee)?.name)}`, name: '担当者' })
-    if (applied.authorId) chips.push({ clear: { authorId: '' }, kind: 'author', label: `作者: ${person('author', applied.authorId, rows.find((row) => row.author.id === applied.authorId)?.author.name)}`, name: '作者' })
-  }
+  if (applied.reviewer) chips.push({ clear: { reviewer: '' }, kind: 'reviewer', label: `レビュアー: ${person('reviewer', applied.reviewer)}`, name: 'レビュアー' })
+  if (applied.assignee) chips.push({ clear: { assignee: '' }, kind: 'assignee', label: `担当者: ${person('assignee', applied.assignee)}`, name: '担当者' })
+  if (applied.authorId) chips.push({ clear: { authorId: '' }, kind: 'author', label: `作者: ${person('author', applied.authorId)}`, name: '作者' })
   if (applied.projectId && applied.projectId !== fixedProjectId) {
-    const path = conditionNames[`project:${applied.projectId}`] ?? rows.find((row) => row.projectId === applied.projectId)?.projectPath
+    const path = conditionName('project', applied.projectId, conditionNames, rows)
     chips.push({ clear: { projectId: '' }, kind: 'project', label: `プロジェクト: ${path || `ID ${applied.projectId}`}`, name: 'プロジェクト' })
   }
   if (applied.groupId) chips.push({ clear: { groupId: '' }, kind: 'group', label: `グループ: ${groupPaths[applied.groupId] ?? (/^\d+$/u.test(applied.groupId) ? `ID ${applied.groupId}` : applied.groupId)}`, name: 'グループ' })
@@ -619,16 +626,33 @@ function conditionChips(applied: AppliedSearch, { conditionNames, currentUserId,
   return chips
 }
 
-const queueConditions: Record<PersonalQueue, string> = { assigned: '自分が担当（固定）', created: '自分が作成（固定）', waiting: '自分がレビュアー（固定）' }
+/** Who or what an ID condition names: the editor's choice, or a fetched row that mentions the ID. */
+function conditionName(kind: 'reviewer' | 'assignee' | 'author' | 'project', id: string, conditionNames: Record<string, string>, rows: MergeRequest[]): string | undefined {
+  const chosen = conditionNames[`${kind}:${id}`]
+  if (chosen) return chosen
+  if (kind === 'reviewer') return rows.flatMap((row) => row.reviewers ?? []).find((user) => user.id === id)?.name
+  if (kind === 'assignee') return rows.flatMap((row) => row.assignees ?? []).find((user) => user.id === id)?.name
+  if (kind === 'author') return rows.find((row) => row.author.id === id)?.author.name
+  return rows.find((row) => row.projectId === id)?.projectPath || undefined
+}
+
+/** The reader's own MRs, switched with chips under the search field; each is one condition on the reader. */
+const QUEUE_SWITCHES: Array<{ label: string; queue: PersonalQueue }> = [
+  { label: 'レビュー依頼', queue: 'waiting' },
+  { label: '担当', queue: 'assigned' },
+  { label: '作成', queue: 'created' },
+]
+
+function ownCondition(queue: PersonalQueue, currentUserId: string): { key: 'reviewer' | 'assignee' | 'authorId'; value: string } {
+  if (queue === 'waiting') return { key: 'reviewer', value: 'self' }
+  if (queue === 'assigned') return { key: 'assignee', value: 'self' }
+  return { key: 'authorId', value: currentUserId }
+}
 
 
-/** What 「条件をクリア」 returns to: the list as first opened, keeping a queue's person and a project's scope. */
-function defaultConditions(projectId: string | undefined, personalQueue: PersonalQueue | null, currentUserId: string): SearchDraft {
-  const base: SearchDraft = { assignee: '', authorId: '', groupId: '', labels: '', orderBy: 'updated_at', projectId: projectId ?? '', reviewer: '', search: '', sort: 'desc', sourceBranch: '', state: 'all', targetBranch: '', updatedAfter: '', updatedBefore: '' }
-  if (personalQueue === 'waiting') return { ...base, reviewer: 'self', state: 'opened' }
-  if (personalQueue === 'assigned') return { ...base, assignee: 'self', state: 'opened' }
-  if (personalQueue === 'created') return { ...base, authorId: currentUserId, state: 'opened' }
-  return base
+/** What 「条件をクリア」 returns to: every MR, keeping a project's scope. */
+function defaultConditions(projectId: string | undefined): SearchDraft {
+  return { assignee: '', authorId: '', groupId: '', labels: '', orderBy: 'updated_at', projectId: projectId ?? '', reviewer: '', search: '', sort: 'desc', sourceBranch: '', state: 'all', targetBranch: '', updatedAfter: '', updatedBefore: '' }
 }
 
 function sameConditions(left: SearchDraft, right: SearchDraft): boolean {
@@ -823,10 +847,6 @@ function ApprovalStatus({ approval, pending, state }: { approval: RowApproval | 
 
 function LoadingRows() {
   return <Box aria-label="MRを読み込み中" role="status" sx={{ ...delayedRevealSx, p: 1.5 }}><Stack spacing={1.5}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '60%' }} /></Stack>)}</Stack></Box>
-}
-
-function shorten(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length)}…` : text
 }
 
 export function buildQuery(filters: AppliedSearch, currentUserId?: string): MergeRequestsQuery {

@@ -161,6 +161,16 @@ export async function openGitLabUrl(sessionId: string, url: string): Promise<voi
   }
 }
 
+/** Opens a http(s) link from a comment or description in the default browser. */
+export async function openExternalUrl(url: string): Promise<void> {
+  ensureDesktop()
+  try {
+    await invoke<void>('open_external_url', { url })
+  } catch (error) {
+    throw normalizeGitLabError(error)
+  }
+}
+
 /**
  * Opens GitLab's page for a new token on the given instance, also before a
  * connection exists. Rust validates the HTTPS origin and opens only that page.

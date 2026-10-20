@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { GitLabSession, Note } from '../../types/gitlab'
 import { clearPreferences, preferenceScope, scopedKey } from './preferences'
-import { observeComments, readWorkspace, unreadComments, usePersonalWorkspace, workspaceUnreadCount } from './personalWorkspace'
+import { closeStaleTabs, observeComments, openWorkspaceTab, readWorkspace, STALE_TAB_MS, unreadComments, usePersonalWorkspace, workspaceUnreadCount } from './personalWorkspace'
 
 const scope = preferenceScope('https://gitlab.example/GitLab', '42')
 const ref = { iid: '3', projectId: '77' }
@@ -163,5 +163,33 @@ describe('personal workspace pins and recents', () => {
     expect(data.recent).toHaveLength(30)
     expect(new Set(data.recent.map(({ projectId, iid }) => `${projectId}:${iid}`)).size).toBe(30)
     expect(data.recent[0]).toEqual(duplicateRef)
+  })
+})
+
+describe('open tabs', () => {
+  beforeEach(() => clearPreferences(scope))
+
+  it('closes tabs not shown for three days, but not the MR on screen or a pinned one', () => {
+    const start = Date.parse('2026-10-01T00:00:00.000Z')
+    const shownLater = { iid: '4', projectId: '77' }
+    const onScreen = { iid: '5', projectId: '77' }
+    for (const item of [ref, shownLater, onScreen]) openWorkspaceTab(scope, item, start)
+    renderHook(() => usePersonalWorkspace(session)).result.current.togglePinned({ iid: '6', projectId: '77' })
+    openWorkspaceTab(scope, shownLater, start + STALE_TAB_MS - 60_000)
+
+    closeStaleTabs(scope, onScreen, start + STALE_TAB_MS - 1)
+    expect(readWorkspace(scope).open).toHaveLength(3)
+    closeStaleTabs(scope, onScreen, start + STALE_TAB_MS)
+    expect(readWorkspace(scope).open).toEqual([onScreen, shownLater])
+    expect(readWorkspace(scope).pinned).toEqual([{ iid: '6', projectId: '77' }])
+  })
+
+  it('starts counting tabs opened before shown times were kept', () => {
+    localStorage.setItem(scopedKey(scope, 'personal-workspace'), JSON.stringify({ open: [ref] }))
+    const now = Date.parse('2026-10-01T00:00:00.000Z')
+    closeStaleTabs(scope, null, now)
+    expect(readWorkspace(scope).open).toEqual([ref])
+    closeStaleTabs(scope, null, now + STALE_TAB_MS)
+    expect(readWorkspace(scope).open).toEqual([])
   })
 })

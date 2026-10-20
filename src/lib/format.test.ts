@@ -12,6 +12,15 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime('2026-10-07T12:00:00.000Z', now)).toBe('2日前')
   })
 
+  it('counts days by the local calendar after the first hour', () => {
+    const morning = new Date(2026, 9, 9, 9, 0).getTime()
+    expect(formatRelativeTime(new Date(2026, 9, 9, 1, 0).getTime(), morning)).toBe('8時間前')
+    expect(formatRelativeTime(new Date(2026, 9, 8, 23, 0).getTime(), morning)).toBe('昨日')
+    expect(formatRelativeTime(new Date(2026, 9, 7, 23, 0).getTime(), morning)).toBe('2日前')
+    expect(formatRelativeTime(new Date(2026, 9, 8, 8, 30).getTime(), new Date(2026, 9, 9, 0, 10).getTime())).toBe('昨日')
+    expect(formatRelativeTime(new Date(2026, 9, 8, 23, 50).getTime(), new Date(2026, 9, 9, 0, 10).getTime())).toBe('20分前')
+  })
+
   it('falls back to a calendar date for older, future and other-year values', () => {
     expect(formatRelativeTime('2026-09-01T12:00:00.000Z', now)).toBe('9/1')
     expect(formatRelativeTime('2025-09-01T12:00:00.000Z', now)).toBe('2025/9/1')

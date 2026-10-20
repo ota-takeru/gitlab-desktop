@@ -31,12 +31,14 @@ export interface ConditionValues {
  * renders inside the list's search form in the React tree, so its own forms
  * stop their submit from also submitting the search text.
  */
-export function ConditionEditor({ anchorEl, currentUserId, groupPath, kind, onApply, onClose, values }: {
+export function ConditionEditor({ anchorEl, currentUserId, groupPath, kind, nameOf, onApply, onClose, values }: {
   anchorEl: HTMLElement | null
   currentUserId: string
   /** The full path of the selected group, when known. */
   groupPath?: string
   kind: ConditionKind | null
+  /** The name of the chosen person or project, when known. */
+  nameOf?: (kind: 'reviewer' | 'assignee' | 'author' | 'project', id: string) => string | undefined
   onApply: (patch: Partial<ConditionValues>, label?: string) => void
   onClose: () => void
   values: ConditionValues
@@ -52,15 +54,16 @@ export function ConditionEditor({ anchorEl, currentUserId, groupPath, kind, onAp
     open={Boolean(anchorEl && kind)}
     slotProps={{ paper: { 'aria-label': kind ? `${CONDITION_NAMES[kind]}の条件` : undefined, role: 'dialog', sx: { mt: 0.5, p: kind === 'state' ? 0.5 : 1.5, width: kind === 'state' ? 200 : 360 } } }}
   >
-    {kind ? <EditorBody apply={apply} currentUserId={currentUserId} groupPath={groupPath} kind={kind} values={values} /> : null}
+    {kind ? <EditorBody apply={apply} currentUserId={currentUserId} groupPath={groupPath} kind={kind} nameOf={nameOf} values={values} /> : null}
   </Popover>
 }
 
-function EditorBody({ apply, currentUserId, groupPath, kind, values }: {
+function EditorBody({ apply, currentUserId, groupPath, kind, nameOf, values }: {
   apply: (patch: Partial<ConditionValues>, label?: string) => void
   currentUserId: string
   groupPath?: string
   kind: ConditionKind
+  nameOf?: (kind: 'reviewer' | 'assignee' | 'author' | 'project', id: string) => string | undefined
   values: ConditionValues
 }) {
   if (kind === 'state') {
@@ -78,13 +81,14 @@ function EditorBody({ apply, currentUserId, groupPath, kind, values }: {
         autoFocus
         label={CONDITION_NAMES[kind]}
         onChange={(id, label) => { if (id) apply({ [field]: id }, label) }}
+        selectedName={current && current !== self ? nameOf?.(kind, current) : undefined}
         value={current === self ? '' : current}
       />
       <Button onClick={() => apply({ [field]: self })} sx={{ alignSelf: 'flex-start' }} variant={current === self ? 'contained' : 'outlined'}>自分</Button>
     </Stack>
   }
   if (kind === 'project') {
-    return <ProjectSearchPicker ariaLabel="MRのプロジェクト" autoFocus label="プロジェクト" onChange={(id, label) => { if (id) apply({ groupId: '', projectId: id }, label) }} value={values.projectId} />
+    return <ProjectSearchPicker ariaLabel="MRのプロジェクト" autoFocus label="プロジェクト" onChange={(id, label) => { if (id) apply({ groupId: '', projectId: id }, label) }} selectedName={values.projectId ? nameOf?.('project', values.projectId) : undefined} value={values.projectId} />
   }
   if (kind === 'group') {
     return <GroupSearchPicker ariaLabel="MRのグループ" autoFocus label="グループ" onChange={(id, fullPath) => { if (id) apply({ groupId: id, projectId: '' }, fullPath) }} selectedPath={groupPath} value={values.groupId} />

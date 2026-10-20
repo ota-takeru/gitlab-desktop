@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { Discussion, GitLabCommandError, GitLabSnapshot } from '../../types/gitlab'
-import { QueryRefreshPolicy, useQueryRefreshAllowed } from '../shared/QueryRefreshPolicy'
 import { DiscussionPageObserver } from './DiscussionPageObserver'
 import { PageStore } from './discussionPageStore'
 
@@ -9,6 +8,11 @@ import { PageStore } from './discussionPageStore'
 export const MAX_DISCUSSION_PAGES = 10
 /** When the newest page is this short, the previous page is loaded too so the first view has context. */
 const MIN_INITIAL_DISCUSSIONS = 10
+/**
+ * Older loaded pages refresh this often (the newest page every minute), so replies and edits in
+ * older threads appear without a write of one's own; GitLab files a reply under its thread's page.
+ */
+export const OLDER_PAGE_REFRESH_MS = 5 * 60_000
 
 export interface DiscussionWindow {
   /** Loaded discussions in GitLab order (oldest first) within the loaded page range. */
@@ -48,7 +52,6 @@ export interface DiscussionWindow {
  */
 export function useDiscussionWindow(sessionId: string | null, projectId: string, iid: string, active: boolean): DiscussionWindow {
   const [store] = useState(() => new PageStore())
-  const refreshAllowed = useQueryRefreshAllowed()
   const version = useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion)
   const [fixedLow, setFixedLow] = useState<number | null>(null)
 
@@ -123,10 +126,8 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
   }, [state.latestPage, state.low, store])
 
   const observers = active
-    // Only the newest page polls; older pages refresh after a write that touches them.
-    ? state.observed.map((page) => <QueryRefreshPolicy key={page} value={refreshAllowed && page === state.latestPage}>
-      <DiscussionPageObserver iid={iid} page={page} projectId={projectId} sessionId={sessionId} store={store} />
-    </QueryRefreshPolicy>)
+    // Older pages refresh less often than the newest one, and at once after a write that touches them.
+    ? state.observed.map((page) => <DiscussionPageObserver iid={iid} key={page} page={page} projectId={projectId} refreshIntervalMs={page === state.latestPage ? undefined : OLDER_PAGE_REFRESH_MS} sessionId={sessionId} store={store} />)
     : null
 
   return {

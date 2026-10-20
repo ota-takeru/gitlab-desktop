@@ -1410,6 +1410,30 @@ pub fn open_token_creation_page(instance_url: &str) -> Result<(), AppError> {
         .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
 }
 
+/// A web link from a comment or description, checked before the default
+/// browser opens it: only http(s) without embedded credentials.
+pub fn external_url(input: &str) -> Result<Url, AppError> {
+    let url = Url::parse(input.trim())
+        .map_err(|_| AppError::new("INVALID_INPUT", "URLが正しくありません。"))?;
+    if !matches!(url.scheme(), "https" | "http")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "http/httpsのリンクだけを開けます。",
+        ));
+    }
+    Ok(url)
+}
+
+pub fn open_external_url(input: &str) -> Result<(), AppError> {
+    let url = external_url(input)?;
+    open::that_detached(url.as_str())
+        .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
+}
+
 /// Accepts only uploads served by the connected instance (relative URLs are
 /// resolved against it). Credentials are sent to that origin only.
 fn instance_avatar_url(instance_url: &str, input: &str) -> Option<Url> {
@@ -2657,6 +2681,32 @@ mod tests {
             account_key("https://a/", "1"),
             account_key("https://a/", "2")
         );
+    }
+
+    #[test]
+    fn external_links_are_web_urls_without_credentials() {
+        assert_eq!(
+            external_url(" https://docs.gitlab.com/ee/api/ ")
+                .unwrap()
+                .as_str(),
+            "https://docs.gitlab.com/ee/api/"
+        );
+        assert!(external_url("http://intranet.example/page?q=1#top").is_ok());
+        for invalid in [
+            "",
+            "docs.gitlab.com",
+            "javascript:alert(1)",
+            "file:///C:/Windows/System32/calc.exe",
+            "mailto:someone@example.com",
+            "ms-settings:privacy",
+            "https://user:secret@example.com/",
+        ] {
+            assert_eq!(
+                external_url(invalid).unwrap_err().code,
+                "INVALID_INPUT",
+                "{invalid}"
+            );
+        }
     }
 
     #[test]

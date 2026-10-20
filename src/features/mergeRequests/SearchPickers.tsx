@@ -15,6 +15,8 @@ interface SearchPickerProps {
   /** `label` is how the choice reads in a condition tag, or empty when it is cleared. */
   onChange: (id: string, label: string) => void
   autoFocus?: boolean
+  /** The name of the selected ID, when the caller knows it. */
+  selectedName?: string
 }
 
 interface PickerOption {
@@ -23,7 +25,7 @@ interface PickerOption {
   detail: string
 }
 
-export function UserSearchPicker(props: SearchPickerProps) {
+export function UserSearchPicker({ selectedName, ...props }: SearchPickerProps) {
   const { session } = useConnection()
   const [searchText, setSearchText] = useState('')
   const debouncedSearch = useDebouncedSearch(searchText)
@@ -36,6 +38,7 @@ export function UserSearchPicker(props: SearchPickerProps) {
   return (
     <CandidatePicker
       {...props}
+      fallback={(value) => savedIdOption(value, selectedName)}
       loading={result.loading || result.refreshing}
       noOptionsText={result.error ? 'ユーザー候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力してください' : '候補がありません'}
       onSearchTextChange={setSearchText}
@@ -45,7 +48,7 @@ export function UserSearchPicker(props: SearchPickerProps) {
   )
 }
 
-export function ProjectSearchPicker(props: SearchPickerProps) {
+export function ProjectSearchPicker({ selectedName, ...props }: SearchPickerProps) {
   const { session } = useConnection()
   const [searchText, setSearchText] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -70,6 +73,7 @@ export function ProjectSearchPicker(props: SearchPickerProps) {
   return (
     <CandidatePicker
       {...props}
+      fallback={(value) => savedIdOption(value, selectedName)}
       loading={result.loading || result.refreshing}
       onChange={(id) => props.onChange(id, result.data?.find((project) => project.id === id)?.pathWithNamespace ?? '')}
       noOptionsText={result.error ? 'プロジェクト候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力するか、開いて候補を表示してください' : '候補がありません'}
@@ -118,10 +122,10 @@ export function GroupSearchPicker({ onChange, selectedPath, ...props }: Omit<Sea
   )
 }
 
-function CandidatePicker({ ariaLabel, autoFocus, fallback = savedIdOption, label, loading, noOptionsText, onChange, onClose, onOpen, onSearchTextChange, options, queryError, value }: Omit<SearchPickerProps, 'onChange'> & {
+function CandidatePicker({ ariaLabel, autoFocus, fallback, label, loading, noOptionsText, onChange, onClose, onOpen, onSearchTextChange, options, queryError, value }: Omit<SearchPickerProps, 'onChange'> & {
   onChange: (id: string, label: string) => void
   /** Stands in for a value whose candidate is not loaded. */
-  fallback?: (value: string) => PickerOption | null
+  fallback: (value: string) => PickerOption | null
   loading: boolean
   noOptionsText: string
   onClose?: () => void
@@ -163,9 +167,10 @@ function CandidatePicker({ ariaLabel, autoFocus, fallback = savedIdOption, label
   )
 }
 
-/** Only a real ID stands in for a person or project whose name is not loaded; anything else is no choice yet. */
-function savedIdOption(value: string): PickerOption | null {
-  return /^[1-9]\d*$/u.test(value) ? { detail: '保存済みのID', id: value, name: `ID ${value}` } : null
+/** Only a real ID stands in for a person or project whose candidate is not loaded, named when the caller knows it; anything else is no choice yet. */
+function savedIdOption(value: string, name?: string): PickerOption | null {
+  if (!/^[1-9]\d*$/u.test(value)) return null
+  return name ? { detail: `ID ${value}`, id: value, name } : { detail: '保存済みのID', id: value, name: `ID ${value}` }
 }
 
 function savedGroupOption(value: string, fullPath: string | undefined): PickerOption | null {

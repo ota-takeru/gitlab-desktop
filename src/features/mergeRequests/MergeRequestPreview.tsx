@@ -9,7 +9,9 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { projectUrlOf } from '../../lib/markdownLinks'
 import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StatusPill } from '../../components/StatusPill'
@@ -73,7 +75,7 @@ export function MergeRequestPreview({ approval, closeAt, mergeRequest, onClose, 
         {people.length ? <Typography color="textSecondary" component="div" sx={{ mt: 0.25 }} variant="caption">{people.join(' · ')}</Typography> : null}
         {mergeRequest.labels?.length ? <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5, mt: 1 }}>{mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" />)}</Stack> : null}
         <Box sx={{ borderTop: 1, borderColor: 'divider', mt: 1.5, pt: 1.5 }}>
-          <MockMarkdown body={mergeRequest.description || '説明はありません。'} />
+          <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)}><MockMarkdown body={mergeRequest.description || '説明はありません。'} /></MarkdownLinkProvider>
         </Box>
       </Box>
     </Box>

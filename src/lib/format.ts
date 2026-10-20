@@ -15,9 +15,18 @@ export function formatRelativeTime(value: string | number, now = Date.now()): st
   if (elapsed < 0) return formatCalendarDate(timestamp, now)
   if (elapsed < MINUTE) return 'たった今'
   if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}分前`
-  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}時間前`
-  if (elapsed < 7 * DAY) return `${Math.floor(elapsed / DAY)}日前`
+  // Past an hour, days count local calendar days, so last night reads 「昨日」 rather than hours ago.
+  const days = calendarDaysBetween(timestamp, now)
+  if (days === 0) return `${Math.floor(elapsed / HOUR)}時間前`
+  if (days === 1) return '昨日'
+  if (days < 7) return `${days}日前`
   return formatCalendarDate(timestamp, now)
+}
+
+function calendarDaysBetween(from: number, to: number): number {
+  const start = new Date(from)
+  const end = new Date(to)
+  return Math.round((Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()) - Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / DAY)
 }
 
 /** Full local date and time, used for tooltips and machine-readable labels. */

@@ -15,6 +15,8 @@ interface WorkspaceData {
   pinned: MrRef[]
   /** MRs open as sidebar tabs (not pinned), newest first. */
   open: MrRef[]
+  /** When each open tab was last shown (ISO time); a tab not shown for `STALE_TAB_MS` closes. */
+  shown: Record<string, string>
   tabs: Record<string, TabMeta>
   recent: MrRef[]
   reading: Record<string, Reading>
@@ -23,8 +25,12 @@ interface WorkspaceData {
 export const defaultWorkspaceSettings: WorkspaceSettings = { autoRefresh: true, notifyComments: false, notifyTodos: false }
 const changedEvent = 'gitlab-workspace-preferences-change'
 export function mrRefKey(ref: MrRef): string { return `${ref.projectId}:${ref.iid}` }
-const emptyData = (): WorkspaceData => ({ pinned: [], open: [], tabs: {}, recent: [], reading: {}, settings: { ...defaultWorkspaceSettings } })
+const emptyData = (): WorkspaceData => ({ pinned: [], open: [], shown: {}, tabs: {}, recent: [], reading: {}, settings: { ...defaultWorkspaceSettings } })
 const MAX_OPEN_TABS = 20
+/** Open tabs stay mounted with their data, so ones not shown for three days close. */
+export const STALE_TAB_MS = 3 * 24 * 60 * 60_000
+/** Showing a tab again records the time only this long after the last record, so switching tabs rarely writes. */
+const SHOWN_RESOLUTION_MS = 60 * 60_000
 const validRef = (ref: unknown): ref is MrRef => Boolean(ref && typeof ref === 'object' && /^[1-9]\d*$/u.test((ref as MrRef).projectId) && /^[1-9]\d*$/u.test((ref as MrRef).iid))
 function refs(value: unknown, max: number): MrRef[] {
   return Array.isArray(value) ? value.filter(validRef).filter((ref, index, all) => all.findIndex((other) => mrRefKey(other) === mrRefKey(ref)) === index).slice(0, max) : []
@@ -70,7 +76,9 @@ function parseWorkspace(raw: string): WorkspaceData {
     }
     const pinned = refs(value.pinned, 100)
     const open = refs(value.open, MAX_OPEN_TABS).filter((ref) => !pinned.some((item) => mrRefKey(item) === mrRefKey(ref)))
-    return { pinned, open, tabs: tabMeta(value.tabs), recent: refs(value.recent, 30), reading, settings: {
+    const shown = Object.fromEntries(Object.entries(value.shown && typeof value.shown === 'object' ? value.shown : {})
+      .filter(([ref, date]) => open.some((item) => mrRefKey(item) === ref) && typeof date === 'string' && Number.isFinite(Date.parse(date))))
+    return { pinned, open, shown, tabs: tabMeta(value.tabs), recent: refs(value.recent, 30), reading, settings: {
       autoRefresh: value.settings?.autoRefresh !== false,
       notifyComments: value.settings?.notifyComments === true,
       notifyTodos: value.settings?.notifyTodos === true,
@@ -81,6 +89,8 @@ function save(scope: PreferenceScope, data: WorkspaceData) {
   // Titles are kept only for MRs the sidebar or the history can show.
   const kept = new Set([...data.pinned, ...data.open, ...data.recent].map(mrRefKey))
   data.tabs = Object.fromEntries(Object.entries(data.tabs).filter(([ref]) => kept.has(ref)))
+  const open = new Set(data.open.map(mrRefKey))
+  data.shown = Object.fromEntries(Object.entries(data.shown).filter(([ref]) => open.has(ref)))
   const text = JSON.stringify(data)
   try {
     if (localStorage.getItem(key(scope)) === text) return
@@ -136,13 +146,43 @@ function unreadCountIn(data: WorkspaceData, ref: MrRef): number | undefined {
   const record = data.reading[mrRefKey(ref)]
   return record ? Object.keys(record.known).filter((id) => record.read[id] === undefined).length : undefined
 }
-/** Adds the MR as the newest open tab unless it already has a tab; existing tabs keep their place. */
-export function openWorkspaceTab(scope: PreferenceScope, ref: MrRef) {
+/**
+ * Adds the MR as the newest open tab unless it already has a tab; existing tabs keep their place.
+ * An open tab records that it was shown, which keeps it from closing as stale.
+ */
+export function openWorkspaceTab(scope: PreferenceScope, ref: MrRef, now = Date.now()) {
   if (!validRef(ref)) return
   const current = readWorkspace(scope)
-  if ([...current.pinned, ...current.open].some((item) => mrRefKey(item) === mrRefKey(ref))) return
-  current.open = [{ iid: ref.iid, projectId: ref.projectId }, ...current.open].slice(0, MAX_OPEN_TABS)
+  const refKey = mrRefKey(ref)
+  if (current.pinned.some((item) => mrRefKey(item) === refKey)) return
+  if (current.open.some((item) => mrRefKey(item) === refKey)) {
+    const last = Date.parse(current.shown[refKey] ?? '')
+    if (now - last < SHOWN_RESOLUTION_MS) return
+  } else {
+    current.open = [{ iid: ref.iid, projectId: ref.projectId }, ...current.open].slice(0, MAX_OPEN_TABS)
+  }
+  current.shown[refKey] = new Date(now).toISOString()
   save(scope, current)
+}
+
+/**
+ * Closes the open tabs not shown for `STALE_TAB_MS`, except `current` (the MR on screen).
+ * A tab without a recorded time, such as one opened before times were kept, starts counting now.
+ */
+export function closeStaleTabs(scope: PreferenceScope, current: MrRef | null, now = Date.now()) {
+  const data = readWorkspace(scope)
+  const currentKey = current ? mrRefKey(current) : null
+  let changed = false
+  data.open = data.open.filter((ref) => {
+    const refKey = mrRefKey(ref)
+    const shown = Date.parse(data.shown[refKey] ?? '')
+    if (refKey === currentKey) return true
+    if (!Number.isFinite(shown)) { data.shown[refKey] = new Date(now).toISOString(); changed = true; return true }
+    if (now - shown < STALE_TAB_MS) return true
+    changed = true
+    return false
+  })
+  if (changed) save(scope, data)
 }
 function subscribe(listener: () => void) {
   globalThis.addEventListener(changedEvent, listener)
@@ -184,6 +224,7 @@ function workspaceApi(scope: PreferenceScope, connected: boolean, data: Workspac
       const current = readWorkspace(scope)
       current.pinned = current.pinned.filter((item) => mrRefKey(item) !== mrRefKey(ref))
       current.open = [{ iid: ref.iid, projectId: ref.projectId }, ...current.open.filter((item) => mrRefKey(item) !== mrRefKey(ref))].slice(0, MAX_OPEN_TABS)
+      current.shown[mrRefKey(ref)] = new Date().toISOString()
       save(scope, current)
     },
     /** Moves a tab within its own section, pinned or open. */

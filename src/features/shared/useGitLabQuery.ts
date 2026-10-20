@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo } from 'react'
-import { useQueryRefreshAllowed } from './QueryRefreshPolicy'
+import { useQueryRefreshAllowed, useQueryRetention } from './QueryRefreshPolicy'
 
 import { cancelGitLabRequest, createRequestId, normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
 import {
@@ -21,6 +21,9 @@ export interface GitLabQueryState<T> {
   stale: boolean
   refresh: () => void
 }
+
+/** How often a read that last failed is tried again by itself. */
+const FAILED_REFRESH_INTERVAL_MS = 5 * 60_000
 
 interface LoadedQuery<T> {
   snapshot: GitLabSnapshot<T> | null
@@ -51,13 +54,29 @@ export function useGitLabQuery<Q extends GitLabQuery>(
   const { refreshIntervalMs } = options
   const queryClient = useQueryClient()
   const autoRefresh = useQueryRefreshAllowed()
+  const gcTime = useQueryRetention()
   const queryJson = useMemo(() => (query ? JSON.stringify(query) : ''), [query])
   const queryKey = useMemo(() => ['gitlab', sessionId ?? '', queryJson] as const, [queryJson, sessionId])
   const loaded = useQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
     enabled: Boolean(sessionId && query),
-    refetchInterval: (current) => autoRefresh && document.visibilityState === 'visible' && query && (refreshIntervalMs === undefined ? ['mrs', 'mr', 'notes', 'discussions', 'drafts', 'todos', 'approvals', 'mrApprovals', 'mrAwards', 'noteAwards'].includes(query.kind) : refreshIntervalMs !== false) && !current.state.error && !current.state.data?.error ? refreshIntervalMs || 60_000 : false,
+    // An explicit undefined would replace the client's default rather than keep it.
+    ...(gcTime === undefined ? {} : { gcTime }),
+    // After a failed read polling goes on more slowly instead of stopping, so a passing network
+    // error does not freeze the screen; a lost permission or a missing resource is not asked again.
+    refetchInterval: (current) => {
+      if (!autoRefresh || document.visibilityState !== 'visible' || !query) return false
+      if (refreshIntervalMs === undefined ? !['mrs', 'mr', 'notes', 'discussions', 'drafts', 'todos', 'approvals', 'mrApprovals', 'mrAwards', 'noteAwards'].includes(query.kind) : refreshIntervalMs === false) return false
+      const failure = current.state.error ?? current.state.data?.error
+      if (isAccessDenied(failure)) return false
+      const interval = refreshIntervalMs || 60_000
+      return failure ? Math.max(interval, FAILED_REFRESH_INTERVAL_MS, failure.retryAfterMs ?? 0) : interval
+    },
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: (current) => autoRefresh && !current.state.error && !current.state.data?.error && Date.now() - current.state.dataUpdatedAt > 60_000,
+    refetchOnWindowFocus: (current) => {
+      const failure = current.state.error ?? current.state.data?.error
+      const interval = failure ? FAILED_REFRESH_INTERVAL_MS : refreshIntervalMs || 60_000
+      return autoRefresh && !isAccessDenied(failure) && Date.now() - Math.max(current.state.dataUpdatedAt, current.state.errorUpdatedAt) > interval
+    },
     queryFn: ({ signal }) => {
       // React Query only calls queryFn while enabled, but keep this guard for
       // type safety and for future callers that manually refetch a disabled key.

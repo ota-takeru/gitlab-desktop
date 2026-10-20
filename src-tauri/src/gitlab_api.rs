@@ -1510,14 +1510,17 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 Vec::new(),
             )
         }
-        Query::Todos { page } => {
+        Query::Todos { page, done } => {
             validate_page(*page)?;
             (
                 endpoint(api_base, &["todos"])?,
                 ResponseKind::Todos,
                 vec![
                     ("type".to_owned(), "MergeRequest".to_owned()),
-                    ("state".to_owned(), "pending".to_owned()),
+                    (
+                        "state".to_owned(),
+                        if *done { "done" } else { "pending" }.to_owned(),
+                    ),
                     ("page".to_owned(), page.to_string()),
                     ("per_page".to_owned(), TODO_PER_PAGE.to_string()),
                 ],
@@ -5836,14 +5839,37 @@ mod tests {
         assert_eq!(params.get("active").unwrap(), "true");
         assert_eq!(params.get("per_page").unwrap(), "30");
         assert_eq!(params.get("page").unwrap(), "2");
-        let (todos, _) = build_query_url(&api, &Query::Todos { page: 1 }).unwrap();
+        let (todos, _) = build_query_url(
+            &api,
+            &Query::Todos {
+                page: 1,
+                done: false,
+            },
+        )
+        .unwrap();
         let params = todos
             .query_pairs()
             .collect::<std::collections::HashMap<_, _>>();
         assert_eq!(params.get("type").unwrap(), "MergeRequest");
         assert_eq!(params.get("state").unwrap(), "pending");
         assert_eq!(params.get("per_page").unwrap(), "100");
-        assert!(build_query_url(&api, &Query::Todos { page: 0 }).is_err());
+        let (done, _) = build_query_url(
+            &api,
+            &Query::Todos {
+                page: 1,
+                done: true,
+            },
+        )
+        .unwrap();
+        assert!(done.query().unwrap().contains("state=done"));
+        assert!(build_query_url(
+            &api,
+            &Query::Todos {
+                page: 0,
+                done: false,
+            },
+        )
+        .is_err());
     }
 
     #[test]

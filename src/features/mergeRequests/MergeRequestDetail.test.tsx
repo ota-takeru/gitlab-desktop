@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
 import type { MergeRequest, Note } from '../../types/gitlab'
@@ -18,6 +18,7 @@ const detailMocks = vi.hoisted(() => {
   const discussion = { id: 'discussion-120', individualNote: false, notes }
   const mergeRequest = {
     id: '120', iid: '120', projectId: '7', title: 'Read-only integration sample', description: '', state: 'opened', webUrl: 'https://gitlab.com/group/project/-/merge_requests/120', author: { id: '99', name: 'Author', username: 'author' }, sourceBranch: 'feature', targetBranch: 'main', updatedAt: '2026-04-03T00:00:00.000Z', headSha: 'head-abc', diffRefs: { baseSha: 'base-abc', startSha: 'start-abc', headSha: 'head-abc' },
+    reviewers: [currentUser],
   }
   const diff = { oldPath: 'src/example.ts', newPath: 'src/example.ts', diff: '@@ -1,3 +1,3 @@\n line one\n line two\n line three\n', newFile: false, deletedFile: false, renamedFile: false, tooLarge: false, collapsed: false }
   const session = { id: 'session-42', instanceUrl: 'https://gitlab.com', user: currentUser, serverVersion: '18.0' }
@@ -248,6 +249,10 @@ describe('BufferedReviewComposer', () => {
   it('replaces the reviewers with the selected users and the reviewers it last saw', async () => {
     detailMocks.useComposerBufferMock.mockReturnValue({ body: '', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
     detailMocks.mutationRunMock.mockResolvedValue(true)
+    // Assigned rather than reviewing, so adding yourself as a reviewer is offered.
+    const involved = detailMocks.mergeRequest
+    detailMocks.mergeRequest = { ...involved, assignees: [detailMocks.session.user], reviewers: [] } as typeof involved
+    onTestFinished(() => { detailMocks.mergeRequest = involved })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
@@ -550,6 +555,31 @@ describe('replying and resolving in the diff', () => {
     fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ discussionId: 'discussion-120', iid: '120', kind: 'resolve', projectId: '7', resolved: true }, undefined))
   })
+
+  describe('on an MR you neither wrote, are assigned to nor review', () => {
+    const involved = detailMocks.mergeRequest
+    beforeEach(() => {
+      detailMocks.mergeRequest = { ...involved, reviewers: [] }
+      return () => { detailMocks.mergeRequest = involved }
+    })
+
+    it('asks before a write and sends nothing when declined', async () => {
+      globalThis.confirm = vi.fn(() => false)
+      renderChanges()
+      const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+      fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
+      await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('担当外のMRです')))
+      expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
+    })
+
+    it('sends the write once the warning is accepted', async () => {
+      globalThis.confirm = vi.fn(() => true)
+      renderChanges()
+      const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+      fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
+      await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith(expect.objectContaining({ kind: 'resolve' }), undefined))
+    })
+  })
 })
 
 describe('MergeRequestDetail header, results and pending review', () => {
@@ -621,6 +651,20 @@ describe('MergeRequestDetail header, results and pending review', () => {
     finish(true)
     await waitFor(() => expect(screen.getByRole('button', { name: '承認する' })).toBeEnabled())
     expect(detailMocks.mutationRunMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks only once before approving an MR you are not part of', async () => {
+    const involved = detailMocks.mergeRequest
+    detailMocks.mergeRequest = { ...involved, reviewers: [] }
+    try {
+      renderDetail('overview')
+      fireEvent.click(await screen.findByRole('button', { name: '承認する' }))
+      await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledTimes(1))
+      expect(globalThis.confirm).toHaveBeenCalledTimes(1)
+      expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('!120 を承認しますか？'))
+    } finally {
+      detailMocks.mergeRequest = involved
+    }
   })
 
   it('asks before approving and sends nothing when declined', async () => {

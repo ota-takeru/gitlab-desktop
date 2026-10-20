@@ -36,8 +36,9 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { useConfirm, useNotify } from '../../components/Feedback'
+import { ConfirmScope, useConfirm, useNotify, type ConfirmOptions } from '../../components/Feedback'
 import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
+import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
 import { delayedRevealSx } from '../../components/paneSx'
@@ -51,6 +52,7 @@ import { LabelChip } from '../../components/LabelChip'
 import { formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
+import { projectUrlOf } from '../../lib/markdownLinks'
 import type {
   Approvals,
   AwardEmoji,
@@ -198,6 +200,8 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const [dismissedError, setDismissedError] = useState<unknown>(null)
   const confirm = useConfirm()
   const notify = useNotify()
+  // Set when a dialog that already carried the outside-MR warning was accepted, so the write it leads to is not asked again.
+  const outsideAcknowledged = useRef(false)
   const [verificationError, setVerificationError] = useState<string | null>(null)
   const [verificationReady, setVerificationReady] = useState(false)
   const [verifyingUnknown, setVerifyingUnknown] = useState(false)
@@ -218,6 +222,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
 
   const uploadAttachment = async (file: File): Promise<string | null> => {
     if (!session) return null
+    if (!await confirmOutsideWrite()) return null
     const flushed = await flushComposerBuffers().catch(() => false)
     if (!flushed) throw normalizeGitLabError({ code: 'STORAGE', message: '入力の保存を確認できないため、添付を停止しました。' })
     let markdown: string | null = null
@@ -463,7 +468,27 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     return <Stack spacing={1.5} sx={{ px: 2, py: 2 }}>{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />} sx={{ alignSelf: 'flex-start' }}>{backLabel}</Button> : null}<Alert severity="error">このMRは現在の接続先または権限では表示できません。保存済みの内容は表示しません。</Alert></Stack>
   }
 
+  // Writes to an MR you neither wrote, are assigned to nor review are asked once more, so a wrong MR is not changed by mistake.
+  const outsider = Boolean(session && !isInvolved(mergeRequest, session.user.id))
+  const withOutsideNote = (options: ConfirmOptions): ConfirmOptions => outsider
+    ? { ...options, message: <><Box component="span" sx={{ color: 'warning.main', display: 'block', mb: options.message ? 1 : 0 }}>{OUTSIDE_NOTE}</Box>{options.message}</> }
+    : options
+  const confirmWithOutsideNote = async (options: ConfirmOptions) => {
+    const ok = await confirm(withOutsideNote(options))
+    outsideAcknowledged.current = ok && outsider
+    return ok
+  }
+  const confirmOutsideWrite = async () => {
+    if (!outsider) return true
+    if (outsideAcknowledged.current) {
+      outsideAcknowledged.current = false
+      return true
+    }
+    return confirm({ confirmLabel: '実行する', message: `${OUTSIDE_NOTE}この操作を実行しますか？`, title: '担当外のMRです' })
+  }
+
   const runAction = async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
+    if (!await confirmOutsideWrite()) return false
     const success = await mutation.run(action, localDraftKey)
     if (success) refresh?.()
     return success
@@ -562,7 +587,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
   // Publishing shows the comment to everyone on the MR and cannot be taken back as a draft.
   const publishDraft = async (draft: Draft) => {
-    if (!await confirm({ confirmLabel: '公開する', message: plainExcerpt(draft.body, 120), title: 'この下書きを公開しますか？' })) return false
+    if (!await confirm(withOutsideNote({ confirmLabel: '公開する', message: plainExcerpt(draft.body, 120), title: 'この下書きを公開しますか？' }))) return false
     return publishDraftId(draft.id, draft.discussionId)
   }
 
@@ -575,7 +600,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
   const editDraft = (draft: Draft, body: string) => runAction({ body, draftId: draft.id, iid, kind: 'editDraft', projectId: resourceId }, draftsResult.refresh)
   const publishSelectedDrafts = async () => {
-    if (!selectedDrafts.length || !await confirm({ confirmLabel: `${selectedDrafts.length}件を公開する`, message: '一件ずつ公開します。途中で失敗したら残りは公開しません。', title: `選択した下書き${selectedDrafts.length}件を公開しますか？` })) return
+    if (!selectedDrafts.length || !await confirm(withOutsideNote({ confirmLabel: `${selectedDrafts.length}件を公開する`, message: '一件ずつ公開します。途中で失敗したら残りは公開しません。', title: `選択した下書き${selectedDrafts.length}件を公開しますか？` }))) return
     for (const draftId of selectedDrafts) {
       if (!await publishDraftId(draftId)) break
     }
@@ -606,7 +631,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         return
       }
       if (!all.length) { draftsResult.refresh(); return }
-      if (!await confirm({ confirmLabel: `${all.length}件を公開する`, message: '一件ずつ公開します。途中で失敗したら残りは公開しません。', title: `未公開レビュー${all.length}件をすべて公開しますか？` })) return
+      if (!await confirm(withOutsideNote({ confirmLabel: `${all.length}件を公開する`, message: '一件ずつ公開します。途中で失敗したら残りは公開しません。', title: `未公開レビュー${all.length}件をすべて公開しますか？` }))) return
       for (const draft of all) {
         if (!await publishDraftId(draft.id, draft.discussionId)) break
       }
@@ -787,15 +812,15 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }, currentResult.refresh)
   const rerequestReview = async (user: GitLabUser) => {
     const projectPath = mergeRequest.projectPath
-    if (!projectPath || !await confirm({ confirmLabel: '再依頼する', message: `${user.name}さんにレビューの依頼が通知されます。`, title: `${user.name}さんにレビューを再依頼しますか？` })) return
+    if (!projectPath || !await confirmWithOutsideNote({ confirmLabel: '再依頼する', message: `${user.name}さんにレビューの依頼が通知されます。`, title: `${user.name}さんにレビューを再依頼しますか？` })) return
     if (await runAction({ iid, kind: 'rerequestReview', projectId: resourceId, projectPath, userId: user.id }, currentResult.refresh)) notify({ message: `${user.name}さんにレビューを再依頼しました`, severity: 'success' })
   }
   // The button stays busy until the approvals are read back, so a second click cannot approve twice.
   const toggleApproval = async () => {
     if (!mergeRequest.headSha || approvalWriting) return false
-    const confirmed = await confirm(myApproved
+    const confirmed = await confirm(withOutsideNote(myApproved
       ? { confirmLabel: '承認を取り消す', destructive: true, message: '必要な承認数を満たさなくなり、マージできなくなる場合があります。', title: `!${mergeRequest.iid} の承認を取り消しますか？` }
-      : { confirmLabel: '承認する', message: `表示中のhead ${shortSha(mergeRequest.headSha)} を承認します。承認はMRの参加者に通知されます。`, title: `!${mergeRequest.iid} を承認しますか？` })
+      : { confirmLabel: '承認する', message: `表示中のhead ${shortSha(mergeRequest.headSha)} を承認します。承認はMRの参加者に通知されます。`, title: `!${mergeRequest.iid} を承認しますか？` }))
     if (!confirmed) return false
     const kind = myApproved ? 'unapprove' : 'approve'
     setApprovalWriting(kind)
@@ -856,6 +881,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
 
   return (
+    <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)}>
     <Box component="section" ref={sectionRef} sx={{ minHeight: '100%', width: '100%' }}>
       <Box component="header" data-sticky-header="true" ref={headerRef} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', position: 'sticky', px: 2, pt: 1.5, top: 0, zIndex: 2 }}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32 }}>
@@ -874,7 +900,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
             {approvalsResult.error && !approvalWriting ? <Tooltip title={`承認状態を取得できませんでした: ${approvalsResult.error.message}`}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? '再取得中…' : '承認状態を再取得'}</Button></span></Tooltip>
               : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? '承認中…' : approvalWriting === 'unapprove' ? '取り消し中…' : approvalsResult.loading && !approvals ? '確認中…' : myApproved ? '自分の承認を取り消す' : '承認する'}</Button>}
           </Box>
-          <MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={currentResult.refresh} onRun={(action) => runAction(action, currentResult.refresh)} />
+          <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={currentResult.refresh} onRun={(action) => runAction(action, currentResult.refresh)} /></ConfirmScope>
         </Stack>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: 1 }}>
           <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: compactHeader ? 1 : 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
@@ -935,9 +961,10 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
           {mrAwardsResult.loading ? <Typography color="textSecondary" role="status" variant="caption">リアクションを読み込み中…</Typography> : null}
           {mrAwardsResult.error ? <Typography color={mrAwardsResult.data ? 'textSecondary' : 'error'} variant="caption">{mrAwardsResult.data ? `保存済みのリアクションを表示中です。更新に失敗しました: ${mrAwardsResult.error.message}` : `リアクションを取得できませんでした: ${mrAwardsResult.error.message}`}</Typography> : null}
         </Stack>} /> : null}
-        {activeTab === 'pipelines' ? <PipelinesTab disabled={mutation.isLocked || mutation.isPending} iid={iid} onOpenUrl={(url) => void openInGitLab(url)} onRunAction={(action) => runAction(action)} projectId={resourceId} sessionId={session?.id ?? null} /> : null}
+        {activeTab === 'pipelines' ? <ConfirmScope confirm={confirmWithOutsideNote}><PipelinesTab disabled={mutation.isLocked || mutation.isPending} iid={iid} onOpenUrl={(url) => void openInGitLab(url)} onRunAction={(action) => runAction(action)} projectId={resourceId} sessionId={session?.id ?? null} /></ConfirmScope> : null}
       </Stack>
     </Box>
+    </MarkdownLinkProvider>
   )
 }
 
@@ -1392,6 +1419,12 @@ function actionLabel(action: GitLabAction | null): string {
     case 'applySuggestions': return '提案の適用'
     default: return '直前の操作'
   }
+}
+
+const OUTSIDE_NOTE = 'あなたはこのMRの作者・担当者・レビュアーではありません。'
+
+function isInvolved(mergeRequest: MergeRequest, userId: string): boolean {
+  return mergeRequest.author.id === userId || Boolean(mergeRequest.assignees?.some((user) => user.id === userId) || mergeRequest.reviewers?.some((user) => user.id === userId))
 }
 
 /** Threads placed by line (`n:12`, `o:4`), in the order of their line numbers. */

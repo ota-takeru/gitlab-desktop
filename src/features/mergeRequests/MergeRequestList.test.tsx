@@ -105,27 +105,37 @@ describe('MergeRequestList search filters', () => {
     expect(screen.getByText('1件取得')).toBe(loadingStatus)
   })
 
-  it('keeps the people condition of a personal queue and offers it only in MR search', () => {
-    const onSearchAll = vi.fn()
-    const view = render(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchAll={onSearchAll} />)
+  it('switches between the reader\'s own MRs with chips that become removable condition tags', () => {
+    const onSearchStateChange = vi.fn()
+    const view = render(<MergeRequestList initialParams={{ state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
+    const own = (name: string) => within(screen.getByRole('group', { name: '自分のMR' })).getByRole('button', { name })
 
-    const queueSearch = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
-    // Text typed in a queue can be searched for in all MRs instead.
-    fireEvent.change(queueSearch, { target: { value: 'cache' } })
-    fireEvent.click(screen.getByRole('button', { name: 'すべてのMRから「cache」を検索' }))
-    expect(onSearchAll).toHaveBeenCalledWith('cache')
-    // The queue's person is a tag that cannot be removed, and only the state can be added.
-    expect(conditionTags()).toEqual(['自分がレビュアー（固定）', '状態: Open'])
-    expect(screen.queryByLabelText('固定の条件の絞り込みを解除')).not.toBeInTheDocument()
-    openSearchOptions()
-    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['状態'])
-    expect(screen.queryByRole('button', { name: /保存済み検索を管理/u })).not.toBeInTheDocument()
+    fireEvent.click(own('レビュー依頼'))
+    expect(own('レビュー依頼')).toHaveAttribute('aria-pressed', 'true')
+    expect(conditionTags()).toEqual(['状態: Open', 'レビュアー: 自分'])
     expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42', state: 'opened' })
+    expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ reviewer: 'self', state: 'opened' }))
+    // Exactly the reader's condition makes the screen that queue.
+    expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBeInTheDocument()
 
-    view.unmount()
-    render(<MergeRequestList initialParams={{ state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
+    // Another chip replaces it; its tag removes it like any other condition.
+    fireEvent.click(own('担当'))
+    expect(own('レビュー依頼')).toHaveAttribute('aria-pressed', 'false')
+    expect(conditionTags()).toEqual(['状態: Open', '担当者: 自分'])
+    fireEvent.click(screen.getByLabelText('担当者の絞り込みを解除'))
+    expect(conditionTags()).toEqual(['状態: Open'])
+    expect(own('担当')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /保存済み検索を管理/u })).toBeInTheDocument()
     openSearchOptions()
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['状態', 'レビュアー', '担当者', '作者', 'ラベル', 'ソースブランチ', 'ターゲットブランチ', '更新日', 'プロジェクト', 'グループ'])
+
+    // From every MR a chip also narrows to open ones, as the queues did; a second press removes it.
+    view.unmount()
+    render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
+    fireEvent.click(own('作成'))
+    expect(conditionTags()).toEqual(['状態: Open', '作者: 自分'])
+    fireEvent.click(own('作成'))
+    expect(conditionTags()).toEqual(['状態: Open'])
   })
 
   it('shows a project branch as a chip that returns to all the project MRs when removed', () => {
@@ -780,13 +790,13 @@ describe('MergeRequestList search filters', () => {
     expect(onSearchStateChange).toHaveBeenLastCalledWith({ orderBy: 'updated_at', page: '1', sort: 'desc', state: 'all' })
   })
 
-  it('names the fixed condition of a personal queue in its empty result and keeps it when cleared', () => {
+  it('names the reader\'s condition in an empty result and clears it with the others', () => {
     queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'mrs' ? { ...emptyResult, data: [] } : emptyResult)
     render(<MergeRequestList initialParams={{ reviewer: 'self', search: 'cache', state: 'merged' }} onOpenMergeRequest={vi.fn()} />)
 
-    expect(screen.getByText(/自分がレビュアー（固定） · 検索語: cache · 状態: Merged/u)).toBeInTheDocument()
+    expect(screen.getByText(/検索語: cache · 状態: Merged · レビュアー: 自分/u)).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: '条件をクリア' })[0])
-    expect(latestHookMrsQuery()).toMatchObject({ reviewerId: '42', search: '', state: 'opened' })
+    expect(latestHookMrsQuery()).toEqual({ kind: 'mrs', orderBy: 'updated_at', page: 1, search: '', sort: 'desc', state: 'all' })
   })
 
   it('offers MR number search outside a project too', () => {

@@ -148,6 +148,9 @@ pub enum Query {
     },
     Todos {
         page: u32,
+        /// The To-Dos already marked done (read notifications) instead of the pending ones.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        done: bool,
     },
     Branches {
         project_id: String,
@@ -628,6 +631,7 @@ mod tests {
             serde_json::json!({"kind": "groups", "search": "platform", "page": 1}),
             serde_json::json!({"kind": "project", "path": "group/project"}),
             serde_json::json!({"kind": "todos", "page": 2}),
+            serde_json::json!({"kind": "todos", "page": 1, "done": true}),
             serde_json::json!({"kind": "branches", "projectId": "7", "search": "feat", "page": 1}),
             serde_json::json!({"kind": "notes", "projectId": "7", "iid": "3", "page": 1}),
             serde_json::json!({"kind": "mrPipelines", "projectId": "7", "iid": "3", "page": 1}),

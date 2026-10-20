@@ -19,6 +19,7 @@
     "allow-clear-gitlab-cache",
     "allow-cancel-gitlab-request",
     "allow-open-gitlab-url",
+    "allow-open-external-url",
     "allow-open-token-creation-page",
     "allow-get-gitlab-avatar",
     "allow-check-app-update",

@@ -10,6 +10,13 @@ import { ClientApp } from './ClientApp'
 import { reportGitLabConnectivity } from './connectivity'
 import { clearComposerBufferStore, createComposerBufferKey, useComposerBuffer } from './mergeRequests/useComposerBuffer'
 
+/** The chips that switch the MR list between the reader's own MRs. */
+const ownMrs = () => within(screen.getByRole('group', { name: '自分のMR' }))
+/** Which of the reader's own MRs the list shows; null for the search of every MR. */
+function expectOwnMrs(shown: 'レビュー依頼' | '担当' | '作成' | null) {
+  for (const name of ['レビュー依頼', '担当', '作成']) expect(ownMrs().getByRole('button', { name })).toHaveAttribute('aria-pressed', String(name === shown))
+}
+
 const { connection, gitlabQueryMock, invokeMock } = vi.hoisted(() => ({
   connection: {
     session: null as GitLabSession | null,
@@ -115,7 +122,7 @@ it('waits for session restoration before choosing the default route', async () =
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
   expect(screen.getByRole('button', { name: 'MR一覧' })).toHaveAttribute('aria-current', 'page')
-  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
+  expectOwnMrs(null)
   expect(screen.queryByRole('button', { name: /UI catalog/u })).not.toBeInTheDocument()
   expect(screen.queryByText('GitLab workspace')).not.toBeInTheDocument()
   expect(screen.queryByText('自分の GitLab 作業を、軽く始める')).not.toBeInTheDocument()
@@ -127,8 +134,7 @@ it('maps a legacy home URL to the MR search, the first tab by default', async ()
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
-  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['検索', 'レビュー依頼', '担当', '作成'])
-  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
+  expectOwnMrs(null)
   expect(screen.queryByRole('button', { name: /ホーム/u })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /UI catalog/u })).not.toBeInTheDocument()
 })
@@ -141,8 +147,7 @@ it('starts the MR list at the first tab in the reader order and searches all MRs
     render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
     await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['レビュー依頼', '検索', '担当', '作成'])
-    expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
+    expectOwnMrs('レビュー依頼')
 
     fireEvent.keyDown(window, { ctrlKey: true, key: 'k' })
     await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
@@ -163,7 +168,7 @@ it('opens a legacy full-page MR link over the first MR list tab', async () => {
   expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
-  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
+  expectOwnMrs(null)
 })
 
 it('keeps the navigation as it is while an MR is open, and remembers one choice', async () => {
@@ -295,12 +300,12 @@ it('preserves MR search filters when returning from an opened request', async ()
   // Returning goes back through history, which completes after the click.
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&search=needle'))
   expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('needle')
-  expect(screen.getByRole('tab', { name: 'レビュー依頼' })).toHaveAttribute('aria-selected', 'true')
+  expectOwnMrs('レビュー依頼')
 })
 
 it.each([
-  ['担当', '担当しているMR', 'assignee=self&state=opened', 'assigneeId'],
-  ['作成', '作成したMR', 'authorId=1&state=opened', 'authorId'],
+  ['担当', '担当しているMR', 'page=1&state=opened&assignee=self&orderBy=updated_at&sort=desc', 'assigneeId'],
+  ['作成', '作成したMR', 'page=1&state=opened&authorId=1&orderBy=updated_at&sort=desc', 'authorId'],
 ] as const)('opens and returns to the %s tab without selecting MR search', async (tab, heading, queryString, queryKey) => {
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string; assigneeId?: string; authorId?: string } | null) => {
@@ -315,10 +320,10 @@ it.each([
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  fireEvent.click(screen.getByRole('tab', { name: tab }))
+  fireEvent.click(ownMrs().getByRole('button', { name: tab }))
   await waitFor(() => expect(window.location.hash).toBe(`#client/mrs?${queryString}`))
   expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
-  expect(screen.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
+  expectOwnMrs(tab)
   expect(gitlabQueryMock.mock.calls.some(([, query]) => query?.[queryKey] === '1')).toBe(true)
 
   // The list just left stays mounted, hidden, so only the shown one is searched.
@@ -328,9 +333,8 @@ it.each([
 
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe(`#client/mrs?${queryString}`))
-  expect(screen.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true')
+  expectOwnMrs(tab)
   expect(screen.getByRole('button', { name: 'MR一覧' })).toHaveAttribute('aria-current', 'page')
-  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'false')
 })
 
 it('returns to the last MR list tab from the navigation', async () => {
@@ -338,16 +342,16 @@ it('returns to the last MR list tab from the navigation', async () => {
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  fireEvent.click(screen.getByRole('tab', { name: '担当' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
-  // Projects are a place of their own, without the MR list's tabs.
+  fireEvent.click(ownMrs().getByRole('button', { name: '担当' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?page=1&state=opened&assignee=self&orderBy=updated_at&sort=desc'))
+  // Projects are a place of their own, without the MR list's chips.
   fireEvent.click(screen.getByRole('button', { name: 'プロジェクト' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/projects'))
-  expect(screen.queryByRole('tablist', { name: 'MR一覧の切り替え' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
-  expect(screen.getByRole('tab', { name: '担当' })).toHaveAttribute('aria-selected', 'true')
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?page=1&state=opened&assignee=self&orderBy=updated_at&sort=desc'))
+  expectOwnMrs('担当')
 })
 
 it('opens the project screen from an MR and names where Back returns to', async () => {
@@ -364,7 +368,7 @@ it('opens the project screen from an MR and names where Back returns to', async 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject'))
   expect(screen.getByRole('heading', { name: 'group/project' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'プロジェクト' })).toHaveAttribute('aria-current', 'page')
-  expect(screen.queryByRole('tablist', { name: 'MR一覧の切り替え' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
 })
 
 it('switches a project screen between its MRs and branches, and shows the MRs of a branch', async () => {
@@ -423,7 +427,7 @@ it.each(['#client/pinned', '#client/recent'])('starts the MR list for the former
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs'))
-  expect(screen.getByRole('tab', { name: '検索' })).toHaveAttribute('aria-selected', 'true')
+  expectOwnMrs(null)
 })
 
 it('moves back and forward with the mouse side buttons without moving twice', async () => {
@@ -484,7 +488,7 @@ it('keeps the navigation folded while the notifications are open', async () => {
   localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
 })
 
-it('keeps places in the navigation, the MR lists in tabs, and opening by URL beside the tabs', () => {
+it('keeps places in the navigation, the reader\'s own MRs in chips, and opening by URL beside the title', () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
@@ -493,7 +497,7 @@ it('keeps places in the navigation, the MR lists in tabs, and opening by URL bes
   expect(within(within(navigation).getAllByRole('list')[0]).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['MR一覧', 'プロジェクト'])
   // Notifications open over the page from their own button, not as a place.
   expect(screen.getByRole('button', { name: '通知' })).toHaveAttribute('aria-haspopup', 'dialog')
-  expect(within(screen.getByRole('tablist', { name: 'MR一覧の切り替え' })).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['検索', 'レビュー依頼', '担当', '作成'])
+  expect(ownMrs().getAllByRole('button').map((chip) => chip.textContent)).toEqual(['レビュー依頼', '担当', '作成'])
   expect(within(navigation).queryByRole('button', { name: 'MR検索' })).not.toBeInTheDocument()
   expect(within(navigation).queryByRole('button', { name: 'MR URLから開く' })).not.toBeInTheDocument()
 
@@ -680,11 +684,12 @@ it('keeps the MR list mounted when it applies a search itself', async () => {
   await waitFor(() => expect(window.location.hash).toContain('search=needle'))
   expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBe(search)
 
-  // Another list still starts fresh; the previous one stays mounted, hidden.
-  fireEvent.click(screen.getByRole('tab', { name: '担当' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?assignee=self&state=opened'))
-  expect(screen.getByDisplayValue('needle')).not.toBeVisible()
-  expect(screen.getByRole('textbox', { name: '担当しているMRをタイトル・説明・MR番号で検索' })).toHaveValue('')
+  // Switching to the reader's other MRs changes one condition in the same list and keeps the text.
+  fireEvent.click(ownMrs().getByRole('button', { name: '担当' }))
+  await waitFor(() => expect(window.location.hash).toContain('assignee=self'))
+  expect(window.location.hash).toContain('search=needle')
+  expect(window.location.hash).not.toContain('reviewer=')
+  expect(screen.getByRole('textbox', { name: '担当しているMRをタイトル・説明・MR番号で検索' })).toBe(search)
 })
 
 it('shows a list and an MR visited before as they were left, without building them again', async () => {

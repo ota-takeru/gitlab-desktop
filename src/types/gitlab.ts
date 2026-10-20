@@ -89,7 +89,8 @@ export interface MergeRequestsQuery {
 export interface UsersQuery { kind: 'users'; search: string; page: number }
 export interface GroupsQuery { kind: 'groups'; search: string; page: number }
 export interface ProjectLookupQuery { kind: 'project'; path: string }
-export interface TodosQuery { kind: 'todos'; page: number }
+/** Pending To-Dos are the unread notifications; `done` lists the read ones instead. */
+export interface TodosQuery { kind: 'todos'; page: number; done?: true }
 export interface BranchesQuery { kind: 'branches'; projectId: string; search: string; page: number }
 
 export interface GitLabBranch {

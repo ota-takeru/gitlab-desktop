@@ -2,21 +2,19 @@ import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Discussion } from '../../types/gitlab'
-import { useQueryRefreshAllowed } from '../shared/QueryRefreshPolicy'
-import { useDiscussionWindow, type DiscussionWindow } from './useDiscussionWindow'
+import { OLDER_PAGE_REFRESH_MS, useDiscussionWindow, type DiscussionWindow } from './useDiscussionWindow'
 
 const mocks = vi.hoisted(() => ({
   pages: {} as Record<number, { data: unknown[]; nextPage: number | null; totalPages?: number }>,
   requested: [] as number[],
-  autoRefresh: {} as Record<number, boolean>,
+  refreshIntervals: {} as Record<number, number | false | undefined>,
   refreshes: [] as number[],
 }))
 
 vi.mock('../shared/useGitLabQuery', () => ({
-  useGitLabQuery: (_sessionId: string | null, query: { kind: string; page: number } | null) => {
-    const autoRefresh = useQueryRefreshAllowed()
+  useGitLabQuery: (_sessionId: string | null, query: { kind: string; page: number } | null, options?: { refreshIntervalMs?: number | false }) => {
     const page = query?.page ?? 0
-    mocks.autoRefresh[page] = autoRefresh
+    mocks.refreshIntervals[page] = options?.refreshIntervalMs
     if (!mocks.requested.includes(page)) mocks.requested.push(page)
     const entry = mocks.pages[page]
     return {
@@ -51,7 +49,7 @@ describe('useDiscussionWindow', () => {
   beforeEach(() => {
     mocks.pages = {}
     mocks.requested = []
-    mocks.autoRefresh = {}
+    mocks.refreshIntervals = {}
     mocks.refreshes = []
   })
 
@@ -68,14 +66,15 @@ describe('useDiscussionWindow', () => {
     expect(current.value?.latestPage).toBe(3)
     expect(current.value?.hasOlder).toBe(true)
     expect(mocks.requested).not.toContain(2)
-    expect(mocks.autoRefresh[3]).toBe(true)
+    // The newest page polls at the default interval.
+    expect(mocks.refreshIntervals[3]).toBeUndefined()
 
     act(() => current.value?.loadOlder())
     await waitFor(() => expect(current.value?.discussions).toHaveLength(42))
     expect(current.value?.discussions[0].id).toBe('p2-1')
     expect(current.value?.discussions.at(-1)?.id).toBe('p3-12')
-    // Only the newest page polls; older pages refresh after related writes.
-    expect(mocks.autoRefresh[2]).toBe(false)
+    // Older pages poll less often, and at once after related writes.
+    expect(mocks.refreshIntervals[2]).toBe(OLDER_PAGE_REFRESH_MS)
 
     act(() => current.value?.refreshDiscussion('p2-5'))
     expect(mocks.refreshes).toEqual([2, 3])

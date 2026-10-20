@@ -14,6 +14,7 @@ fn main() {
             "clear_gitlab_cache",
             "cancel_gitlab_request",
             "open_gitlab_url",
+            "open_external_url",
             "open_token_creation_page",
             "get_gitlab_avatar",
             "get_local_draft",

@@ -7,8 +7,10 @@ interface KeepAliveProps {
   activeKey: string | null
   /** The active screen's content. A kept screen shows the content it last had until it is active again. */
   children: ReactNode
-  /** How many screens stay mounted, the active one included. */
+  /** How many screens stay mounted, the active one included, besides those in `keep`. */
   max: number
+  /** Screens that stay mounted once shown, however many there are, until they leave this list. */
+  keep?: readonly string[]
   component?: ElementType
   sx?: SxProps<Theme>
   /**
@@ -18,11 +20,24 @@ interface KeepAliveProps {
   renderKey?: string
 }
 
+const noKeys: readonly string[] = []
+
 interface KeptScreens {
   /** Render order: the order screens were first shown, so returning to one never moves its DOM (and its scroll). */
   order: string[]
-  /** Most recently shown first; the last ones are dropped beyond `max`. */
+  /** Most recently shown first; the last ones not kept are dropped beyond `max`. */
   recent: string[]
+  /** The `keep` list the screens were last counted with. */
+  kept: string
+}
+
+function keptScreens(screens: KeptScreens, activeKey: string | null, max: number, keep: readonly string[]): KeptScreens {
+  const kept = new Set(keep)
+  let others = 0
+  const recent = [...(activeKey === null ? [] : [activeKey]), ...screens.recent.filter((key) => key !== activeKey)]
+    .filter((key) => key === activeKey || kept.has(key) || ++others < Math.max(1, max))
+  const order = [...screens.order.filter((key) => recent.includes(key)), ...(activeKey === null || screens.order.includes(activeKey) ? [] : [activeKey])]
+  return { kept: keep.join(' '), order, recent }
 }
 
 /**
@@ -33,12 +48,11 @@ interface KeptScreens {
  * Only the active screen's wrapper carries `data-screen-active="true"`, for
  * document queries that must ignore the hidden ones.
  */
-export function KeepAlive({ activeKey, children, component = 'div', max, renderKey, sx }: KeepAliveProps) {
-  const [screens, setScreens] = useState<KeptScreens>({ order: [], recent: [] })
+export function KeepAlive({ activeKey, children, component = 'div', keep = noKeys, max, renderKey, sx }: KeepAliveProps) {
+  const [screens, setScreens] = useState<KeptScreens>({ kept: '', order: [], recent: [] })
   let current = screens
-  if (activeKey !== null && screens.recent[0] !== activeKey) {
-    const recent = [activeKey, ...screens.recent.filter((key) => key !== activeKey)].slice(0, Math.max(1, max))
-    current = { order: [...screens.order.filter((key) => recent.includes(key)), ...(screens.order.includes(activeKey) ? [] : [activeKey])], recent }
+  if ((activeKey !== null && screens.recent[0] !== activeKey) || screens.kept !== keep.join(' ')) {
+    current = keptScreens(screens, activeKey, max, keep)
     setScreens(current)
   }
   return <>{current.order.map((key) => {

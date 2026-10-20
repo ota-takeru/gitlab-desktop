@@ -128,6 +128,11 @@ fn open_gitlab_url(
 ) -> Result<(), AppError> {
     state.native()?.open_url(&session_id, &url)
 }
+/// Opens a http(s) link from a comment or description in the default browser.
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), AppError> {
+    native::open_external_url(&url)
+}
 /// Opens GitLab's token page before any connection exists; only the fixed
 /// token path on a validated HTTPS instance can be opened.
 #[tauri::command]
@@ -354,6 +359,7 @@ pub fn run() {
             clear_gitlab_cache,
             cancel_gitlab_request,
             open_gitlab_url,
+            open_external_url,
             open_token_creation_page,
             get_gitlab_avatar,
             get_local_draft,

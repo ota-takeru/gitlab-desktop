@@ -206,3 +206,19 @@ it('shows an empty stack truthfully', () => {
   fireEvent.click(screen.getByRole('button', { name: '通知' }))
   expect(screen.getByText('通知はありません')).toBeInTheDocument()
 })
+
+it('shows read notifications on request and opens them without another read', () => {
+  const read = todo({ id: '8', iid: '9', title: 'Already read' })
+  queryMock.mockImplementation((_sessionId: string, query: { done?: true } | null) => result(query?.done ? [read] : []))
+  const onOpen = vi.fn()
+  renderWithClient(<NotificationNavItem collapsed={false} navigationWidth={52} onOpen={onOpen} />)
+  fireEvent.click(screen.getByRole('button', { name: '通知' }))
+  expect(screen.getByText('通知はありません')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: '既読' }))
+  expect(queryMock).toHaveBeenCalledWith('session-1', { kind: 'todos', page: 1, done: true })
+  expect(screen.queryByRole('button', { name: 'すべて既読' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByText('Already read'))
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: '8', iid: '9' }))
+  expect(runDetailedMock).not.toHaveBeenCalled()
+})

@@ -83,6 +83,24 @@ describe('useGitLabQuery', () => {
     await waitFor(() => expect(screen.getByTestId('query-state')).toHaveTextContent('network:idle:ok'))
   })
 
+  it('keeps polling more slowly after a failed read, but not after a denied one', async () => {
+    queryGitLabMock.mockRejectedValue({ code: 'NETWORK', message: 'offline' })
+    const mrQuery = { iid: '2', kind: 'mr' as const, projectId: '1' }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    function MrProbe() {
+      return <output data-testid="mr-state">{useGitLabQuery('session-1', mrQuery).error?.code ?? 'ok'}</output>
+    }
+    render(<QueryClientProvider client={queryClient}><MrProbe /></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByTestId('mr-state')).toHaveTextContent('NETWORK'))
+
+    const cached = queryClient.getQueryCache().find({ queryKey: ['gitlab', 'session-1', JSON.stringify(mrQuery)] })!
+    const interval = cached.observers[0].options.refetchInterval as (current: unknown) => number | false
+    expect(interval(cached)).toBe(5 * 60_000)
+    expect(interval({ state: { data: undefined, error: { code: 'RATE_LIMITED', retryAfterMs: 10 * 60_000 } } })).toBe(10 * 60_000)
+    expect(interval({ state: { data: undefined, error: { code: 'FORBIDDEN' } } })).toBe(false)
+    expect(interval({ state: { data: { error: null, snapshot: null }, error: null } })).toBe(60_000)
+  })
+
   it('keeps a denied resource empty without retrying it in a loop', async () => {
     queryGitLabMock.mockImplementation(({ mode }: { mode: string }) => mode === 'cache'
       ? Promise.resolve(snapshot('cache'))

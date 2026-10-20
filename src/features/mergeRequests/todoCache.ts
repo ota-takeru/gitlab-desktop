@@ -21,6 +21,11 @@ function isTodosKey(key: readonly unknown[], sessionId: string): boolean {
   return key[0] === 'gitlab' && key[1] === sessionId && typeof key[2] === 'string' && key[2].includes('"kind":"todos"')
 }
 
+/** The pages of read notifications, which keep what was read. */
+function isDoneTodosKey(key: readonly unknown[]): boolean {
+  return typeof key[2] === 'string' && key[2].includes('"done":true')
+}
+
 /**
  * The pending notifications of one merge request among the To-Do pages already
  * loaded (the notification panel and its count). It never asks GitLab.
@@ -32,7 +37,7 @@ export function useLoadedMergeRequestNotifications(sessionId: string | null, pro
     if (!sessionId) return '[]'
     const found = new Map<string, GitLabTodo>()
     for (const query of cache.findAll({ queryKey: ['gitlab', sessionId] })) {
-      if (!isTodosKey(query.queryKey, sessionId)) continue
+      if (!isTodosKey(query.queryKey, sessionId) || isDoneTodosKey(query.queryKey)) continue
       for (const todo of (query.state.data as LoadedTodos | undefined)?.snapshot?.data ?? []) {
         if (todo.projectId === projectId && todo.iid === iid && isNotificationTodo(todo)) found.set(todo.id, todo)
       }
@@ -44,15 +49,15 @@ export function useLoadedMergeRequestNotifications(sessionId: string | null, pro
 }
 
 /**
- * Drops To-Dos marked done from every loaded To-Do page, then lets them
- * reload once. The notification monitor keeps the IDs it has seen, so a done
+ * Drops To-Dos marked done from every loaded page of unread notifications, then
+ * lets every To-Do page reload once, so the read ones appear among the read. The notification monitor keeps the IDs it has seen, so a done
  * To-Do never comes back as new.
  */
 export function forgetDoneTodos(queryClient: QueryClient, sessionId: string, todoIds: string[]): void {
   if (!todoIds.length) return
   const done = new Set(todoIds)
   const predicate = (query: { queryKey: readonly unknown[] }) => isTodosKey(query.queryKey, sessionId)
-  queryClient.setQueriesData<LoadedTodos>({ predicate }, (current) => current?.snapshot
+  queryClient.setQueriesData<LoadedTodos>({ predicate: (query) => predicate(query) && !isDoneTodosKey(query.queryKey) }, (current) => current?.snapshot
     ? { ...current, snapshot: { ...current.snapshot, data: current.snapshot.data.filter((todo) => !done.has(todo.id)) } }
     : current)
   void queryClient.invalidateQueries({ predicate })

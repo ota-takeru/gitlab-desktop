@@ -11,6 +11,7 @@ Working contract for the implementation. Credentials never return over IPC. The 
 - `mutate_gitlab({input:{sessionId,requestId,action}})` -> void
 - `clear_gitlab_cache({sessionId})` -> void
 - `open_gitlab_url({sessionId,url})` -> void (Rust validates registered instance)
+- `open_external_url({url})` -> void; opens a link clicked in a comment or description in the default browser, http(s) without credentials only
 - `reauthenticate_gitlab({token})` -> Session; uses the saved instance, refuses a token of another user (INVALID_INPUT) and keeps cache, drafts and receipts
 - `open_token_creation_page({instanceUrl})` -> void; validates the instance like connect and opens only its personal access token page
 - `get_local_draft({sessionId,key})` -> {body,updatedAt}|null; `set_local_draft({sessionId,key,body})` -> void; `clear_local_drafts({sessionId})` -> void

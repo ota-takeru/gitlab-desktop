@@ -43,6 +43,13 @@ const FeedbackContext = createContext<Feedback>(fallback)
 export function useConfirm() { return useContext(FeedbackContext).confirm }
 export function useNotify() { return useContext(FeedbackContext).notify }
 
+/** Changes the confirmations asked inside it, for example to add a warning that applies to the whole area. */
+export function ConfirmScope({ children, confirm }: { children: ReactNode; confirm: Feedback['confirm'] }) {
+  const notify = useNotify()
+  const value = useMemo(() => ({ confirm, notify }), [confirm, notify])
+  return <FeedbackContext.Provider value={value}>{children}</FeedbackContext.Provider>
+}
+
 /** One themed confirmation dialog and one notice at a time for the whole client. */
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<ConfirmOptions | null>(null)

@@ -111,6 +111,12 @@ describe('SearchPickers', () => {
     expect(screen.getByRole('combobox', { name: 'MRの作者' })).toHaveValue('ID 17 · 保存済みのID')
   })
 
+  it('names a saved ID when the caller knows who it is', () => {
+    render(<UserSearchPicker ariaLabel="MRのレビュアー" label="レビュアー" onChange={vi.fn()} selectedName="Alice Example" value="563" />)
+
+    expect(screen.getByRole('combobox', { name: 'MRのレビュアー' })).toHaveValue('Alice Example · ID 563')
+  })
+
   it('shows no choice for a value that is not an ID', () => {
     render(<UserSearchPicker ariaLabel="MRのレビュアー" label="レビュアー" onChange={vi.fn()} value="id" />)
 

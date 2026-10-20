@@ -30,8 +30,8 @@ import { ClientNavItem } from '../components/ClientNavItem'
 import { useConfirm } from '../components/Feedback'
 import { PaneEmpty } from '../components/Pane'
 import { KeepAlive } from '../components/KeepAlive'
+import { MarkdownLinkProvider } from '../components/MarkdownLinks'
 import { delayedRevealSx } from '../components/paneSx'
-import { useReorder } from '../components/useReorder'
 import { SettingsSection } from '../components/SettingsSection'
 import { StatusBar } from '../components/StatusBar'
 import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
@@ -56,11 +56,12 @@ import { NotificationNavItem } from './mergeRequests/NotificationPanel'
 import { MergeRequestTabs } from './mergeRequests/MergeRequestTabs'
 import { OpenMergeRequestDialog } from './mergeRequests/OpenMergeRequestDialog'
 import { personalQueueFor } from './mergeRequests/personalQueue'
-import { openWorkspaceTab, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
+import { closeStaleTabs, mrRefKey, openWorkspaceTab, STALE_TAB_MS, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
-import { QueryRefreshPolicy, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
+import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed } from './shared/AutoUpdateSafety'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
+import { useOpenMarkdownLink } from './shared/useOpenMarkdownLink'
 import { clearGitLabMutationStates } from './shared/useGitLabMutation'
 import { useGitLabQuery } from './shared/useGitLabQuery'
 
@@ -100,7 +101,10 @@ function writeLayoutPreference(key: string, value: boolean): void {
 }
 
 type ClientRoute = 'projects' | 'mrs' | 'branches' | 'code' | 'settings'
-/** The MR list's tabs are lists of MRs only; notifications open from their own button in the sidebar. */
+/**
+ * The MR list's own conditions: the search of all MRs, or one condition on the connected user,
+ * switched with the chips under the search field. Notifications open from their own button in the sidebar.
+ */
 type MergeRequestHubTab = 'waiting' | 'assigned' | 'created' | 'search'
 
 const hubTabs: Array<{ label: string; value: MergeRequestHubTab }> = [
@@ -111,7 +115,7 @@ const hubTabs: Array<{ label: string; value: MergeRequestHubTab }> = [
 ]
 const HUB_TAB_ORDER_KEY = 'gitlab-desktop:mr-hub-tab-order'
 
-/** The reader's order of the MR list's tabs; the first one is where the MR list starts. */
+/** The reader's order of the MR list's former tabs; the first one is still where the MR list starts. */
 function readHubTabOrder(): MergeRequestHubTab[] {
   const known = hubTabs.map((tab) => tab.value)
   let stored: unknown
@@ -120,11 +124,7 @@ function readHubTabOrder(): MergeRequestHubTab[] {
   return [...order, ...known.filter((value) => !order.includes(value))]
 }
 
-function writeHubTabOrder(order: MergeRequestHubTab[]): void {
-  try { globalThis.localStorage?.setItem(HUB_TAB_ORDER_KEY, JSON.stringify(order)) } catch { /* The order still applies until the window is reopened. */ }
-}
-
-/** Where a tab of the MR list leads. Without the user's ID, "created" falls back to the review queue. */
+/** Where the MR list starts for each of its conditions. Without the user's ID, "created" falls back to the review queue. */
 function hubTabLocation(tab: MergeRequestHubTab, userId: string | undefined): { route: ClientRoute; params: Record<string, string> } {
   if (tab === 'search') return { params: {}, route: 'mrs' }
   if (tab === 'assigned') return { params: { assignee: 'self', state: 'opened' }, route: 'mrs' }
@@ -190,7 +190,8 @@ function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, se
   // and result remain active for the lifetime of the app.
   return <Box sx={{ bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: '100vh' }}>
     <WindowCloseProtection />
-    <QueryRefreshPolicy value={workspace.settings.autoRefresh && autoInstallAllowed}>
+    {/* Unsent text and pending writes hold back app updates, not data refresh: typed text lives in its own buffers. */}
+    <QueryRefreshPolicy value={workspace.settings.autoRefresh}>
       <WorkspaceMonitor key={sessionKey} />
       <ClientWorkspace colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} autoInstallAllowed={autoInstallAllowed} sessionKey={sessionKey} status={status} />
     </QueryRefreshPolicy>
@@ -422,6 +423,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     setOpenedMergeRequest(null)
     select(ref)
   }
+  const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef)
 
   // The shown MR always has a sidebar tab, also when reached by Back or a link,
   // or when it is unpinned while shown.
@@ -433,19 +435,23 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   useEffect(() => {
     if (selectedProjectId && selectedIid && !selectedPinned && instanceUrl && userId) openWorkspaceTab({ instanceUrl, userId }, { iid: selectedIid, projectId: selectedProjectId })
   }, [instanceUrl, selectedIid, selectedPinned, selectedProjectId, userId])
+  // Open tabs stay mounted with their data, so ones not shown for three days close, checked hourly.
+  useEffect(() => {
+    if (!instanceUrl || !userId) return
+    const current = selectedProjectId && selectedIid ? { iid: selectedIid, projectId: selectedProjectId } : null
+    const check = () => closeStaleTabs({ instanceUrl, userId }, current)
+    check()
+    const timer = globalThis.setInterval(check, 60 * 60_000)
+    return () => globalThis.clearInterval(timer)
+  }, [instanceUrl, selectedIid, selectedProjectId, userId])
+  const openTabKeys = useMemo(() => workspace.open.map(mrRefKey), [workspace.open])
+  const selectedHasTab = selectedPinned || Boolean(selected && openTabKeys.includes(mrRefKey(selected)))
 
   const personal = personalQueueFor(listParams, session?.user.id)
-  // The personal queues and search share one list screen with tabs.
+  // The personal queues and search share one list screen; chips under its search field switch between them.
   const hubTab: MergeRequestHubTab | null = route === 'mrs' ? personal ?? (params.projectName ? null : 'search') : null
-  const [hubOrder, setHubOrder] = useState(readHubTabOrder)
-  const hubReorder = useReorder({ axis: 'x', keys: hubOrder, onMove: (key, toIndex) => {
-    const next = hubOrder.filter((value) => value !== key)
-    next.splice(toIndex, 0, key as MergeRequestHubTab)
-    setHubOrder(next)
-    writeHubTabOrder(next)
-  } })
-  // Until a tab of the MR list is shown, the MR list starts at the reader's first tab.
-  const lastHubLocation = useRef<{ route: ClientRoute; params: Record<string, string> }>(hubTabLocation(hubOrder[0], session?.user.id))
+  // Until the MR list is shown, it starts where the reader's first former tab led.
+  const lastHubLocation = useRef<{ route: ClientRoute; params: Record<string, string> }>(hubTabLocation(readHubTabOrder()[0], session?.user.id))
   useEffect(() => {
     if (hubTab) lastHubLocation.current = { params: listParams, route }
   }, [hubTab, listParams, route])
@@ -459,29 +465,12 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   if (!initialRestoreSettled && status !== 'checking') setInitialRestoreSettled(true)
   const waitingForSessionRestore = !session && status === 'checking' && !initialRestoreSettled
 
-  const openSearch = () => {
-    navigate('mrs')
-    globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0)
-  }
-  const openHubTab = (tab: MergeRequestHubTab) => {
-    if (tab === 'search') openSearch()
-    else {
-      const next = hubTabLocation(tab, session?.user.id)
-      navigate(next.route, next.params)
-    }
-  }
   function openLastHub() {
     const last = lastHubLocation.current
     navigate(last.route, last.params)
   }
-  // Opening by URL is a one-off action of the MR list, beside its tabs.
-  const hubNavigation = hubTab ? <Stack direction="row" sx={{ alignItems: 'center', minWidth: 0 }}>
-    {/* The tabs can be dragged, or moved with Alt+←/→, into the reader's order. */}
-    <Tabs aria-label="MR一覧の切り替え" onChange={(_, value: MergeRequestHubTab) => openHubTab(value)} scrollButtons={false} sx={{ flex: 1, minWidth: 0 }} value={hubTab} variant="scrollable" {...hubReorder.containerProps}>
-      {hubOrder.map((value) => <Tab aria-description="Alt+←/→で並べ替え" key={value} label={hubTabs.find((tab) => tab.value === value)?.label} sx={{ '&[data-reorder-dragging]': { bgcolor: 'surface.raised', borderRadius: 1, boxShadow: 4, cursor: 'grabbing' } }} value={value} {...hubReorder.itemProps(value)} />)}
-    </Tabs>
-    <Tooltip title="MR URLから開く (Ctrl+O)"><IconButton aria-label="MR URLから開く" onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip>
-  </Stack> : undefined
+  // Opening by URL is a one-off action of the MR list, beside its title.
+  const hubActions = hubTab ? <Tooltip title="MR URLから開く (Ctrl+O)"><IconButton aria-label="MR URLから開く" onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
   // A project's screen shows its name beside tabs for its MRs, its branches and its code.
   const projectTab = route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
   const projectNavigation = projectTab ? <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
@@ -500,6 +489,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const projectsSelected = !selected && (route === 'projects' || route === 'branches' || route === 'code' || (route === 'mrs' && hubTab === null))
 
   return (
+    <MarkdownLinkProvider instanceUrl={session?.instanceUrl} open={openMarkdownLink}>
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {/* In a narrow window an expanded navigation lies over the page, like the peek, instead of taking its width. */}
@@ -566,15 +556,16 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
-                {route === 'mrs' ? <MergeRequestList key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={hubNavigation ?? projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchAll={personal ? (search) => { navigate('mrs', search ? { search } : {}); globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0) } : undefined} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
+                {route === 'mrs' ? <MergeRequestList actions={hubActions} key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
                 {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? `プロジェクト ${params.projectId}`, sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
                 {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
                 </AppErrorBoundary>
                 </QueryRefreshPolicy>
                 </KeepAlive>
               </Box>
-              <KeepAlive activeKey={selected && route !== 'settings' ? `${selected.projectId}:${selected.iid}` : null} component="main" max={5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-              {selected ? <QueryRefreshPolicy value={refreshAllowed}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
+              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={openTabKeys} max={5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              {/* An MR with a sidebar tab keeps its data while hidden, so switching back shows it at once. */}
+              {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute
                   initialMergeRequest={mergeRequest}
                   key={`${selected.projectId}:${selected.iid}`}
@@ -585,7 +576,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                   selected={selected}
                   tab={parseTab(params.tab)}
                 />
-                </AppErrorBoundary></QueryRefreshPolicy> : null}
+                </AppErrorBoundary></QueryRetention></QueryRefreshPolicy> : null}
               </KeepAlive>
             </> : null}
           </Box>
@@ -597,6 +588,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
         <AppVersionLabel />
       </>} />
     </Box>
+    </MarkdownLinkProvider>
   )
 }
 
