@@ -28,7 +28,7 @@ test('preview diff timeline, Blame and associated MR', async ({ page }, testInfo
   await expect(page.getByText('Fixture commit')).toBeVisible()
   await page.getByRole('button', { name: /関連MR/ }).first().click()
   await expect(page.getByText('に関連するMR')).toBeVisible()
-  await expect(page.getByRole('button', { name: /!42/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^!42 MR一覧の検索結果/ })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('03-blame-related-mr.png'), animations: 'disabled' })
 })
 
