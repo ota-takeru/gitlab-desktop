@@ -965,12 +965,12 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
   if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
 
-  return <Box ref={rootRef} sx={(theme) => blameEnabled ? ({
+  return <Box ref={rootRef} sx={blameEnabled ? (theme: Theme) => ({
     '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
     '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
     '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
     '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  }) : {}}>
+  }) : undefined}>
     {markdown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
       <Button aria-label={showSource ? 'Markdownをレンダリング' : 'Markdownのソースを表示'} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? 'Markdown表示' : 'ソース表示'}</Button>
     </Box> : null}
