@@ -44,3 +44,15 @@ test('preview rendered Markdown file and source switch', async ({ page }, testIn
   await expect(page.getByTestId('file-line').first()).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('05-markdown-source.png'), animations: 'disabled' })
 })
+
+test('preview Blame inside both sides of a split diff', async ({ page }, testInfo) => {
+  await page.goto(`${root}${mr}`)
+  await page.getByRole('tab', { name: '変更' }).click()
+  await page.getByRole('button', { name: 'Blame' }).click()
+  await page.getByRole('button', { name: '左右に並べて比較' }).click()
+  const rows = page.getByTestId('diff-split-row')
+  await expect(rows.first()).toBeVisible()
+  await expect(rows.first().locator('.blame-cell')).toHaveCount(2)
+  await expect(page.getByRole('region', { name: 'Blameの行履歴' })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('06-blame-split.png'), animations: 'disabled' })
+})
