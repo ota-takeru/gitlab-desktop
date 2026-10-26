@@ -102,3 +102,27 @@ test('preview full-file Markdown annotations and keep the viewed diff section', 
   await page.getByRole('button', { name: '差分', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Markdown差分プレビュー' })).toBeVisible()
 })
+
+test('preview Blame in rendered Markdown full-file view and its source rows', async ({ page }, testInfo) => {
+  await page.goto(`${root}#client/mrs?reviewer=self&state=opened&mr=101-37`)
+  await page.getByRole('tab', { name: '変更' }).click()
+  await page.getByRole('button', { name: /docs\/review-guide\.md/ }).first().click()
+  await page.getByRole('button', { name: 'ファイル全体' }).click()
+  await page.getByRole('button', { name: 'Blame', exact: true }).click()
+
+  const markdown = page.getByLabel('Markdownプレビュー')
+  await expect(markdown).toBeVisible()
+  await expect(markdown.locator('[data-review-blame-line]').first()).toBeVisible()
+  const attribution = markdown.getByRole('button', { name: /1行のBlame:/u })
+  await expect(attribution).toBeVisible()
+  await attribution.click()
+  await expect(page.getByRole('dialog', { name: 'Blameのコミット詳細' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('10-full-file-markdown-blame.png'), animations: 'disabled' })
+
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Markdownのソースを表示' }).click()
+  const source = page.getByTestId('file-line').first()
+  await expect(source.locator('.blame-cell')).toBeVisible()
+  await expect(source.getByRole('button', { name: /1行のBlame:/u })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('11-full-file-source-blame.png'), animations: 'disabled' })
+})
