@@ -359,7 +359,7 @@ describe('MergeRequestDetail tabs and description', () => {
     expect(within(preview).getByRole('heading', { name: 'Rendered MR Markdown' })).toBeInTheDocument()
     expect(within(preview).getByRole('heading', { name: 'Previous' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '差分' })).toHaveAttribute('aria-pressed', 'true')
-    expect(detailMocks.queryCalls.some((query) => query?.kind === 'file')).toBe(false)
+    expect(detailMocks.queryCalls).not.toContainEqual(expect.objectContaining({ kind: 'file' }))
     expect(screen.queryByText('Important')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Markdown差分のソースを表示' }))
