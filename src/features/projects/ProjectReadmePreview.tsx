@@ -7,21 +7,16 @@ import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { FullFileView } from '../mergeRequests/DiffViewer'
-import type { BlobQuery, Project, TreeEntry, TreeQuery } from '../../types/gitlab'
+import type { BlobQuery, Project, TreeQuery } from '../../types/gitlab'
+import { chooseReadmeFile } from './readmeFiles'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
-
-/** Look for a README without requesting every repository file or every project's README. */
-export function chooseReadmeFile(entries: readonly TreeEntry[]): TreeEntry | undefined {
-  const files = entries.filter((entry) => entry.type === 'blob' && /^readme(?:\.(?:md|markdown|mdown|txt))?$/iu.test(entry.name))
-  const priority = (name: string) => name.toLowerCase() === 'readme.md' ? 0 : /\.(?:md|markdown|mdown)$/iu.test(name) ? 1 : 2
-  return [...files].sort((a, b) => priority(a.name) - priority(b.name) || a.name.localeCompare(b.name))[0]
-}
 
 export function ProjectReadmePreview({ project, sessionId }: { project: Project; sessionId: string }) {
   const treeQuery = useMemo<TreeQuery>(() => ({ kind: 'tree', projectId: project.id, path: '', page: 1 }), [project.id])
   const tree = useGitLabQuery(sessionId, treeQuery)
   const readme = chooseReadmeFile(tree.data ?? [])
-  const blobQuery = useMemo<BlobQuery | null>(() => readme ? { kind: 'blob', projectId: project.id, sha: readme.id } : null, [project.id, readme?.id])
+  const readmeId = readme?.id ?? null
+  const blobQuery = useMemo<BlobQuery | null>(() => readmeId ? { kind: 'blob', projectId: project.id, sha: readmeId } : null, [project.id, readmeId])
   const blob = useGitLabQuery(sessionId, blobQuery)
   const markdown = Boolean(readme && (isMarkdownFilePath(readme.name) || /^readme$/iu.test(readme.name)))
   return <Box aria-label={`${project.name}のREADME`} component="section" sx={{ maxHeight: 440, overflow: 'auto', px: 1 }}>

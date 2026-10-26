@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { chooseReadmeFile } from './ProjectReadmePreview'
+import { chooseReadmeFile } from './readmeFiles'
 import type { TreeEntry } from '../../types/gitlab'
 
 const entry = (name: string, type: TreeEntry['type'] = 'blob'): TreeEntry => ({ id: 'abcdef', name, path: name, type })
