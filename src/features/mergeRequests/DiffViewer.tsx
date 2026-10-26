@@ -91,6 +91,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
   const displayedPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
+  const [fileAnchor, setFileAnchor] = useState<{ path: string; line: number } | null>(null)
+  const restoreDiffAnchor = useRef<{ path: string; line: number } | null>(null)
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
   const [blameOpen, setBlameOpen] = useState(false)
   const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && (!selectedDiff.deletedFile || fileSource?.beforeSha))
@@ -414,6 +416,40 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     }
   }
 
+  const changeFileView = (next: 'diff' | 'file') => {
+    if (next === 'file' && displayedPath) {
+      // The viewport can be on the third Markdown change block or on a later
+      // source-diff hunk. Capture that actual section before unmounting it.
+      const top = Math.max(0, fileHeaderRef.current?.getBoundingClientRect().bottom ?? 0)
+      const bottom = globalThis.innerHeight || 1000
+      const anchors = Array.from(fileTopRef.current?.querySelectorAll<HTMLElement>('[data-file-anchor]') ?? [])
+      const visible = anchors.find((node) => {
+        const rect = node.getBoundingClientRect()
+        return rect.bottom > top + 2 && rect.top < bottom - 2
+      })
+      const visibleLine = visible ? Number(visible.dataset.fileAnchor) : NaN
+      const line = Number.isSafeInteger(visibleLine) && visibleLine > 0
+        ? visibleLine
+        : selectedPosition?.newLine ?? firstChangedFileLine(rows.length ? rows : displayLines)
+      setFileAnchor({ path: displayedPath, line })
+    }
+    if (next === 'diff' && view === 'file' && fileAnchor?.path === displayedPath) restoreDiffAnchor.current = fileAnchor
+    onViewChange(next)
+  }
+
+  useLayoutEffect(() => {
+    const wanted = restoreDiffAnchor.current
+    if (view !== 'diff' || !wanted || wanted.path !== displayedPath) return
+    const candidates = Array.from(fileTopRef.current?.querySelectorAll<HTMLElement>('[data-file-anchor]') ?? [])
+    const target = candidates.reduce<HTMLElement | null>((best, node) => {
+      const distance = Math.abs(Number(node.dataset.fileAnchor) - wanted.line)
+      const bestDistance = best ? Math.abs(Number(best.dataset.fileAnchor) - wanted.line) : Number.POSITIVE_INFINITY
+      return distance < bestDistance ? node : best
+    }, null)
+    target?.scrollIntoView?.({ behavior: 'auto', block: 'center' })
+    restoreDiffAnchor.current = null
+  }, [diffOffset, displayedPath, layout, renderedMarkdownDiff, view])
+
   const diffContent = renderedMarkdownDiff
     ? <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} />
     : layout === 'split'
@@ -464,7 +500,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             </ToggleButtonGroup> : null}
             {canBlame && view === 'diff' ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
             {view === 'diff' && markdownDiff && parsed.status === 'valid' && !diffSearch.trim() ? <Button aria-label={renderedMarkdownDiff ? 'Markdown差分のソースを表示' : 'Markdown差分をプレビュー表示'} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? 'ソース差分' : 'Markdownプレビュー'}</Button> : null}
-             {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
+             {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) changeFileView(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
               <ToggleButton value="diff">差分</ToggleButton>
               <ToggleButton value="file">ファイル全体</ToggleButton>
             </ToggleButtonGroup> : null}
@@ -485,7 +521,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">この差分は大きすぎるため省略されています。</Typography></Stack></Box> : null}
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
-          {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} path={displayedPath} /> : <>
+          {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} /> : <>
             {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
             {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルは空白の変更のみです。</Typography> : null}
             {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">空白の変更を無視して表示中です。行の位置がずれる可能性があるため、新しい行コメントは書けません。</Typography> : null}
@@ -563,7 +599,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
   const skipped = diffGaps(lines, startIndex)
   // Opened unchanged lines: plain context rows, outside paging and search.
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
-    <div className="diff-row" data-kind="context" data-testid="diff-opened-line">
+    <div className="diff-row" data-file-anchor={line.newLine} data-kind="context" data-testid="diff-opened-line">
       {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
       <span className="diff-gutter"><span className="diff-number">{line.oldLine}</span><span className="diff-number">{line.newLine}</span></span>
       <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(openedTokens[index] ?? [{ text: line.text }], '')}</span>
@@ -604,7 +640,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
           const key = `${lineIndex}-${line.oldLine ?? ''}-${line.newLine ?? ''}`
           return <Fragment key={key}>
             {skipped[index].count > 0 ? <DiffGap expansion={gapExpansion} gap={skipped[index]} renderLines={openedRows} /> : null}
-            <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineSelection.isChosen(lineIndex) ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" tabIndex={isSelectedPosition ? -1 : undefined}>
+            <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineSelection.isChosen(lineIndex) ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" data-file-anchor={line.newLine} tabIndex={isSelectedPosition ? -1 : undefined}>
               {blameEnabled ? <BlameCell line={line.kind === 'remove' ? line.oldLine : line.newLine} side={line.kind === 'remove' ? 'old' : 'new'} /> : null}
               <span className="diff-gutter">
                 <span className="diff-number">{line.oldLine ?? ''}</span>
@@ -749,7 +785,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => {
     const code = renderCode(openedTokens[index] ?? [{ text: line.text }], '')
     return <Fragment key={`opened-${line.newLine}`}>
-      <div className="split-row" data-testid="diff-opened-line">
+      <div className="split-row" data-file-anchor={line.newLine} data-testid="diff-opened-line">
         {blameEnabled ? <BlameCell line={line.oldLine} side="old" /> : null}
         <span className="split-number" data-kind="context" data-side="old">{line.oldLine}</span>
         <span className="split-code" data-kind="context">{code}</span>
@@ -792,7 +828,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
         const hasSearchMatch = (row.leftIndex !== undefined && searchMatchIndices.has(row.leftIndex)) || (row.rightIndex !== undefined && searchMatchIndices.has(row.rightIndex))
         return <Fragment key={row.key}>
           {row.gap && row.gap.count > 0 ? <DiffGap expansion={gapExpansion} gap={row.gap} renderLines={openedRows} /> : null}
-          <div className="split-row" data-line-id={selected && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-active={activeSearch ? 'true' : undefined} data-search-match={hasSearchMatch ? 'true' : undefined} data-selected={selected ? 'true' : undefined} data-testid="diff-split-row" tabIndex={selected ? -1 : undefined}>
+          <div className="split-row" data-line-id={selected && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-active={activeSearch ? 'true' : undefined} data-search-match={hasSearchMatch ? 'true' : undefined} data-selected={selected ? 'true' : undefined} data-testid="diff-split-row" data-file-anchor={row.right?.newLine ?? row.left?.newLine} tabIndex={selected ? -1 : undefined}>
             {cell(row.left, 'old', row.leftIndex)}
             {cell(row.right, 'new', row.rightIndex)}
           </div>
