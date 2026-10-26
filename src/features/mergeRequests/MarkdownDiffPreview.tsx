@@ -27,7 +27,7 @@ export function MarkdownDiffPreview({ blameEnabled = false, layout, lines }: Mar
     <Typography color="textSecondary" sx={{ mb: 1.5 }} variant="caption">変更部分だけをMarkdownで表示しています。行コメントや記法の確認には「ソース差分」を使用してください。</Typography>
     {changes.length === 0 ? <Typography color="textSecondary" role="status" variant="body2">この範囲に表示する変更はありません。</Typography> : null}
     <Stack spacing={1.5}>
-      {changes.map((change, index) => <Box aria-label={`変更ブロック${index + 1}`} component="section" key={change.id} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, minWidth: 0, overflow: 'hidden' }}>
+      {changes.map((change, index) => <Box aria-label={`変更ブロック${index + 1}`} data-file-anchor={change.new?.firstLine ?? lines.find((line) => line.kind !== 'remove' && line.oldLine !== undefined && change.old && line.oldLine >= change.old.lastLine)?.newLine ?? change.old?.firstLine ?? 1} component="section" key={change.id} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, minWidth: 0, overflow: 'hidden' }}>
         <Box sx={{ bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', px: 1.5, py: 0.5 }}>
           <Typography color="textSecondary" variant="caption">変更 {index + 1}/{changes.length}</Typography>
         </Box>
