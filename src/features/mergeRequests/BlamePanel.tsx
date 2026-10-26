@@ -1,71 +1,131 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
+import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 
 import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import { openGitLabUrl } from '../../lib/gitlab'
-import type { BlameQuery, CommitMergeRequestsQuery } from '../../types/gitlab'
+import type { BlameBlock, BlameQuery, CommitMergeRequestsQuery } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { blameAttributions, blameWindowStart, BLAME_WINDOW, type BlameAttribution } from './blameLines'
+import type { ParsedLine } from './diffParser'
 
-const BLAME_WINDOW = 80
-const MAX_LINE = 1_000_000
-const clampLine = (value: number) => Math.max(1, Math.min(MAX_LINE, Math.floor(value) || 1))
+type Side = 'old' | 'new'
+interface BlameSide {
+  map: ReadonlyMap<number, BlameAttribution>
+  start: number | null
+  /** No historical SHA means attribution must not be guessed from the other revision. */
+  available: boolean
+  loading: boolean
+  failed: boolean
+  loaded: boolean
+}
+interface BlameContextValue {
+  old: BlameSide
+  new: BlameSide
+  select: (side: Side, line: number, attribution: BlameAttribution, anchorEl: HTMLElement) => void
+  request: (side: Side, line: number) => void
+}
+const BlameContext = createContext<BlameContextValue | null>(null)
 
-/** Bounded revision-specific blame; the related MR API is called only on selection. */
-export function BlamePanel({ anchorLine, path, projectId, sessionId, sha }: { anchorLine: number; path: string; projectId: string; sessionId: string; sha: string }) {
-  const [start, setStart] = useState(() => clampLine(anchorLine))
-  const [input, setInput] = useState(() => String(clampLine(anchorLine)))
-  const [commit, setCommit] = useState<string | null>(null)
+/** Fetch only when the user enables Blame. Each side uses the correct Git SHA
+ * and file path; the code itself is rendered exclusively by the diff viewer. */
+export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, projectId, sessionId, sha }: {
+  beforeSha?: string
+  children: ReactNode
+  lines: ParsedLine[]
+  newPath: string
+  oldPath: string
+  projectId: string
+  sessionId: string
+  sha: string
+}) {
+  const [requested, setRequested] = useState<{ old: number | null; new: number | null }>({ old: null, new: null })
+  const [selection, setSelection] = useState<{ anchor: HTMLElement; block: BlameBlock; line: number; side: Side } | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
-  const end = Math.min(MAX_LINE, start + BLAME_WINDOW - 1)
-  const query = useMemo<BlameQuery>(() => ({ kind: 'blame', path, projectId, sha, startLine: start, endLine: end }), [end, path, projectId, sha, start])
-  const result = useGitLabQuery(sessionId, query)
-  const relatedQuery = useMemo<CommitMergeRequestsQuery | null>(() => commit ? { kind: 'commitMergeRequests', projectId, sha: commit } : null, [commit, projectId])
+
+  const firstNew = lines.find((line) => line.newLine !== undefined)?.newLine
+  const firstOld = lines.find((line) => line.oldLine !== undefined)?.oldLine
+  const newStart = requested.new ?? (firstNew !== undefined ? blameWindowStart(firstNew) : null)
+  const oldStart = requested.old ?? (firstOld !== undefined ? blameWindowStart(firstOld) : null)
+  const newQuery: BlameQuery | null = newStart !== null && newPath
+    ? { kind: 'blame', projectId, path: newPath, sha, startLine: newStart, endLine: newStart + BLAME_WINDOW - 1 }
+    : null
+  const oldQuery: BlameQuery | null = beforeSha && oldStart !== null && oldPath
+    ? { kind: 'blame', projectId, path: oldPath, sha: beforeSha, startLine: oldStart, endLine: oldStart + BLAME_WINDOW - 1 }
+    : null
+  const current = useGitLabQuery(sessionId, newQuery)
+  const previous = useGitLabQuery(sessionId, oldQuery)
+  const newMap = useMemo(() => current.data && newStart !== null ? blameAttributions(current.data, newStart) : new Map<number, BlameAttribution>(), [current.data, newStart])
+  const oldMap = useMemo(() => previous.data && oldStart !== null ? blameAttributions(previous.data, oldStart) : new Map<number, BlameAttribution>(), [previous.data, oldStart])
+
+  const relatedQuery: CommitMergeRequestsQuery | null = selection
+    ? { kind: 'commitMergeRequests', projectId, sha: selection.block.commitId }
+    : null
   const related = useGitLabQuery(sessionId, relatedQuery)
-  const groups = useMemo(() => (result.data ?? []).map((block, index, blocks) => ({
-    ...block,
-    from: start + blocks.slice(0, index).reduce((count, previous) => count + previous.lines.length, 0),
-  })), [result.data, start])
-  const jump = () => {
-    const value = Number(input)
-    const next = Number.isFinite(value) ? clampLine(value) : start
-    setStart(next)
-    setInput(String(next))
-    setCommit(null)
+
+  const value: BlameContextValue = {
+    old: { available: Boolean(beforeSha), failed: Boolean(previous.error), loaded: Boolean(previous.data), loading: previous.loading, map: oldMap, start: oldStart },
+    new: { available: true, failed: Boolean(current.error), loaded: Boolean(current.data), loading: current.loading, map: newMap, start: newStart },
+    request: (side, line) => {
+      setRequested((prev) => ({ ...prev, [side]: blameWindowStart(line) }))
+    },
+    select: (side, line, attribution, anchor) => {
+      setSelection({ anchor, block: attribution.block, line, side })
+      setOpenError(null)
+    },
   }
-  return <Box aria-label="Blameの行履歴" component="section" sx={{ bgcolor: 'surface.raised', borderBottom: 1, borderColor: 'divider', px: 1.5, py: 1 }}>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
-      <Typography sx={{ fontWeight: 600 }} variant="subtitle2">Blame · {start}〜{end}行</Typography>
-      <Box component="form" onSubmit={(event) => { event.preventDefault(); jump() }} sx={{ alignItems: 'center', display: 'flex', gap: 0.5, ml: 'auto' }}>
-        <TextField label="開始行" onChange={(event) => setInput(event.target.value)} size="small" slotProps={{ htmlInput: { min: 1, max: MAX_LINE, 'aria-label': 'Blameの開始行' } }} sx={{ maxWidth: 120 }} type="number" value={input} />
-        <Button size="small" type="submit" variant="outlined">移動</Button>
-      </Box>
-    </Stack>
-    {result.loading && !result.data ? <Typography role="status" variant="caption">Blameを読み込み中…</Typography> : null}
-    {result.error ? <Alert severity={result.data ? 'warning' : 'error'}>{result.error.message}</Alert> : null}
-    {groups.length === 0 && result.data ? <Typography color="textSecondary" variant="body2">この範囲の履歴はありません。</Typography> : null}
-    <Stack spacing={0.5} sx={{ maxHeight: 350, overflowY: 'auto' }}>
-      {groups.map((group, index) => <Box component="section" key={`${group.commitId}:${index}`} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', flexWrap: 'wrap', px: 1, py: 0.5 }}>
-          <Button aria-pressed={commit === group.commitId} onClick={() => setCommit((current) => current === group.commitId ? null : group.commitId)} size="small">{shortSha(group.commitId)} · 関連MR</Button>
-          <Typography variant="caption">{group.authorName || '作成者不明'}</Typography>
-          <Typography color="textSecondary" title={group.committedAt ? formatAbsoluteTime(group.committedAt) : undefined} variant="caption">{group.committedAt ? formatAbsoluteTime(group.committedAt) : '日時不明'}</Typography>
-          <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 100 }} title={group.title} variant="caption">{group.title}</Typography>
+
+  return <BlameContext.Provider value={value}>
+    {children}
+    <Popover anchorEl={selection?.anchor} anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }} onClose={() => setSelection(null)} open={Boolean(selection)} slotProps={{ paper: { sx: { maxWidth: 420, p: 1.5, width: 'min(420px, calc(100vw - 24px))' } } }}>
+      {selection ? <Box aria-label="Blameのコミット詳細" role="dialog">
+        <Stack spacing={0.75}>
+          <Typography sx={{ fontWeight: 700 }} variant="subtitle2">{shortSha(selection.block.commitId)} · {selection.block.authorName || '作成者不明'}</Typography>
+          <Typography color="textSecondary" variant="caption">{selection.side === 'old' ? '変更前' : '変更後'}の{selection.line}行 · {selection.block.committedAt ? formatAbsoluteTime(selection.block.committedAt) : '日時不明'}</Typography>
+          <Typography sx={{ overflowWrap: 'anywhere' }} variant="body2">{selection.block.title || 'コミットメッセージなし'}</Typography>
+          <Divider />
+          <Typography color="textSecondary" variant="caption">関連MR</Typography>
+          {related.loading && !related.data ? <Typography variant="caption">読み込み中…</Typography> : null}
+          {related.error ? <Alert severity="warning">関連MRを取得できませんでした: {related.error.message}</Alert> : null}
+          {related.data?.length === 0 ? <Typography color="textSecondary" variant="caption">関連MRは見つかりませんでした。</Typography> : null}
+          {(related.data ?? []).map((mr) => <Button key={`${mr.projectId}:${mr.iid}`} onClick={() => void openGitLabUrl(sessionId, mr.webUrl).catch((error: unknown) => setOpenError(error instanceof Error ? error.message : 'MRを開けませんでした'))} size="small" sx={{ alignSelf: 'flex-start', justifyContent: 'flex-start', textAlign: 'left' }}>!{mr.iid} {mr.title}</Button>)}
+          {openError ? <Alert severity="warning">{openError}</Alert> : null}
         </Stack>
-        <Box sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', lineHeight: '20px', overflowX: 'auto', p: 0.5 }}>{group.lines.map((line, offset) => <Box component="div" key={offset} sx={{ whiteSpace: 'pre' }}><Box component="span" sx={{ color: 'text.secondary', display: 'inline-block', mr: 1, textAlign: 'right', userSelect: 'none', width: 40 }}>{group.from + offset}</Box>{line}</Box>)}</Box>
-      </Box>)}
-    </Stack>
-    {commit ? <Box sx={{ mt: 1 }}>
-      <Typography sx={{ fontWeight: 600 }} variant="caption">{shortSha(commit)}に関連するMR</Typography>
-      {related.loading && !related.data ? <Typography color="textSecondary" role="status" variant="caption"> 取得中…</Typography> : null}
-      {related.error ? <Alert severity="warning">関連MRを取得できませんでした: {related.error.message}</Alert> : null}
-      {related.data?.length === 0 ? <Typography color="textSecondary" variant="body2">関連MRは特定できませんでした。</Typography> : null}
-      {(related.data ?? []).map((mr) => <Box key={`${mr.projectId}:${mr.iid}`}><Button onClick={() => void openGitLabUrl(sessionId, mr.webUrl).catch((err: unknown) => setOpenError(err instanceof Error ? err.message : 'MRを開けませんでした。'))} size="small">!{mr.iid} {mr.title}</Button><Typography color="textSecondary" component="span" variant="caption"> · {mr.state}</Typography></Box>)}
-      {openError ? <Alert onClose={() => setOpenError(null)} severity="warning">{openError}</Alert> : null}
-    </Box> : null}
-  </Box>
+      </Box> : null}
+    </Popover>
+  </BlameContext.Provider>
+}
+
+/** A narrow gutter within the actual diff row, not a second code viewer. */
+export function BlameCell({ line, side }: { line?: number; side: Side }) {
+  const context = useContext(BlameContext)
+  if (!context || line === undefined) return <span className="blame-cell" />
+  const state = context[side]
+  if (!state.available) return <span aria-label="このリビジョンの変更前の履歴はありません" className="blame-cell">—</span>
+  const inWindow = state.start !== null && line >= state.start && line < state.start + BLAME_WINDOW
+  const attribution = inWindow ? state.map.get(line) : undefined
+  const buttonLabel = attribution
+    ? `${line}行のBlame: ${shortSha(attribution.block.commitId)} ${attribution.block.authorName}`
+    : `${line}行のBlameを取得`
+  const display = attribution
+    ? attribution.first ? shortSha(attribution.block.commitId) : '│'
+    : inWindow && state.loading ? '…' : inWindow && state.failed ? '!' : inWindow && state.loaded ? '—' : '…'
+  const title = attribution
+    ? `${shortSha(attribution.block.commitId)} · ${attribution.block.authorName} · ${attribution.block.title}`
+    : state.failed && inWindow ? '取得に失敗しました' : 'この行の履歴を取得'
+  return <span className="blame-cell" data-side={side}>
+    <button aria-label={buttonLabel} className="blame-action" onClick={(event) => {
+      event.stopPropagation()
+      if (attribution) context.select(side, line, attribution, event.currentTarget)
+      else context.request(side, line)
+    }} title={title} type="button">
+      {display}
+    </button>
+    {attribution?.first ? <span className="blame-author" title={attribution.block.authorName}>{attribution.block.authorName}</span> : null}
+  </span>
 }
