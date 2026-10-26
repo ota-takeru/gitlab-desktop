@@ -105,15 +105,15 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const diffKey = selectedDiff ? `${displayedPath}\0${selectedDiff.diff}\0${whitespaceIgnored}` : ''
   const markdownDiff = Boolean(displayedPath && isMarkdownFilePath(displayedPath))
   const [markdownMode, setMarkdownMode] = useState<{ key: string; mode: 'preview' | 'source' } | null>(null)
+  const [diffSearch, setDiffSearch] = useState('')
   const positionKey = selectedPosition ? `${selectedPosition.newPath}:${selectedPosition.oldPath}:${selectedPosition.oldLine ?? ''}:${selectedPosition.newLine ?? ''}` : ''
   const markdownModeKey = `${diffKey}\0${positionKey}`
   const commentTargetsFile = Boolean(selectedPosition && displayedPath && (selectedPosition.newPath === displayedPath || selectedPosition.oldPath === displayedPath))
   // An incoming line-comment link opens the source diff; normal Markdown files
   // open a rendered, change-only preview. Explicit mode choices take precedence.
-  const renderedMarkdownDiff = markdownDiff && parsed.status === 'valid'
+  const renderedMarkdownDiff = markdownDiff && parsed.status === 'valid' && !diffSearch.trim()
     && (markdownMode?.key === markdownModeKey ? markdownMode.mode === 'preview' : !commentTargetsFile)
   const selectedLineIndex = useMemo(() => parsed.status === 'valid' && selectedPosition ? displayLines.findIndex((line) => matchesPosition(line, selectedPosition)) : -1, [displayLines, parsed.status, selectedPosition])
-  const [diffSearch, setDiffSearch] = useState('')
   const [fileSearch, setFileSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState<{ query: string; path: string; lineIndex: number } | null>(null)
   // Parse and lowercase the whole page only while searching, and only once per
@@ -462,7 +462,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup> : null}
             {canBlame && view === 'diff' ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
-            {view === 'diff' && markdownDiff && parsed.status === 'valid' ? <Button aria-label={renderedMarkdownDiff ? 'Markdown差分のソースを表示' : 'Markdown差分をプレビュー表示'} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? 'ソース差分' : 'Markdownプレビュー'}</Button> : null}
+            {view === 'diff' && markdownDiff && parsed.status === 'valid' && !diffSearch.trim() ? <Button aria-label={renderedMarkdownDiff ? 'Markdown差分のソースを表示' : 'Markdown差分をプレビュー表示'} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? 'ソース差分' : 'Markdownプレビュー'}</Button> : null}
              {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
               <ToggleButton value="diff">差分</ToggleButton>
               <ToggleButton value="file">ファイル全体</ToggleButton>

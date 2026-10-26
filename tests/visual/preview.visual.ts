@@ -70,7 +70,7 @@ test('preview Markdown review diff with rendered, colored changed text only', as
   await expect(preview.getByText('Unrelated background')).toHaveCount(0)
   await expect(preview.locator('[data-kind="add"]').first()).toBeVisible()
   await expect(preview.locator('[data-kind="remove"]').first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '差分' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '差分', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.screenshot({ path: testInfo.outputPath('07-markdown-review-diff.png'), animations: 'disabled' })
 
   await page.getByRole('button', { name: 'Markdown差分のソースを表示' }).click()
