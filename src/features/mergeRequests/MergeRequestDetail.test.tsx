@@ -860,8 +860,8 @@ describe('stepping through unresolved threads', () => {
       detailMocks.diffPages = { 1: [file('README.md'), file('src/example.ts'), file('lib/z.ts')] }
       detailMocks.discussions[1] = [thread('readme', 'README.md', 1, 'りーどみー'), thread('example', 'src/example.ts', 2, 'えぐざんぷる'), thread('z', 'lib/z.ts', 1, 'ぜっと')]
       renderDetail('changes')
-      // README.md opens rendered; the unresolved-thread shortcut switches to the diff.
-      expect((await screen.findByRole('button', { name: 'ファイル全体' }))).toHaveAttribute('aria-pressed', 'true')
+      // README.md opens a changed-section preview; a thread shortcut opens its source line.
+      expect((await screen.findByRole('button', { name: '差分' }))).toHaveAttribute('aria-pressed', 'true')
 
       fireEvent.keyDown(document.body, { key: 'n' })
       await waitFor(() => expect(focusedThread()).toBe('z'))

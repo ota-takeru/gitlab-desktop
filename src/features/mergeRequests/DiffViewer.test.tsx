@@ -508,7 +508,7 @@ describe('Markdown rendered diff presentation', () => {
     expect(within(preview).getByRole('region', { name: '追加 2行' })).toHaveAttribute('data-kind', 'add')
     expect(screen.queryByTestId('diff-line')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Markdown差分のソースを表示' }))
-    expect(screen.getAllByTestId('diff-line')).toHaveLength(4)
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(5)
     expect(screen.getByRole('button', { name: 'Markdown差分をプレビュー表示' })).toBeInTheDocument()
   })
 
