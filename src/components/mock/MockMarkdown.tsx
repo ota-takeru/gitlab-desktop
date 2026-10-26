@@ -9,6 +9,8 @@ import { emojiForName, useEmojiCatalog, type EmojiCatalog } from '../../lib/awar
 import { remarkGitLabReferences, resolveMarkdownUrl, type MarkdownLinkBase } from '../../lib/markdownLinks'
 import { useMarkdownLinks } from '../MarkdownLinks'
 import { markdownBodySx } from '../markdownBodySx'
+import { rehypeReviewDiff } from '../../lib/markdownReview'
+import type { FullFileDiffAnnotations } from '../../features/mergeRequests/fullFileAnnotations'
 import { useGitLabImage } from '../../features/shared/useGitLabImage'
 
 interface MarkdownNode { type: string; value?: string; children?: MarkdownNode[] }
@@ -48,10 +50,11 @@ const components: Components = {
 const parsedBodies = new Map<string, ReactElement>()
 const MAX_PARSED_BODIES = 2000
 
-function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: MarkdownLinkBase): ReactElement {
+function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: MarkdownLinkBase, review?: FullFileDiffAnnotations): ReactElement {
   // Bodies parsed before the emoji list loaded only know the common emoji, so they are kept apart;
   // so are bodies from different projects, whose references point elsewhere.
-  const key = `${catalog ? 'emoji' : 'common'}\n${base.instanceUrl ?? ''}\n${base.projectUrl ?? ''}\n${body}`
+  const reviewKey = review ? `${[...review.addedLines].join(',')}|${[...review.removedByAnchor.values()].flat().map((item) => `${item.anchorLine}:${item.oldStart}:${item.text}`).join('|')}` : ''
+  const key = `${catalog ? 'emoji' : 'common'}\n${base.instanceUrl ?? ''}\n${base.projectUrl ?? ''}\n${reviewKey}\n${body}`
   const cached = parsedBodies.get(key)
   if (cached) {
     parsedBodies.delete(key)
@@ -61,15 +64,15 @@ function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: Markdow
   const remarkPlugins = [remarkGfm, remarkGitLabEmoji(catalog), remarkGitLabReferences(base)]
   const urlTransform = (url: string) => resolveMarkdownUrl(url, base)
   // `Markdown` is synchronous and uses no hooks, so its output can be kept and reused.
-  const parsed = Markdown({ children: body, components, remarkPlugins, skipHtml: true, urlTransform })
+  const parsed = Markdown({ children: body, components, rehypePlugins: review ? [rehypeReviewDiff(review)] : [], remarkPlugins, skipHtml: true, urlTransform })
   parsedBodies.set(key, parsed)
   if (parsedBodies.size > MAX_PARSED_BODIES) parsedBodies.delete(parsedBodies.keys().next().value!)
   return parsed
 }
 
 /** A local preview of basic Markdown, GitLab emoji and references; other GitLab-specific commands are not executed. */
-export const MockMarkdown = memo(function MockMarkdown({ body, size = 'body2' }: { body: string; size?: 'body1' | 'body2' }) {
+export const MockMarkdown = memo(function MockMarkdown({ body, review, size = 'body2' }: { body: string; review?: FullFileDiffAnnotations; size?: 'body1' | 'body2' }) {
   const { catalog } = useEmojiCatalog()
   const { instanceUrl, projectUrl } = useMarkdownLinks()
-  return <Box sx={markdownBodySx(size)}>{parseMarkdown(body, catalog, { instanceUrl, projectUrl })}</Box>
+  return <Box sx={markdownBodySx(size)}>{parseMarkdown(body, catalog, { instanceUrl, projectUrl }, review)}</Box>
 })
