@@ -56,3 +56,24 @@ test('preview Blame inside both sides of a split diff', async ({ page }, testInf
   await expect(page.getByRole('region', { name: 'Blameの行履歴' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('06-blame-split.png'), animations: 'disabled' })
 })
+
+test('preview Markdown review diff with rendered, colored changed text only', async ({ page }, testInfo) => {
+  await page.goto(`${root}#client/mrs?reviewer=self&state=opened&mr=101-37`)
+  await page.getByRole('tab', { name: '変更' }).click()
+  await page.getByRole('button', { name: /docs\/review-guide\.md/ }).first().click()
+
+  const preview = page.getByRole('region', { name: 'Markdown差分プレビュー' })
+  await expect(preview).toBeVisible()
+  await expect(preview.getByRole('heading', { name: 'Fast review' })).toBeVisible()
+  await expect(preview.getByText('Review only')).toBeVisible()
+  await expect(preview.getByText('Manual review')).toBeVisible()
+  await expect(preview.getByText('Unrelated background')).toHaveCount(0)
+  await expect(preview.locator('[data-kind="add"]').first()).toBeVisible()
+  await expect(preview.locator('[data-kind="remove"]').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: '差分' })).toHaveAttribute('aria-pressed', 'true')
+  await page.screenshot({ path: testInfo.outputPath('07-markdown-review-diff.png'), animations: 'disabled' })
+
+  await page.getByRole('button', { name: 'Markdown差分のソースを表示' }).click()
+  await expect(page.getByTestId('diff-line').first()).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Markdown差分プレビュー' })).toHaveCount(0)
+})
