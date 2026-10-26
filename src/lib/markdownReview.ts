@@ -20,8 +20,8 @@ function removedElement(item: RemovedFileLines): ReviewNode {
     type: 'element', tagName: 'div',
     properties: { 'data-review-deleted': 'true', 'data-file-anchor': String(item.anchorLine), 'aria-label': `変更前の削除 ${numbers}行` },
     children: [
-      { type: 'element', tagName: 'strong', children: [text(`− 削除された内容（旧版 ${numbers}行）`)] },
-      { type: 'element', tagName: 'pre', children: [text(item.text)] },
+      { type: 'element', tagName: 'strong', properties: {}, children: [text(`− 削除された内容（旧版 ${numbers}行）`)] },
+      { type: 'element', tagName: 'pre', properties: {}, children: [text(item.text)] },
     ],
   }
 }
