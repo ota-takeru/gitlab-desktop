@@ -34,9 +34,11 @@ const BlameContext = createContext<BlameContextValue | null>(null)
 
 /** Fetch only when the user enables Blame. Each side uses the correct Git SHA
  * and file path; the code itself is rendered exclusively by the diff viewer. */
-export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, projectId, sessionId, sha }: {
+export function BlameProvider({ beforeSha, children, initialNewLine, lines, newPath, oldPath, projectId, sessionId, sha }: {
   beforeSha?: string
   children: ReactNode
+  /** File-view attribution starts at the visible source line, not line 1. */
+  initialNewLine?: number
   lines: ParsedLine[]
   newPath: string
   oldPath: string
@@ -48,7 +50,7 @@ export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, pr
   const [selection, setSelection] = useState<{ anchor: HTMLElement; block: BlameBlock; line: number; side: Side } | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
 
-  const firstNew = lines.find((line) => line.newLine !== undefined)?.newLine
+  const firstNew = initialNewLine ?? lines.find((line) => line.newLine !== undefined)?.newLine
   const firstOld = lines.find((line) => line.oldLine !== undefined)?.oldLine
   const newStart = requested.new ?? (firstNew !== undefined ? blameWindowStart(firstNew) : null)
   const oldStart = requested.old ?? (firstOld !== undefined ? blameWindowStart(firstOld) : null)
