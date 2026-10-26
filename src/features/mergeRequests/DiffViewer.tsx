@@ -32,6 +32,7 @@ import { BlameCell, BlameProvider } from './BlamePanel'
 import { MarkdownDiffPreview } from './MarkdownDiffPreview'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
+import { annotateFullFile, filePageStart, firstChangedFileLine, type RemovedFileLines } from './fullFileAnnotations'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
@@ -867,38 +868,92 @@ function highlightDiffLines(lines: ParsedLine[], language: string | null): Synta
   return result
 }
 
-export function FullFileView({ content, language, loading, path }: { content?: string | null; language: string | null; loading: boolean; path?: string | null }) {
+function RemovedFullFileLines({ item }: { item: RemovedFileLines }) {
+  const label = item.oldStart === item.oldEnd ? String(item.oldStart) : `${item.oldStart}〜${item.oldEnd}`
+  return <Box aria-label={`旧版の削除 ${label}行`} data-file-anchor={item.anchorLine} data-testid="file-deletion" sx={(theme) => ({
+    bgcolor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 0.5, px: 1.5, py: 0.5,
+  })}>
+    <Typography sx={{ fontWeight: 600 }} variant="caption">− 旧版で削除 · {label}行</Typography>
+    <Typography component="pre" sx={{ fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', m: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{item.text}</Typography>
+  </Box>
+}
+
+export function FullFileView({ content, diffLines, language, loading, path, targetLine }: { content?: string | null; diffLines?: ParsedLine[]; language: string | null; loading: boolean; path?: string | null; targetLine?: number }) {
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
-  const [filePaging, setFilePaging] = useState({ contentKey: '', offset: 0 })
-  const [showSource, setShowSource] = useState(false)
+  const focus = targetLine ?? 0
   const markdown = isMarkdownFilePath(path)
-  const offset = filePaging.contentKey === contentKey ? filePaging.offset : 0
+  const annotations = useMemo(() => content !== null && content !== undefined && diffLines && diffLines.length ? annotateFullFile(diffLines, content) : null, [content, diffLines])
+  const changeMarkers = annotations?.consistent ? annotations : null
+  const firstOffset = targetLine ? filePageStart(targetLine, lines.length, FILE_PAGE_SIZE) : 0
+  const [filePaging, setFilePaging] = useState({ contentKey: '', focus: 0, offset: 0 })
+  const [showSource, setShowSource] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const lastPositioned = useRef<{ content: string | null | undefined; line: number; source: boolean } | null>(null)
+  const offset = filePaging.contentKey === contentKey && filePaging.focus === focus ? filePaging.offset : firstOffset
   const updateOffset = (update: (current: number) => number): void => {
     setFilePaging((current) => {
-      const currentOffset = current.contentKey === contentKey ? current.offset : 0
-      return { contentKey, offset: update(currentOffset) }
+      const currentOffset = current.contentKey === contentKey && current.focus === focus ? current.offset : firstOffset
+      return { contentKey, focus, offset: update(currentOffset) }
     })
   }
-
   const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
-  // Avoid tokenizing large Markdown files when their rendered view is active.
   const visibleTokens = useMemo(() => markdown && !showSource ? [] : highlightLines(visibleLines, language), [language, markdown, showSource, visibleLines])
+
+  useLayoutEffect(() => {
+    if (!content || !targetLine || !rootRef.current) return
+    const previous = lastPositioned.current
+    if (previous?.content === content && previous.line === targetLine && previous.source === showSource) return
+    const candidates = Array.from(rootRef.current.querySelectorAll<HTMLElement>('[data-file-line], [data-file-anchor], [data-source-start]'))
+    const rank = (element: HTMLElement): number => {
+      const exactLine = Number(element.dataset.fileLine)
+      const removalAnchor = Number(element.dataset.fileAnchor)
+      if (exactLine === targetLine || removalAnchor === targetLine) return 0
+      const start = Number(element.dataset.sourceStart)
+      const end = Number(element.dataset.sourceEnd)
+      if (start > 0 && end >= start && start <= targetLine && targetLine <= end) return (end - start + 1) / 1000
+      const nearest = exactLine || removalAnchor || start
+      return nearest > 0 ? 1 + Math.abs(nearest - targetLine) : Number.POSITIVE_INFINITY
+    }
+    const target = candidates.reduce<HTMLElement | null>((best, element) => !best || rank(element) < rank(best) ? element : best, null)
+    if (target) {
+      lastPositioned.current = { content, line: targetLine, source: showSource }
+      target.scrollIntoView?.({ behavior: 'auto', block: 'center' })
+    }
+  }, [content, markdown, offset, showSource, targetLine])
 
   if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
 
-  return <>
+  return <Box ref={rootRef}>
     {markdown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
       <Button aria-label={showSource ? 'Markdownをレンダリング' : 'Markdownのソースを表示'} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? 'Markdown表示' : 'ソース表示'}</Button>
     </Box> : null}
+    {annotations && !annotations.consistent ? <Typography color="warning.main" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">取得したファイルと差分の行が一致しないため、変更箇所の色付けを省略しています。</Typography> : null}
     {!content ? <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
-      : markdown && !showSource ? <Box aria-label="Markdownプレビュー" sx={{ minWidth: 0, px: 2, py: 1.5 }}><MockMarkdown body={content} size="body1" /></Box>
+      : markdown && !showSource ? <Box aria-label="Markdownプレビュー" sx={(theme) => ({
+          minWidth: 0, px: 2, py: 1.5,
+          '& [data-review-change="add"]': { backgroundColor: theme.palette.diff?.addedBackground, boxShadow: `inset 3px 0 0 ${theme.palette.success.main}`, borderRadius: 1, px: 0.5 },
+          '& [data-review-deleted="true"]': { backgroundColor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 1, px: 1.5, py: 1 },
+          '& [data-review-deleted="true"] pre': { fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', mb: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' },
+        })}><MockMarkdown body={content} review={changeMarkers ?? undefined} size="body1" /></Box>
         : <>
           <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
-          <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
+          <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => {
+            const fileLine = offset + index + 1
+            const additions = changeMarkers?.addedLines.has(fileLine)
+            return <Fragment key={fileLine}>
+              {(changeMarkers?.removedByAnchor.get(fileLine) ?? []).map((item, removedIndex) => <RemovedFullFileLines item={item} key={`${item.oldStart}:${removedIndex}`} />)}
+              <Stack data-change={additions ? 'add' : undefined} data-file-line={fileLine} data-testid="file-line" direction="row" sx={(theme) => ({
+                backgroundColor: additions ? theme.palette.diff?.addedBackground : undefined,
+                boxShadow: additions ? `inset 3px 0 0 ${theme.palette.success.main}` : undefined, minHeight: 22,
+              })}><Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>
+            </Fragment>
+          })}
+          {offset + visibleLines.length >= lines.length ? (changeMarkers?.removedByAnchor.get(lines.length + 1) ?? []).map((item, index) => <RemovedFullFileLines item={item} key={`last:${item.oldStart}:${index}`} />) : null}
+          </Box>
         </>}
-  </>
+  </Box>
 }
 
 function matchesPosition(line: ParsedLine, position: Position | undefined): boolean {
