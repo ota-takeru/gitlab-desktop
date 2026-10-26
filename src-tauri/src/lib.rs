@@ -121,6 +121,14 @@ async fn get_gitlab_avatar(
     state.native()?.avatar(session_id, url).await
 }
 #[tauri::command]
+async fn get_gitlab_image(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    url: String,
+) -> Result<Option<String>, AppError> {
+    state.native()?.markdown_image(session_id, url).await
+}
+#[tauri::command]
 fn open_gitlab_url(
     state: tauri::State<'_, ApplicationState>,
     session_id: String,
@@ -362,6 +370,7 @@ pub fn run() {
             open_external_url,
             open_token_creation_page,
             get_gitlab_avatar,
+            get_gitlab_image,
             get_local_draft,
             set_local_draft,
             clear_local_drafts,

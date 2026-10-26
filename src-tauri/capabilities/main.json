@@ -22,6 +22,7 @@
     "allow-open-external-url",
     "allow-open-token-creation-page",
     "allow-get-gitlab-avatar",
+    "allow-get-gitlab-image",
     "allow-check-app-update",
     "allow-download-app-update",
     "allow-install-app-update",
