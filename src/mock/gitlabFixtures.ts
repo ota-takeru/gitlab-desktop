@@ -192,7 +192,8 @@ function toFixtureMergeRequest(mock: MockMergeRequest, now: number): FixtureMerg
   const allFiles = [...mock.files, ...getMockCommitsForMergeRequest(mock.id).flatMap((commit) => commit.files)]
   return {
     approvedBy: others.slice(0, mock.approvals),
-    commits: getMockCommitsForMergeRequest(mock.id).map((commit) => ({
+    commits: getMockCommitsForMergeRequest(mock.id).map((commit, index, history) => ({
+      parentIds: [index > 0 ? sha(history[index - 1].sha) : sha('ba5e')],
       createdAt: fixtureTime(commit.date, now),
       diffs: commit.files.map(toDiff),
       id: sha(commit.sha),
