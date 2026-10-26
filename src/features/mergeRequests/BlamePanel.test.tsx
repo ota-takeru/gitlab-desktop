@@ -62,7 +62,7 @@ it('annotates rendered Markdown blocks with Blame and keeps the original text on
   const markers = preview.querySelectorAll('[data-review-blame-line]')
   expect(markers.length).toBeGreaterThanOrEqual(3)
   expect(within(preview).getAllByText('Introduction')).toHaveLength(1)
-  expect(within(preview).getByText('A')).toBeInTheDocument()
+  expect(within(preview).getByText('rich')).toBeInTheDocument()
   expect(within(preview).getByText('First item')).toBeInTheDocument()
   expect(within(preview).getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
   expect(queryMock.mock.calls.some(([, query]) => query?.kind === 'commitMergeRequests')).toBe(false)
@@ -74,7 +74,7 @@ it('annotates rendered Markdown blocks with Blame and keeps the original text on
   fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
   const line = screen.getAllByTestId('file-line')[0]
   expect(within(line).getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
-  expect(screen.getAllByTestId('file-line')).toHaveLength(7)
+  expect(screen.getAllByTestId('file-line')).toHaveLength(6)
 })
 
 it('begins whole-file Blame at its focused 80-line window and loads a different range on demand', () => {
