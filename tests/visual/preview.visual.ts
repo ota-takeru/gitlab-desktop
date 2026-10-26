@@ -77,3 +77,28 @@ test('preview Markdown review diff with rendered, colored changed text only', as
   await expect(page.getByTestId('diff-line').first()).toBeVisible()
   await expect(page.getByRole('region', { name: 'Markdown差分プレビュー' })).toHaveCount(0)
 })
+
+test('preview full-file Markdown annotations and keep the viewed diff section', async ({ page }, testInfo) => {
+  await page.goto(`${root}#client/mrs?reviewer=self&state=opened&mr=101-37`)
+  await page.getByRole('tab', { name: '変更' }).click()
+  await page.getByRole('button', { name: /docs\/review-guide\.md/ }).first().click()
+  const changeOnly = page.getByRole('region', { name: 'Markdown差分プレビュー' })
+  await expect(changeOnly).toBeVisible()
+  await changeOnly.getByRole('region', { name: '変更ブロック3' }).scrollIntoViewIfNeeded()
+
+  await page.getByRole('button', { name: 'ファイル全体' }).click()
+  const full = page.getByLabel('Markdownプレビュー')
+  await expect(full).toBeVisible()
+  await expect(full.getByText('Unrelated background')).toBeVisible()
+  await expect(full.locator('[data-review-change="add"]').first()).toBeVisible()
+  await expect(full.locator('[data-review-deleted="true"]').first()).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('08-markdown-full-file-highlights.png'), animations: 'disabled' })
+
+  await page.getByRole('button', { name: 'Markdownのソースを表示' }).click()
+  await expect(page.getByTestId('file-line').filter({ hasText: 'Fast review' })).toHaveAttribute('data-change', 'add')
+  await expect(page.getByTestId('file-deletion').first()).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('09-markdown-full-file-source-highlights.png'), animations: 'disabled' })
+
+  await page.getByRole('button', { name: '差分', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Markdown差分プレビュー' })).toBeVisible()
+})
