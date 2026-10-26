@@ -24,11 +24,13 @@ test('preview diff timeline, Blame and associated MR', async ({ page }, testInfo
   await expect(page.getByRole('button', { name: 'Blame' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('02-commit-timeline.png'), animations: 'disabled' })
   await page.getByRole('button', { name: 'Blame' }).click()
-  await expect(page.getByRole('region', { name: 'Blameの行履歴' })).toBeVisible()
-  await expect(page.getByText('Fixture commit')).toBeVisible()
-  await page.getByRole('button', { name: /関連MR/ }).first().click()
-  await expect(page.getByText('に関連するMR')).toBeVisible()
+  const gutter = page.locator('[data-side="new"] .blame-action').filter({ hasText: /^[0-9a-f]{8}$/ }).first()
+  await expect(gutter).toBeVisible()
+  await gutter.click()
+  await expect(page.getByRole('dialog', { name: 'Blameのコミット詳細' })).toBeVisible()
   await expect(page.getByRole('button', { name: /^!42 MR一覧の検索結果/ })).toBeVisible()
+  // A single diff viewer owns the code; the popover shows metadata only.
+  await expect(page.getByRole('region', { name: 'Blameの行履歴' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('03-blame-related-mr.png'), animations: 'disabled' })
 })
 
