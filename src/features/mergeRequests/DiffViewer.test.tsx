@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAppTheme } from '../../theme'
 import type { Diff, Position } from '../../types/gitlab'
 import { scopedKey } from '../shared/preferences'
-import { DIFF_PAGE_SIZE, FILE_PAGE_SIZE, DiffViewer } from './DiffViewer'
+import { DIFF_PAGE_SIZE, FILE_PAGE_SIZE, DiffViewer, FullFileView } from './DiffViewer'
 import { setFileReviewed, type ReviewedFileContext } from './useReviewedFiles'
 
 function renderViewer(diff: Diff, options: { fileContent?: string | null; selectedPosition?: Position; view?: 'diff' | 'file' } = {}) {
@@ -476,5 +476,19 @@ describe('DiffViewer multi-line comments and whitespace', () => {
     expect(screen.getByRole('button', { name: '空白の変更を無視' })).toHaveAttribute('aria-pressed', 'true')
     // Real changes stay changes while whitespace is ignored.
     expect(screen.getAllByTestId('diff-line').filter((row) => row.dataset.kind !== 'context')).toHaveLength(5)
+  })
+})
+
+describe('Markdown full-file preview', () => {
+  it('renders Markdown by default and allows inspecting the original source', () => {
+    render(<ThemeProvider theme={createAppTheme('light')}>
+      <FullFileView content={'# Example heading\n\n**important**'} language="markdown" loading={false} path="docs/guide.MD" />
+    </ThemeProvider>)
+    expect(screen.getByRole('heading', { name: 'Example heading' })).toBeInTheDocument()
+    expect(screen.queryByTestId('file-line')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
+    expect(screen.getAllByTestId('file-line').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Markdownをレンダリング' }))
+    expect(screen.getByRole('heading', { name: 'Example heading' })).toBeInTheDocument()
   })
 })

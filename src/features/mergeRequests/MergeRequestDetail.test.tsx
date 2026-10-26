@@ -25,6 +25,7 @@ const detailMocks = vi.hoisted(() => {
   return {
     commits: [] as { id: string; title: string }[],
     diff,
+    fileContent: null as string | null,
     /** Diff pages by page number, when a test needs more than the one file. */
     diffPages: null as Record<number, typeof diff[]> | null,
     discussion,
@@ -108,6 +109,7 @@ vi.mock('../shared/useGitLabQuery', () => ({
     if (query?.kind === 'mr') data = detailMocks.mergeRequest
     else if (query?.kind === 'discussions') data = detailMocks.discussions[query.page ?? 1] ?? []
     else if (query?.kind === 'diffs') data = detailMocks.diffPages?.[query.page ?? 1] ?? [detailMocks.diff]
+    else if (query?.kind === 'file') data = detailMocks.fileContent === null ? null : { content: detailMocks.fileContent }
     else if (query?.kind === 'users') data = query.search === 'al' ? detailMocks.users : []
     else if (query?.kind === 'drafts') data = detailMocks.drafts
     else if (query?.kind === 'commits') data = detailMocks.commits
@@ -341,6 +343,24 @@ describe('MergeRequestDetail tabs and description', () => {
     render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><Harness /></ThemeProvider></QueryClientProvider>)
     return onTabChange
   }
+
+  it('renders changed Markdown files on opening, while keeping the raw diff accessible', async () => {
+    const originalDiff = detailMocks.diff
+    detailMocks.diff = {
+      ...originalDiff,
+      oldPath: 'docs/guide.md',
+      newPath: 'docs/guide.md',
+      diff: '@@ -1,1 +1,1 @@\n-# Previous\n+# Rendered MR Markdown\n',
+    }
+    detailMocks.fileContent = '# Rendered MR Markdown\n\n**Important**'
+    onTestFinished(() => { detailMocks.diff = originalDiff; detailMocks.fileContent = null })
+    renderDetail('changes')
+    expect(await screen.findByRole('heading', { name: 'Rendered MR Markdown' })).toBeInTheDocument()
+    expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'file', path: 'docs/guide.md', projectId: '7' }))
+    fireEvent.click(screen.getByRole('button', { name: '差分' }))
+    expect(screen.getByRole('button', { name: '差分' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('heading', { name: 'Rendered MR Markdown' })).not.toBeInTheDocument()
+  })
 
   it('shows line comments under their diff line and opens the thread in the discussion tab', async () => {
     const onTabChange = renderDetail('changes')
