@@ -15,8 +15,11 @@ export function ProjectReadmePreview({ project, sessionId }: { project: Project;
   const treeQuery = useMemo<TreeQuery>(() => ({ kind: 'tree', projectId: project.id, path: '', page: 1 }), [project.id])
   const tree = useGitLabQuery(sessionId, treeQuery)
   const readme = chooseReadmeFile(tree.data ?? [])
-  const readmeId = readme?.id ?? null
-  const blobQuery = useMemo<BlobQuery | null>(() => readmeId ? { kind: 'blob', projectId: project.id, sha: readmeId } : null, [project.id, readmeId])
+  // The query cache keys its data by serialized parameters. No useMemo is
+  // needed here, avoiding stale dependencies when the selected README changes.
+  const blobQuery: BlobQuery | null = readme?.id
+    ? { kind: 'blob', projectId: project.id, sha: readme.id }
+    : null
   const blob = useGitLabQuery(sessionId, blobQuery)
   const markdown = Boolean(readme && (isMarkdownFilePath(readme.name) || /^readme$/iu.test(readme.name)))
   return <Box aria-label={`${project.name}のREADME`} component="section" sx={{ maxHeight: 440, overflow: 'auto', px: 1 }}>
