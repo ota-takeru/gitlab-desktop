@@ -26,14 +26,10 @@ export function BlamePanel({ anchorLine, path, projectId, sessionId, sha }: { an
   const result = useGitLabQuery(sessionId, query)
   const relatedQuery = useMemo<CommitMergeRequestsQuery | null>(() => commit ? { kind: 'commitMergeRequests', projectId, sha: commit } : null, [commit, projectId])
   const related = useGitLabQuery(sessionId, relatedQuery)
-  const groups = useMemo(() => {
-    let line = start
-    return (result.data ?? []).map((block) => {
-      const group = { ...block, from: line }
-      line += block.lines.length
-      return group
-    })
-  }, [result.data, start])
+  const groups = useMemo(() => (result.data ?? []).map((block, index, blocks) => ({
+    ...block,
+    from: start + blocks.slice(0, index).reduce((count, previous) => count + previous.lines.length, 0),
+  })), [result.data, start])
   const jump = () => {
     const value = Number(input)
     const next = Number.isFinite(value) ? clampLine(value) : start
