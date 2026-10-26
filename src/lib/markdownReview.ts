@@ -47,10 +47,26 @@ function labelBlocks(node: ReviewNode, added: ReadonlySet<number>, parent: strin
 
 /** Annotate actual rendered Markdown blocks by their source positions, while
  * inserting explicit old-version deletion markers near the surviving text. */
-export function rehypeReviewDiff(annotations: FullFileDiffAnnotations) {
+export function rehypeReviewDiff(annotations: FullFileDiffAnnotations, showBlame = false) {
   return () => (root: ReviewNode) => {
     for (const child of root.children ?? []) labelBlocks(child, annotations.addedLines, undefined)
-    if (!root.children || annotations.removedByAnchor.size === 0) return
+    if (!root.children) return
+    const withBlame = (node: ReviewNode): ReviewNode => {
+      const line = node.position?.start?.line
+      // Synthetic old-revision deletions have no line in the current file.
+      if (!showBlame || !line || node.type !== 'element' || node.properties?.['data-review-deleted']) return node
+      return {
+        type: 'element',
+        tagName: 'div',
+        properties: { 'data-review-blame-line': String(line) },
+        position: node.position,
+        children: [node],
+      }
+    }
+    if (annotations.removedByAnchor.size === 0) {
+      root.children = root.children.map(withBlame)
+      return
+    }
     const groups = [...annotations.removedByAnchor.values()].flat().sort((a,b)=>a.anchorLine-b.anchorLine)
     const updated: ReviewNode[] = []
     let next = 0
@@ -68,6 +84,6 @@ export function rehypeReviewDiff(annotations: FullFileDiffAnnotations) {
       updated.push(removedElement(groups[next]))
       next += 1
     }
-    root.children = updated
+    root.children = updated.map(withBlame)
   }
 }
