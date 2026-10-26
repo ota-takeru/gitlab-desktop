@@ -7,12 +7,12 @@ test.use({ viewport: { width: 1280, height: 840 }, colorScheme: 'light' })
 const root = '/?fixture=ready&theme=light'
 const mr = '#client/mrs?reviewer=self&state=opened&mr=101-42'
 
-test('preview README in project list', async ({ page }, testInfo) => {
+test('preview README on project overview', async ({ page }, testInfo) => {
   await page.goto(`${root}#client/projects`)
   const project = page.getByRole('button', { name: /Desktop Client（platform\/desktop-client）/ })
   await expect(project).toBeVisible()
-  await project.hover()
-  await page.getByRole('button', { name: 'Desktop ClientのREADMEを表示' }).click()
+  await project.click()
+  await expect(page.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('READMEプレビュー · README.md')).toBeVisible()
   await expect(page.getByText('主な機能')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('01-project-readme.png'), animations: 'disabled' })
