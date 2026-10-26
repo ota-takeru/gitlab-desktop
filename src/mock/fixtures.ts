@@ -155,6 +155,27 @@ const cancellationDiff: MockChangedFile = {
   ],
 }
 
+/** The README-like document used to visually check rendered, change-only Markdown diffs. */
+const markdownReviewDiff: MockChangedFile = {
+  path: 'docs/review-guide.md',
+  additions: 3,
+  deletions: 3,
+  fullContent: '# Review guide\n\n## **Fast review**\n\n- Review only **changed sections**\n- Keep reviewer notes\n\n[Review documentation](https://gitlab.example/docs/reviews)\n\n## Unrelated background\n\nThis long reference section is unchanged and must not appear in a diff preview.\n',
+  lines: [
+    { kind: 'context', oldLine: 1, newLine: 1, code: '# Review guide' },
+    { kind: 'context', oldLine: 2, newLine: 2, code: '' },
+    { kind: 'deletion', oldLine: 3, code: '## Manual review' },
+    { kind: 'addition', newLine: 3, code: '## **Fast review**' },
+    { kind: 'context', oldLine: 4, newLine: 4, code: '' },
+    { kind: 'deletion', oldLine: 5, code: '- Check changes line by line' },
+    { kind: 'addition', newLine: 5, code: '- Review only **changed sections**' },
+    { kind: 'context', oldLine: 6, newLine: 6, code: '- Keep reviewer notes' },
+    { kind: 'context', oldLine: 7, newLine: 7, code: '' },
+    { kind: 'deletion', oldLine: 8, code: 'Old review guide link' },
+    { kind: 'addition', newLine: 8, code: '[Review documentation](https://gitlab.example/docs/reviews)' },
+  ],
+}
+
 const secureStoreDiff: MockChangedFile = {
   path: 'src-tauri/src/credentials.rs',
   additions: 11,
@@ -446,7 +467,7 @@ export const mockMergeRequests: MockMergeRequest[] = [
     checksTotal: 21,
     approvals: 2,
     requiredApprovals: 2,
-    files: [secureStoreDiff],
+    files: [secureStoreDiff, markdownReviewDiff],
     discussions: discussionSet.secure,
   },
   {

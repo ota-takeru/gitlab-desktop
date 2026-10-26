@@ -365,8 +365,9 @@ it('opens the project screen from an MR and names where Back returns to', async 
 
   expect(await screen.findByRole('button', { name: '担当に戻る' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'group/project' }))
-  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject'))
-  expect(screen.getByRole('heading', { name: 'group/project' })).toBeInTheDocument()
+  await waitFor(() => expect(window.location.hash).toBe('#client/overview?projectId=42&projectName=group%2Fproject'))
+  expect(screen.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('heading', { name: 'group/projectの概要' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'プロジェクト' })).toHaveAttribute('aria-current', 'page')
   expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
 })

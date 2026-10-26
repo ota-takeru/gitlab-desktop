@@ -13,7 +13,7 @@ describe('offline full-file snapshots', () => {
       ...mockMergeRequests.flatMap((mergeRequest) => mergeRequest.files),
       ...mockMergeRequests.flatMap((mergeRequest) => getMockCommitsForMergeRequest(mergeRequest.id).flatMap((commit) => commit.files)),
     ]
-    expect(new Set(files.map((file) => file.path))).toHaveLength(8)
+    expect(new Set(files.map((file) => file.path))).toHaveLength(9)
     for (const file of files) {
       expect(file.fullContent).toEqual(expect.any(String))
       const lines = contentLines(file.fullContent ?? '')

@@ -28,7 +28,8 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/gitlab'
 import { DiffFileTree, FileThreadMark, fileTreeOrder } from './DiffFileTree'
 import { DiffGap, type GapExpansion } from './DiffGap'
-import { BlamePanel } from './BlamePanel'
+import { BlameCell, BlameProvider } from './BlamePanel'
+import { MarkdownDiffPreview } from './MarkdownDiffPreview'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
@@ -79,7 +80,7 @@ interface DiffViewerProps {
    * commit), to open unchanged lines between hunks. Without it they open only
    * from `fileContent`.
    */
-  fileSource?: { sessionId: string; projectId: string; sha: string }
+  fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string }
   /** Applying the suggestions in the threads shown under the lines. */
   suggestionActions?: SuggestionActions
 }
@@ -91,7 +92,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const displayedPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
   const [blameOpen, setBlameOpen] = useState(false)
-  const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.deletedFile && !selectedDiff.collapsed && !selectedDiff.tooLarge)
+  const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && (!selectedDiff.deletedFile || fileSource?.beforeSha))
   // GitLab's diff API has no whitespace option, so whitespace-only changes are folded here.
   const [whitespaceIgnored, setWhitespaceIgnored] = useState(readIgnoreWhitespace)
   const toggleWhitespace = () => {
@@ -102,9 +103,17 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const displayLines = folded?.lines ?? parsed.lines
   const whitespaceOnlyFile = Boolean(folded && !folded.changed && parsed.lines.some((line) => line.kind !== 'context'))
   const diffKey = selectedDiff ? `${displayedPath}\0${selectedDiff.diff}\0${whitespaceIgnored}` : ''
-  const positionKey = selectedPosition ? `${selectedPosition.newPath}:${selectedPosition.oldPath}:${selectedPosition.oldLine ?? ''}:${selectedPosition.newLine ?? ''}` : ''
-  const selectedLineIndex = useMemo(() => parsed.status === 'valid' && selectedPosition ? displayLines.findIndex((line) => matchesPosition(line, selectedPosition)) : -1, [displayLines, parsed.status, selectedPosition])
+  const markdownDiff = Boolean(displayedPath && isMarkdownFilePath(displayedPath))
+  const [markdownMode, setMarkdownMode] = useState<{ key: string; mode: 'preview' | 'source' } | null>(null)
   const [diffSearch, setDiffSearch] = useState('')
+  const positionKey = selectedPosition ? `${selectedPosition.newPath}:${selectedPosition.oldPath}:${selectedPosition.oldLine ?? ''}:${selectedPosition.newLine ?? ''}` : ''
+  const markdownModeKey = `${diffKey}\0${positionKey}`
+  const commentTargetsFile = Boolean(selectedPosition && displayedPath && (selectedPosition.newPath === displayedPath || selectedPosition.oldPath === displayedPath))
+  // An incoming line-comment link opens the source diff; normal Markdown files
+  // open a rendered, change-only preview. Explicit mode choices take precedence.
+  const renderedMarkdownDiff = markdownDiff && parsed.status === 'valid' && !diffSearch.trim()
+    && (markdownMode?.key === markdownModeKey ? markdownMode.mode === 'preview' : !commentTargetsFile)
+  const selectedLineIndex = useMemo(() => parsed.status === 'valid' && selectedPosition ? displayLines.findIndex((line) => matchesPosition(line, selectedPosition)) : -1, [displayLines, parsed.status, selectedPosition])
   const [fileSearch, setFileSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState<{ query: string; path: string; lineIndex: number } | null>(null)
   // Parse and lowercase the whole page only while searching, and only once per
@@ -167,9 +176,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
 
   // One array per page, so the split view's row pairing is not rebuilt on every render.
   const rows = useMemo(() => displayLines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, displayLines])
-  const blameAnchorLine = rows.find((line) => line.newLine !== undefined)?.newLine ?? 1
   const language = displayedPath ? languageForPath(displayedPath) : null
-  const rowTokens = useMemo(() => highlightDiffLines(rows, language), [language, rows])
+  const rowTokens = useMemo(() => renderedMarkdownDiff ? [] : highlightDiffLines(rows, language), [language, renderedMarkdownDiff, rows])
   const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
   const lineCounts = useMemo(() => ({ added: displayLines.filter((line) => line.kind === 'add').length, removed: displayLines.filter((line) => line.kind === 'remove').length }), [displayLines])
   const commentable = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
@@ -405,6 +413,12 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     }
   }
 
+  const diffContent = renderedMarkdownDiff
+    ? <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} />
+    : layout === 'split'
+    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+
   return (
     <Box ref={rootRef}>
       <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'flex-start', minHeight: 420 }}>
@@ -448,12 +462,12 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup> : null}
             {canBlame && view === 'diff' ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
+            {view === 'diff' && markdownDiff && parsed.status === 'valid' && !diffSearch.trim() ? <Button aria-label={renderedMarkdownDiff ? 'Markdown差分のソースを表示' : 'Markdown差分をプレビュー表示'} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? 'ソース差分' : 'Markdownプレビュー'}</Button> : null}
              {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
               <ToggleButton value="diff">差分</ToggleButton>
               <ToggleButton value="file">ファイル全体</ToggleButton>
             </ToggleButtonGroup> : null}
           </Stack>
-          {blameOpen && canBlame && view === 'diff' && fileSource && displayedPath ? <BlamePanel anchorLine={blameAnchorLine} key={`${fileSource.sha}:${displayedPath}`} path={displayedPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha} /> : null}
            {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
             <Tooltip describeChild placement="bottom-start" title="表示中の差分ページを検索します。他のページは対象外です。"><TextField
@@ -479,9 +493,9 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">古い議論は未取得のため、読み込み済みのコメントだけを表示しています。</Typography> : null}
             {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">取得済みの差分に一致する行はありません。</Typography> : null}
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={displayLines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, displayLines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
-            {layout === 'split'
-              ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
-              : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />}
+            {blameOpen && canBlame && fileSource && selectedDiff
+              ? <BlameProvider beforeSha={fileSource.beforeSha} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} lines={rows} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
+              : diffContent}
           </>}
         </Box>
       </Stack>
@@ -544,11 +558,12 @@ function dragOver(selection: LineSelection) {
   }
 }
 
-function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const skipped = diffGaps(lines, startIndex)
   // Opened unchanged lines: plain context rows, outside paging and search.
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
     <div className="diff-row" data-kind="context" data-testid="diff-opened-line">
+      {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
       <span className="diff-gutter"><span className="diff-number">{line.oldLine}</span><span className="diff-number">{line.newLine}</span></span>
       <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(openedTokens[index] ?? [{ text: line.text }], '')}</span>
     </div>
@@ -560,6 +575,10 @@ function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelec
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
       // Long code lines wrap, so the page stays the only scroll.
       '& .diff-rows': { minWidth: 0 },
+      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
+      '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
+      '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
+      '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
       '& .diff-row': { '--row-bg': theme.palette.background.paper, backgroundColor: 'var(--row-bg)', color: theme.palette.text.primary, display: 'flex', minHeight: 22 },
       '& .diff-row[data-kind="add"]': { '--row-bg': theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"]': { '--row-bg': theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
@@ -585,6 +604,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelec
           return <Fragment key={key}>
             {skipped[index].count > 0 ? <DiffGap expansion={gapExpansion} gap={skipped[index]} renderLines={openedRows} /> : null}
             <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineSelection.isChosen(lineIndex) ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" tabIndex={isSelectedPosition ? -1 : undefined}>
+              {blameEnabled ? <BlameCell line={line.kind === 'remove' ? line.oldLine : line.newLine} side={line.kind === 'remove' ? 'old' : 'new'} /> : null}
               <span className="diff-gutter">
                 <span className="diff-number">{line.oldLine ?? ''}</span>
                 <span className="diff-number">{line.newLine ?? ''}</span>
@@ -703,7 +723,7 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
   return rows
 }
 
-function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
   const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
     // Context rows offer one comment action, on the new side, with both line numbers.
@@ -716,6 +736,7 @@ function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelecti
       : line ? `${line.newPath}の${line.newLine ?? line.oldLine}行にコメント` : ''
     const chosen = allowComments && lineIndex !== undefined && lineSelection.isChosen(lineIndex)
     return <>
+      {blameEnabled ? <BlameCell line={number} side={side} /> : null}
       <span className="split-number" data-kind={kind} data-line-index={line ? lineIndex : undefined} data-range={chosen ? 'true' : undefined} data-side={side}>
         {number ?? ''}
         {position && lineIndex !== undefined ? lineAction(lineIndex, label, lineSelection) : null}
@@ -728,8 +749,10 @@ function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelecti
     const code = renderCode(openedTokens[index] ?? [{ text: line.text }], '')
     return <Fragment key={`opened-${line.newLine}`}>
       <div className="split-row" data-testid="diff-opened-line">
+        {blameEnabled ? <BlameCell line={line.oldLine} side="old" /> : null}
         <span className="split-number" data-kind="context" data-side="old">{line.oldLine}</span>
         <span className="split-code" data-kind="context">{code}</span>
+        {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
         <span className="split-number" data-kind="context" data-side="new">{line.newLine}</span>
         <span className="split-code" data-kind="context">{code}</span>
       </div>
@@ -738,7 +761,13 @@ function SplitDiff({ activeSearchMatch, allowComments, gapExpansion, lineSelecti
   })
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
-      '& .split-row': { display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 22 },
+      '& .split-row': { display: 'grid', gridTemplateColumns: blameEnabled ? '106px 72px minmax(0, 1fr) 106px 72px minmax(0, 1fr)' : '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 22 },
+      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
+      '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
+      '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
+      '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      '& .split-row .blame-cell': { width: 106 },
+      '& .split-row .blame-author': { display: 'none' },
       '& .split-row[data-selected="true"]': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
       '& .split-row[data-search-active="true"]': { outline: `2px solid ${theme.palette.secondary.main}`, outlineOffset: -2 },
       '& mark': { backgroundColor: theme.palette.diff?.searchMatchBackground, color: theme.palette.diff?.searchMatchText },

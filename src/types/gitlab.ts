@@ -523,6 +523,8 @@ export interface Commit {
   createdAt: string
   /** Git's committer timestamp, which may differ from the creation/author date. */
   committedAt?: string
+  /** Parent commits supplied by GitLab; the first is the old side of a commit diff. */
+  parentIds?: string[]
 }
 
 export interface Draft {

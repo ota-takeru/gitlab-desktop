@@ -17,7 +17,7 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
@@ -33,7 +33,6 @@ import { preferenceScope, readPinnedProjectIds, readRecentProjectIds, writePinne
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useRememberedListState } from './listState'
 import { type ProjectLabel, readProjectLabels, sameProjectLabel, writeProjectLabels } from './projectLabels'
-import { ProjectReadmePreview } from './ProjectReadmePreview'
 
 const defaultConditions = { includeArchived: false, membershipOnly: true, page: 1, search: '', searchInput: '' }
 
@@ -47,7 +46,6 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
   const [pinned, setPinned] = useState(() => readPinnedProjectIds(scope))
   const [recent, setRecent] = useState(() => readRecentProjectIds(scope))
   const [labels, setLabels] = useState(() => readProjectLabels(scope))
-  const [readmeProjectId, setReadmeProjectId] = useState<string | null>(null)
   const query = useMemo(() => ({
     includeArchived,
     kind: 'projects' as const,
@@ -148,11 +146,9 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
           {projects.map((project) => {
             const isPinned = pinned.includes(project.id)
             const favouriteButton = <Tooltip title={isPinned ? 'お気に入りから外す' : 'お気に入りに追加'}><IconButton aria-label={isPinned ? `${project.name}をお気に入りから外す` : `${project.name}をお気に入りに追加`} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project)}>{isPinned ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}</IconButton></Tooltip>
-            const readmeOpen = readmeProjectId === project.id
             return (
-              <Fragment key={project.id}>
-              <ListRow
-                actions={<Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Button aria-expanded={readmeOpen} aria-label={`${project.name}のREADMEを${readmeOpen ? '閉じる' : '表示'}`} onClick={() => setReadmeProjectId(readmeOpen ? null : project.id)} size="small">README</Button>{!isPinned ? favouriteButton : null}</Stack>}
+              <ListRow key={project.id}
+                actions={!isPinned ? favouriteButton : undefined}
                 // A favourite keeps its star in view: the mark and the button to remove it are one control.
                 stickyActions={isPinned ? favouriteButton : undefined}
                 ariaLabel={`${project.name}（${project.pathWithNamespace}）`}
@@ -167,8 +163,6 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
                 <Tooltip enterDelay={600} title={project.pathWithNamespace}><Typography color="textSecondary" component="div" noWrap variant="caption">{project.pathWithNamespace}</Typography></Tooltip>
                 {project.description ? <Typography color="textSecondary" component="div" noWrap sx={{ mt: 0.25 }} title={project.description} variant="caption">{project.description}</Typography> : null}
               </ListRow>
-              {readmeOpen ? <Box component="li" sx={{ borderBottom: 1, borderColor: "divider", listStyle: "none", px: 1.5, py: 1 }}><ProjectReadmePreview project={project} sessionId={session.id} /></Box> : null}
-              </Fragment>
             )
           })}
         </Box> : null}
