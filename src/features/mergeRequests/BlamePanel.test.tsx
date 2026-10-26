@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 
 import { createAppTheme } from '../../theme'
 import { FullFileView } from './DiffViewer'
@@ -101,4 +102,31 @@ it('leaves Markdown rendering and source mode free of Blame in standalone code b
   expect(screen.queryByLabelText(/行のBlame/u)).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
   expect(screen.queryByRole('button', { name: /行のBlame/u })).not.toBeInTheDocument()
+})
+
+it('keeps full-file source mode mounted while Blame is toggled on and off', () => {
+  function Harness() {
+    const [enabled, setEnabled] = useState(false)
+    return <ThemeProvider theme={createAppTheme('light')}>
+      <BlameProvider enabled={enabled} initialNewLine={1} lines={[]} newPath="docs/file.md" oldPath="docs/file.md" projectId="7" sessionId="session1" sha={newSha}>
+        <button onClick={() => setEnabled((current) => !current)} type="button">Blame切替</button>
+        <FullFileView blameEnabled={enabled} content={'# Heading\n\nBody text'} language="markdown" loading={false} path="docs/file.md" />
+      </BlameProvider>
+    </ThemeProvider>
+  }
+  render(<Harness />)
+  fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
+  expect(screen.getAllByTestId('file-line')).toHaveLength(3)
+  expect(queryMock.mock.calls.some(([, query]) => query?.kind === 'blame')).toBe(false)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Blame切替' }))
+  expect(screen.getByRole('button', { name: 'Markdownをレンダリング' })).toBeInTheDocument()
+  expect(screen.getAllByTestId('file-line')).toHaveLength(3)
+  expect(screen.getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
+  expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', sha: newSha, startLine: 1, endLine: 80 }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Blame切替' }))
+  expect(screen.getAllByTestId('file-line')).toHaveLength(3)
+  expect(screen.queryByRole('button', { name: /行のBlame/u })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Markdownをレンダリング' })).toBeInTheDocument()
 })
