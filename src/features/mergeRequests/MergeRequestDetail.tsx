@@ -50,7 +50,6 @@ import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
 import { LabelChip } from '../../components/LabelChip'
 import { formatAbsoluteTime, formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
-import { defaultFileViewForDiff } from '../../lib/markdownFiles'
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { projectUrlOf } from '../../lib/markdownLinks'
@@ -276,7 +275,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const drafts = (draftsResult.data ?? []) as Draft[]
   const approvals = approvalsResult.data as Approvals | null
   const selectedDiff = diffs.find((diff) => (diff.newPath || diff.oldPath) === selectedFile) ?? diffs[0]
-  const resolvedFileView = fileView ?? defaultFileViewForDiff(selectedDiff)
+  const resolvedFileView = fileView ?? 'diff'
   const fileSha = selectedCommit ?? mergeRequest?.headSha
   const beforeFileSha = selectedCommit
     ? commits.find((commit) => commit.id === selectedCommit)?.parentIds?.[0]
@@ -1201,7 +1200,7 @@ interface VersionChoice {
   onSelect: (headCommitSha: string | null) => void
 }
 
-function ChangesTab({ compareBaseSha, local, fileSource, threadActions, pendingDrafts, lineComposer, discussions, discussionHeadSha, discussionsIncomplete, onOpenDiscussion, reviewContext, allowComments, changeNextPage, changePage, changesError, changesLoading, changesTruncated, commitNextPage, commitPage, commits, commitsError, commitsLoading, diffs, fileResult, fileView, onComment, onNextChangePage, onNextCommitPage, onPrevChangePage, onPrevCommitPage, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition, suggestionActions, versions }: { compareBaseSha?: string; local?: LocalChoice; fileSource?: { sessionId: string; projectId: string; sha: string }; reviewContext?: ReviewedFileContext; allowComments: boolean; changeNextPage: number | null; changePage: number; changesError: Error | null; changesLoading: boolean; changesTruncated: boolean; commitNextPage: number | null; commitPage: number; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; onComment: (position: Position) => void; onNextChangePage: () => void; onNextCommitPage: () => void; onPrevChangePage: () => void; onPrevCommitPage: () => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position; discussions?: Discussion[]; discussionHeadSha?: string; discussionsIncomplete: boolean; onOpenDiscussion: (discussionId: string) => void; lineComposer?: { position: Position; node: React.ReactNode }; pendingDrafts?: Draft[]; threadActions?: ThreadActions; suggestionActions?: SuggestionActions; versions: VersionChoice }) {
+function ChangesTab({ compareBaseSha, local, fileSource, threadActions, pendingDrafts, lineComposer, discussions, discussionHeadSha, discussionsIncomplete, onOpenDiscussion, reviewContext, allowComments, changeNextPage, changePage, changesError, changesLoading, changesTruncated, commitNextPage, commitPage, commits, commitsError, commitsLoading, diffs, fileResult, fileView, onComment, onNextChangePage, onNextCommitPage, onPrevChangePage, onPrevCommitPage, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition, suggestionActions, versions }: { compareBaseSha?: string; local?: LocalChoice; fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string }; reviewContext?: ReviewedFileContext; allowComments: boolean; changeNextPage: number | null; changePage: number; changesError: Error | null; changesLoading: boolean; changesTruncated: boolean; commitNextPage: number | null; commitPage: number; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; onComment: (position: Position) => void; onNextChangePage: () => void; onNextCommitPage: () => void; onPrevChangePage: () => void; onPrevCommitPage: () => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position; discussions?: Discussion[]; discussionHeadSha?: string; discussionsIncomplete: boolean; onOpenDiscussion: (discussionId: string) => void; lineComposer?: { position: Position; node: React.ReactNode }; pendingDrafts?: Draft[]; threadActions?: ThreadActions; suggestionActions?: SuggestionActions; versions: VersionChoice }) {
   const compareFrom = versions.compareFrom
   const showingLocal = Boolean(local?.active)
   return (

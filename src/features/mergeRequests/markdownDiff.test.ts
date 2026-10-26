@@ -10,7 +10,7 @@ const parse = (diff: string) => {
 
 describe('Markdown preview of changed hunks', () => {
   it('contains only edited text, without unchanged document context', () => {
-    const changes = parse('@@ -1,6 +1,6 @@\n # Heading\n unchanged introduction\n-## Old title\n+## **New title**\n unchanged tail\n context ending\n')
+    const changes = parse('@@ -1,5 +1,5 @@\n # Heading\n unchanged introduction\n-## Old title\n+## **New title**\n unchanged tail\n context ending\n')
     expect(changes).toHaveLength(1)
     expect(changes[0].old).toEqual({ firstLine: 3, lastLine: 3, text: '## Old title' })
     expect(changes[0].new).toEqual({ firstLine: 3, lastLine: 3, text: '## **New title**' })
@@ -18,10 +18,10 @@ describe('Markdown preview of changed hunks', () => {
   })
 
   it('keeps consecutive list changes as one Markdown fragment per side and separates hunks', () => {
-    const changes = parse('@@ -10,3 +10,4 @@\n context\n- item old\n+ item new\n+ **another item**\n next\n@@ -30,2 +31,2 @@\n-# Before\n+# After\n context\n')
+    const changes = parse('@@ -10,3 +10,4 @@\n context\n-- item old\n+- item new\n+- **another item**\n next\n@@ -30,2 +31,2 @@\n-# Before\n+# After\n context\n')
     expect(changes).toHaveLength(2)
-    expect(changes[0].old).toMatchObject({ firstLine: 11, lastLine: 11, text: 'item old' })
-    expect(changes[0].new).toMatchObject({ firstLine: 11, lastLine: 12, text: 'item new\n**another item**' })
+    expect(changes[0].old).toMatchObject({ firstLine: 11, lastLine: 11, text: '- item old' })
+    expect(changes[0].new).toMatchObject({ firstLine: 11, lastLine: 12, text: '- item new\n- **another item**' })
     expect(changes[1].old?.text).toBe('# Before')
     expect(changes[1].new?.text).toBe('# After')
   })

@@ -13,7 +13,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RelativeTime } from '../../components/RelativeTime'
 import { delayedRevealSx } from '../../components/paneSx'
 import { shortSha } from '../../lib/format'
-import { defaultFileViewForDiff } from '../../lib/markdownFiles'
 import { getLocalChanges, getLocalFile, getLocalRepository, linkLocalRepository, pickLocalRepositoryFolder, unlinkLocalRepository } from '../../lib/localRepository'
 import { normalizeGitLabError } from '../../lib/gitlab'
 import { DiffViewer } from './DiffViewer'
@@ -49,7 +48,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   const shown = changes.data?.diffs.find((diff) => (diff.newPath || diff.oldPath) === selectedFile) ?? changes.data?.diffs[0]
   const readable = Boolean(shown && !shown.deletedFile && !shown.tooLarge)
   const shownPath = shown ? (shown.newPath || shown.oldPath) : ''
-  const view = viewChoice?.path === shownPath ? viewChoice.view : defaultFileViewForDiff(shown)
+  const view = viewChoice?.path === shownPath ? viewChoice.view : 'diff'
   const file = useQuery({ enabled: readable, gcTime: 0, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? ''), queryKey: ['localFile', sessionId, projectId, shown?.newPath, changes.dataUpdatedAt], staleTime: 0 })
 
   if (repository.isPending) return <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">ローカルリポジトリの紐付けを確認中…</Typography>
