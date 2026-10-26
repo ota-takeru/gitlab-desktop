@@ -4,6 +4,7 @@ import Typography from '@mui/material/Typography'
 import { useMemo } from 'react'
 
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
+import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { FullFileView } from '../mergeRequests/DiffViewer'
 import type { BlobQuery, Project, TreeEntry, TreeQuery } from '../../types/gitlab'
@@ -22,7 +23,7 @@ export function ProjectReadmePreview({ project, sessionId }: { project: Project;
   const readme = chooseReadmeFile(tree.data ?? [])
   const blobQuery = useMemo<BlobQuery | null>(() => readme ? { kind: 'blob', projectId: project.id, sha: readme.id } : null, [project.id, readme?.id])
   const blob = useGitLabQuery(sessionId, blobQuery)
-  const markdown = Boolean(readme && /\.(?:md|markdown|mdown)$/iu.test(readme.name) && (blob.data?.content.length ?? 0) <= 200_000)
+  const markdown = Boolean(readme && (isMarkdownFilePath(readme.name) || /^readme$/iu.test(readme.name)))
   return <Box aria-label={`${project.name}のREADME`} component="section" sx={{ maxHeight: 440, overflow: 'auto', px: 1 }}>
     <Typography sx={{ fontWeight: 600, mb: 1 }} variant="subtitle2">READMEプレビュー{readme ? ` · ${readme.name}` : ''}</Typography>
     {tree.loading || readme && blob.loading ? <Typography color="textSecondary" variant="body2">読み込み中…</Typography> : null}
