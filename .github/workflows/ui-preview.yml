@@ -24,6 +24,13 @@ jobs:
       - run: npm ci
       - name: Capture live UI using fixture IPC
         run: npx playwright test tests/visual/preview.visual.ts --workers=1
+      - name: Export audited dependency manifests (temporary)
+        if: github.event_name == 'pull_request'
+        run: |
+          npm install --package-lock-only --save-dev --save-exact vite@8.3.5 vitest@5.0.5
+          npm audit fix --package-lock-only
+          npm audit --audit-level=moderate
+          node -e 'const fs = require("fs"); for (const name of ["package.json", "package-lock.json"]) { const value = fs.readFileSync(name, "utf8"); let part = 0; for (let offset = 0; offset < value.length; offset += 2048) { console.log("AUDITED_FILE_PART|" + name + "|" + part + "|" + JSON.stringify(value.slice(offset, offset + 2048))); part += 1; } console.log("AUDITED_FILE_END|" + name + "|" + value.length + "|" + part); }'
       - name: Upload preview screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
