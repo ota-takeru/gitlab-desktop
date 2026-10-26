@@ -50,11 +50,12 @@ const components: Components = {
 const parsedBodies = new Map<string, ReactElement>()
 const MAX_PARSED_BODIES = 2000
 
-function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: MarkdownLinkBase, review?: FullFileDiffAnnotations): ReactElement {
+function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: MarkdownLinkBase, review?: FullFileDiffAnnotations, renderBlame?: (line: number) => ReactNode): ReactElement {
   // Bodies parsed before the emoji list loaded only know the common emoji, so they are kept apart;
   // so are bodies from different projects, whose references point elsewhere.
-  const reviewKey = review ? `${[...review.addedLines].join(',')}|${[...review.removedByAnchor.values()].flat().map((item) => `${item.anchorLine}:${item.oldStart}:${item.text}`).join('|')}` : ''
-  const key = `${catalog ? 'emoji' : 'common'}\n${base.instanceUrl ?? ''}\n${base.projectUrl ?? ''}\n${reviewKey}\n${body}`
+  const annotations = review ?? (renderBlame ? { addedLines: new Set<number>(), removedByAnchor: new Map() as FullFileDiffAnnotations['removedByAnchor'], consistent: true } : undefined)
+  const reviewKey = annotations ? `${[...annotations.addedLines].join(',')}|${[...annotations.removedByAnchor.values()].flat().map((item) => `${item.anchorLine}:${item.oldStart}:${item.text}`).join('|')}` : ''
+  const key = `${catalog ? 'emoji' : 'common'}\n${base.instanceUrl ?? ''}\n${base.projectUrl ?? ''}\n${renderBlame ? 'blame' : 'plain'}\n${reviewKey}\n${body}`
   const cached = parsedBodies.get(key)
   if (cached) {
     parsedBodies.delete(key)
@@ -64,15 +65,27 @@ function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: Markdow
   const remarkPlugins = [remarkGfm, remarkGitLabEmoji(catalog), remarkGitLabReferences(base)]
   const urlTransform = (url: string) => resolveMarkdownUrl(url, base)
   // `Markdown` is synchronous and uses no hooks, so its output can be kept and reused.
-  const parsed = Markdown({ children: body, components, rehypePlugins: review ? [rehypeReviewDiff(review)] : [], remarkPlugins, skipHtml: true, urlTransform })
+  const markdownComponents: Components = renderBlame ? {
+    ...components,
+    div: ({ children, node }) => {
+      const value = node?.properties?.['data-review-blame-line']
+      const line = typeof value === 'string' ? Number(value) : NaN
+      if (!Number.isSafeInteger(line) || line < 1) return <div>{children}</div>
+      return <Box component="div" data-review-blame-line={line} sx={{ alignItems: 'start', display: 'grid', gap: 1, gridTemplateColumns: 'minmax(110px, 132px) minmax(0, 1fr)', minWidth: 0 }}>
+        <Box className="markdown-blame-cell" sx={{ minWidth: 0 }}>{renderBlame(line)}</Box>
+        <Box sx={{ minWidth: 0 }}>{children}</Box>
+      </Box>
+    },
+  } : components
+  const parsed = Markdown({ children: body, components: markdownComponents, rehypePlugins: annotations ? [rehypeReviewDiff(annotations, Boolean(renderBlame))] : [], remarkPlugins, skipHtml: true, urlTransform })
   parsedBodies.set(key, parsed)
   if (parsedBodies.size > MAX_PARSED_BODIES) parsedBodies.delete(parsedBodies.keys().next().value!)
   return parsed
 }
 
 /** A local preview of basic Markdown, GitLab emoji and references; other GitLab-specific commands are not executed. */
-export const MockMarkdown = memo(function MockMarkdown({ body, review, size = 'body2' }: { body: string; review?: FullFileDiffAnnotations; size?: 'body1' | 'body2' }) {
+export const MockMarkdown = memo(function MockMarkdown({ body, renderBlame, review, size = 'body2' }: { body: string; renderBlame?: (line: number) => ReactNode; review?: FullFileDiffAnnotations; size?: 'body1' | 'body2' }) {
   const { catalog } = useEmojiCatalog()
   const { instanceUrl, projectUrl } = useMarkdownLinks()
-  return <Box sx={markdownBodySx(size)}>{parseMarkdown(body, catalog, { instanceUrl, projectUrl }, review)}</Box>
+  return <Box sx={markdownBodySx(size)}>{parseMarkdown(body, catalog, { instanceUrl, projectUrl }, review, renderBlame)}</Box>
 })
