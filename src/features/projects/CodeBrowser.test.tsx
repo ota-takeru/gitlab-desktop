@@ -60,6 +60,9 @@ it('shows a file by its blob id with line numbers, and fetches no folder meanwhi
 
   expect(queryMock).toHaveBeenCalledWith('session-1', { kind: 'blob', projectId: '7', sha: blobSha })
   expect(queryMock).not.toHaveBeenCalledWith('session-1', expect.objectContaining({ kind: 'tree' }), expect.anything())
+  expect(screen.getByRole('button', { name: 'Markdownのソースを表示' })).toBeInTheDocument()
+  expect(screen.queryByTestId('file-line')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
   expect(screen.getAllByTestId('file-line').map((line) => line.textContent)).toEqual(['1line one', '2line two'])
   expect(within(screen.getByRole('navigation', { name: '場所' })).getByText('README.md')).toBeInTheDocument()
 })

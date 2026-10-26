@@ -26,6 +26,7 @@ import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { useStableCallback } from '../shared/useStableCallback'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
+import { CommentChangeStatus } from './CommentChangeStatus'
 import { positionLabel as formatPositionLabel } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
 import { NoteBody, type SuggestionActions } from './SuggestionBlock'
@@ -36,6 +37,8 @@ const NOTES_PER_PAGE = 50
 const THREAD_WITH_CODE_WIDE = '@container (min-width: 960px)'
 
 interface DiscussionListProps {
+  projectId?: string
+  headSha?: string | null
   /** Session used to load GitLab avatars; initials are shown without it. */
   sessionId?: string | null
   currentUserId: string
@@ -86,7 +89,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
   const setEditing = onEditingNoteChange ?? setLocalEditingId
@@ -278,6 +281,7 @@ export function DiscussionList({ sessionId, currentUserId, discussions, disabled
                       >{positionLabel}</Button>
                     </Box>
                   ) : <Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', fontFamily: 'code.fontFamily', minWidth: 0 }} variant="caption">{positionLabel}</Typography>}</Tooltip> : <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">MR全体へのスレッド</Typography>}
+                  {position && position.headSha !== headSha && headSha && sessionId && projectId ? <CommentChangeStatus headSha={headSha} position={position} projectId={projectId} sessionId={sessionId} /> : null}
                   {isCollapsed && firstNote ? <Tooltip describeChild title={plainExcerpt(firstNote.body, 300)}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 0', minWidth: 0 }} variant="caption">— {firstNote.author.name}: {plainExcerpt(firstNote.body, 80)}</Typography></Tooltip> : null}
                 </Stack>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>

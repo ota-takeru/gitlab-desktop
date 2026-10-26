@@ -4,18 +4,21 @@ import type { MarkdownLinkBase } from '../lib/markdownLinks'
 export interface MarkdownLinks extends MarkdownLinkBase {
   /** Opens a clicked http(s) link; without it links behave as plain anchors. */
   open?: (url: string) => void
+  /** Only a real authenticated session may load uploads. */
+  sessionId?: string
 }
 
 const MarkdownLinkContext = createContext<MarkdownLinks>({})
 
 /** Tells rendered Markdown below where it was written and how to open its links; inner providers add to outer ones. */
-export function MarkdownLinkProvider({ children, instanceUrl, open, projectUrl }: MarkdownLinks & { children: ReactNode }) {
+export function MarkdownLinkProvider({ children, instanceUrl, open, projectUrl, sessionId }: MarkdownLinks & { children: ReactNode }) {
   const outer = useContext(MarkdownLinkContext)
   const value = useMemo(() => ({
     instanceUrl: instanceUrl ?? outer.instanceUrl,
     open: open ?? outer.open,
     projectUrl: projectUrl ?? outer.projectUrl,
-  }), [instanceUrl, open, outer, projectUrl])
+    sessionId: sessionId ?? outer.sessionId,
+  }), [instanceUrl, open, outer, projectUrl, sessionId])
   return <MarkdownLinkContext.Provider value={value}>{children}</MarkdownLinkContext.Provider>
 }
 

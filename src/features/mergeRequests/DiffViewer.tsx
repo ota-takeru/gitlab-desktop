@@ -28,6 +28,9 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/gitlab'
 import { DiffFileTree, FileThreadMark, fileTreeOrder } from './DiffFileTree'
 import { DiffGap, type GapExpansion } from './DiffGap'
+import { BlamePanel } from './BlamePanel'
+import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
@@ -87,6 +90,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
   const displayedPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
+  const [blameOpen, setBlameOpen] = useState(false)
+  const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.deletedFile && !selectedDiff.collapsed && !selectedDiff.tooLarge)
   // GitLab's diff API has no whitespace option, so whitespace-only changes are folded here.
   const [whitespaceIgnored, setWhitespaceIgnored] = useState(readIgnoreWhitespace)
   const toggleWhitespace = () => {
@@ -162,6 +167,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
 
   // One array per page, so the split view's row pairing is not rebuilt on every render.
   const rows = useMemo(() => displayLines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, displayLines])
+  const blameAnchorLine = rows.find((line) => line.newLine !== undefined)?.newLine ?? 1
   const language = displayedPath ? languageForPath(displayedPath) : null
   const rowTokens = useMemo(() => highlightDiffLines(rows, language), [language, rows])
   const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
@@ -441,12 +447,14 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup> : null}
-            {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
+            {canBlame && view === 'diff' ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
+             {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
               <ToggleButton value="diff">差分</ToggleButton>
               <ToggleButton value="file">ファイル全体</ToggleButton>
             </ToggleButtonGroup> : null}
           </Stack>
-          {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
+          {blameOpen && canBlame && view === 'diff' && fileSource && displayedPath ? <BlamePanel anchorLine={blameAnchorLine} key={`${fileSource.sha}:${displayedPath}`} path={displayedPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha} /> : null}
+           {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
             <Tooltip describeChild placement="bottom-start" title="表示中の差分ページを検索します。他のページは対象外です。"><TextField
               fullWidth
@@ -462,7 +470,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">この差分は大きすぎるため省略されています。</Typography></Stack></Box> : null}
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
-          {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} /> : <>
+          {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} path={displayedPath} /> : <>
             {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
             {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルは空白の変更のみです。</Typography> : null}
             {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">空白の変更を無視して表示中です。行の位置がずれる可能性があるため、新しい行コメントは書けません。</Typography> : null}
@@ -830,10 +838,12 @@ function highlightDiffLines(lines: ParsedLine[], language: string | null): Synta
   return result
 }
 
-export function FullFileView({ content, language, loading }: { content?: string | null; language: string | null; loading: boolean }) {
+export function FullFileView({ content, language, loading, path }: { content?: string | null; language: string | null; loading: boolean; path?: string | null }) {
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
   const [filePaging, setFilePaging] = useState({ contentKey: '', offset: 0 })
+  const [showSource, setShowSource] = useState(false)
+  const markdown = isMarkdownFilePath(path)
   const offset = filePaging.contentKey === contentKey ? filePaging.offset : 0
   const updateOffset = (update: (current: number) => number): void => {
     setFilePaging((current) => {
@@ -843,14 +853,22 @@ export function FullFileView({ content, language, loading }: { content?: string 
   }
 
   const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
-  const visibleTokens = useMemo(() => highlightLines(visibleLines, language), [language, visibleLines])
+  // Avoid tokenizing large Markdown files when their rendered view is active.
+  const visibleTokens = useMemo(() => markdown && !showSource ? [] : highlightLines(visibleLines, language), [language, markdown, showSource, visibleLines])
 
   if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
-  if (!content) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
+
   return <>
-    <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
-    <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
+    {markdown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
+      <Button aria-label={showSource ? 'Markdownをレンダリング' : 'Markdownのソースを表示'} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? 'Markdown表示' : 'ソース表示'}</Button>
+    </Box> : null}
+    {!content ? <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
+      : markdown && !showSource ? <Box aria-label="Markdownプレビュー" sx={{ minWidth: 0, px: 2, py: 1.5 }}><MockMarkdown body={content} size="body1" /></Box>
+        : <>
+          <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
+          <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
+        </>}
   </>
 }
 

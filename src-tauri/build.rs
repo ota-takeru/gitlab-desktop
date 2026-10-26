@@ -17,6 +17,7 @@ fn main() {
             "open_external_url",
             "open_token_creation_page",
             "get_gitlab_avatar",
+            "get_gitlab_image",
             "get_local_draft",
             "set_local_draft",
             "clear_local_drafts",

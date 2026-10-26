@@ -161,6 +161,12 @@ export interface FileQuery {
   sha: string
 }
 
+export interface BlameQuery { kind: 'blame'; projectId: string; path: string; sha: string; startLine: number; endLine: number }
+export interface CommitMergeRequestsQuery { kind: 'commitMergeRequests'; projectId: string; sha: string }
+
+export interface BlameBlock { commitId: string; title: string; authorName: string; committedAt: string; lines: string[] }
+export interface AssociatedMergeRequest { projectId: string; iid: string; title: string; state: string; webUrl: string }
+
 /** One folder of a repository; without `ref`, the default branch. `path` is '' for the top. */
 export interface TreeQuery {
   kind: 'tree'
@@ -330,6 +336,8 @@ export type GitLabQuery =
   | DiffsQuery
   | CommitDiffQuery
   | FileQuery
+  | BlameQuery
+  | CommitMergeRequestsQuery
   | TreeQuery
   | BlobQuery
   | ApprovalsQuery
@@ -511,7 +519,10 @@ export interface Discussion {
 export interface Commit {
   id: string
   title: string
+  /** Fallback for older cached records. */
   createdAt: string
+  /** Git's committer timestamp, which may differ from the creation/author date. */
+  committedAt?: string
 }
 
 export interface Draft {
@@ -545,6 +556,8 @@ export type QueryData =
   | Commit[]
   | Draft[]
   | FileContent
+  | BlameBlock[]
+  | AssociatedMergeRequest[]
   | TreeEntry[]
   | Approvals
   | AwardEmoji[]
@@ -829,6 +842,8 @@ export type GitLabQueryData<Q extends GitLabQuery> =
                 : Draft[]
           : Q extends CommitDiffQuery ? Diff[]
             : Q extends FileQuery ? FileContent
+              : Q extends BlameQuery ? BlameBlock[]
+              : Q extends CommitMergeRequestsQuery ? AssociatedMergeRequest[]
               : Q extends TreeQuery ? TreeEntry[]
               : Q extends BlobQuery ? FileContent
               : Q extends ApprovalsQuery ? Approvals

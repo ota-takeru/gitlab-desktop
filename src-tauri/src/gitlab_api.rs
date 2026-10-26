@@ -80,6 +80,8 @@ enum ResponseKind {
     Diffs,
     Discussions,
     Commits,
+    Blame,
+    CommitMergeRequests,
     Drafts,
     CommitDiff,
     Approvals,
@@ -1788,6 +1790,32 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 vec![("ref".to_owned(), sha.clone())],
             )
         }
+        Query::Blame { project_id, path, sha, start_line, end_line } => {
+            validate_id(project_id, "projectId")?;
+            validate_path(path)?;
+            validate_sha(sha, "sha")?;
+            if *start_line == 0 || *end_line < *start_line || end_line.saturating_sub(*start_line) >= 100 || *end_line > 1_000_000 {
+                return Err(AppError::new("INVALID_INPUT", "Blameは1回につき100行以内で指定してください。"));
+            }
+            (
+                endpoint(api_base, &["projects", project_id, "repository", "files", path, "blame"])?,
+                ResponseKind::Blame,
+                vec![
+                    ("ref".to_owned(), sha.clone()),
+                    ("range[start]".to_owned(), start_line.to_string()),
+                    ("range[end]".to_owned(), end_line.to_string()),
+                ],
+            )
+        }
+        Query::CommitMergeRequests { project_id, sha } => {
+            validate_id(project_id, "projectId")?;
+            validate_sha(sha, "sha")?;
+            (
+                endpoint(api_base, &["projects", project_id, "repository", "commits", sha, "merge_requests"])?,
+                ResponseKind::CommitMergeRequests,
+                vec![("per_page".to_owned(), "20".to_owned())],
+            )
+        }
         Query::Tree {
             project_id,
             git_ref,
@@ -2873,6 +2901,8 @@ fn normalize_response(kind: ResponseKind, value: Value) -> Result<Value, AppErro
         ResponseKind::Diffs => normalize_array(value, Some("changes"), normalize_diff),
         ResponseKind::Discussions => normalize_array(value, None, normalize_discussion),
         ResponseKind::Commits => normalize_array(value, None, normalize_commit),
+        ResponseKind::Blame => normalize_array(value, None, normalize_blame_block),
+        ResponseKind::CommitMergeRequests => normalize_array(value, None, normalize_associated_merge_request),
         ResponseKind::CommitDiff => normalize_array(value, None, normalize_diff),
         ResponseKind::Drafts => normalize_array(value, None, normalize_draft),
         ResponseKind::Approvals => normalize_approvals(&value),
@@ -3376,11 +3406,48 @@ fn normalize_line_range(value: &Value) -> Option<Value> {
     Some(json!({ "start": point("start")?, "end": point("end")? }))
 }
 
+fn normalize_blame_block(value: &Value) -> Result<Value, AppError> {
+    require_object(value, "GitLabから不正なBlame情報が返されました。")?;
+    let commit = value.get("commit").ok_or_else(|| unsupported_response("Blameのコミット情報がありません。"))?;
+    require_object(commit, "Blameのコミット情報が不正です。")?;
+    let lines = value.get("lines").and_then(Value::as_array)
+        .ok_or_else(|| unsupported_response("Blameの行情報が不正です。"))?;
+    if lines.len() > 100 {
+        return Err(unsupported_response("Blameの行数が上限を超えています。"));
+    }
+    let mut text = Vec::with_capacity(lines.len());
+    for line in lines {
+        let Some(line) = line.as_str() else {
+            return Err(unsupported_response("Blameの行情報が不正です。"));
+        };
+        text.push(line);
+    }
+    Ok(json!({
+        "commitId": required_string_field(commit, "id", "blame commit")?,
+        "title": string_field(commit, "title"),
+        "authorName": string_field(commit, "author_name"),
+        "committedAt": string_field(commit, "committed_date"),
+        "lines": text,
+    }))
+}
+
+fn normalize_associated_merge_request(value: &Value) -> Result<Value, AppError> {
+    require_object(value, "GitLabから不正な関連MR情報が返されました。")?;
+    Ok(json!({
+        "projectId": required_id_field(value, "project_id", "associated MR")?,
+        "iid": required_id_field(value, "iid", "associated MR")?,
+        "title": required_string_field(value, "title", "associated MR")?,
+        "webUrl": required_string_field(value, "web_url", "associated MR")?,
+        "state": string_field(value, "state"),
+    }))
+}
+
 fn normalize_commit(value: &Value) -> Result<Value, AppError> {
     Ok(json!({
         "id": string_field(value, "id"),
         "title": string_field(value, "title"),
         "createdAt": string_field(value, "created_at"),
+        "committedAt": value.get("committed_date").and_then(Value::as_str).unwrap_or_else(|| value.get("created_at").and_then(Value::as_str).unwrap_or("")),
     }))
 }
 
@@ -6201,6 +6268,33 @@ mod tests {
             assert!(diffs.data.is_array());
             println!("Public MR flow: {} list rows, {} discussions, {} files; network+normalization {} ms", rows.len(), discussions.data.as_array().unwrap().len(), diffs.data.as_array().unwrap().len(), started.elapsed().as_millis());
         });
+    }
+
+    #[test]
+    fn normalizes_blame_and_associated_merge_requests() {
+        let block = normalize_blame_block(&json!({
+            "commit": { "id": "abc", "author_name": "Alice", "committed_date": "2026-09-01", "title": "Fix" },
+            "lines": ["before", "after"]
+        })).unwrap();
+        assert_eq!(block["lines"], json!(["before", "after"]));
+        assert_eq!(block["commitId"], "abc");
+        let mr = normalize_associated_merge_request(&json!({
+            "project_id": 7, "iid": 12, "title": "Introduce fix",
+            "web_url": "https://gitlab.example/group/repo/-/merge_requests/12", "state": "merged"
+        })).unwrap();
+        assert_eq!(mr["projectId"], "7");
+        assert_eq!(mr["iid"], "12");
+    }
+
+    #[test]
+    fn blame_query_restricts_range_and_encodes_paths() {
+        let base = Url::parse("https://gitlab.example/api/v4/").unwrap();
+        let query = Query::Blame { project_id: "7".to_owned(), path: "src/foo bar.ts".to_owned(), sha: "a".repeat(40), start_line: 2, end_line: 17 };
+        let (url, _) = build_query_url(&base, &query).unwrap();
+        assert!(url.path().contains("foo%20bar.ts"));
+        assert!(url.as_str().contains("range%5Bstart%5D=2"));
+        let bad = Query::Blame { project_id: "7".to_owned(), path: "x.rs".to_owned(), sha: "a".repeat(40), start_line: 1, end_line: 101 };
+        assert_eq!(build_query_url(&base, &bad).unwrap_err().code, "INVALID_INPUT");
     }
 
     #[test]

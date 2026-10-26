@@ -13,6 +13,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RelativeTime } from '../../components/RelativeTime'
 import { delayedRevealSx } from '../../components/paneSx'
 import { shortSha } from '../../lib/format'
+import { defaultFileViewForDiff } from '../../lib/markdownFiles'
 import { getLocalChanges, getLocalFile, getLocalRepository, linkLocalRepository, pickLocalRepositoryFolder, unlinkLocalRepository } from '../../lib/localRepository'
 import { normalizeGitLabError } from '../../lib/gitlab'
 import { DiffViewer } from './DiffViewer'
@@ -34,7 +35,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   const changes = useQuery({ enabled: Boolean(linked), gcTime: 0, queryFn: () => getLocalChanges(sessionId, projectId, headSha), queryKey: ['localChanges', sessionId, projectId, headSha, linked?.path], staleTime: 0 })
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
-  const [view, setView] = useState<'diff' | 'file'>('diff')
+  const [viewChoice, setViewChoice] = useState<{ path: string; view: 'diff' | 'file' } | null>(null)
   // Linking or unlinking replaces the focused control, so focus moves to its
   // counterpart as soon as that mounts.
   const focusAfter = useRef<'linked' | 'unlinked' | null>(null)
@@ -47,6 +48,8 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   // The shown file as it is now, for the whole-file view and for opening the lines between hunks.
   const shown = changes.data?.diffs.find((diff) => (diff.newPath || diff.oldPath) === selectedFile) ?? changes.data?.diffs[0]
   const readable = Boolean(shown && !shown.deletedFile && !shown.tooLarge)
+  const shownPath = shown ? (shown.newPath || shown.oldPath) : ''
+  const view = viewChoice?.path === shownPath ? viewChoice.view : defaultFileViewForDiff(shown)
   const file = useQuery({ enabled: readable, gcTime: 0, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? ''), queryKey: ['localFile', sessionId, projectId, shown?.newPath, changes.dataUpdatedAt], staleTime: 0 })
 
   if (repository.isPending) return <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">ローカルリポジトリの紐付けを確認中…</Typography>
@@ -99,7 +102,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
       {data?.truncated ? <Alert severity="warning">差分が大きすぎるため途中で打ち切りました。一部のファイルが表示されていません。</Alert> : null}
       {data && (data.untrackedCount > data.untrackedIncluded || data.untrackedMore) ? <Alert severity="warning">未追跡のファイルのうち{data.untrackedCount - data.untrackedIncluded}件{data.untrackedMore ? '以上' : ''}は、件数か大きさの上限を超えたため差分に含めていません。</Alert> : null}
       {data && !data.diffs.length && !data.truncated ? <Typography color="textSecondary" role="status" variant="body2">MRの最新コミットとローカルの作業ツリーに差分はありません。</Typography> : null}
-      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isFetching} key={`local:${headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={setView} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
+      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isFetching} key={`local:${headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={(next) => setViewChoice({ path: shownPath, view: next })} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
       {view === 'file' && shown?.deletedFile ? <Typography color="textSecondary" role="status" variant="body2">このファイルは作業ツリーで削除されています。</Typography> : null}
       {view === 'file' && file.error ? <Alert severity="error">ファイル全体を読めませんでした: {normalizeGitLabError(file.error).message}</Alert> : null}
     </Stack>

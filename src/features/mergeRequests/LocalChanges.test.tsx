@@ -182,3 +182,18 @@ describe('LocalChanges', () => {
     expect(screen.queryByText(/^ローカルの変更を読めませんでした/u)).not.toBeInTheDocument()
   })
 })
+
+describe('Markdown in local changes', () => {
+  it('opens the Markdown preview first and can switch to the diff', async () => {
+    const markdownDiff = { ...changes.diffs[0], oldPath: 'docs/guide.md', newPath: 'docs/guide.md', diff: '@@ -1,1 +1,1 @@\n-# Before\n+# Local heading\n' }
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue({ ...changes, diffs: [markdownDiff] })
+    mocks.getLocalFile.mockResolvedValue({ content: '# Local heading\n\nDocument body' })
+    renderLocal()
+    expect(await screen.findByRole('heading', { name: 'Local heading' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイル全体' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '差分' }))
+    expect(screen.getByRole('button', { name: '差分' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('heading', { name: 'Local heading' })).not.toBeInTheDocument()
+  })
+})

@@ -44,10 +44,14 @@ pub struct LiveSession {
     /// Avatar images already fetched for this session, as data URLs. `None`
     /// records an avatar URL that did not yield a small image.
     avatars: Mutex<HashMap<String, Option<String>>>,
+    /// Session-local cache for bounded, authenticated Markdown uploads.
+    images: Mutex<HashMap<String, Option<String>>>,
 }
 
 const AVATAR_CACHE_LIMIT: usize = 512;
 const AVATAR_MAX_BYTES: usize = 256 * 1024;
+const MARKDOWN_IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
+const MARKDOWN_IMAGE_CACHE_LIMIT: usize = 12;
 
 struct Inner {
     active: Option<Arc<LiveSession>>,
@@ -333,6 +337,7 @@ fn make_session(
         revision: AtomicU64::new(0),
         retry_at: AtomicU64::new(0),
         avatars: Mutex::new(HashMap::new()),
+        images: Mutex::new(HashMap::new()),
     }))
 }
 
@@ -1164,6 +1169,34 @@ impl NativeState {
         Ok(fetched.flatten())
     }
 
+    /// Only uploads served by the connected GitLab origin may be embedded.
+    pub async fn markdown_image(&self, id: String, input: String) -> Result<Option<String>, AppError> {
+        let session = self.active(&id)?;
+        let Some(url) = instance_markdown_image_url(&session.public.instance_url, &input) else {
+            return Ok(None);
+        };
+        let key = url.to_string();
+        if let Some(hit) = session.images.lock().map_err(|_| storage_error())?.get(&key) {
+            return Ok(hit.clone());
+        }
+        if check_cooldown(&session).is_err() {
+            return Ok(None);
+        }
+        let fetched = tokio::select! {
+            fetched = async {
+                let _slot = session.slots.clone().acquire_owned().await.ok()?;
+                fetch_image_data(&session.client, url, MARKDOWN_IMAGE_MAX_BYTES).await
+            } => fetched,
+            _ = session.cancelled.cancelled() => return Err(cancelled()),
+        };
+        if let Some(image) = &fetched {
+            let mut images = session.images.lock().map_err(|_| storage_error())?;
+            if images.len() >= MARKDOWN_IMAGE_CACHE_LIMIT { images.clear(); }
+            images.insert(key, image.clone());
+        }
+        Ok(fetched.flatten())
+    }
+
     pub fn open_url(&self, id: &str, input: &str) -> Result<(), AppError> {
         let session = self.active(id)?;
         let base = normalize_instance(&session.public.instance_url)?;
@@ -1450,6 +1483,24 @@ fn instance_avatar_url(instance_url: &str, input: &str) -> Option<Url> {
     .then_some(url)
 }
 
+/// Markdown previews may only read upload paths under the current instance.
+fn instance_markdown_image_url(instance_url: &str, input: &str) -> Option<Url> {
+    let base = normalize_instance(instance_url).ok()?;
+    let url = Url::parse(input.trim()).ok()?;
+    let path = url.path().to_ascii_lowercase();
+    (url.origin() == base.origin()
+        && url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+        && path.starts_with(&base.path().to_ascii_lowercase())
+        && path.contains("/uploads/")
+        && !path.contains("%2f")
+        && !path.contains("%5c")
+        && !path.contains("%2e"))
+    .then_some(url)
+}
+
 /// Accepts Gravatar images, which GitLab returns as `avatar_url` for users
 /// without an uploaded avatar.
 fn gravatar_url(input: &str) -> Option<Url> {
@@ -1487,6 +1538,10 @@ fn anonymous_client() -> Result<reqwest::Client, AppError> {
 /// `Some(None)`: the server answered with something that is not a small
 /// image. `None`: the request failed and may be retried later.
 async fn fetch_avatar(client: &reqwest::Client, url: Url) -> Option<Option<String>> {
+    fetch_image_data(client, url, AVATAR_MAX_BYTES).await
+}
+
+async fn fetch_image_data(client: &reqwest::Client, url: Url, max_bytes: usize) -> Option<Option<String>> {
     use base64::Engine as _;
     let mut response = client.get(url).send().await.ok()?;
     if !response.status().is_success() {
@@ -1513,7 +1568,7 @@ async fn fetch_avatar(client: &reqwest::Client, url: Url) -> Option<Option<Strin
     }
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.ok()? {
-        if body.len() + chunk.len() > AVATAR_MAX_BYTES {
+        if body.len() + chunk.len() > max_bytes {
             return Some(None);
         }
         body.extend_from_slice(&chunk);
@@ -2801,6 +2856,22 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(draft.body, "本文");
+    }
+
+    #[test]
+    fn markdown_images_only_allow_same_instance_uploads() {
+        let base = "https://gitlab.example/GitLab/";
+        assert!(instance_markdown_image_url(base, "https://gitlab.example/GitLab/group/repo/uploads/ab/photo.png").is_some());
+        assert!(instance_markdown_image_url(base, "https://gitlab.example/GitLab/uploads/a.png").is_some());
+        for bad in [
+            "https://other.example/GitLab/group/repo/uploads/a.png",
+            "http://gitlab.example/GitLab/uploads/a.png",
+            "https://gitlab.example/GitLab/api/v4/user",
+            "https://gitlab.example/GitLab/group/repo/-/raw/main/secrets.txt",
+            "https://gitlab.example/GitLab/uploads/%2e%2e/api/v4/user",
+        ] {
+            assert!(instance_markdown_image_url(base, bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

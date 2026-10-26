@@ -233,6 +233,10 @@ pub enum Query {
         path: String,
         sha: String,
     },
+    /// Bounded blame for a file at one commit.
+    Blame { project_id: String, path: String, sha: String, start_line: u32, end_line: u32 },
+    /// MR(s) associated with a commit.
+    CommitMergeRequests { project_id: String, sha: String },
     /// One folder of a repository; without `ref`, GitLab lists the default branch.
     Tree {
         project_id: String,

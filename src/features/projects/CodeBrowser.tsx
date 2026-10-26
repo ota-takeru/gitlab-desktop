@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography'
 import { useMemo, useState, type ReactNode } from 'react'
 
 import { ListRow } from '../../components/ListRow'
+import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { paneResultsSx } from '../../components/paneSx'
@@ -109,7 +110,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
         {shown.error && !shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{errorMessage(shown.error, Boolean(file), path)}</Alert> : null}
         {shown.error && shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの内容を表示中です。更新に失敗しました: {shown.error.message}</Alert> : null}
         {file
-          ? shown.error && !shown.data ? null : <FullFileView content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} />
+          ? shown.error && !shown.data ? null : <MarkdownLinkProvider instanceUrl={session.instanceUrl} sessionId={session.id}><FullFileView key={`${file.path}:${file.sha}`} content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} path={file.path} /></MarkdownLinkProvider>
           : <>
             {tree.data && entries.length === 0 && !path ? <PaneEmpty description="このブランチにはファイルがありません。" icon={<FolderOutlinedIcon fontSize="inherit" />} title="ファイルはありません" /> : null}
             {tree.data && (entries.length || path) ? <Box aria-label="ファイル" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>
