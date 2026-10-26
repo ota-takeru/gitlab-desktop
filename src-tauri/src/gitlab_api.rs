@@ -3381,6 +3381,7 @@ fn normalize_commit(value: &Value) -> Result<Value, AppError> {
         "id": string_field(value, "id"),
         "title": string_field(value, "title"),
         "createdAt": string_field(value, "created_at"),
+        "committedAt": value.get("committed_date").and_then(Value::as_str).unwrap_or_else(|| value.get("created_at").and_then(Value::as_str).unwrap_or("")),
     }))
 }
 

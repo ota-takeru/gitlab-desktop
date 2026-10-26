@@ -49,7 +49,7 @@ import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
 import { LabelChip } from '../../components/LabelChip'
-import { formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
+import { formatAbsoluteTime, formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { projectUrlOf } from '../../lib/markdownLinks'
@@ -1257,7 +1257,7 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
       {scrollable ? <Tooltip title="左へスクロール"><span><IconButton aria-label="コミットの帯を左へスクロール" disabled={!overflow.left} onClick={() => scrollBy(-1)}><ChevronLeftRoundedIcon /></IconButton></span></Tooltip> : null}
       <Box aria-label="比較対象" onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', pb: 0.5 }}><Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 'max-content' }}>
         <Button aria-pressed={wholeMergeRequest} color="inherit" data-commit-item onClick={() => onSelect(null)} sx={item(wholeMergeRequest)} tabIndex={tabStop === null ? 0 : -1}>MR全体</Button>
-        {loading ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">コミットを読み込み中…</Typography> : commits.map((commit) => <Tooltip key={commit.id} title={commit.title}><Button aria-pressed={selected === commit.id} color="inherit" data-commit-item onClick={() => onSelect(commit.id)} sx={{ ...item(selected === commit.id), justifyContent: 'flex-start', maxWidth: 260 }} tabIndex={tabStop === commit.id ? 0 : -1}><Box component="span" sx={{ color: 'primary.main', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', flexShrink: 0, mr: 1 }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>)}
+        {loading ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">コミットを読み込み中…</Typography> : commits.map((commit) => { const time = commit.committedAt || commit.createdAt; return <Tooltip key={commit.id} title={`${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={selected === commit.id} color="inherit" data-commit-item onClick={() => onSelect(commit.id)} sx={{ ...item(selected === commit.id), justifyContent: 'flex-start', gap: 1, maxWidth: 420 }} tabIndex={tabStop === commit.id ? 0 : -1}><Box component="span" sx={{ color: 'primary.main', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', flexShrink: 0 }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box>{time ? <Box component="time" dateTime={time} sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 'caption.fontSize' }}>{formatAbsoluteTime(time)}</Box> : null}</Button></Tooltip> })}
       </Stack></Box>
       {scrollable ? <Tooltip title="右へスクロール"><span><IconButton aria-label="コミットの帯を右へスクロール" disabled={!overflow.right} onClick={() => scrollBy(1)}><ChevronRightRoundedIcon /></IconButton></span></Tooltip> : null}
       {nextPage !== null ? <Button onClick={onNextPage} size="small" sx={{ flexShrink: 0 }}>次のコミット</Button> : null}

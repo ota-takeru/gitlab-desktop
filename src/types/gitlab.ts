@@ -511,7 +511,10 @@ export interface Discussion {
 export interface Commit {
   id: string
   title: string
+  /** Fallback for older cached records. */
   createdAt: string
+  /** Git's committer timestamp, which may differ from the creation/author date. */
+  committedAt?: string
 }
 
 export interface Draft {
