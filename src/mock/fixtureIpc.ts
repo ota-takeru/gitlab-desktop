@@ -188,10 +188,19 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'mr': return find(request).mergeRequest
       case 'discussions': return find(request).discussions
       case 'notes': return find(request).discussions.flatMap((discussion) => discussion.notes)
-      case 'commits': return find(request).commits.map(({ createdAt, id, title }) => ({ createdAt, id, title }))
+      case 'commits': return find(request).commits.map(({ createdAt, id, title }) => ({ createdAt, committedAt: createdAt, id, title }))
       case 'drafts': return drafts.get(keyOf(request)) ?? []
       case 'diffs': return find(request).diffs
       case 'commitDiff': return find(request).commits.find((commit) => commit.id === request.sha)?.diffs ?? notFound()
+      case 'blame': {
+        const file = projectFiles(request.projectId)[request.path]
+        if (file === undefined) return notFound()
+        const lines = file.split('\n').slice(request.startLine - 1, request.endLine)
+        return lines.length ? [{ authorName: 'Fixture User', commitId: request.sha, committedAt: new Date().toISOString(), lines, title: 'Fixture commit' }] : []
+      }
+      case 'commitMergeRequests': return data.mergeRequests.map(({ mergeRequest }) => mergeRequest)
+        .filter((mr) => mr.projectId === request.projectId && mr.headSha === request.sha)
+        .map((mr) => ({ iid: mr.iid, projectId: mr.projectId, state: mr.state, title: mr.title, webUrl: mr.webUrl }))
       case 'file': {
         const content = data.mergeRequests.find((item) => item.mergeRequest.projectId === request.projectId && request.path in item.files)?.files[request.path]
         return content === undefined ? notFound() : { content }
