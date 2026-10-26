@@ -28,6 +28,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/gitlab'
 import { DiffFileTree, FileThreadMark, fileTreeOrder } from './DiffFileTree'
 import { DiffGap, type GapExpansion } from './DiffGap'
+import { BlamePanel } from './BlamePanel'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
@@ -87,6 +88,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
   const displayedPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
+  const [blameOpen, setBlameOpen] = useState(false)
+  const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.deletedFile && !selectedDiff.collapsed && !selectedDiff.tooLarge)
   // GitLab's diff API has no whitespace option, so whitespace-only changes are folded here.
   const [whitespaceIgnored, setWhitespaceIgnored] = useState(readIgnoreWhitespace)
   const toggleWhitespace = () => {
@@ -162,6 +165,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
 
   // One array per page, so the split view's row pairing is not rebuilt on every render.
   const rows = useMemo(() => displayLines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, displayLines])
+  const blameAnchorLine = rows.find((line) => line.newLine !== undefined)?.newLine ?? 1
   const language = displayedPath ? languageForPath(displayedPath) : null
   const rowTokens = useMemo(() => highlightDiffLines(rows, language), [language, rows])
   const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
@@ -441,12 +445,14 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup> : null}
-            {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
+            {canBlame && view === 'diff' ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
+             {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
               <ToggleButton value="diff">差分</ToggleButton>
               <ToggleButton value="file">ファイル全体</ToggleButton>
             </ToggleButtonGroup> : null}
           </Stack>
-          {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
+          {blameOpen && canBlame && view === 'diff' && fileSource && displayedPath ? <BlamePanel anchorLine={blameAnchorLine} key={`${fileSource.sha}:${displayedPath}`} path={displayedPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha} /> : null}
+           {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
             <Tooltip describeChild placement="bottom-start" title="表示中の差分ページを検索します。他のページは対象外です。"><TextField
               fullWidth
