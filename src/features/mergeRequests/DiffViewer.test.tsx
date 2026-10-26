@@ -492,3 +492,33 @@ describe('Markdown full-file preview', () => {
     expect(screen.getByRole('heading', { name: 'Example heading' })).toBeInTheDocument()
   })
 })
+
+describe('Markdown rendered diff presentation', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('renders only edited lines, highlights additions and removals, and switches back to reviewable source diff', () => {
+    const diff = makeDiff('@@ -1,4 +1,4 @@\n # Unchanged title\n-## Old review\n+## **New review**\n context outside the change\n ending\n', 'docs/README.md')
+    renderViewer(diff, { fileContent: '# Whole README\n\nSomething else', view: 'diff' })
+    const preview = screen.getByRole('region', { name: 'Markdown差分プレビュー' })
+    expect(within(preview).getByRole('heading', { name: 'Old review' })).toBeInTheDocument()
+    expect(within(preview).getByRole('heading', { name: 'New review' })).toBeInTheDocument()
+    expect(within(preview).queryByText('Unchanged title')).not.toBeInTheDocument()
+    expect(screen.queryByText('Whole README')).not.toBeInTheDocument()
+    expect(within(preview).getByRole('region', { name: '削除 2行' })).toHaveAttribute('data-kind', 'remove')
+    expect(within(preview).getByRole('region', { name: '追加 2行' })).toHaveAttribute('data-kind', 'add')
+    expect(screen.queryByTestId('diff-line')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown差分のソースを表示' }))
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'Markdown差分をプレビュー表示' })).toBeInTheDocument()
+  })
+
+  it('opens a linked old line comment in the source diff, retaining the line selection', () => {
+    const diff = makeDiff('@@ -5,1 +5,1 @@\n-before\n+after\n', 'docs/guide.markdown')
+    const selectedPosition: Position = { baseSha: 'base', headSha: 'head', newLine: 5, newPath: 'docs/guide.markdown', oldPath: 'docs/guide.markdown', positionType: 'text', startSha: 'start' }
+    renderViewer(diff, { selectedPosition, view: 'diff' })
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(2)
+    expect(screen.queryByRole('region', { name: 'Markdown差分プレビュー' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown差分をプレビュー表示' }))
+    expect(screen.getByRole('region', { name: 'Markdown差分プレビュー' })).toBeInTheDocument()
+  })
+})

@@ -184,16 +184,22 @@ describe('LocalChanges', () => {
 })
 
 describe('Markdown in local changes', () => {
-  it('opens the Markdown preview first and can switch to the diff', async () => {
+  it('opens a Markdown change-only preview first and keeps source and whole-file options', async () => {
     const markdownDiff = { ...changes.diffs[0], oldPath: 'docs/guide.md', newPath: 'docs/guide.md', diff: '@@ -1,1 +1,1 @@\n-# Before\n+# Local heading\n' }
     mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
     mocks.getLocalChanges.mockResolvedValue({ ...changes, diffs: [markdownDiff] })
     mocks.getLocalFile.mockResolvedValue({ content: '# Local heading\n\nDocument body' })
     renderLocal()
-    expect(await screen.findByRole('heading', { name: 'Local heading' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'ファイル全体' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: '差分' }))
+    const preview = await screen.findByRole('region', { name: 'Markdown差分プレビュー' })
+    expect(within(preview).getByRole('heading', { name: 'Local heading' })).toBeInTheDocument()
+    expect(within(preview).getByRole('heading', { name: 'Before' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '差分' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('heading', { name: 'Local heading' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Document body')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown差分のソースを表示' }))
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'ファイル全体' }))
+    expect(screen.getByRole('button', { name: 'ファイル全体' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Document body')).toBeInTheDocument()
   })
 })

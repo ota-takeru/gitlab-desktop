@@ -355,11 +355,23 @@ describe('MergeRequestDetail tabs and description', () => {
     detailMocks.fileContent = '# Rendered MR Markdown\n\n**Important**'
     onTestFinished(() => { detailMocks.diff = originalDiff; detailMocks.fileContent = null })
     renderDetail('changes')
-    expect(await screen.findByRole('heading', { name: 'Rendered MR Markdown' })).toBeInTheDocument()
-    expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'file', path: 'docs/guide.md', projectId: '7' }))
-    fireEvent.click(screen.getByRole('button', { name: '差分' }))
+    const preview = await screen.findByRole('region', { name: 'Markdown差分プレビュー' })
+    expect(within(preview).getByRole('heading', { name: 'Rendered MR Markdown' })).toBeInTheDocument()
+    expect(within(preview).getByRole('heading', { name: 'Previous' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '差分' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('heading', { name: 'Rendered MR Markdown' })).not.toBeInTheDocument()
+    expect(detailMocks.queryCalls.some((query) => query?.kind === 'file')).toBe(false)
+    expect(screen.queryByText('Important')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown差分のソースを表示' }))
+    expect(screen.queryByRole('region', { name: 'Markdown差分プレビュー' })).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown差分をプレビュー表示' }))
+    expect(screen.getByRole('region', { name: 'Markdown差分プレビュー' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'ファイル全体' }))
+    expect(screen.getByRole('button', { name: 'ファイル全体' })).toHaveAttribute('aria-pressed', 'true')
+    expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'file', path: 'docs/guide.md', projectId: '7' }))
+    expect(screen.getByText('Important')).toBeInTheDocument()
   })
 
   it('shows line comments under their diff line and opens the thread in the discussion tab', async () => {
