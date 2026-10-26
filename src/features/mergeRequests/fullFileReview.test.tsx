@@ -94,7 +94,7 @@ describe('full-file diff context', () => {
     const rows = screen.getAllByTestId('file-line')
     expect(rows[0]).toHaveAttribute('data-file-line', '1001')
     expect(rows[200]).toHaveAttribute('data-change', 'add')
-    fireEvent.click(screen.getByRole('button', { name: '差分', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: /^差分$/u }))
     expect(screen.getAllByTestId('diff-line')).toHaveLength(2)
   })
 })
