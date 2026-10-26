@@ -27,8 +27,8 @@ export function CommentChangeStatus({ headSha, position, projectId, sessionId }:
   [comparable, headSha, path, projectId, requested])
   const before = useGitLabQuery(sessionId, beforeQuery)
   const after = useGitLabQuery(sessionId, afterQuery)
-  const result = before.data && after.data ? compareCommentCode(before.data.content, after.data.content, position) : null
   const failed = before.error || after.error
+  const result = !failed && before.data && after.data ? compareCommentCode(before.data.content, after.data.content, position) : null
   return <Box sx={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
     <Tooltip title="GitLabの古い版へのコメントです。コードが変更されたとは限りません。">
       <Typography color="textSecondary" variant="caption">旧版</Typography>
