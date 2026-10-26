@@ -28,7 +28,9 @@ describe('full-file diff context', () => {
     expect(within(area).getByText('Unchanged')).toBeInTheDocument()
     expect(within(area).queryByTestId('file-line')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
-    expect(screen.getByText('## **New section**').closest('[data-change="add"]')).not.toBeNull()
+    const highlightedLine = screen.getAllByTestId('file-line').find((line) => line.getAttribute('data-file-line') === '3')
+    expect(highlightedLine).toHaveAttribute('data-change', 'add')
+    expect(highlightedLine).toHaveTextContent('## **New section**')
     expect(screen.getByTestId('file-deletion')).toHaveTextContent('## Old section')
   })
 
@@ -42,6 +44,33 @@ describe('full-file diff context', () => {
     expect(rows[200]).toHaveAttribute('data-change', 'add')
     expect(screen.getByTestId('file-deletion')).toHaveTextContent('OLD')
     expect(screen.getByText(/表示 1001.*1400.*1400行/u)).toBeInTheDocument()
+  })
+
+  it('follows the hunk actually visible when two distant changes are shown', () => {
+    const diff: Diff = {
+      oldPath: 'src/large.ts', newPath: 'src/large.ts', newFile: false, deletedFile: false, renamedFile: false, collapsed: false, tooLarge: false,
+      diff: '@@ -10 +10 @@\n-old10\n+new10\n@@ -1201 +1201 @@\n-OLD\n+NEW\n',
+    }
+    const content = Array.from({ length: 1400 }, (_, i) => i === 9 ? 'new10' : i === 1200 ? 'NEW' : `line ${i + 1}`).join('\n')
+    function Harness() {
+      const [view, setView] = useState<'diff' | 'file'>('diff')
+      return <DiffViewer diffs={[diff]} fileContent={content} onComment={vi.fn()} onSelectFile={vi.fn()} onViewChange={setView} selectedFile={diff.newPath} selectedPosition={undefined} view={view} />
+    }
+    const view = render(<ThemeProvider theme={theme}><Harness /></ThemeProvider>)
+    const marks = Array.from(view.container.querySelectorAll<HTMLElement>('[data-file-anchor]'))
+    expect(marks.map((node) => node.dataset.fileAnchor)).toEqual(['10', '1201'])
+    const rect = (top: number, bottom: number): DOMRect => ({
+      top, bottom, left: 0, right: 100, x: 0, y: top, width: 100, height: bottom - top, toJSON: () => ({}),
+    })
+    vi.spyOn(marks[0], 'getBoundingClientRect').mockReturnValue(rect(-700, -680))
+    vi.spyOn(marks[1], 'getBoundingClientRect').mockReturnValue(rect(120, 145))
+    fireEvent.click(screen.getByRole('button', { name: 'ファイル全体' }))
+    const rows = screen.getAllByTestId('file-line')
+    expect(rows[0]).toHaveAttribute('data-file-line', '1001')
+    expect(rows[200]).toHaveAttribute('data-file-line', '1201')
+    expect(rows[200]).toHaveAttribute('data-change', 'add')
+    expect(screen.getByTestId('file-deletion')).toHaveTextContent('OLD')
+    vi.restoreAllMocks()
   })
 
   it('does not imply stale or inconsistent diff annotations are accurate', () => {
