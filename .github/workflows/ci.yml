@@ -41,6 +41,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Reject high-severity npm advisories
+        run: npm audit --audit-level=high
+
       - name: Run release script tests
         run: node --test scripts/release-config.test.mjs
 
