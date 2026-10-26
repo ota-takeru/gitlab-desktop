@@ -84,7 +84,7 @@ export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, pr
     {children}
     <Popover anchorEl={selection?.anchor} anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }} onClose={() => setSelection(null)} open={Boolean(selection)} slotProps={{ paper: { sx: { maxWidth: 420, p: 1.5, width: 'min(420px, calc(100vw - 24px))' } } }}>
       {selection ? <Box aria-label="Blameのコミット詳細" role="dialog">
-        <Stack spacing={0.75}>
+        <Stack spacing={1}>
           <Typography sx={{ fontWeight: 700 }} variant="subtitle2">{shortSha(selection.block.commitId)} · {selection.block.authorName || '作成者不明'}</Typography>
           <Typography color="textSecondary" variant="caption">{selection.side === 'old' ? '変更前' : '変更後'}の{selection.line}行 · {selection.block.committedAt ? formatAbsoluteTime(selection.block.committedAt) : '日時不明'}</Typography>
           <Typography sx={{ overflowWrap: 'anywhere' }} variant="body2">{selection.block.title || 'コミットメッセージなし'}</Typography>
