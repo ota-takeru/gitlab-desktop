@@ -3448,7 +3448,7 @@ fn normalize_commit(value: &Value) -> Result<Value, AppError> {
         "title": string_field(value, "title"),
         "createdAt": string_field(value, "created_at"),
         "committedAt": value.get("committed_date").and_then(Value::as_str).unwrap_or_else(|| value.get("created_at").and_then(Value::as_str).unwrap_or("")),
-        "parentIds": value.get("parent_ids").and_then(Value::as_array).map(|parents| parents.iter().filter_map(Value::as_str).filter(|sha| validate_sha(sha).is_ok()).collect::<Vec<_>>()).unwrap_or_default(),
+        "parentIds": value.get("parent_ids").and_then(Value::as_array).map(|parents| parents.iter().filter_map(Value::as_str).filter(|sha| validate_sha(sha, "parentId").is_ok()).collect::<Vec<_>>()).unwrap_or_default(),
     }))
 }
 
