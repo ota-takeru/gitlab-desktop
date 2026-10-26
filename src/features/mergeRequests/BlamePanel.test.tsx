@@ -67,14 +67,16 @@ it('annotates rendered Markdown blocks with Blame and keeps the original text on
   expect(within(preview).getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
   expect(queryMock.mock.calls.some(([, query]) => query?.kind === 'commitMergeRequests')).toBe(false)
 
-  fireEvent.click(within(preview).getByRole('button', { name: /1行のBlame:/u }))
-  expect(screen.getByRole('dialog', { name: 'Blameのコミット詳細' })).toBeInTheDocument()
-  expect(queryMock).toHaveBeenCalledWith('session1', { kind: 'commitMergeRequests', projectId: '7', sha: newSha })
-
+  // Switching to source mode preserves line attribution and does not
+  // fetch associated MRs before opening a commit.
   fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
   const line = screen.getAllByTestId('file-line')[0]
   expect(within(line).getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
   expect(screen.getAllByTestId('file-line')).toHaveLength(6)
+
+  fireEvent.click(within(line).getByRole('button', { name: /1行のBlame:/u }))
+  expect(screen.getByRole('dialog', { name: 'Blameのコミット詳細' })).toBeInTheDocument()
+  expect(queryMock).toHaveBeenCalledWith('session1', { kind: 'commitMergeRequests', projectId: '7', sha: newSha })
 })
 
 it('begins whole-file Blame at its focused 80-line window and loads a different range on demand', () => {
