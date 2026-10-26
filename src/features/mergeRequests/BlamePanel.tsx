@@ -34,9 +34,13 @@ const BlameContext = createContext<BlameContextValue | null>(null)
 
 /** Fetch only when the user enables Blame. Each side uses the correct Git SHA
  * and file path; the code itself is rendered exclusively by the diff viewer. */
-export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, projectId, sessionId, sha }: {
+export function BlameProvider({ beforeSha, children, enabled = true, initialNewLine, lines, newPath, oldPath, projectId, sessionId, sha }: {
   beforeSha?: string
   children: ReactNode
+  /** Keeps the file subtree mounted when the Blame toggle changes. */
+  enabled?: boolean
+  /** File-view attribution starts at the visible source line, not line 1. */
+  initialNewLine?: number
   lines: ParsedLine[]
   newPath: string
   oldPath: string
@@ -48,14 +52,14 @@ export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, pr
   const [selection, setSelection] = useState<{ anchor: HTMLElement; block: BlameBlock; line: number; side: Side } | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
 
-  const firstNew = lines.find((line) => line.newLine !== undefined)?.newLine
+  const firstNew = initialNewLine ?? lines.find((line) => line.newLine !== undefined)?.newLine
   const firstOld = lines.find((line) => line.oldLine !== undefined)?.oldLine
   const newStart = requested.new ?? (firstNew !== undefined ? blameWindowStart(firstNew) : null)
   const oldStart = requested.old ?? (firstOld !== undefined ? blameWindowStart(firstOld) : null)
-  const newQuery: BlameQuery | null = newStart !== null && newPath
+  const newQuery: BlameQuery | null = enabled && newStart !== null && newPath
     ? { kind: 'blame', projectId, path: newPath, sha, startLine: newStart, endLine: newStart + BLAME_WINDOW - 1 }
     : null
-  const oldQuery: BlameQuery | null = beforeSha && oldStart !== null && oldPath
+  const oldQuery: BlameQuery | null = enabled && beforeSha && oldStart !== null && oldPath
     ? { kind: 'blame', projectId, path: oldPath, sha: beforeSha, startLine: oldStart, endLine: oldStart + BLAME_WINDOW - 1 }
     : null
   const current = useGitLabQuery(sessionId, newQuery)
@@ -63,7 +67,7 @@ export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, pr
   const newMap = useMemo(() => current.data && newStart !== null ? blameAttributions(current.data, newStart) : new Map<number, BlameAttribution>(), [current.data, newStart])
   const oldMap = useMemo(() => previous.data && oldStart !== null ? blameAttributions(previous.data, oldStart) : new Map<number, BlameAttribution>(), [previous.data, oldStart])
 
-  const relatedQuery: CommitMergeRequestsQuery | null = selection
+  const relatedQuery: CommitMergeRequestsQuery | null = enabled && selection
     ? { kind: 'commitMergeRequests', projectId, sha: selection.block.commitId }
     : null
   const related = useGitLabQuery(sessionId, relatedQuery)
@@ -82,7 +86,7 @@ export function BlameProvider({ beforeSha, children, lines, newPath, oldPath, pr
 
   return <BlameContext.Provider value={value}>
     {children}
-    <Popover anchorEl={selection?.anchor} anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }} onClose={() => setSelection(null)} open={Boolean(selection)} slotProps={{ paper: { sx: { maxWidth: 420, p: 1.5, width: 'min(420px, calc(100vw - 24px))' } } }}>
+    <Popover anchorEl={selection?.anchor} anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }} onClose={() => setSelection(null)} open={enabled && Boolean(selection)} slotProps={{ paper: { sx: { maxWidth: 420, p: 1.5, width: 'min(420px, calc(100vw - 24px))' } } }}>
       {selection ? <Box aria-label="Blameのコミット詳細" role="dialog">
         <Stack spacing={1}>
           <Typography sx={{ fontWeight: 700 }} variant="subtitle2">{shortSha(selection.block.commitId)} · {selection.block.authorName || '作成者不明'}</Typography>

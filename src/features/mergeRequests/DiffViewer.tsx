@@ -32,6 +32,7 @@ import { BlameCell, BlameProvider } from './BlamePanel'
 import { MarkdownDiffPreview } from './MarkdownDiffPreview'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
+import { annotateFullFile, filePageStart, firstChangedFileLine, type RemovedFileLines } from './fullFileAnnotations'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
@@ -90,6 +91,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
   const displayedPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
+  const [fileAnchor, setFileAnchor] = useState<{ path: string; line: number } | null>(null)
+  const restoreDiffAnchor = useRef<{ path: string; line: number } | null>(null)
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
   const [blameOpen, setBlameOpen] = useState(false)
   const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && (!selectedDiff.deletedFile || fileSource?.beforeSha))
@@ -413,6 +416,40 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     }
   }
 
+  const changeFileView = (next: 'diff' | 'file') => {
+    if (next === 'file' && displayedPath) {
+      // The viewport can be on the third Markdown change block or on a later
+      // source-diff hunk. Capture that actual section before unmounting it.
+      const top = Math.max(0, fileHeaderRef.current?.getBoundingClientRect().bottom ?? 0)
+      const bottom = globalThis.innerHeight || 1000
+      const anchors = Array.from(fileTopRef.current?.querySelectorAll<HTMLElement>('[data-file-anchor]') ?? [])
+      const visible = anchors.find((node) => {
+        const rect = node.getBoundingClientRect()
+        return rect.bottom > top + 2 && rect.top < bottom - 2
+      })
+      const visibleLine = visible ? Number(visible.dataset.fileAnchor) : NaN
+      const line = Number.isSafeInteger(visibleLine) && visibleLine > 0
+        ? visibleLine
+        : selectedPosition?.newLine ?? firstChangedFileLine(rows.length ? rows : displayLines)
+      setFileAnchor({ path: displayedPath, line })
+    }
+    if (next === 'diff' && view === 'file' && fileAnchor?.path === displayedPath) restoreDiffAnchor.current = fileAnchor
+    onViewChange(next)
+  }
+
+  useLayoutEffect(() => {
+    const wanted = restoreDiffAnchor.current
+    if (view !== 'diff' || !wanted || wanted.path !== displayedPath) return
+    const candidates = Array.from(fileTopRef.current?.querySelectorAll<HTMLElement>('[data-file-anchor]') ?? [])
+    const target = candidates.reduce<HTMLElement | null>((best, node) => {
+      const distance = Math.abs(Number(node.dataset.fileAnchor) - wanted.line)
+      const bestDistance = best ? Math.abs(Number(best.dataset.fileAnchor) - wanted.line) : Number.POSITIVE_INFINITY
+      return distance < bestDistance ? node : best
+    }, null)
+    target?.scrollIntoView?.({ behavior: 'auto', block: 'center' })
+    restoreDiffAnchor.current = null
+  }, [diffOffset, displayedPath, layout, renderedMarkdownDiff, view])
+
   const diffContent = renderedMarkdownDiff
     ? <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} />
     : layout === 'split'
@@ -461,9 +498,9 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup> : null}
-            {canBlame && view === 'diff' ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
+            {canBlame ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
             {view === 'diff' && markdownDiff && parsed.status === 'valid' && !diffSearch.trim() ? <Button aria-label={renderedMarkdownDiff ? 'Markdown差分のソースを表示' : 'Markdown差分をプレビュー表示'} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? 'ソース差分' : 'Markdownプレビュー'}</Button> : null}
-             {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) onViewChange(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
+             {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) changeFileView(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
               <ToggleButton value="diff">差分</ToggleButton>
               <ToggleButton value="file">ファイル全体</ToggleButton>
             </ToggleButtonGroup> : null}
@@ -484,7 +521,11 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">この差分は大きすぎるため省略されています。</Typography></Stack></Box> : null}
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
-          {view === 'file' ? <FullFileView key={displayedPath ?? ''} content={fileContent} language={language} loading={fileLoading} path={displayedPath} /> : <>
+          {view === 'file' ? (canBlame && fileSource && selectedDiff
+            ? <BlameProvider enabled={blameOpen} initialNewLine={fileAnchor?.path === displayedPath ? fileAnchor.line : 1} key={`${fileSource.sha}:${displayedPath}:full`} lines={[]} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>
+                <FullFileView blameEnabled={blameOpen} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />
+              </BlameProvider>
+            : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />) : <>
             {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
             {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルは空白の変更のみです。</Typography> : null}
             {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">空白の変更を無視して表示中です。行の位置がずれる可能性があるため、新しい行コメントは書けません。</Typography> : null}
@@ -562,7 +603,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
   const skipped = diffGaps(lines, startIndex)
   // Opened unchanged lines: plain context rows, outside paging and search.
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
-    <div className="diff-row" data-kind="context" data-testid="diff-opened-line">
+    <div className="diff-row" data-file-anchor={line.newLine} data-kind="context" data-testid="diff-opened-line">
       {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
       <span className="diff-gutter"><span className="diff-number">{line.oldLine}</span><span className="diff-number">{line.newLine}</span></span>
       <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(openedTokens[index] ?? [{ text: line.text }], '')}</span>
@@ -603,7 +644,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
           const key = `${lineIndex}-${line.oldLine ?? ''}-${line.newLine ?? ''}`
           return <Fragment key={key}>
             {skipped[index].count > 0 ? <DiffGap expansion={gapExpansion} gap={skipped[index]} renderLines={openedRows} /> : null}
-            <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineSelection.isChosen(lineIndex) ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" tabIndex={isSelectedPosition ? -1 : undefined}>
+            <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineSelection.isChosen(lineIndex) ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" data-file-anchor={line.newLine} tabIndex={isSelectedPosition ? -1 : undefined}>
               {blameEnabled ? <BlameCell line={line.kind === 'remove' ? line.oldLine : line.newLine} side={line.kind === 'remove' ? 'old' : 'new'} /> : null}
               <span className="diff-gutter">
                 <span className="diff-number">{line.oldLine ?? ''}</span>
@@ -748,7 +789,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => {
     const code = renderCode(openedTokens[index] ?? [{ text: line.text }], '')
     return <Fragment key={`opened-${line.newLine}`}>
-      <div className="split-row" data-testid="diff-opened-line">
+      <div className="split-row" data-file-anchor={line.newLine} data-testid="diff-opened-line">
         {blameEnabled ? <BlameCell line={line.oldLine} side="old" /> : null}
         <span className="split-number" data-kind="context" data-side="old">{line.oldLine}</span>
         <span className="split-code" data-kind="context">{code}</span>
@@ -791,7 +832,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
         const hasSearchMatch = (row.leftIndex !== undefined && searchMatchIndices.has(row.leftIndex)) || (row.rightIndex !== undefined && searchMatchIndices.has(row.rightIndex))
         return <Fragment key={row.key}>
           {row.gap && row.gap.count > 0 ? <DiffGap expansion={gapExpansion} gap={row.gap} renderLines={openedRows} /> : null}
-          <div className="split-row" data-line-id={selected && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-active={activeSearch ? 'true' : undefined} data-search-match={hasSearchMatch ? 'true' : undefined} data-selected={selected ? 'true' : undefined} data-testid="diff-split-row" tabIndex={selected ? -1 : undefined}>
+          <div className="split-row" data-line-id={selected && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-active={activeSearch ? 'true' : undefined} data-search-match={hasSearchMatch ? 'true' : undefined} data-selected={selected ? 'true' : undefined} data-testid="diff-split-row" data-file-anchor={row.right?.newLine ?? row.left?.newLine} tabIndex={selected ? -1 : undefined}>
             {cell(row.left, 'old', row.leftIndex)}
             {cell(row.right, 'new', row.rightIndex)}
           </div>
@@ -867,38 +908,97 @@ function highlightDiffLines(lines: ParsedLine[], language: string | null): Synta
   return result
 }
 
-export function FullFileView({ content, language, loading, path }: { content?: string | null; language: string | null; loading: boolean; path?: string | null }) {
+function RemovedFullFileLines({ item }: { item: RemovedFileLines }) {
+  const label = item.oldStart === item.oldEnd ? String(item.oldStart) : `${item.oldStart}〜${item.oldEnd}`
+  return <Box aria-label={`旧版の削除 ${label}行`} data-file-anchor={item.anchorLine} data-testid="file-deletion" sx={(theme) => ({
+    bgcolor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 0.5, px: 1.5, py: 0.5,
+  })}>
+    <Typography sx={{ fontWeight: 600 }} variant="caption">− 旧版で削除 · {label}行</Typography>
+    <Typography component="pre" sx={{ fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', m: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{item.text}</Typography>
+  </Box>
+}
+
+export function FullFileView({ blameEnabled = false, content, diffLines, language, loading, path, targetLine }: { blameEnabled?: boolean; content?: string | null; diffLines?: ParsedLine[]; language: string | null; loading: boolean; path?: string | null; targetLine?: number }) {
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
-  const [filePaging, setFilePaging] = useState({ contentKey: '', offset: 0 })
-  const [showSource, setShowSource] = useState(false)
+  const focus = targetLine ?? 0
   const markdown = isMarkdownFilePath(path)
-  const offset = filePaging.contentKey === contentKey ? filePaging.offset : 0
+  const annotations = useMemo(() => content !== null && content !== undefined && diffLines && diffLines.length ? annotateFullFile(diffLines, content) : null, [content, diffLines])
+  const changeMarkers = annotations?.consistent ? annotations : null
+  const firstOffset = targetLine ? filePageStart(targetLine, lines.length, FILE_PAGE_SIZE) : 0
+  const [filePaging, setFilePaging] = useState({ contentKey: '', focus: 0, offset: 0 })
+  const [showSource, setShowSource] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const lastPositioned = useRef<{ content: string | null | undefined; line: number; source: boolean } | null>(null)
+  const offset = filePaging.contentKey === contentKey && filePaging.focus === focus ? filePaging.offset : firstOffset
   const updateOffset = (update: (current: number) => number): void => {
     setFilePaging((current) => {
-      const currentOffset = current.contentKey === contentKey ? current.offset : 0
-      return { contentKey, offset: update(currentOffset) }
+      const currentOffset = current.contentKey === contentKey && current.focus === focus ? current.offset : firstOffset
+      return { contentKey, focus, offset: update(currentOffset) }
     })
   }
-
   const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
-  // Avoid tokenizing large Markdown files when their rendered view is active.
   const visibleTokens = useMemo(() => markdown && !showSource ? [] : highlightLines(visibleLines, language), [language, markdown, showSource, visibleLines])
+
+  useLayoutEffect(() => {
+    if (!content || !targetLine || !rootRef.current) return
+    const previous = lastPositioned.current
+    if (previous?.content === content && previous.line === targetLine && previous.source === showSource) return
+    const candidates = Array.from(rootRef.current.querySelectorAll<HTMLElement>('[data-file-line], [data-file-anchor], [data-source-start]'))
+    const rank = (element: HTMLElement): number => {
+      const exactLine = Number(element.dataset.fileLine)
+      const removalAnchor = Number(element.dataset.fileAnchor)
+      if (exactLine === targetLine || removalAnchor === targetLine) return 0
+      const start = Number(element.dataset.sourceStart)
+      const end = Number(element.dataset.sourceEnd)
+      if (start > 0 && end >= start && start <= targetLine && targetLine <= end) return (end - start + 1) / 1000
+      const nearest = exactLine || removalAnchor || start
+      return nearest > 0 ? 1 + Math.abs(nearest - targetLine) : Number.POSITIVE_INFINITY
+    }
+    const target = candidates.reduce<HTMLElement | null>((best, element) => !best || rank(element) < rank(best) ? element : best, null)
+    if (target) {
+      lastPositioned.current = { content, line: targetLine, source: showSource }
+      target.scrollIntoView?.({ behavior: 'auto', block: 'center' })
+    }
+  }, [content, markdown, offset, showSource, targetLine])
 
   if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
 
-  return <>
+  return <Box ref={rootRef} sx={blameEnabled ? (theme: Theme) => ({
+    '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
+    '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
+    '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
+    '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  }) : undefined}>
     {markdown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
       <Button aria-label={showSource ? 'Markdownをレンダリング' : 'Markdownのソースを表示'} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? 'Markdown表示' : 'ソース表示'}</Button>
     </Box> : null}
+    {annotations && !annotations.consistent ? <Typography color="warning.main" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">取得したファイルと差分の行が一致しないため、変更箇所の色付けを省略しています。</Typography> : null}
     {!content ? <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
-      : markdown && !showSource ? <Box aria-label="Markdownプレビュー" sx={{ minWidth: 0, px: 2, py: 1.5 }}><MockMarkdown body={content} size="body1" /></Box>
+      : markdown && !showSource ? <Box aria-label="Markdownプレビュー" sx={(theme) => ({
+          minWidth: 0, px: 2, py: 1.5,
+          '& [data-review-change="add"]': { backgroundColor: theme.palette.diff?.addedBackground, boxShadow: `inset 3px 0 0 ${theme.palette.success.main}`, borderRadius: 1, px: 0.5 },
+          '& [data-review-deleted="true"]': { backgroundColor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 1, px: 1.5, py: 1 },
+          '& [data-review-deleted="true"] pre': { fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', mb: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' },
+        })}><MockMarkdown body={content} renderBlame={blameEnabled ? (line) => <BlameCell line={line} side="new" /> : undefined} review={changeMarkers ?? undefined} size="body1" /></Box>
         : <>
           <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
-          <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => <Stack data-testid="file-line" direction="row" key={offset + index} sx={{ minHeight: 22 }}><Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{offset + index + 1}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>)}</Box>
+          <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => {
+            const fileLine = offset + index + 1
+            const additions = changeMarkers?.addedLines.has(fileLine)
+            return <Fragment key={fileLine}>
+              {(changeMarkers?.removedByAnchor.get(fileLine) ?? []).map((item, removedIndex) => <RemovedFullFileLines item={item} key={`${item.oldStart}:${removedIndex}`} />)}
+              <Stack data-change={additions ? 'add' : undefined} data-file-line={fileLine} data-testid="file-line" direction="row" sx={(theme) => ({
+                backgroundColor: additions ? theme.palette.diff?.addedBackground : undefined,
+                boxShadow: additions ? `inset 3px 0 0 ${theme.palette.success.main}` : undefined, minHeight: 22,
+              })}>{blameEnabled ? <BlameCell line={fileLine} side="new" /> : null}<Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>
+            </Fragment>
+          })}
+          {offset + visibleLines.length >= lines.length ? (changeMarkers?.removedByAnchor.get(lines.length + 1) ?? []).map((item, index) => <RemovedFullFileLines item={item} key={`last:${item.oldStart}:${index}`} />) : null}
+          </Box>
         </>}
-  </>
+  </Box>
 }
 
 function matchesPosition(line: ParsedLine, position: Position | undefined): boolean {

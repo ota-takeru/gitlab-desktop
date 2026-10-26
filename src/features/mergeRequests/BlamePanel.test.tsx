@@ -1,6 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { ThemeProvider } from '@mui/material/styles'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 
+import { createAppTheme } from '../../theme'
+import { FullFileView } from './DiffViewer'
 import { BlameCell, BlameProvider } from './BlamePanel'
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }))
@@ -44,4 +48,85 @@ it('never attributes removed code to the new revision when its old SHA is unknow
   </BlameProvider>)
   expect(screen.getByLabelText('このリビジョンの変更前の履歴はありません')).toBeInTheDocument()
   expect(queryMock.mock.calls.some(([, query]) => query?.kind === 'blame')).toBe(false)
+})
+
+it('annotates rendered Markdown blocks with Blame and keeps the original text once', () => {
+  const body = '# Introduction\n\nA **rich** paragraph.\n\n- First item\n- Second item'
+  render(<ThemeProvider theme={createAppTheme('light')}>
+    <BlameProvider initialNewLine={3} lines={[]} newPath="docs/guide.md" oldPath="docs/guide.md" projectId="7" sessionId="session1" sha={newSha}>
+      <FullFileView blameEnabled content={body} language="markdown" loading={false} path="docs/guide.md" targetLine={3} />
+    </BlameProvider>
+  </ThemeProvider>)
+
+  expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', path: 'docs/guide.md', sha: newSha, startLine: 1, endLine: 80 }))
+  const preview = screen.getByLabelText('Markdownプレビュー')
+  const markers = preview.querySelectorAll('[data-review-blame-line]')
+  expect(markers.length).toBeGreaterThanOrEqual(3)
+  expect(within(preview).getAllByText('Introduction')).toHaveLength(1)
+  expect(within(preview).getByText('rich')).toBeInTheDocument()
+  expect(within(preview).getByText('First item')).toBeInTheDocument()
+  expect(within(preview).getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
+  expect(queryMock.mock.calls.some(([, query]) => query?.kind === 'commitMergeRequests')).toBe(false)
+
+  // Switching to source mode preserves line attribution and does not
+  // fetch associated MRs before opening a commit.
+  fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
+  const line = screen.getAllByTestId('file-line')[0]
+  expect(within(line).getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
+  expect(screen.getAllByTestId('file-line')).toHaveLength(6)
+
+  fireEvent.click(within(line).getByRole('button', { name: /1行のBlame:/u }))
+  expect(screen.getByRole('dialog', { name: 'Blameのコミット詳細' })).toBeInTheDocument()
+  expect(queryMock).toHaveBeenCalledWith('session1', { kind: 'commitMergeRequests', projectId: '7', sha: newSha })
+})
+
+it('begins whole-file Blame at its focused 80-line window and loads a different range on demand', () => {
+  const content = Array.from({ length: 1250 }, (_, index) => `line ${index + 1}`).join('\n')
+  render(<ThemeProvider theme={createAppTheme('light')}>
+    <BlameProvider initialNewLine={1201} lines={[]} newPath="src/long.ts" oldPath="src/long.ts" projectId="7" sessionId="session1" sha={newSha}>
+      <FullFileView blameEnabled content={content} language="typescript" loading={false} path="src/long.ts" targetLine={1201} />
+    </BlameProvider>
+  </ThemeProvider>)
+  expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', path: 'src/long.ts', sha: newSha, startLine: 1201, endLine: 1280 }))
+  const first = screen.getAllByTestId('file-line')[0]
+  expect(first).toHaveAttribute('data-file-line', '1001')
+  fireEvent.click(within(first).getByRole('button', { name: /1001行のBlameを取得/u }))
+  expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', path: 'src/long.ts', sha: newSha, startLine: 961, endLine: 1040 }))
+})
+
+it('leaves Markdown rendering and source mode free of Blame in standalone code browsing', () => {
+  const body = '# Heading\n\nBody'
+  render(<ThemeProvider theme={createAppTheme('light')}>
+    <FullFileView content={body} language="markdown" loading={false} path="README.md" />
+  </ThemeProvider>)
+  expect(screen.queryByLabelText(/行のBlame/u)).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
+  expect(screen.queryByRole('button', { name: /行のBlame/u })).not.toBeInTheDocument()
+})
+
+it('keeps full-file source mode mounted while Blame is toggled on and off', () => {
+  function Harness() {
+    const [enabled, setEnabled] = useState(false)
+    return <ThemeProvider theme={createAppTheme('light')}>
+      <BlameProvider enabled={enabled} initialNewLine={1} lines={[]} newPath="docs/file.md" oldPath="docs/file.md" projectId="7" sessionId="session1" sha={newSha}>
+        <button onClick={() => setEnabled((current) => !current)} type="button">Blame切替</button>
+        <FullFileView blameEnabled={enabled} content={'# Heading\n\nBody text'} language="markdown" loading={false} path="docs/file.md" />
+      </BlameProvider>
+    </ThemeProvider>
+  }
+  render(<Harness />)
+  fireEvent.click(screen.getByRole('button', { name: 'Markdownのソースを表示' }))
+  expect(screen.getAllByTestId('file-line')).toHaveLength(3)
+  expect(queryMock.mock.calls.some(([, query]) => query?.kind === 'blame')).toBe(false)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Blame切替' }))
+  expect(screen.getByRole('button', { name: 'Markdownをレンダリング' })).toBeInTheDocument()
+  expect(screen.getAllByTestId('file-line')).toHaveLength(3)
+  expect(screen.getByRole('button', { name: /1行のBlame:/u })).toBeInTheDocument()
+  expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', sha: newSha, startLine: 1, endLine: 80 }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Blame切替' }))
+  expect(screen.getAllByTestId('file-line')).toHaveLength(3)
+  expect(screen.queryByRole('button', { name: /行のBlame/u })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Markdownをレンダリング' })).toBeInTheDocument()
 })
