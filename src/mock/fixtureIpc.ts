@@ -114,7 +114,8 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'check_app_update': return { configured: false, downloaded: false, notes: null, version: null }
       case 'download_app_update': return null
       case 'get_pending_operation':
-      case 'get_gitlab_avatar': return null
+      case 'get_gitlab_avatar':
+      case 'get_gitlab_image': return null
       case 'plugin:notification|is_permission_granted': return false
       case 'plugin:notification|request_permission': return 'denied'
       case 'acknowledge_pending_operation':
@@ -391,7 +392,10 @@ export function installFixtureIpc(state: FixtureState): void {
   }
 
   function projectFiles(projectId: string): Record<string, string> {
-    return Object.assign({}, ...data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === projectId).map((item) => item.files))
+    const previewReadme = projectId === '101' ? {
+      'README.md': '# Desktop Client\n\nGitLabのマージリクエストをレビューする、Windows向けデスクトップクライアントです。\n\n## 主な機能\n\n- **差分レビュー**：変更と関連スレッドを同じ画面で閲覧\n- **Blame**：行の変更コミットと関連MRを確認\n- **キャッシュ**：表示済みの情報を再利用\n\n## 技術スタック\n\nTypeScript / React / Tauri / Rust\n\n> 開発用の固定データによる表示です。\n',
+    } : {}
+    return Object.assign({}, previewReadme, ...data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === projectId).map((item) => item.files))
   }
 
   function find(ref: { projectId: string; iid: string }): FixtureMergeRequest {
