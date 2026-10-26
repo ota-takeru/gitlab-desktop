@@ -22,6 +22,10 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - name: Inspect dependency advisories (diagnostic)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: npm audit --json
       - name: Capture live UI using fixture IPC
         run: npx playwright test tests/visual/preview.visual.ts --workers=1
       - name: Upload preview screenshots
