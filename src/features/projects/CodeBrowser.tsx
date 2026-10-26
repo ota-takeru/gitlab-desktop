@@ -115,7 +115,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
         {shown.error && !shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{errorMessage(shown.error, Boolean(file), path)}</Alert> : null}
         {shown.error && shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの内容を表示中です。更新に失敗しました: {shown.error.message}</Alert> : null}
         {file
-          ? shown.error && !shown.data ? null : showMarkdown && blob.data ? <MarkdownLinkProvider instanceUrl={session.instanceUrl}><Box sx={{ px: 2, py: 1.5 }}><MockMarkdown body={blob.data.content} size="body1" /></Box></MarkdownLinkProvider> : <FullFileView content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} />
+          ? shown.error && !shown.data ? null : showMarkdown && blob.data ? <MarkdownLinkProvider instanceUrl={session.instanceUrl} sessionId={session.id}><Box sx={{ px: 2, py: 1.5 }}><MockMarkdown body={blob.data.content} size="body1" /></Box></MarkdownLinkProvider> : <FullFileView content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} />
           : <>
             {tree.data && entries.length === 0 && !path ? <PaneEmpty description="このブランチにはファイルがありません。" icon={<FolderOutlinedIcon fontSize="inherit" />} title="ファイルはありません" /> : null}
             {tree.data && (entries.length || path) ? <Box aria-label="ファイル" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>

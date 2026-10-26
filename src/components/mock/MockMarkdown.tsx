@@ -9,6 +9,7 @@ import { emojiForName, useEmojiCatalog, type EmojiCatalog } from '../../lib/awar
 import { remarkGitLabReferences, resolveMarkdownUrl, type MarkdownLinkBase } from '../../lib/markdownLinks'
 import { useMarkdownLinks } from '../MarkdownLinks'
 import { markdownBodySx } from '../markdownBodySx'
+import { useGitLabImage } from '../../features/shared/useGitLabImage'
 
 interface MarkdownNode { type: string; value?: string; children?: MarkdownNode[] }
 
@@ -29,9 +30,17 @@ function MarkdownAnchor({ children, href }: { children?: ReactNode; href?: strin
   return <Link href={href} onClick={opensThroughApp ? (event) => { event.preventDefault(); open(href) } : undefined} rel="noopener noreferrer" target="_blank" title={href}>{children}</Link>
 }
 
+/** Uploads are read by Rust; WebView never follows an arbitrary image URL. */
+function MarkdownImage({ alt, src }: { alt?: string; src?: string }) {
+  const { sessionId } = useMarkdownLinks()
+  const { data, ready } = useGitLabImage(sessionId, src)
+  if (data) return <Box component="img" alt={alt ?? ''} loading="lazy" sx={{ display: 'block', height: 'auto', maxHeight: 480, maxWidth: '100%', objectFit: 'contain' }} src={data} />
+  return <Typography component="span" color="textSecondary" variant="caption">[画像: {alt || '説明なし'} · {sessionId && src && !ready ? '読み込み中' : '表示できません'}]</Typography>
+}
+
 const components: Components = {
   a: ({ href, children }) => <MarkdownAnchor href={href}>{children}</MarkdownAnchor>,
-  img: ({ alt }) => <Typography component="span" color="textSecondary" variant="caption">[画像: {alt || '説明なし'} · 外部画像は読み込みません]</Typography>,
+  img: ({ alt, src }) => <MarkdownImage alt={alt} src={src} />,
   code: ({ children }) => <Typography component="code" variant="code" sx={{ fontSize: 'inherit', whiteSpace: 'pre-wrap' }}>{children}</Typography>,
 }
 

@@ -881,7 +881,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
 
   return (
-    <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)}>
+    <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)} sessionId={session?.id}>
     <Box component="section" ref={sectionRef} sx={{ minHeight: '100%', width: '100%' }}>
       <Box component="header" data-sticky-header="true" ref={headerRef} sx={{ bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider', position: 'sticky', px: 2, pt: 1.5, top: 0, zIndex: 2 }}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32 }}>

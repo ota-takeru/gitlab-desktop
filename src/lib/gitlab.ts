@@ -198,6 +198,17 @@ export async function getGitLabAvatar(sessionId: string, url: string): Promise<s
   }
 }
 
+/** Retrieves an authenticated GitLab upload only when Rust validates its
+ * origin, path, MIME type and size. External Markdown images stay blocked. */
+export async function getGitLabImage(sessionId: string, url: string): Promise<string | null> {
+  if (!isTauri()) return null
+  try {
+    return await invoke<string | null>('get_gitlab_image', { sessionId, url })
+  } catch (error) {
+    throw normalizeGitLabError(error)
+  }
+}
+
 /**
  * Reads a cached page immediately and then asks Rust for a network refresh.
  * Each callback is guarded by the caller's lifecycle, so a page can unmount
