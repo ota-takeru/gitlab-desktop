@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: 'Rebuild the screenshot baselines on this runner and upload them as an artifact to commit'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,4 +36,42 @@ jobs:
           name: gitlab-desktop-ui-preview
           path: output/ui-snap/results/**/*.png
           if-no-files-found: warn
+          retention-days: 7
+
+  visual:
+    name: Screenshot comparison and accessibility
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Check accessibility of the client screens
+        run: npx playwright test tests/visual/a11y.visual.ts
+      - name: Compare the catalog and client screens with their baselines
+        if: ${{ !inputs.update_snapshots }}
+        run: npx playwright test tests/visual/catalog.visual.ts tests/visual/user.visual.ts
+      - name: Rebuild the baselines
+        if: ${{ inputs.update_snapshots }}
+        run: npx playwright test tests/visual/catalog.visual.ts tests/visual/user.visual.ts --update-snapshots
+      - name: Upload rebuilt baselines
+        if: ${{ inputs.update_snapshots }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshot-baselines
+          path: tests/visual/screenshots/*.png
+          retention-days: 7
+      - name: Upload the comparison report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshot-report
+          path: |
+            output/ui-snap/report
+            output/ui-snap/results
           retention-days: 7

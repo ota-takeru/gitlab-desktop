@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:release": "node --test scripts/release-config.test.mjs",
     "version:bump": "node scripts/version-bump.mjs",
     "ui:snap": "playwright test",
@@ -52,6 +53,7 @@
     "unified": "11.0.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.1",
     "@tauri-apps/cli": "2.12.3",
@@ -62,6 +64,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
+    "@vitest/coverage-v8": "5.0.5",
     "emojibase-data": "17.0.0",
     "eslint": "10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",
