@@ -155,8 +155,8 @@ describe('ProjectView', () => {
     queryMock.mockReturnValue({ ...emptyResult, data: projects, error: new Error('offline'), refresh, stale: true })
     render(<ProjectView onOpenProject={vi.fn()} />)
 
-    const first = screen.getByRole('button', { name: 'Web（team/web）' })
-    const second = screen.getByRole('button', { name: 'Web（other/web）' })
+    const first = screen.getByRole('button', { name: /^Web .*team\/web/u })
+    const second = screen.getByRole('button', { name: /^Web .*other\/web/u })
     first.focus()
     fireEvent.keyDown(first, { key: 'ArrowDown' })
     expect(document.activeElement).toBe(second)

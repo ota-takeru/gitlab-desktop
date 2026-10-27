@@ -462,7 +462,7 @@ describe('DiffViewer multi-line comments and whitespace', () => {
     const view = render(<ThemeProvider theme={createAppTheme('dark')}><DiffViewer allowComments diffs={[spaced]} onComment={vi.fn()} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile="src/space.ts" selectedPosition={undefined} view="diff" /></ThemeProvider>)
     expect(screen.getAllByTestId('diff-line')).toHaveLength(5)
 
-    fireEvent.click(screen.getByRole('button', { name: '空白の変更を無視' }))
+    fireEvent.click(screen.getByRole('button', { name: '空白を無視' }))
     const rows = screen.getAllByTestId('diff-line')
     expect(rows.map((row) => row.dataset.kind)).toEqual(['context', 'context', 'context'])
     expect(rows[1].textContent).toContain('    run()')
@@ -473,7 +473,7 @@ describe('DiffViewer multi-line comments and whitespace', () => {
 
     view.unmount()
     renderFor()
-    expect(screen.getByRole('button', { name: '空白の変更を無視' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '空白を無視' })).toHaveAttribute('aria-pressed', 'true')
     // Real changes stay changes while whitespace is ignored.
     expect(screen.getAllByTestId('diff-line').filter((row) => row.dataset.kind !== 'context')).toHaveLength(5)
   })

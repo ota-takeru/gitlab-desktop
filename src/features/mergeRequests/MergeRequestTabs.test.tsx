@@ -69,7 +69,7 @@ it('adds an opened MR as the newest tab only when it has no tab yet', () => {
 it('reorders tabs within their section with Alt and the arrow keys', () => {
   render(<MergeRequestTabs collapsed={false} onOpen={vi.fn()} selected={null} />)
 
-  fireEvent.keyDown(screen.getByRole('button', { name: 'team/app !2 開いているMRの題名' }), { altKey: true, key: 'ArrowDown' })
+  fireEvent.keyDown(screen.getByRole('button', { name: '開いているMRの題名 app !2（team/app）' }), { altKey: true, key: 'ArrowDown' })
   expect(readWorkspace(scope).open.map((ref) => ref.iid)).toEqual(['3', '2'])
   // Pinned tabs stay where they are.
   expect(readWorkspace(scope).pinned.map((ref) => ref.iid)).toEqual(['1'])

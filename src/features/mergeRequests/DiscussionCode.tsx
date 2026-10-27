@@ -34,7 +34,7 @@ const codeSx = {
   overflowWrap: 'anywhere',
   whiteSpace: 'pre-wrap',
 } as const
-const numberSx = { color: 'text.secondary', opacity: 0.8, px: 0.5, textAlign: 'right', userSelect: 'none' } as const
+const numberSx = { color: 'text.secondary', px: 0.5, textAlign: 'right', userSelect: 'none' } as const
 
 function DiffExcerpt({ lines, target }: { lines: ParsedLine[]; target: number }) {
   return <Box aria-label="コメント対象の差分" component="figure" role="group" sx={{ m: 0 }}>

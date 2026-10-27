@@ -140,9 +140,9 @@ describe('DiscussionList note ownership and resolution', () => {
     const onResolve = vi.fn().mockResolvedValue(true)
     const view = renderList([discussion], { onResolve })
 
-    fireEvent.click(screen.getByRole('button', { name: '解決する' }))
+    fireEvent.click(screen.getByRole('button', { name: /: 解決する$/u }))
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(discussion, true))
-    expect(screen.queryByRole('button', { name: '未解決に戻す' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /: 未解決に戻す$/u })).not.toBeInTheDocument()
 
     onResolve.mockClear()
     const allResolved = createDiscussion([
@@ -163,9 +163,9 @@ describe('DiscussionList note ownership and resolution', () => {
       </ThemeProvider>,
     )
 
-    expect(screen.getByRole('button', { name: '未解決に戻す' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '解決する' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '未解決に戻す' }))
+    expect(screen.getByRole('button', { name: /: 未解決に戻す$/u })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /: 解決する$/u })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /: 未解決に戻す$/u }))
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(allResolved, false))
   })
 
@@ -201,7 +201,7 @@ describe('DiscussionList note ownership and resolution', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '返信' }))
     await waitFor(() => expect(onReply).toHaveBeenCalledWith(discussion))
-    fireEvent.click(screen.getByRole('button', { name: '解決する' }))
+    fireEvent.click(screen.getByRole('button', { name: /: 解決する$/u }))
     await waitFor(() => expect(onResolve).toHaveBeenCalledWith(discussion, true))
   })
 

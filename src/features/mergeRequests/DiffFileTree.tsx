@@ -69,7 +69,8 @@ export function FileThreadMark({ count }: { count?: FileThreadCount }) {
   return <Tooltip title={label}>
     <Box aria-label={label} component="span" data-unresolved={count.unresolved > 0 ? 'true' : undefined} role="img" sx={{ alignItems: 'center', color: count.unresolved ? 'warning.main' : 'text.secondary', display: 'inline-flex', flexShrink: 0, gap: 0.25, typography: 'caption' }}>
       {count.unresolved ? <MarkChatUnreadOutlinedIcon fontSize="inherit" /> : <ChatBubbleOutlineRoundedIcon fontSize="inherit" />}
-      {count.unresolved || count.total}
+      {/* The number is drawn from `data-count`; the label above says it, so a row's name is not given a stray digit. */}
+      <Box component="span" data-count={count.unresolved || count.total} sx={{ '&::before': { content: 'attr(data-count)' } }} />
     </Box>
   </Tooltip>
 }

@@ -475,7 +475,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {reviewState.enabled ? <Typography color="textSecondary" component="div" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 0.25 }} variant="caption">確認済み {reviewedCount}/{diffs.length}</Typography> : null}
           {/* The file-name search filters the tree, so it sits on top of it. */}
           {treeShown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, p: 0.5 }}>{fileSearchField(true)}</Box> : null}
-          <List disablePadding sx={{ overflowY: 'auto', p: 0.5 }}>
+          {/* The rows are buttons, not list items. */}
+          <List component="div" disablePadding sx={{ overflowY: 'auto', p: 0.5 }}>
             {fileListMode === 'tree' ? <DiffFileTree displayedPath={displayedPath} entries={fileSearchMatches} expandAll={Boolean(fileSearch.trim())} fileMark={(diff) => <FileKindMark diff={diff} />} isReviewed={reviewState.isReviewed} onSelect={onSelectFile} threadCount={(path) => threadCounts.get(path)} /> : fileSearchMatches.map(({ diff, path }) => {
               const { directory, name } = splitPath(path)
               const kind = diff.tooLarge ? '取得制限' : diff.untracked ? '未追跡' : diff.newFile ? '新規' : diff.deletedFile ? '削除' : diff.renamedFile ? `名前変更: ${diff.oldPath}` : null
@@ -497,7 +498,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               {selectedDiff && view === 'diff' ? <Typography aria-label={`追加${lineCounts.added}行、削除${lineCounts.removed}行`} component="span" sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap' }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
             </Stack>
             {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title="確認済みにすると次の未確認ファイルを開きます。head SHAまたはファイル差分が変わると未確認に戻ります。"><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={toggleReviewed} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? '確認済み' : '確認済みにする'}</Button></Tooltip> : null}
-            {view === 'diff' ? <Tooltip describeChild title={whitespaceIgnored ? '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示しています。行の位置がずれる可能性があるため、この間は新しい行コメントを書けません。' : '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示します。表示中は新しい行コメントを書けません。'}><ToggleButton aria-label="空白の変更を無視" onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25 }} value="ignore-whitespace">空白を無視</ToggleButton></Tooltip> : null}
+            {view === 'diff' ? <Tooltip describeChild title={whitespaceIgnored ? '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示しています。行の位置がずれる可能性があるため、この間は新しい行コメントを書けません。' : '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示します。表示中は新しい行コメントを書けません。'}><ToggleButton onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25 }} value="ignore-whitespace">空白を無視</ToggleButton></Tooltip> : null}
             {view === 'diff' ? <ToggleButtonGroup aria-label="差分の表示形式" exclusive onChange={(_, next: DiffLayout | null) => { if (next) changeLayout(next) }} size="small" sx={{ flexShrink: 0 }} value={layout}>
               <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
@@ -559,7 +560,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function FileKindMark({ diff }: { diff: Diff }) {
   const [label, color] = diff.untracked ? ['U', 'success.main'] : diff.newFile ? ['A', 'success.main'] : diff.deletedFile ? ['D', 'error.main'] : diff.renamedFile ? ['R', 'info.main'] : ['M', 'warning.main']
-  return <Box aria-hidden component="span" sx={{ color, flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'overline.fontSize', fontWeight: 700, width: 10 }}>{label}</Box>
+  // Drawn from `data-kind`, so the letter is not read as part of the file row's name, which already says the path.
+  return <Box aria-hidden component="span" data-kind={label} sx={{ color, flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'overline.fontSize', fontWeight: 700, width: 10, '&::before': { content: 'attr(data-kind)' } }} />
 }
 
 function PageControls({ offset, pageSize, total, onNext, onPrevious }: { offset: number; pageSize: number; total: number; onNext: () => void; onPrevious: () => void }) {
@@ -628,7 +630,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
       '& .diff-gutter': { backgroundColor: 'var(--row-bg)', display: 'flex', flexShrink: 0, paddingRight: '26px', position: 'relative' },
       // Lines chosen for a multi-line comment: a bar and a tint on the gutter, keeping the add/remove colour of the code.
       '& .diff-row[data-range="true"] .diff-gutter': { backgroundColor: theme.palette.action.selected, boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
-      '& .diff-number': { color: theme.palette.text.secondary, opacity: 0.8, padding: '0 6px', textAlign: 'right', userSelect: 'none', width: 44 },
+      '& .diff-number': { color: theme.palette.text.secondary, padding: '0 6px', textAlign: 'right', userSelect: 'none', width: 44 },
       '& .diff-row:hover .diff-action, & .diff-row:focus-within .diff-action, & .diff-row[data-selected="true"] .diff-action': { opacity: 1 },
       '& .diff-code': { color: theme.palette.text.primary, flex: 1, minWidth: 0, overflowWrap: 'anywhere', paddingRight: '24px', whiteSpace: 'pre-wrap' },
       '& .diff-row[data-kind="add"] .diff-prefix': { color: theme.palette.diff?.addedText },

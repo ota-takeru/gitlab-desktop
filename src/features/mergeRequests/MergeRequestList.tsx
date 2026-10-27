@@ -368,6 +368,8 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
             ref={searchFieldRef}
             slotProps={{
               htmlInput: {
+                // A text field that opens the conditions menu; as a combobox its open state may be announced.
+                role: 'combobox',
                 'aria-controls': searchOptions ? 'mr-search-options' : undefined,
                 'aria-expanded': Boolean(searchOptions),
                 'aria-haspopup': 'menu',
@@ -818,7 +820,7 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
         {hasUnread ? <Tooltip title={`未読 ${unread}件（既知のコメントの未読数です。未取得のコメントは含みません）`}><Chip aria-label={`未読 ${unread}`} color="primary" icon={<MarkChatUnreadRoundedIcon />} label={unread} size="small" /></Tooltip> : null}
         <Typography sx={{ fontWeight: 500 }} variant="caption">{mergeRequest.author.name}</Typography>
         {labels.slice(0, ROW_LABELS).map((label) => <Chip key={label} label={label} size="small" sx={{ maxWidth: '100%' }} variant="outlined" />)}
-        {hiddenLabels.length ? <Tooltip title={hiddenLabels.join(', ')}><Chip aria-label={`ほかのラベル ${hiddenLabels.length}件: ${hiddenLabels.join(', ')}`} label={`+${hiddenLabels.length}`} size="small" variant="outlined" /></Tooltip> : null}
+        {hiddenLabels.length ? <Tooltip title={hiddenLabels.join(', ')}><Chip aria-label={`+${hiddenLabels.length} ほかのラベル: ${hiddenLabels.join(', ')}`} label={`+${hiddenLabels.length}`} size="small" variant="outlined" /></Tooltip> : null}
       </Stack>
     </ListRow>
   )

@@ -29,6 +29,6 @@ describe('GitLabUserAvatar', () => {
     const { container } = render(<><GitLabUserAvatar sessionId="session-b" user={user} /><GitLabUserAvatar sessionId="session-b" user={{ ...user, avatarUrl: null, id: '8' }} /></>)
     await waitFor(() => expect(avatarMock).toHaveBeenCalledTimes(1))
     expect(container.querySelector('img')).toBeNull()
-    expect(container).toHaveTextContent('AA')
+    expect(container.querySelectorAll('[data-initial="A"]')).toHaveLength(2)
   })
 })

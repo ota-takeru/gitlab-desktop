@@ -123,7 +123,7 @@ describe('LocalChanges', () => {
 
     expect(await screen.findByText(/未追跡1件を含む/u)).toBeInTheDocument()
     // The file list marks it as untracked, not as a committed new file.
-    expect(screen.getByText('U')).toBeInTheDocument()
+    expect(document.querySelector('[data-kind="U"]')).toBeInTheDocument()
     expect(screen.queryByText('A')).not.toBeInTheDocument()
     expect(screen.queryByText(/上限を超えたため/u)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'ファイル全体' }))

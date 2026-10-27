@@ -165,7 +165,6 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
                 actions={!isPinned ? favouriteButton : undefined}
                 // A favourite keeps its star in view: the mark and the button to remove it are one control.
                 stickyActions={isPinned ? favouriteButton : undefined}
-                ariaLabel={`${project.name}（${project.pathWithNamespace}）`}
                 leading={<SourceOutlinedIcon sx={{ color: 'place.projects', fontSize: 16 }} />}
                 onOpen={() => openProject(project)}
               >

@@ -14,12 +14,11 @@ export function UserAvatar({ id, name, size = 28, src }: { id: string; name: str
   // The letter takes a text size that fits the circle instead of a size computed from it.
   const fontSize = size <= 20 ? 'overline.fontSize' : size <= 28 ? 'caption.fontSize' : 'body2.fontSize'
   return (
-    <Box aria-hidden sx={(theme) => {
+    // The letter is drawn from `data-initial`, so it never becomes part of a surrounding control's name.
+    <Box aria-hidden data-initial={initial} sx={(theme) => {
       // Avatar tones are quiet tints that never read as a state colour.
       const tone = theme.palette.avatar[hash % theme.palette.avatar.length]
-      return { alignItems: 'center', bgcolor: tone.background, borderRadius: '50%', color: tone.text, display: 'flex', flexShrink: 0, fontSize, fontWeight: 600, height: size, justifyContent: 'center', userSelect: 'none', width: size }
-    }}>
-      {initial}
-    </Box>
+      return { alignItems: 'center', bgcolor: tone.background, borderRadius: '50%', color: tone.text, display: 'flex', flexShrink: 0, fontSize, fontWeight: 600, height: size, justifyContent: 'center', userSelect: 'none', width: size, '&::before': { content: 'attr(data-initial)' } }
+    }} />
   )
 }

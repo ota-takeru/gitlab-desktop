@@ -70,7 +70,11 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
   const name = meta?.title || `!${mrRef.iid}`
   // The last part of the project path tells similar titles apart without taking a line of its own.
   const project = meta?.projectPath ? meta.projectPath.slice(meta.projectPath.lastIndexOf('/') + 1) : ''
-  const fullName = `${meta?.projectPath || `プロジェクト ${mrRef.projectId}`} !${mrRef.iid}${meta?.title ? ` ${meta.title}` : ''}`
+  // The title comes first, as on screen, so the spoken name starts with the words a voice-control user reads.
+  const fullName = `${meta?.title ? `${meta.title} ` : ''}${meta?.projectPath || `プロジェクト ${mrRef.projectId}`} !${mrRef.iid}`
+  // Expanded, the name is the text on screen with the full project path after it.
+  const shownName = project ? `${name} ${project} !${mrRef.iid}` : name
+  const expandedName = meta?.projectPath && meta.projectPath !== project ? `${shownName}（${meta.projectPath}）` : shownName
   const selectedSx = { '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }
   if (collapsed) {
     return <Tooltip placement="right" title={fullName}>
@@ -89,7 +93,7 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
   const dragging = reorder.draggingKey === key
   return <Box component="li" style={style} sx={{ bgcolor: dragging ? 'surface.raised' : undefined, borderRadius: 1, boxShadow: dragging ? 4 : 'none', listStyle: 'none', position: 'relative', '&:hover .tab-actions, &:focus-within .tab-actions': { opacity: 1 } }}>
     <Tooltip enterDelay={600} placement="right" title={fullName}>
-      <ListItemButton aria-current={selected ? 'page' : undefined} aria-description="Alt+↑/↓で並べ替え" aria-label={fullName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ alignItems: 'flex-start', cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 30, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
+      <ListItemButton aria-current={selected ? 'page' : undefined} aria-description="Alt+↑/↓で並べ替え" aria-label={expandedName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ alignItems: 'flex-start', cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 30, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
         <Box sx={{ display: 'flex', flexShrink: 0, pt: 0.25 }}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', fontWeight: selected ? 600 : 500, lineHeight: 1.35, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{name}</Typography>

@@ -265,7 +265,7 @@ describe('BufferedReviewComposer', () => {
       </QueryClientProvider>,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: /^レビュアーを変更/u }))
+    fireEvent.click(await screen.findByRole('button', { name: /（レビュアーを変更）$/u }))
     const dialog = await screen.findByRole('dialog', { name: 'レビュアーを変更' })
     expect(within(dialog).getByRole('button', { name: '変更する' })).toBeDisabled()
     fireEvent.click(within(dialog).getByRole('button', { name: '自分を追加' }))
@@ -598,7 +598,7 @@ describe('replying and resolving in the diff', () => {
   it('resolves the diff thread', async () => {
     renderChanges()
     const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
-    fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
+    fireEvent.click(within(thread).getByRole('button', { name: /: 解決する$/u }))
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ discussionId: 'discussion-120', iid: '120', kind: 'resolve', projectId: '7', resolved: true }, undefined))
   })
 
@@ -613,7 +613,7 @@ describe('replying and resolving in the diff', () => {
       globalThis.confirm = vi.fn(() => false)
       renderChanges()
       const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
-      fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
+      fireEvent.click(within(thread).getByRole('button', { name: /: 解決する$/u }))
       await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('担当外のMRです')))
       expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
     })
@@ -622,7 +622,7 @@ describe('replying and resolving in the diff', () => {
       globalThis.confirm = vi.fn(() => true)
       renderChanges()
       const thread = await screen.findByRole('article', { name: 'Colleagueのスレッド' })
-      fireEvent.click(within(thread).getByRole('button', { name: '解決する' }))
+      fireEvent.click(within(thread).getByRole('button', { name: /: 解決する$/u }))
       await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith(expect.objectContaining({ kind: 'resolve' }), undefined))
     })
   })

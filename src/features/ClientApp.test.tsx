@@ -89,21 +89,21 @@ it('keeps a user MR list and its filters when switching profile tabs and returni
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
   expect(await screen.findByRole('tab', { name: '作成したMR' })).toHaveAttribute('aria-selected', 'true')
   expect(gitlabQueryMock).toHaveBeenCalledWith('session-1', expect.objectContaining({ kind: 'mrs', authorId: '1', state: 'all', search: 'searchable' }), expect.anything())
-  fireEvent.change(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' }), { target: { value: 'searchable list' } })
-  fireEvent.submit(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' }).closest('form')!)
+  fireEvent.change(screen.getByRole('combobox', { name: 'MRをタイトル・説明・MR番号で検索' }), { target: { value: 'searchable list' } })
+  fireEvent.submit(screen.getByRole('combobox', { name: 'MRをタイトル・説明・MR番号で検索' }).closest('form')!)
   expect(window.location.hash).toContain('#client/user?')
   expect(new URLSearchParams(window.location.hash.split('?')[1]).get('username')).toBe('one')
   fireEvent.click(screen.getByRole('tab', { name: 'プロジェクト' }))
   expect(await screen.findByRole('tab', { name: 'プロジェクト' })).toHaveAttribute('aria-selected', 'true')
   expect(gitlabQueryMock).toHaveBeenCalledWith('session-1', expect.objectContaining({ kind: 'userProjects', userId: '1' }), expect.anything())
   fireEvent.click(screen.getByRole('tab', { name: '作成したMR' }))
-  expect(await screen.findByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveValue('searchable list')
+  expect(await screen.findByRole('combobox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveValue('searchable list')
   fireEvent.click(document.querySelector('[data-screen-active="true"] [data-list-row="true"][data-mr-id="42-7"]')!)
   expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '@oneに戻る' }))
   await waitFor(() => expect(window.location.hash).not.toContain('mr='))
   expect(screen.getByRole('tab', { name: '作成したMR' })).toBeVisible()
-  expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveValue('searchable list')
+  expect(screen.getByRole('combobox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveValue('searchable list')
 })
 
 it('shows a missing user without fetching unscoped MRs or projects', () => {
@@ -278,12 +278,12 @@ it('keeps the list mounted and only toggles the selection parameter when opening
   })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  fireEvent.change(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' }), { target: { value: 'unsent draft' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' }), { target: { value: 'unsent draft' } })
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('unsent draft')
+  expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('unsent draft')
 })
 
 it('returns to the list through history, so Back does not reopen the MR', async () => {
@@ -339,7 +339,7 @@ it('preserves MR search filters when returning from an opened request', async ()
 
   // Returning goes back through history, which completes after the click.
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&search=needle'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('needle')
+  expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('needle')
   expectOwnMrs('レビュー依頼')
 })
 
@@ -719,18 +719,18 @@ it('keeps the MR list mounted when it applies a search itself', async () => {
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
-  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
+  const search = screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
   fireEvent.change(search, { target: { value: 'needle' } })
   fireEvent.submit(search.closest('form')!)
   await waitFor(() => expect(window.location.hash).toContain('search=needle'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBe(search)
+  expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBe(search)
 
   // Switching to the reader's other MRs changes one condition in the same list and keeps the text.
   fireEvent.click(ownMrs().getByRole('button', { name: '担当' }))
   await waitFor(() => expect(window.location.hash).toContain('assignee=self'))
   expect(window.location.hash).toContain('search=needle')
   expect(window.location.hash).not.toContain('reviewer=')
-  expect(screen.getByRole('textbox', { name: '担当しているMRをタイトル・説明・MR番号で検索' })).toBe(search)
+  expect(screen.getByRole('combobox', { name: '担当しているMRをタイトル・説明・MR番号で検索' })).toBe(search)
 })
 
 it('shows a list and an MR visited before as they were left, without building them again', async () => {
@@ -744,14 +744,14 @@ it('shows a list and an MR visited before as they were left, without building th
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   // Text typed but not applied survives a visit to another place.
-  const search = screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
+  const search = screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })
   fireEvent.change(search, { target: { value: 'typed' } })
   fireEvent.click(screen.getByRole('button', { name: /設定$/u }))
   await waitFor(() => expect(window.location.hash).toBe('#client/settings'))
   expect(search).not.toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  expect(screen.getByRole('textbox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBe(search)
+  expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toBe(search)
   expect(search).toHaveValue('typed')
 
   // An MR opened again is the same rendered page.
