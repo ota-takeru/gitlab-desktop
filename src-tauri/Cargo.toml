@@ -38,4 +38,4 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [dev-dependencies]
 serde_json = "1"
-minisign-verify = "0.2"
+minisign-verify = "0.3"
