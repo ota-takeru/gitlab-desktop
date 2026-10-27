@@ -55,7 +55,8 @@ function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: Markdow
   // so are bodies from different projects, whose references point elsewhere.
   const annotations = review ?? (renderBlame ? { addedLines: new Set<number>(), removedByAnchor: new Map() as FullFileDiffAnnotations['removedByAnchor'], consistent: true } : undefined)
   const reviewKey = annotations ? `${[...annotations.addedLines].join(',')}|${[...annotations.removedByAnchor.values()].flat().map((item) => `${item.anchorLine}:${item.oldStart}:${item.text}`).join('|')}` : ''
-  const key = `${catalog ? 'emoji' : 'common'}\n${base.instanceUrl ?? ''}\n${base.projectUrl ?? ''}\n${renderBlame ? 'blame' : 'plain'}\n${reviewKey}\n${body}`
+  const repository = base.repository ? `${base.repository.projectId}:${base.repository.ref ?? ''}:${base.repository.path}` : ''
+  const key = `${catalog ? 'emoji' : 'common'}\n${base.instanceUrl ?? ''}\n${base.projectUrl ?? ''}\n${repository}\n${renderBlame ? 'blame' : 'plain'}\n${reviewKey}\n${body}`
   const cached = parsedBodies.get(key)
   if (cached) {
     parsedBodies.delete(key)
@@ -63,7 +64,7 @@ function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: Markdow
     return cached
   }
   const remarkPlugins = [remarkGfm, remarkGitLabEmoji(catalog), remarkGitLabReferences(base)]
-  const urlTransform = (url: string) => resolveMarkdownUrl(url, base)
+  const urlTransform = (url: string, key: string) => resolveMarkdownUrl(url, base, key)
   // `Markdown` is synchronous and uses no hooks, so its output can be kept and reused.
   const markdownComponents: Components = renderBlame ? {
     ...components,
@@ -86,6 +87,6 @@ function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: Markdow
 /** A local preview of basic Markdown, GitLab emoji and references; other GitLab-specific commands are not executed. */
 export const MockMarkdown = memo(function MockMarkdown({ body, renderBlame, review, size = 'body2' }: { body: string; renderBlame?: (line: number) => ReactNode; review?: FullFileDiffAnnotations; size?: 'body1' | 'body2' }) {
   const { catalog } = useEmojiCatalog()
-  const { instanceUrl, projectUrl } = useMarkdownLinks()
-  return <Box sx={markdownBodySx(size)}>{parseMarkdown(body, catalog, { instanceUrl, projectUrl }, review, renderBlame)}</Box>
+  const { instanceUrl, projectUrl, repository } = useMarkdownLinks()
+  return <Box sx={markdownBodySx(size)}>{parseMarkdown(body, catalog, { instanceUrl, projectUrl, repository }, review, renderBlame)}</Box>
 })

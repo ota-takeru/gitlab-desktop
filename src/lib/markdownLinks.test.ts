@@ -23,3 +23,25 @@ describe('Markdown links', () => {
     expect(projectUrlOf('')).toBeUndefined()
   })
 })
+
+describe('Markdown images in repository files', () => {
+  const file = { ...base, repository: { projectId: '42', path: 'docs/guide/intro.md', ref: 'feature/x' } }
+  const raw = (path: string, ref = 'feature%2Fx') => `https://gitlab.example/gitlab/api/v4/projects/42/repository/files/${encodeURIComponent(path)}/raw?ref=${ref}`
+
+  it('reads relative and root images from the file version', () => {
+    expect(resolveMarkdownUrl('img/a b.png', file, 'src')).toBe(raw('docs/guide/img/a b.png'))
+    expect(resolveMarkdownUrl('./a.png?raw=true', file, 'src')).toBe(raw('docs/guide/a.png'))
+    expect(resolveMarkdownUrl('../../logo%20x.png', file, 'src')).toBe(raw('logo x.png'))
+    expect(resolveMarkdownUrl('/assets/logo.png', file, 'src')).toBe(raw('assets/logo.png'))
+    expect(resolveMarkdownUrl('a.png', { ...base, repository: { projectId: '42', path: 'README.md' } }, 'src')).toBe(raw('a.png', 'HEAD'))
+  })
+
+  it('keeps uploads and links as before and reads nothing outside the repository', () => {
+    expect(resolveMarkdownUrl('/uploads/abc/a.png', file, 'src')).toBe('https://gitlab.example/gitlab/team/desktop/uploads/abc/a.png')
+    expect(resolveMarkdownUrl('img/a.png', file, 'href')).toBe('')
+    expect(resolveMarkdownUrl('img/a.png', base, 'src')).toBe('')
+    expect(resolveMarkdownUrl('../../../a.png', file, 'src')).toBe('')
+    expect(resolveMarkdownUrl('data:image/png;base64,AA', file, 'src')).toBe('')
+    expect(resolveMarkdownUrl('//evil.example/a.png', file, 'src')).toBe('')
+  })
+})

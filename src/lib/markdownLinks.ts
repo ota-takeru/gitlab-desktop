@@ -4,6 +4,16 @@ export interface MarkdownLinkBase {
   instanceUrl?: string
   /** The project the body belongs to, e.g. `https://gitlab.example/group/project`. */
   projectUrl?: string
+  /** The repository file the body was read from, so its relative images can be read from the same version. */
+  repository?: MarkdownRepositoryFile
+}
+
+export interface MarkdownRepositoryFile {
+  projectId: string
+  /** A branch, tag or commit; the default branch when omitted. */
+  ref?: string
+  /** The file's path in the repository, e.g. `docs/guide.md`. */
+  path: string
 }
 
 const trimSlash = (url: string) => url.replace(/\/+$/u, '')
@@ -18,12 +28,34 @@ export function projectUrlOf(mergeRequestUrl: string): string | undefined {
  * The URL a link opens: web and mail links as written, and GitLab's root-relative
  * links on the connected instance (`/uploads/` belongs to the project). Anything
  * else, such as `javascript:` or a path relative to an unknown file, opens nothing.
+ * An image (`key` is `src`) in a repository file is read from that file's version.
  */
-export function resolveMarkdownUrl(url: string, base: MarkdownLinkBase): string {
+export function resolveMarkdownUrl(url: string, base: MarkdownLinkBase, key?: string): string {
   if (/^(https?:\/\/|mailto:)/iu.test(url)) return url
+  if (key === 'src' && base.repository && base.instanceUrl && !url.startsWith('/uploads/') && !url.startsWith('//') && !/^[a-z][a-z\d+.-]*:/iu.test(url)) {
+    return repositoryImageUrl(url, base.repository, base.instanceUrl)
+  }
   if (!url.startsWith('/') || url.startsWith('//')) return ''
   if (url.startsWith('/uploads/')) return base.projectUrl ? `${trimSlash(base.projectUrl)}${url}` : ''
   return base.instanceUrl ? `${trimSlash(base.instanceUrl)}${url}` : ''
+}
+
+/**
+ * An image path in a repository file, as GitLab resolves it: relative to the file's folder,
+ * or to the repository root when it starts with `/`. It is read through the repository files API.
+ */
+function repositoryImageUrl(url: string, repository: MarkdownRepositoryFile, instanceUrl: string): string {
+  const written = url.replace(/[?#].*$/u, '')
+  let decoded: string
+  try { decoded = decodeURIComponent(written) } catch { return '' }
+  const segments = decoded.startsWith('/') ? [] : repository.path.split('/').slice(0, -1)
+  for (const segment of decoded.split('/')) {
+    if (segment === '..') { if (!segments.pop()) return '' }
+    else if (segment && segment !== '.') segments.push(segment)
+  }
+  if (!segments.length) return ''
+  const ref = encodeURIComponent(repository.ref || 'HEAD')
+  return `${trimSlash(instanceUrl)}/api/v4/projects/${encodeURIComponent(repository.projectId)}/repository/files/${encodeURIComponent(segments.join('/'))}/raw?ref=${ref}`
 }
 
 interface MarkdownNode { type: string; value?: string; url?: string; children?: MarkdownNode[] }

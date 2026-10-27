@@ -21,6 +21,7 @@ export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { proj
     ? { kind: 'blob', projectId: project.id, sha: readme.id }
     : null
   const blob = useGitLabQuery(sessionId, blobQuery)
+  const repository = readme ? { projectId: project.id, path: readme.path } : undefined
   const markdown = Boolean(readme && (isMarkdownFilePath(readme.name) || /^readme$/iu.test(readme.name)))
   return <Box aria-label={`${project.name}のREADME`} component="section" sx={{ maxHeight: 440, overflow: 'auto', px: 1 }}>
     <Typography sx={{ fontWeight: 600, mb: 1 }} variant="subtitle2">READMEプレビュー{readme ? ` · ${readme.name}` : ''}</Typography>
@@ -28,7 +29,7 @@ export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { proj
     {tree.error ? <Alert severity="warning">READMEの一覧を取得できませんでした: {tree.error.message}</Alert> : null}
     {readme && blob.error ? <Alert severity="warning">READMEを取得できませんでした: {blob.error.message}</Alert> : null}
     {tree.data && !readme ? <Typography color="textSecondary" variant="body2">{tree.snapshot?.nextPage ? '先頭100件にはREADMEがありません。残りのファイルはコードタブから確認してください。' : 'READMEがありません。'}</Typography> : null}
-    {blob.data && markdown ? <MarkdownLinkProvider instanceUrl={instanceUrl} projectUrl={project.webUrl} sessionId={sessionId}><MockMarkdown body={blob.data.content} size="body1" /></MarkdownLinkProvider> : null}
+    {blob.data && markdown ? <MarkdownLinkProvider instanceUrl={instanceUrl} projectUrl={project.webUrl} repository={repository} sessionId={sessionId}><MockMarkdown body={blob.data.content} size="body1" /></MarkdownLinkProvider> : null}
     {blob.data && !markdown ? <FullFileView content={blob.data.content} language="text" loading={false} /> : null}
   </Box>
 }

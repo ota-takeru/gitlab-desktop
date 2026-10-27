@@ -1170,13 +1170,22 @@ impl NativeState {
     }
 
     /// Only uploads served by the connected GitLab origin may be embedded.
-    pub async fn markdown_image(&self, id: String, input: String) -> Result<Option<String>, AppError> {
+    pub async fn markdown_image(
+        &self,
+        id: String,
+        input: String,
+    ) -> Result<Option<String>, AppError> {
         let session = self.active(&id)?;
         let Some(url) = instance_markdown_image_url(&session.public.instance_url, &input) else {
             return Ok(None);
         };
         let key = url.to_string();
-        if let Some(hit) = session.images.lock().map_err(|_| storage_error())?.get(&key) {
+        if let Some(hit) = session
+            .images
+            .lock()
+            .map_err(|_| storage_error())?
+            .get(&key)
+        {
             return Ok(hit.clone());
         }
         if check_cooldown(&session).is_err() {
@@ -1191,7 +1200,9 @@ impl NativeState {
         };
         if let Some(image) = &fetched {
             let mut images = session.images.lock().map_err(|_| storage_error())?;
-            if images.len() >= MARKDOWN_IMAGE_CACHE_LIMIT { images.clear(); }
+            if images.len() >= MARKDOWN_IMAGE_CACHE_LIMIT {
+                images.clear();
+            }
             images.insert(key, image.clone());
         }
         Ok(fetched.flatten())
@@ -1483,22 +1494,39 @@ fn instance_avatar_url(instance_url: &str, input: &str) -> Option<Url> {
     .then_some(url)
 }
 
-/// Markdown previews may only read upload paths under the current instance.
+/// Markdown previews may only read upload paths under the current instance,
+/// or a repository file's raw content, which a Markdown file's relative image names.
 fn instance_markdown_image_url(instance_url: &str, input: &str) -> Option<Url> {
     let base = normalize_instance(instance_url).ok()?;
     let url = Url::parse(input.trim()).ok()?;
     let path = url.path().to_ascii_lowercase();
+    let base_path = base.path().to_ascii_lowercase();
     (url.origin() == base.origin()
         && url.scheme() == "https"
         && url.username().is_empty()
         && url.password().is_none()
         && url.fragment().is_none()
-        && path.starts_with(&base.path().to_ascii_lowercase())
-        && path.contains("/uploads/")
-        && !path.contains("%2f")
+        && path.starts_with(&base_path)
         && !path.contains("%5c")
-        && !path.contains("%2e"))
+        && !path.contains("%2e")
+        && ((path.contains("/uploads/") && !path.contains("%2f"))
+            || is_repository_raw_file(&path[base_path.len()..], url.query())))
     .then_some(url)
+}
+
+/// `api/v4/projects/<id>/repository/files/<encoded path>/raw?ref=<ref>`: the
+/// file path is one encoded segment, so no other API route can be reached.
+fn is_repository_raw_file(path: &str, query: Option<&str>) -> bool {
+    let Some(rest) = path.strip_prefix("api/v4/projects/") else {
+        return false;
+    };
+    let segments: Vec<&str> = rest.split('/').collect();
+    matches!(
+        segments.as_slice(),
+        [project, "repository", "files", file, "raw"]
+            if !project.is_empty() && project.bytes().all(|byte| byte.is_ascii_digit()) && !file.is_empty()
+    ) && query
+        .is_some_and(|query| query.starts_with("ref=") && query.len() > 4 && !query.contains('&'))
 }
 
 /// Accepts Gravatar images, which GitLab returns as `avatar_url` for users
@@ -1541,7 +1569,11 @@ async fn fetch_avatar(client: &reqwest::Client, url: Url) -> Option<Option<Strin
     fetch_image_data(client, url, AVATAR_MAX_BYTES).await
 }
 
-async fn fetch_image_data(client: &reqwest::Client, url: Url, max_bytes: usize) -> Option<Option<String>> {
+async fn fetch_image_data(
+    client: &reqwest::Client,
+    url: Url,
+    max_bytes: usize,
+) -> Option<Option<String>> {
     use base64::Engine as _;
     let mut response = client.get(url).send().await.ok()?;
     if !response.status().is_success() {
@@ -1560,10 +1592,17 @@ async fn fetch_image_data(client: &reqwest::Client, url: Url, max_bytes: usize) 
                 .to_ascii_lowercase()
         })
         .unwrap_or_default();
-    if !matches!(
+    // Repository files are served as raw bytes, so their type is read from the content.
+    let sniff = matches!(
         content_type.as_str(),
-        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
-    ) {
+        "application/octet-stream" | "text/plain"
+    );
+    if !sniff
+        && !matches!(
+            content_type.as_str(),
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+        )
+    {
         return Some(None);
     }
     let mut body = Vec::new();
@@ -1573,10 +1612,32 @@ async fn fetch_image_data(client: &reqwest::Client, url: Url, max_bytes: usize) 
         }
         body.extend_from_slice(&chunk);
     }
+    let content_type = if sniff {
+        match sniff_image_type(&body) {
+            Some(sniffed) => sniffed.to_owned(),
+            None => return Some(None),
+        }
+    } else {
+        content_type
+    };
     Some(Some(format!(
         "data:{content_type};base64,{}",
         base64::engine::general_purpose::STANDARD.encode(body)
     )))
+}
+
+fn sniff_image_type(body: &[u8]) -> Option<&'static str> {
+    if body.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
+        Some("image/png")
+    } else if body.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some("image/jpeg")
+    } else if body.starts_with(b"GIF87a") || body.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if body.len() >= 12 && &body[..4] == b"RIFF" && &body[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
 }
 
 fn write_busy() -> AppError {
@@ -2861,9 +2922,22 @@ mod tests {
     #[test]
     fn markdown_images_only_allow_same_instance_uploads() {
         let base = "https://gitlab.example/GitLab/";
-        assert!(instance_markdown_image_url(base, "https://gitlab.example/GitLab/group/repo/uploads/ab/photo.png").is_some());
-        assert!(instance_markdown_image_url(base, "https://gitlab.example/GitLab/uploads/a.png").is_some());
+        assert!(instance_markdown_image_url(
+            base,
+            "https://gitlab.example/GitLab/group/repo/uploads/ab/photo.png"
+        )
+        .is_some());
+        assert!(
+            instance_markdown_image_url(base, "https://gitlab.example/GitLab/uploads/a.png")
+                .is_some()
+        );
+        assert!(instance_markdown_image_url(base, "https://gitlab.example/GitLab/api/v4/projects/42/repository/files/docs%2Fimg%20a.png/raw?ref=main").is_some());
         for bad in [
+            "https://gitlab.example/GitLab/api/v4/projects/42/repository/files/docs%2Fimg.png/raw",
+            "https://gitlab.example/GitLab/api/v4/projects/42/repository/files/docs/img.png/raw?ref=main",
+            "https://gitlab.example/GitLab/api/v4/projects/42/repository/files/%2e%2e/raw?ref=main",
+            "https://gitlab.example/GitLab/api/v4/projects/42/repository/files/a.png/raw?ref=main&x=1",
+            "https://gitlab.example/GitLab/api/v4/projects/group%2Frepo/repository/files/a.png/raw?ref=main",
             "https://other.example/GitLab/group/repo/uploads/a.png",
             "http://gitlab.example/GitLab/uploads/a.png",
             "https://gitlab.example/GitLab/api/v4/user",

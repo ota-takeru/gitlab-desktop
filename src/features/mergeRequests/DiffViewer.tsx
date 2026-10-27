@@ -26,6 +26,7 @@ import { type Theme } from '@mui/material/styles'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/gitlab'
+import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { DiffFileTree, FileThreadMark, fileTreeOrder } from './DiffFileTree'
 import { DiffGap, type GapExpansion } from './DiffGap'
 import { BlameCell, BlameProvider } from './BlamePanel'
@@ -285,6 +286,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const sourceSessionId = fileSource?.sessionId
   const sourceProjectId = fileSource?.projectId
   const sourceSha = fileSource?.sha
+  // Relative images in rendered Markdown are read from the shown version.
+  const markdownRepository = useMemo(() => sourceProjectId && sourceSha && displayedPath ? { projectId: sourceProjectId, path: displayedPath, ref: sourceSha } : undefined, [displayedPath, sourceProjectId, sourceSha])
   // The same query as the whole-file view, so both share one cached read.
   const gapQuery = useMemo<FileQuery | null>(() => sourceProjectId && sourceSha && displayedPath ? { kind: 'file', path: displayedPath, projectId: sourceProjectId, sha: sourceSha } : null, [displayedPath, sourceProjectId, sourceSha])
   const gapsExpandable = Boolean(selectedDiff && !selectedDiff.deletedFile && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid')
@@ -451,7 +454,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   }, [diffOffset, displayedPath, layout, renderedMarkdownDiff, view])
 
   const diffContent = renderedMarkdownDiff
-    ? <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} />
+    ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}><MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} /></MarkdownLinkProvider>
     : layout === 'split'
     ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
     : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
@@ -521,11 +524,11 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">この差分は大きすぎるため省略されています。</Typography></Stack></Box> : null}
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
-          {view === 'file' ? (canBlame && fileSource && selectedDiff
+          {view === 'file' ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{canBlame && fileSource && selectedDiff
             ? <BlameProvider enabled={blameOpen} initialNewLine={fileAnchor?.path === displayedPath ? fileAnchor.line : 1} key={`${fileSource.sha}:${displayedPath}:full`} lines={[]} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>
                 <FullFileView blameEnabled={blameOpen} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />
               </BlameProvider>
-            : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />) : <>
+            : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />}</MarkdownLinkProvider> : <>
             {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
             {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルは空白の変更のみです。</Typography> : null}
             {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">空白の変更を無視して表示中です。行の位置がずれる可能性があるため、新しい行コメントは書けません。</Typography> : null}
