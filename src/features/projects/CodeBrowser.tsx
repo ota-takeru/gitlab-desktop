@@ -42,7 +42,7 @@ export interface CodeLocation {
  * A project's repository, one folder at a time; a file opens in place with
  * line numbers and highlighting. Read only, and fetched only when shown.
  */
-export function CodeBrowser({ location, navigation, onNavigate, projectId, projectName }: { location: CodeLocation; navigation?: ReactNode; onNavigate: (next: CodeLocation) => void; projectId: string; projectName: string }) {
+export function CodeBrowser({ location, navigation, onNavigate, projectId, projectName, projectUrl }: { location: CodeLocation; navigation?: ReactNode; onNavigate: (next: CodeLocation) => void; projectId: string; projectName: string; projectUrl?: string }) {
   const { session } = useConnection()
   const { file, path, ref } = location
   // Pages of a large folder; a different folder or branch starts at its first page.
@@ -113,7 +113,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
         {shown.error && !shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{errorMessage(shown.error, Boolean(file), path)}</Alert> : null}
         {shown.error && shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの内容を表示中です。更新に失敗しました: {shown.error.message}</Alert> : null}
         {file
-          ? shown.error && !shown.data ? null : <MarkdownLinkProvider instanceUrl={session.instanceUrl} repository={markdownRepository} sessionId={session.id}><FullFileView key={`${file.path}:${file.sha}`} content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} path={file.path} /></MarkdownLinkProvider>
+          ? shown.error && !shown.data ? null : <MarkdownLinkProvider instanceUrl={session.instanceUrl} projectUrl={projectUrl} repository={markdownRepository} sessionId={session.id}><FullFileView key={`${file.path}:${file.sha}`} content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} path={file.path} /></MarkdownLinkProvider>
           : <>
             {tree.data && entries.length === 0 && !path ? <PaneEmpty description="このブランチにはファイルがありません。" icon={<FolderOutlinedIcon fontSize="inherit" />} title="ファイルはありません" /> : null}
             {tree.data && (entries.length || path) ? <Box aria-label="ファイル" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>

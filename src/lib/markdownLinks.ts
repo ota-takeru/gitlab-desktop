@@ -28,16 +28,42 @@ export function projectUrlOf(mergeRequestUrl: string): string | undefined {
  * The URL a link opens: web and mail links as written, and GitLab's root-relative
  * links on the connected instance (`/uploads/` belongs to the project). Anything
  * else, such as `javascript:` or a path relative to an unknown file, opens nothing.
- * An image (`key` is `src`) in a repository file is read from that file's version.
+ * An image (`key` is `src`) in a repository file is read from that file's version, and a
+ * relative link in one opens the linked file on GitLab at that version (which the app opens itself).
  */
 export function resolveMarkdownUrl(url: string, base: MarkdownLinkBase, key?: string): string {
   if (/^(https?:\/\/|mailto:)/iu.test(url)) return url
   if (key === 'src' && base.repository && base.instanceUrl && !url.startsWith('/uploads/') && !url.startsWith('//') && !/^[a-z][a-z\d+.-]*:/iu.test(url)) {
     return repositoryImageUrl(url, base.repository, base.instanceUrl)
   }
+  if (key === 'href' && base.repository && base.projectUrl && !url.startsWith('#') && !url.startsWith('/uploads/') && !url.startsWith('//') && !/^[a-z][a-z\d+.-]*:/iu.test(url)) {
+    return repositoryFileUrl(url, base.repository, base.projectUrl)
+  }
   if (!url.startsWith('/') || url.startsWith('//')) return ''
   if (url.startsWith('/uploads/')) return base.projectUrl ? `${trimSlash(base.projectUrl)}${url}` : ''
   return base.instanceUrl ? `${trimSlash(base.instanceUrl)}${url}` : ''
+}
+
+/** The repository path a relative path in a repository file names, or null when it leaves the repository. */
+function repositoryPath(url: string, repository: MarkdownRepositoryFile): string | null {
+  const written = url.replace(/[?#].*$/u, '')
+  let decoded: string
+  try { decoded = decodeURIComponent(written) } catch { return null }
+  const segments = decoded.startsWith('/') ? [] : repository.path.split('/').slice(0, -1)
+  for (const segment of decoded.split('/')) {
+    if (segment === '..') { if (!segments.pop()) return null }
+    else if (segment && segment !== '.') segments.push(segment)
+  }
+  return segments.length ? segments.join('/') : null
+}
+
+/** A relative link in a repository file: the linked file on GitLab, at the shown version, with its section. */
+function repositoryFileUrl(url: string, repository: MarkdownRepositoryFile, projectUrl: string): string {
+  const path = repositoryPath(url, repository)
+  if (!path) return ''
+  const section = url.includes('#') ? url.slice(url.indexOf('#')) : ''
+  const encode = (value: string) => value.split('/').map(encodeURIComponent).join('/')
+  return `${trimSlash(projectUrl)}/-/blob/${encode(repository.ref || 'HEAD')}/${encode(path)}${section}`
 }
 
 /**
@@ -45,17 +71,10 @@ export function resolveMarkdownUrl(url: string, base: MarkdownLinkBase, key?: st
  * or to the repository root when it starts with `/`. It is read through the repository files API.
  */
 function repositoryImageUrl(url: string, repository: MarkdownRepositoryFile, instanceUrl: string): string {
-  const written = url.replace(/[?#].*$/u, '')
-  let decoded: string
-  try { decoded = decodeURIComponent(written) } catch { return '' }
-  const segments = decoded.startsWith('/') ? [] : repository.path.split('/').slice(0, -1)
-  for (const segment of decoded.split('/')) {
-    if (segment === '..') { if (!segments.pop()) return '' }
-    else if (segment && segment !== '.') segments.push(segment)
-  }
-  if (!segments.length) return ''
+  const path = repositoryPath(url, repository)
+  if (!path) return ''
   const ref = encodeURIComponent(repository.ref || 'HEAD')
-  return `${trimSlash(instanceUrl)}/api/v4/projects/${encodeURIComponent(repository.projectId)}/repository/files/${encodeURIComponent(segments.join('/'))}/raw?ref=${ref}`
+  return `${trimSlash(instanceUrl)}/api/v4/projects/${encodeURIComponent(repository.projectId)}/repository/files/${encodeURIComponent(path)}/raw?ref=${ref}`
 }
 
 interface MarkdownNode { type: string; value?: string; url?: string; children?: MarkdownNode[] }

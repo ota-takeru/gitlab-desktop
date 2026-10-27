@@ -43,8 +43,8 @@ export async function resolveGitLabPage(sessionId: string, page: GitLabPage, isC
   // A group or subgroup URL looks like a project URL; it is not found as a project and opens in the browser.
   const project = await queryGitLab({ sessionId, mode: 'network', query: { kind: 'project', path: page.path } }).catch(() => null)
   if (!isCurrent() || !project?.data.id) return null
-  const base = { projectId: project.data.id, projectName: project.data.name }
-  if (page.kind === 'project') return { route: 'overview', params: { ...base, projectUrl: project.data.webUrl } }
+  const base = { projectId: project.data.id, projectName: project.data.name, projectUrl: project.data.webUrl }
+  if (page.kind === 'project') return { route: 'overview', params: base }
   if (page.kind === 'branches') return { route: 'branches', params: base }
   if (page.kind === 'mrs') return { route: 'mrs', params: { ...base, state: 'opened' } }
   if (page.kind !== 'tree' && page.kind !== 'blob') return null

@@ -1600,7 +1600,7 @@ async fn fetch_image_data(
     if !sniff
         && !matches!(
             content_type.as_str(),
-            "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml"
         )
     {
         return Some(None);
@@ -1626,6 +1626,18 @@ async fn fetch_image_data(
     )))
 }
 
+/// SVG is text: an `<svg` root, optionally after a BOM, an XML declaration, comments
+/// or a doctype. Shown through `<img>`, its scripts and external references never run.
+fn looks_like_svg(body: &[u8]) -> bool {
+    let head = String::from_utf8_lossy(&body[..body.len().min(1024)]).to_ascii_lowercase();
+    let head = head.trim_start_matches('\u{feff}').trim_start();
+    head.starts_with("<svg")
+        || ((head.starts_with("<?xml")
+            || head.starts_with("<!--")
+            || head.starts_with("<!doctype svg"))
+            && head.contains("<svg"))
+}
+
 fn sniff_image_type(body: &[u8]) -> Option<&'static str> {
     if body.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
         Some("image/png")
@@ -1635,6 +1647,8 @@ fn sniff_image_type(body: &[u8]) -> Option<&'static str> {
         Some("image/gif")
     } else if body.len() >= 12 && &body[..4] == b"RIFF" && &body[8..12] == b"WEBP" {
         Some("image/webp")
+    } else if looks_like_svg(body) {
+        Some("image/svg+xml")
     } else {
         None
     }

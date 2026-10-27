@@ -21,15 +21,15 @@ beforeEach(() => {
 
 it('opens a project on its overview, branches and MR list', async () => {
   expect(await resolveGitLabPage('s', { kind: 'project', path: 'team/desktop' }, always)).toEqual({ route: 'overview', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl } })
-  expect(await resolveGitLabPage('s', { kind: 'branches', path: 'team/desktop' }, always)).toEqual({ route: 'branches', params: { projectId: '42', projectName: 'Desktop' } })
-  expect(await resolveGitLabPage('s', { kind: 'mrs', path: 'team/desktop' }, always)).toEqual({ route: 'mrs', params: { projectId: '42', projectName: 'Desktop', state: 'opened' } })
+  expect(await resolveGitLabPage('s', { kind: 'branches', path: 'team/desktop' }, always)).toEqual({ route: 'branches', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl } })
+  expect(await resolveGitLabPage('s', { kind: 'mrs', path: 'team/desktop' }, always)).toEqual({ route: 'mrs', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl, state: 'opened' } })
 })
 
 it('finds where a ref with a slash ends for folders and files', async () => {
   expect(await resolveGitLabPage('s', { kind: 'tree', path: 'team/desktop', rest: ['feature', 'x', 'src'] }, always))
-    .toEqual({ route: 'code', params: { projectId: '42', projectName: 'Desktop', ref: 'feature/x', path: 'src' } })
+    .toEqual({ route: 'code', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl, ref: 'feature/x', path: 'src' } })
   expect(await resolveGitLabPage('s', { kind: 'blob', path: 'team/desktop', rest: ['feature', 'x', 'src', 'a.ts'] }, always))
-    .toEqual({ route: 'code', params: { projectId: '42', projectName: 'Desktop', ref: 'feature/x', path: 'src', blob: 'b'.repeat(40), file: 'src/a.ts' } })
+    .toEqual({ route: 'code', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl, ref: 'feature/x', path: 'src', blob: 'b'.repeat(40), file: 'src/a.ts' } })
 })
 
 it('gives up on an unknown project or file, and on a superseded click', async () => {

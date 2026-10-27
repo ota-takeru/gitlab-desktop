@@ -58,7 +58,7 @@ describe('useOpenMarkdownLink', () => {
     const onOpenPage = vi.fn()
     const { rerender } = render(<LinkProbe onOpenPage={onOpenPage} url="https://gitlab.example/gitlab/team/desktop/-/branches" />)
     fireEvent.click(screen.getByRole('button', { name: 'open' }))
-    await waitFor(() => expect(onOpenPage).toHaveBeenCalledWith({ route: 'branches', params: { projectId: '42', projectName: 'Desktop' } }))
+    await waitFor(() => expect(onOpenPage).toHaveBeenCalledWith({ route: 'branches', params: { projectId: '42', projectName: 'Desktop', projectUrl: 'https://gitlab.example/gitlab/team/desktop' } }))
 
     rerender(<LinkProbe onOpenPage={onOpenPage} url="https://gitlab.example/gitlab/team/sub" />)
     fireEvent.click(screen.getByRole('button', { name: 'open' }))

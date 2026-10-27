@@ -1054,6 +1054,23 @@ async fn reauthentication_needs_a_saved_connection_and_keeps_local_drafts_on_fai
 }
 
 #[test]
+fn svg_images_are_recognised_from_their_text() {
+    assert_eq!(
+        sniff_image_type(br#"<svg xmlns="http://www.w3.org/2000/svg"></svg>"#),
+        Some("image/svg+xml")
+    );
+    assert_eq!(
+        sniff_image_type("\u{feff}<?xml version=\"1.0\"?>\n<!-- logo -->\n<svg></svg>".as_bytes()),
+        Some("image/svg+xml")
+    );
+    assert_eq!(
+        sniff_image_type(b"<html><body><svg></svg></body></html>"),
+        None
+    );
+    assert_eq!(sniff_image_type(b"plain text"), None);
+}
+
+#[test]
 fn markdown_images_only_allow_same_instance_uploads() {
     let base = "https://gitlab.example/GitLab/";
     assert!(instance_markdown_image_url(
