@@ -209,6 +209,7 @@ describe('BufferedReviewComposer', () => {
         </ThemeProvider>
       </QueryClientProvider>,
     )
+    fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
 
     expect(await screen.findByText('位置コメント')).toBeInTheDocument()
     expect(screen.queryByText('system-only history')).not.toBeInTheDocument()
@@ -284,6 +285,7 @@ describe('BufferedReviewComposer', () => {
     detailMocks.flushComposerBuffersMock.mockResolvedValue(saved)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} /></ThemeProvider></QueryClientProvider>)
+    fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
     const input = await screen.findByLabelText('添付ファイルを選択')
     const file = new File(['test'], 'test.txt', { type: 'text/plain' })
     fireEvent.change(input, { target: { files: [file] } })
@@ -297,6 +299,17 @@ describe('BufferedReviewComposer', () => {
       expect(detailMocks.uploadMock).not.toHaveBeenCalled()
       expect(detailMocks.mutationDetailedMock).not.toHaveBeenCalled()
     }
+  })
+
+  it('opens on the overview first and shows the discussion only when its tab is chosen', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} /></ThemeProvider></QueryClientProvider>)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs[0]).toHaveAccessibleName('概要')
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByLabelText('添付ファイルを選択')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
+    expect(screen.getByRole('tab', { name: /議論/u })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('opens the reply editor inside the thread and sends a reply to that thread', async () => {
@@ -314,6 +327,7 @@ describe('BufferedReviewComposer', () => {
         </ThemeProvider>
       </QueryClientProvider>,
     )
+    fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
 
     fireEvent.click(await screen.findByRole('button', { name: '返信' }))
     const thread = screen.getByText('位置コメント').closest('article') as HTMLElement

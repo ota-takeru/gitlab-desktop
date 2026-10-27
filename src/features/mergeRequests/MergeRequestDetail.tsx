@@ -158,7 +158,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     return () => host.removeEventListener('scroll', update)
   }, [])
   const queryClient = useQueryClient()
-  const [localTab, setLocalTab] = useState<ReviewTab>('discussion')
+  const [localTab, setLocalTab] = useState<ReviewTab>('overview')
   const activeTab = tab ?? localTab
   const setActiveTab = (next: ReviewTab) => { if (onTabChange) onTabChange(next); else setLocalTab(next) }
   // A thread opened from the diff, shown once the discussion tab has settled.
@@ -928,9 +928,9 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? '担当者' : 'レビュアー'} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open /> : null}
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, mb: '-1px', mt: 0.5 }}>
           <Tabs aria-label="MR詳細" onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0 }} value={activeTab}>
+            <Tab label="概要" value="overview" />
             <Tab label={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><span>議論</span>{unresolvedCount > 0 ? <Chip aria-label={`未解決${unresolvedCount}件`} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Stack>} value="discussion" />
             <Tab label="変更" value="changes" />
-            <Tab label="概要" value="overview" />
             <Tab label="パイプライン" value="pipelines" />
           </Tabs>
           {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: 'auto' }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}

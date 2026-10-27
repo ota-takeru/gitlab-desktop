@@ -268,13 +268,15 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
   }, [])
 
-  const select = useCallback((ref: MrRef | null) => {
+  // An MR opens on its overview; a notification about a comment opens it on the discussion.
+  const select = useCallback((ref: MrRef | null, tab?: ReviewTab) => {
     const current = readClientLocation(Boolean(session))
     // From the settings an MR opens over the list the MR list starts with.
     const start = hubTabLocation(readHubTabOrder()[0], session?.user.id)
     const targetRoute = current.route === 'settings' ? start.route : current.route
     const base: Record<string, string> = targetRoute === current.route ? withoutSelection(current.params) : { ...start.params }
     if (ref && current.params.mr === `${ref.projectId}-${ref.iid}` && current.params.tab) base.tab = current.params.tab
+    if (tab && tab !== 'overview') base.tab = tab
     navigate(targetRoute, ref ? { ...base, mr: `${ref.projectId}-${ref.iid}` } : base)
   }, [navigate, session])
 
@@ -402,7 +404,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const changeMergeRequestTab = useCallback((tab: ReviewTab) => {
     const current = readClientLocation(true)
     const next = { ...current.params }
-    if (tab === 'discussion') delete next.tab
+    if (tab === 'overview') delete next.tab
     else next.tab = tab
     navigate(current.route, next)
   }, [navigate])
@@ -428,9 +430,9 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     select({ iid: nextMergeRequest.iid, projectId: nextMergeRequest.projectId })
   }
 
-  const openMergeRequestRef = (ref: MrRef | null) => {
+  const openMergeRequestRef = (ref: MrRef | null, tab?: ReviewTab) => {
     setOpenedMergeRequest(null)
-    select(ref)
+    select(ref, tab)
   }
   const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef, (user) => navigate('user', { username: user.username }))
   const changeUserTab = (tab: UserTab) => {
@@ -529,7 +531,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             <MergeRequestTabs collapsed={navCollapsed} onOpen={openMergeRequestRef} selected={selected} />
           </Box>
           {/* Notifications are not a place: they open over the page, from beside the settings. */}
-          <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={openMergeRequestRef} onOpenChange={foldForNotifications} /></List>
+          <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref) => openMergeRequestRef(ref, 'discussion')} onOpenChange={foldForNotifications} /></List>
           <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? `設定 · ${session ? `${session.user.name} @${session.user.username}` : '未接続'}` : ''}>
@@ -963,7 +965,7 @@ function withoutSelection(params: Record<string, string>): Record<string, string
 }
 
 function parseTab(value: string | undefined): ReviewTab {
-  return value === 'changes' || value === 'overview' || value === 'pipelines' ? value : 'discussion'
+  return value === 'changes' || value === 'discussion' || value === 'pipelines' ? value : 'overview'
 }
 
 /** Composers, toolbars, menus and forms handle Esc themselves. `data-composer` marks a composer's whole region. */

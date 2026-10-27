@@ -7,7 +7,7 @@ for (const theme of ['light', 'dark'] as const) {
       test.use({ viewport, colorScheme: theme })
       test('user links open MR and project lists inside the app', async ({ page }) => {
         await page.clock.setFixedTime(new Date('2026-01-10T18:00:00+09:00'))
-        await page.goto(`/?fixture=ready&theme=${theme}#client/mrs?mr=101-42`)
+        await page.goto(`/?fixture=ready&theme=${theme}#client/mrs?mr=101-42&tab=discussion`)
         await page.getByRole('link', { name: '高橋 明里', exact: true }).first().click()
         await expect(page.getByRole('tab', { name: '作成したMR', exact: true })).toHaveAttribute('aria-selected', 'true')
         await expect(page).toHaveURL(/#client\/user\?username=akari.t$/u)

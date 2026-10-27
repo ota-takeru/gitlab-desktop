@@ -10,7 +10,7 @@ const viewports = [
 const fixedNow = new Date('2026-01-10T18:00:00+09:00')
 
 const queue = '#client/mrs?reviewer=self&state=opened'
-const detail = `${queue}&mr=101-42`
+const detail = `${queue}&mr=101-42&tab=discussion`
 const detailTitle = 'MR一覧の検索結果をSQLiteキャッシュから再利用する'
 
 async function open(page: Page, url: string) {
