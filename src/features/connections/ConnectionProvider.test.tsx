@@ -80,6 +80,20 @@ function mockDefaultCommands() {
   })
 }
 
+/**
+ * Reports the connected session as expired until the provider reacts. The provider
+ * listens with the new session in an effect that can run just after the connected
+ * state is on screen, so an event sent in between would reach the previous listener.
+ */
+async function expireSession(reacted: () => void) {
+  await waitFor(() => {
+    act(() => {
+      window.dispatchEvent(new CustomEvent('gitlab-auth-required', { detail: { sessionId: gitlabComSession.id } }))
+    })
+    reacted()
+  })
+}
+
 describe('GitLab connection IPC and lifecycle', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -147,11 +161,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     )
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('connected'))
 
-    act(() => {
-      window.dispatchEvent(new CustomEvent('gitlab-auth-required', { detail: { sessionId: gitlabComSession.id } }))
-    })
-
-    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
+    await expireSession(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
     expect(screen.getByTestId('instance-url')).toHaveTextContent('')
     expect(screen.getByTestId('error-code')).toHaveTextContent('AUTH_REQUIRED')
     expect(readPinnedProjectIds(scope)).toEqual([])
@@ -326,10 +336,7 @@ describe('GitLab connection IPC and lifecycle', () => {
       </ConnectionProvider>,
     )
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('connected'))
-    act(() => {
-      window.dispatchEvent(new CustomEvent('gitlab-auth-required', { detail: { sessionId: gitlabComSession.id } }))
-    })
-    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
+    await expireSession(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
 
     fireEvent.click(screen.getByRole('button', { name: 'connect' }))
 
@@ -355,10 +362,7 @@ describe('GitLab connection IPC and lifecycle', () => {
       </ConnectionProvider>,
     )
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('connected'))
-    act(() => {
-      window.dispatchEvent(new CustomEvent('gitlab-auth-required', { detail: { sessionId: gitlabComSession.id } }))
-    })
-    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
+    await expireSession(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
 
     fireEvent.click(screen.getByRole('button', { name: 'connect' }))
 
@@ -521,11 +525,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     })
     renderConnectionView()
     await waitFor(() => expect(screen.getByText('GitLab接続済み')).toBeInTheDocument())
-    act(() => {
-      window.dispatchEvent(new CustomEvent('gitlab-auth-required', { detail: { sessionId: gitlabComSession.id } }))
-    })
-
-    expect(await screen.findByRole('heading', { name: '再認証が必要です' })).toBeInTheDocument()
+    await expireSession(() => expect(screen.getByRole('heading', { name: '再認証が必要です' })).toBeInTheDocument())
     expect(screen.getByLabelText('GitLab URL')).toHaveValue(gitlabComSession.instanceUrl)
     fireEvent.change(screen.getByLabelText('Personal Access Token'), { target: { value: 'renewed-token' } })
     fireEvent.submit(screen.getByLabelText('Personal Access Token').closest('form')!)
