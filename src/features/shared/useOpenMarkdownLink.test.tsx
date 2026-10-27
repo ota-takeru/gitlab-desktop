@@ -24,12 +24,13 @@ import { useOpenMarkdownLink } from './useOpenMarkdownLink'
 
 const alice = { id: 'user-1', name: 'Alice', username: 'alice' }
 
-function LinkProbe({ url, onOpenMergeRequest = vi.fn(), onOpenUser = vi.fn() }: {
+function LinkProbe({ url, onOpenMergeRequest = vi.fn(), onOpenPage, onOpenUser = vi.fn() }: {
   url: string
   onOpenMergeRequest?: (ref: { projectId: string; iid: string }) => void
+  onOpenPage?: (location: { route: string; params: Record<string, string> }) => void
   onOpenUser?: (user: typeof alice) => void
 }) {
-  const openLink = useOpenMarkdownLink(onOpenMergeRequest, onOpenUser)
+  const openLink = useOpenMarkdownLink(onOpenMergeRequest, onOpenUser, onOpenPage)
   return <button onClick={() => openLink?.(url)} type="button">open</button>
 }
 
@@ -47,6 +48,23 @@ describe('useOpenMarkdownLink', () => {
     mocks.openExternalUrl.mockReset().mockResolvedValue(undefined)
     mocks.openGitLabUrl.mockReset().mockResolvedValue(undefined)
     mocks.queryGitLab.mockReset()
+  })
+
+  it('opens a project page in the app, and a group page in the browser', async () => {
+    mocks.queryGitLab.mockImplementation(async ({ query }: { query: { path: string } }) => {
+      if (query.path === 'team/desktop') return { data: { id: '42', name: 'Desktop', webUrl: 'https://gitlab.example/gitlab/team/desktop' } }
+      throw new Error('404')
+    })
+    const onOpenPage = vi.fn()
+    const { rerender } = render(<LinkProbe onOpenPage={onOpenPage} url="https://gitlab.example/gitlab/team/desktop/-/branches" />)
+    fireEvent.click(screen.getByRole('button', { name: 'open' }))
+    await waitFor(() => expect(onOpenPage).toHaveBeenCalledWith({ route: 'branches', params: { projectId: '42', projectName: 'Desktop' } }))
+
+    rerender(<LinkProbe onOpenPage={onOpenPage} url="https://gitlab.example/gitlab/team/sub" />)
+    fireEvent.click(screen.getByRole('button', { name: 'open' }))
+    await waitFor(() => expect(mocks.openGitLabUrl).toHaveBeenCalledWith('session-1', 'https://gitlab.example/gitlab/team/sub'))
+    expect(onOpenPage).toHaveBeenCalledTimes(1)
+    expect(mocks.notify).not.toHaveBeenCalled()
   })
 
   it('opens an exact profile result in the app for a GitLab subpath URL', async () => {

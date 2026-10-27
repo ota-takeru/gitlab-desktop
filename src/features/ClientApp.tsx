@@ -66,6 +66,7 @@ import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
 import { useOpenMarkdownLink } from './shared/useOpenMarkdownLink'
+import type { GitLabPageLocation } from './shared/gitlabPageLocation'
 import { UserView, type UserTab } from './users/UserView'
 import { clearGitLabMutationStates } from './shared/useGitLabMutation'
 import { useGitLabQuery } from './shared/useGitLabQuery'
@@ -434,7 +435,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     setOpenedMergeRequest(null)
     select(ref, tab)
   }
-  const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef, (user) => navigate('user', { username: user.username }))
+  const openGitLabPage = useCallback((location: GitLabPageLocation) => navigate(location.route, location.params), [navigate])
+  const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef, (user) => navigate('user', { username: user.username }), openGitLabPage)
   const changeUserTab = (tab: UserTab) => {
     const current = readClientLocation(true)
     navigate('user', { ...withoutSelection(current.params), userTab: tab })
@@ -485,7 +487,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     navigate(last.route, last.params)
   }
   // Opening by URL is a one-off action of the MR list, beside its title.
-  const hubActions = hubTab ? <Tooltip title="MR URLから開く (Ctrl+O)"><IconButton aria-label="MR URLから開く" onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
+  const hubActions = hubTab ? <Tooltip title="GitLabのURLから開く (Ctrl+O)"><IconButton aria-label="GitLabのURLから開く" onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
   // A project's screen shows its name beside tabs for its MRs, its branches and its code.
   const projectTab = route === 'overview' || route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
   const projectNavigation = projectTab ? <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
@@ -551,7 +553,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             <DialogContent><ConnectionView /></DialogContent>
           </Dialog>
           <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} open={shortcutsOpen} />
-          <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestRef} />
+          <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestRef} onOpenPage={openGitLabPage} />
           <Box key={sessionKey} sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {/* The same pane as the restored screen, so nothing moves when it arrives. */}
             {waitingForSessionRestore ? <Box aria-label="一覧" component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}

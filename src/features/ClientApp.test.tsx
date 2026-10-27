@@ -540,10 +540,10 @@ it('keeps places in the navigation, the reader\'s own MRs in chips, and opening 
   expect(screen.getByRole('button', { name: '通知' })).toHaveAttribute('aria-haspopup', 'dialog')
   expect(ownMrs().getAllByRole('button').map((chip) => chip.textContent)).toEqual(['レビュー依頼', '担当', '作成'])
   expect(within(navigation).queryByRole('button', { name: 'MR検索' })).not.toBeInTheDocument()
-  expect(within(navigation).queryByRole('button', { name: 'MR URLから開く' })).not.toBeInTheDocument()
+  expect(within(navigation).queryByRole('button', { name: 'GitLabのURLから開く' })).not.toBeInTheDocument()
 
-  fireEvent.click(screen.getByRole('button', { name: 'MR URLから開く' }))
-  expect(screen.getByRole('dialog', { name: 'MR URLから開く' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'GitLabのURLから開く' }))
+  expect(screen.getByRole('dialog', { name: 'GitLabのURLから開く' })).toBeInTheDocument()
 })
 
 it('clears in-memory composer buffers after an explicit logout event', () => {

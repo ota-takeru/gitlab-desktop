@@ -1,10 +1,12 @@
 import { useCallback, useLayoutEffect, useRef } from 'react'
 import { useNotify } from '../../components/feedbackContext'
 import { normalizeGitLabError, openExternalUrl, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
+import { parseGitLabPageUrl } from '../../lib/gitlabPageUrl'
 import { parseMergeRequestUrl } from '../../lib/mergeRequestUrl'
 import { isTauri } from '../../lib/runtime'
 import type { GitLabUser } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
+import { resolveGitLabPage, type GitLabPageLocation } from './gitlabPageLocation'
 import type { MrRef } from './personalWorkspace'
 
 const RESERVED_PROFILE_PATHS = new Set([
@@ -50,16 +52,18 @@ function profileTarget(url: string, instanceUrl: string): ProfileTarget | null {
 }
 
 /**
- * Opens a link clicked in a comment or description. GitLab users and merge
- * requests on the connected instance open in the app;
+ * Opens a link clicked in a comment or description. GitLab users, merge
+ * requests, and a project's overview, branches, MR list, folders and files on
+ * the connected instance open in the app;
  * other GitLab pages and other sites open in the default browser. Outside the
  * desktop app links stay plain anchors.
  */
-export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, onOpenUser: (user: GitLabUser) => void): ((url: string) => void) | undefined {
+export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, onOpenUser: (user: GitLabUser) => void, onOpenPage?: (location: GitLabPageLocation) => void): ((url: string) => void) | undefined {
   const { session } = useConnection()
   const notify = useNotify()
   const openMergeRequestRef = useRef(onOpenMergeRequest)
   const openUserRef = useRef(onOpenUser)
+  const openPageRef = useRef(onOpenPage)
   const operationRef = useRef(0)
   const sessionId = session?.id
   const instanceUrl = session?.instanceUrl
@@ -67,7 +71,8 @@ export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, on
   useLayoutEffect(() => {
     openMergeRequestRef.current = onOpenMergeRequest
     openUserRef.current = onOpenUser
-  }, [onOpenMergeRequest, onOpenUser])
+    openPageRef.current = onOpenPage
+  }, [onOpenMergeRequest, onOpenPage, onOpenUser])
   useLayoutEffect(() => {
     currentSessionRef.current = sessionId
     operationRef.current += 1
@@ -97,6 +102,12 @@ export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, on
       let mergeRequest: { path: string; iid: string } | null = null
       try { mergeRequest = parseMergeRequestUrl(url, instanceUrl) } catch { /* Another GitLab page. */ }
       if (!mergeRequest) {
+        const page = openPageRef.current ? parseGitLabPageUrl(url, instanceUrl) : null
+        if (page) {
+          const location = await resolveGitLabPage(sessionId, page, isCurrent)
+          if (!isCurrent()) return
+          if (location) { openPageRef.current?.(location); return }
+        }
         const profile = profileTarget(url, instanceUrl)
         if (profile) {
           const user = profile.kind === 'username'
