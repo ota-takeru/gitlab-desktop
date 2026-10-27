@@ -1,16 +1,11 @@
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
-import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
-import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
-import PublishRoundedIcon from '@mui/icons-material/PublishRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded'
 import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined'
 import ThumbUpRoundedIcon from '@mui/icons-material/ThumbUpRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
@@ -19,69 +14,31 @@ import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import ListItemText from '@mui/material/ListItemText'
-import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
-import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
 import { useConfirm, useNotify } from '../../components/feedbackContext'
-import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { GitLabUserLink } from '../../components/GitLabUserLink'
-import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
-import { delayedRevealSx } from '../../components/paneSx'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { ReactionBar } from '../../components/ReactionBar'
 import { applyOwnReaction } from '../../lib/awardEmoji'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
-import { LabelChip } from '../../components/LabelChip'
-import { formatAbsoluteTime, formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
+import { formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { projectUrlOf } from '../../lib/markdownLinks'
-import type {
-  Approvals,
-  AwardEmoji,
-  Commit,
-  DiffsQuery,
-  Diff,
-  Discussion,
-  Draft,
-  FileQuery,
-  GitLabUser,
-  GitLabAction,
-  LabelsQuery,
-  GitLabQuery,
-  GitLabSnapshot,
-  ApprovalsQuery,
-  CommitDiffQuery,
-  MergeRequest,
-  MergeRequestQuery,
-  MrAwardsQuery,
-  MrVersion,
-  MrVersionsQuery,
-  Note,
-  NoteAwardsQuery,
-  Position,
-  ReviewResourceQuery,
-  VersionCompareQuery,
-} from '../../types/gitlab'
+import type { Approvals, AwardEmoji, Commit, DiffsQuery, Diff, Discussion, Draft, FileQuery, GitLabUser, GitLabAction, GitLabQuery, GitLabSnapshot, ApprovalsQuery, CommitDiffQuery, MergeRequest, MergeRequestQuery, MrAwardsQuery, MrVersion, MrVersionsQuery, Note, NoteAwardsQuery, Position, ReviewResourceQuery, VersionCompareQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
@@ -92,8 +49,6 @@ import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
 import { readLoadedDiffPages, useDiscussionCode } from './useDiscussionCode'
 import { DiscussionList, type NoteReactions, type OlderDiscussions } from './DiscussionList'
-import type { ThreadActions } from './DiffThreads'
-import { DiffViewer } from './DiffViewer'
 import { commentScrollPositions } from './composerBuffers'
 import { diffFileOrder } from './diffFileOrder'
 import { LocalChanges } from './LocalChanges'
@@ -102,7 +57,6 @@ import { lineKey, threadsByLine } from './diffLineThreads'
 import { isUnresolvedDiscussion } from './discussionStatus'
 import { UnresolvedThreadNav, UnresolvedThreadStepper } from './UnresolvedThreadNav'
 import { plainExcerpt } from './discussionText'
-import type { ReviewedFileContext } from './useReviewedFiles'
 import { MergeRequestPeopleDialog } from './MergeRequestPeopleDialog'
 import { PipelinesTab } from './PipelinesTab'
 import { MergeRequestActions, MergeStatusText } from './MergeRequestActions'
@@ -111,7 +65,11 @@ import type { SuggestionActions } from './SuggestionBlock'
 import { suggestionSourceLines } from './suggestions'
 import { MarkNotificationReadButton } from './NotificationPanel'
 import { useLoadedMergeRequestNotifications } from './todoCache'
-import { appendComposerBuffer, clearComposerBuffer, createComposerBackendKey, createComposerBufferKey, moveComposerBuffer, rememberComposerTarget, restoreComposerBuffer, seedComposerBuffer, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
+import { appendComposerBuffer, clearComposerBuffer, createComposerBackendKey, createComposerBufferKey, moveComposerBuffer, rememberComposerTarget, restoreComposerBuffer, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
+import { ChangesTab } from './MergeRequestChangesTab'
+import { DraftList, type DraftStatus } from './DraftList'
+import { LoadingPanel } from './LoadingPanel'
+import { OverviewTab } from './MergeRequestOverviewTab'
 
 export type ReviewTab = 'discussion' | 'changes' | 'overview' | 'pipelines'
 type CommitsQuery = ReviewResourceQuery & { kind: 'commits' }
@@ -1087,279 +1045,6 @@ export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof R
   return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>入力を破棄</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
-function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
-  const confirm = useConfirm()
-  if (!drafts.length && page === 1) return null
-  const selectedDrafts = drafts.filter((draft) => selected.includes(draft.id))
-  const paged = nextPage !== null || page > 1
-  return (
-    <Paper component="section" aria-labelledby="draft-list-title" sx={{ bgcolor: 'surface.raised', p: 1.5 }} variant="outlined">
-      <Stack spacing={1}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><PublishRoundedIcon color="primary" fontSize="small" /><Typography color="textSecondary" component="h2" id="draft-list-title" variant="overline">未公開レビュー</Typography><Chip label={paged ? `このページ ${drafts.length}件` : `${drafts.length}件`} size="small" variant="outlined" /><Tooltip title="全ページの下書きを読み直し、一件ずつ公開します。途中で失敗したら残りは公開しません。"><Box component="span" sx={{ ml: 'auto' }}><Button disabled={disabled || publishingAll} onClick={() => void onPublishAll()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{publishingAll ? '公開中…' : 'すべて公開'}</Button></Box></Tooltip></Stack>
-        <List disablePadding>
-          {drafts.map((draft) => {
-            const status = statuses[draft.id] ?? 'idle'
-            const excerpt = plainExcerpt(draft.body, 80)
-            const name = `下書き「${plainExcerpt(draft.body, 20)}」`
-            const editing = draftEditId === draft.id
-            const place = draft.position ? `${draft.position.newPath}:${draft.position.newLine ?? draft.position.oldLine ?? 'file'}` : null
-            const position = draft.position
-            const secondary = status === 'unknown' ? '結果不明 · 更新して確認してください' : status === 'success' ? '公開済み' : status === 'error' ? '公開に失敗しました'
-              : position && place ? <Tooltip title={place}><Button aria-label={`差分へ移動: ${place}`} disabled={disabled} onClick={() => onOpenPosition(position)} size="small" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', fontWeight: 400, justifyContent: 'flex-start', maxWidth: '100%', minHeight: 24, minWidth: 0, px: 0.5 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place} への行コメント</Box></Button></Tooltip>
-                : draft.discussionId ? '既存スレッドへの返信' : '新規コメント'
-            return <ListItem key={draft.id} disableGutters sx={{ alignItems: 'stretch', flexDirection: 'column' }}>
-              <Stack direction="row" sx={{ alignItems: 'center', minWidth: 0 }}>
-                <Checkbox checked={selected.includes(draft.id)} disabled={disabled} slotProps={{ input: { 'aria-label': `${name}を選択` } }} onChange={() => onSelect(draft.id)} size="small" />
-                <ListItemText primary={<Tooltip title={draft.body}><Typography noWrap variant="body2">{excerpt || '（本文なし）'}</Typography></Tooltip>} secondary={secondary} slotProps={{ secondary: { component: 'div', noWrap: true } }} sx={{ minWidth: 0, my: 0 }} />
-                <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
-                  <Tooltip title="下書きを編集"><span><IconButton aria-label={`${name}を編集`} disabled={disabled || editing || status === 'pending' || status === 'unknown' || status === 'success'} onClick={() => onSetEdit(draft.id)} size="small"><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
-                  <Tooltip title="下書きを公開"><span><IconButton aria-label={`${name}を公開`} disabled={disabled || status === 'pending' || status === 'unknown'} onClick={() => void onPublish(draft)} size="small"><PublishRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
-                  <Tooltip title="下書きを削除"><span><IconButton aria-label={`${name}を削除`} disabled={disabled || status === 'pending'} onClick={() => void confirm({ cancelLabel: '残す', confirmLabel: '削除する', destructive: true, message: excerpt, title: 'この下書きを削除しますか？' }).then((ok) => { if (ok) void onDelete(draft) })} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
-                </Stack>
-              </Stack>
-              {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} onClose={() => onSetEdit(null)} onSave={(body) => onEdit(draft, body)} sessionId={sessionId} /> : null}
-            </ListItem>
-          })}
-        </List>
-        {selectedDrafts.length > 0 ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">選択中 {selectedDrafts.length}件 · 公開は一件ずつ実行されます</Typography><Button disabled={disabled} onClick={() => void onPublishSelected()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">選択を公開</Button></Stack> : null}
-        {paged ? <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}><Button aria-label="下書きの前のページ" disabled={page <= 1} onClick={onPrevPage} size="small">前へ</Button><Typography color="textSecondary" variant="caption">ページ {page}</Typography><Button aria-label="下書きの次のページ" disabled={nextPage === null} onClick={onNextPage} size="small">次へ</Button></Stack> : null}
-      </Stack>
-    </Paper>
-  )
-}
-
-/**
- * Edits a pending-review comment in place. Its text is kept in the composer
- * buffer, so closing (Esc) or leaving the tab keeps it; 取消 of a changed text asks first.
- */
-function DraftEditor({ bufferKey, disabled, draft, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
-  const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
-  const confirm = useConfirm()
-  const [saving, setSaving] = useState(false)
-  const seededRef = useRef(false)
-  useEffect(() => {
-    // Start from the draft, or from the text kept when the edit was last closed.
-    if (seededRef.current || persistenceStatus === 'hydrating') return
-    seededRef.current = true
-    seedComposerBuffer(bufferKey, draft.body)
-  }, [bufferKey, draft.body, persistenceStatus])
-  const changed = body !== draft.body
-  const close = () => {
-    // An unchanged copy of the draft is not worth keeping.
-    if (!changed) change('')
-    onClose()
-  }
-  const cancel = async () => {
-    if (changed && !await confirm({ cancelLabel: '編集を続ける', confirmLabel: '破棄する', destructive: true, title: '下書きの編集を破棄しますか？' })) return
-    change('')
-    onClose()
-  }
-  const save = async () => {
-    const trimmed = body.trim()
-    if (disabled || saving || !changed || !trimmed) return
-    setSaving(true)
-    try {
-      if (await onSave(trimmed)) {
-        change('')
-        onClose()
-      }
-    } finally {
-      setSaving(false)
-    }
-  }
-  const handleKeyDown = (event: MarkdownEditorKeyEvent) => {
-    if (event.key === 'Escape') { event.preventDefault(); close(); return true }
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void save(); return true }
-    return false
-  }
-  return <Stack data-composer="" spacing={1} sx={{ pb: 1, pt: 0.5 }}>
-    <MarkdownEditor autoFocus disabled={disabled || saving} label="下書きを編集" onChange={change} onKeyDown={handleKeyDown} value={body} />
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
-      <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">Ctrl+Enter: 保存 · Esc: 閉じる（入力は保持）</Typography>
-      <Button disabled={saving} onClick={() => void cancel()} size="small">取消</Button>
-      <Button disabled={disabled || saving || !changed || !body.trim()} onClick={() => void save()} size="small" variant="contained">{saving ? '保存中…' : '保存'}</Button>
-    </Stack>
-  </Stack>
-}
-
-type DraftStatus = 'idle' | 'pending' | 'success' | 'error' | 'unknown'
-
-/** The MR's versions, and the earlier one the changes tab compares from, if any. */
-interface VersionChoice {
-  compareFrom: string | null
-  error: Error | null
-  headSha?: string
-  items: MrVersion[]
-  loading: boolean
-  /** GitLab has older versions than the listed ones. */
-  more: boolean
-  /** Null returns to the whole MR. */
-  onSelect: (headCommitSha: string | null) => void
-}
-
-function ChangesTab({ compareBaseSha, local, fileSource, threadActions, pendingDrafts, lineComposer, discussions, discussionHeadSha, discussionsIncomplete, onOpenDiscussion, reviewContext, allowComments, changeNextPage, changePage, changesError, changesLoading, changesTruncated, commitNextPage, commitPage, commits, commitsError, commitsLoading, diffs, fileResult, fileView, onComment, onNextChangePage, onNextCommitPage, onPrevChangePage, onPrevCommitPage, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition, suggestionActions, versions }: { compareBaseSha?: string; local?: LocalChoice; fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string }; reviewContext?: ReviewedFileContext; allowComments: boolean; changeNextPage: number | null; changePage: number; changesError: Error | null; changesLoading: boolean; changesTruncated: boolean; commitNextPage: number | null; commitPage: number; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; onComment: (position: Position) => void; onNextChangePage: () => void; onNextCommitPage: () => void; onPrevChangePage: () => void; onPrevCommitPage: () => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position; discussions?: Discussion[]; discussionHeadSha?: string; discussionsIncomplete: boolean; onOpenDiscussion: (discussionId: string) => void; lineComposer?: { position: Position; node: React.ReactNode }; pendingDrafts?: Draft[]; threadActions?: ThreadActions; suggestionActions?: SuggestionActions; versions: VersionChoice }) {
-  const compareFrom = versions.compareFrom
-  const showingLocal = Boolean(local?.active)
-  return (
-    <Stack spacing={1.5}>
-      {commitsError && !commits.length ? <Alert severity="error">コミットを取得できませんでした: {commitsError.message}</Alert> : null}
-      {commitsError && commits.length ? <Alert severity="warning">保存済みのコミットを表示中です。更新に失敗しました: {commitsError.message}</Alert> : null}
-      {!commitsError || commits.length ? <CommitTimeline baseSha={compareBaseSha} commits={commits} compareFrom={compareFrom} local={local} headSha={discussionHeadSha} loading={commitsLoading} nextPage={commitNextPage} onNextPage={onNextCommitPage} onPrevPage={onPrevCommitPage} onSelect={onSelectCommit} page={commitPage} selected={selectedCommit} versionPicker={<VersionPicker versions={versions} />} /> : null}
-      {showingLocal ? local?.content : <>
-      {changesTruncated ? <Alert severity="warning">GitLabがバージョン間の比較を上限で打ち切ったため、一部のファイルが表示されていません。GitLabで確認してください。</Alert> : null}
-      {changesError && !diffs.length ? <Alert severity="error">差分を取得できませんでした: {changesError.message}</Alert> : null}
-      {changesError && diffs.length ? <Alert severity="warning">保存済みの差分を表示中です。更新に失敗しました: {changesError.message}</Alert> : null}
-      {changesLoading && !diffs.length ? <LoadingPanel label="変更を読み込み中…" /> : null}
-      {!changesLoading && !changesError && compareFrom && changePage === 1 && !diffs.length ? <Typography color="textSecondary" role="status" variant="body2">このバージョンから最新までの変更はありません。</Typography> : null}
-      {(!changesLoading || diffs.length) && (!changesError || diffs.length) ? <DiffViewer threadActions={threadActions} pendingDrafts={pendingDrafts} lineComposer={lineComposer} discussionHeadSha={discussionHeadSha} discussions={discussions} discussionsIncomplete={discussionsIncomplete} onOpenDiscussion={onOpenDiscussion} reviewContext={!changesLoading && !changesError ? reviewContext : undefined} key={selectedCommit ?? (compareFrom ? `version:${compareFrom}` : 'mr')} allowComments={allowComments} diffs={diffs} fileContent={fileResult.data?.content} fileLoading={fileResult.loading} fileSource={fileSource} onComment={onComment} onSelectFile={onSelectFile} onViewChange={onViewChange} selectedFile={selectedFile} selectedPosition={selectedPosition} suggestionActions={suggestionActions} view={fileView} /> : null}
-      {fileResult.error ? <Alert severity="error">ファイル全体を取得できませんでした: {fileResult.error.message}</Alert> : null}
-      {changeNextPage !== null || changePage > 1 ? <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}><Button aria-label="差分の前のページ" disabled={changePage <= 1} onClick={onPrevChangePage} size="small">前へ</Button><Typography color="textSecondary" variant="caption">差分のページ {changePage}</Typography><Button aria-label="差分の次のページ" disabled={changeNextPage === null} onClick={onNextChangePage} size="small">次へ</Button></Stack> : null}
-      </>}
-    </Stack>
-  )
-}
-
-function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading, nextPage, onNextPage, onPrevPage, onSelect, page, selected, versionPicker }: { baseSha?: string; commits: Commit[]; compareFrom: string | null; local?: LocalChoice; headSha?: string; loading: boolean; nextPage: number | null; onNextPage: () => void; onPrevPage: () => void; onSelect: (sha: string | null) => void; page: number; selected: string | null; versionPicker: React.ReactNode }) {
-  const showingLocal = Boolean(local?.active)
-  const wholeMergeRequest = selected === null && !compareFrom && !showingLocal
-  const item = (active: boolean) => ({ bgcolor: active ? 'surface.selected' : 'transparent', border: 1, borderColor: active ? 'primary.main' : 'divider', borderRadius: 1, color: active ? 'text.primary' : 'text.secondary', flexShrink: 0, fontWeight: active ? 600 : 400, minHeight: 28, px: 1, '&:hover': { bgcolor: active ? 'surface.selected' : 'action.hover', borderColor: active ? 'primary.main' : 'surface.borderStrong' } })
-  // One tab stop for the whole row (the chosen item); ←/→ Home/End move between items.
-  const tabStop = selected !== null && commits.some((commit) => commit.id === selected) ? selected : null
-  const moveFocus = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-commit-item]'))
-    const current = items.indexOf(document.activeElement as HTMLElement)
-    if (current < 0) return
-    event.preventDefault()
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : Math.min(items.length - 1, Math.max(0, current + (event.key === 'ArrowRight' ? 1 : -1)))
-    items[next].focus()
-    items[next].scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-  }
-  // Many commits stay on one line; the arrows scroll it when it is wider than the pane.
-  const scrollerRef = useRef<HTMLDivElement>(null)
-  const [overflow, setOverflow] = useState({ left: false, right: false })
-  useEffect(() => {
-    const scroller = scrollerRef.current
-    if (!scroller || typeof ResizeObserver === 'undefined') return
-    const update = () => setOverflow({ left: scroller.scrollLeft > 0, right: scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1 })
-    // The observer reports the first size as soon as it starts observing.
-    const observer = new ResizeObserver(update)
-    observer.observe(scroller)
-    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
-    scroller.addEventListener('scroll', update, { passive: true })
-    return () => { observer.disconnect(); scroller.removeEventListener('scroll', update) }
-  }, [])
-  const scrollBy = (direction: 1 | -1) => {
-    const scroller = scrollerRef.current
-    scroller?.scrollBy?.({ behavior: 'smooth', left: direction * scroller.clientWidth * 0.8 })
-  }
-  const scrollable = overflow.left || overflow.right
-  return <Stack spacing={0.5}>
-    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-      {page > 1 ? <Button onClick={onPrevPage} size="small" sx={{ flexShrink: 0 }}>前のコミット</Button> : null}
-      {scrollable ? <Tooltip title="左へスクロール"><span><IconButton aria-label="コミットの帯を左へスクロール" disabled={!overflow.left} onClick={() => scrollBy(-1)}><ChevronLeftRoundedIcon /></IconButton></span></Tooltip> : null}
-      <Box aria-label="比較対象" onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', pb: 0.5 }}><Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 'max-content' }}>
-        <Button aria-pressed={wholeMergeRequest} color="inherit" data-commit-item onClick={() => onSelect(null)} sx={item(wholeMergeRequest)} tabIndex={tabStop === null ? 0 : -1}>MR全体</Button>
-        {loading ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">コミットを読み込み中…</Typography> : commits.map((commit) => { const time = commit.committedAt || commit.createdAt; return <Tooltip describeChild key={commit.id} title={`${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={selected === commit.id} color="inherit" data-commit-item onClick={() => onSelect(commit.id)} sx={{ ...item(selected === commit.id), justifyContent: 'flex-start', gap: 1, maxWidth: 420 }} tabIndex={tabStop === commit.id ? 0 : -1}><Box component="span" sx={{ color: 'primary.main', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', flexShrink: 0 }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box>{time ? <Box component="time" dateTime={time} sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 'caption.fontSize' }}>{formatAbsoluteTime(time)}</Box> : null}</Button></Tooltip> })}
-      </Stack></Box>
-      {scrollable ? <Tooltip title="右へスクロール"><span><IconButton aria-label="コミットの帯を右へスクロール" disabled={!overflow.right} onClick={() => scrollBy(1)}><ChevronRightRoundedIcon /></IconButton></span></Tooltip> : null}
-      {nextPage !== null ? <Button onClick={onNextPage} size="small" sx={{ flexShrink: 0 }}>次のコミット</Button> : null}
-    </Stack>
-    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
-      <Typography color="textSecondary" variant="caption">
-        比較元 <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily' }}>{showingLocal ? (headSha ? `${shortSha(headSha)}（MRの最新）` : 'MRの最新') : selected ? '親コミット' : compareFrom ? `${shortSha(compareFrom)}（過去のバージョン）` : baseSha ? shortSha(baseSha) : 'ターゲットブランチ'}</Box>
-        {' → '}比較先 <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily' }}>{showingLocal ? 'ローカルの作業ツリー' : selected ? shortSha(selected) : headSha ? shortSha(headSha) : 'MRの最新'}</Box>
-      </Typography>
-      {versionPicker}
-      {local ? <Tooltip describeChild title="MRの最新コミットとローカルの作業ツリーの差（未pushのコミット、未コミットの変更、未追跡ファイル）を表示します。"><Button aria-pressed={showingLocal} color="inherit" onClick={local.onSelect} size="small" sx={item(showingLocal)}>ローカルの変更</Button></Tooltip> : null}
-    </Stack>
-    {selected ? <Typography color="textSecondary" role="note" variant="caption">コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。</Typography> : null}
-    {showingLocal ? <Typography color="textSecondary" role="note" variant="caption">MRの最新からローカルの作業ツリーまでの変更です（未pushのコミット、未コミットの変更、未追跡ファイル）。この表示では行コメントできず、確認済みの記録にも含めません。</Typography> : null}
-    {compareFrom && !selected ? <Typography color="textSecondary" role="note" variant="caption">選んだバージョンから最新までの変更です（GitLabのバージョン比較と同じく、その間にリベースがあればターゲットブランチ由来の変更も含まれます）。この表示では行コメントできず、確認済みの記録にも含めません。</Typography> : null}
-  </Stack>
-}
-
-/** The linked local clone as a comparison target, with the view that shows it. */
-interface LocalChoice {
-  active: boolean
-  content: React.ReactNode
-  onSelect: () => void
-}
-
-/** Chooses an earlier version (push) of the MR to show the changes since. */
-function VersionPicker({ versions }: { versions: VersionChoice }) {
-  // The latest version is the MR head itself, so only earlier ones are offered.
-  const earlier = versions.items.filter((version) => version.headCommitSha !== versions.headSha)
-  // Numbered as GitLab does (oldest is 1) when every version is listed.
-  const number = (index: number) => versions.more ? null : versions.items.length - versions.items.indexOf(earlier[index])
-  if (versions.error && !versions.items.length) return <Typography color="error" variant="caption">バージョンを取得できませんでした: {versions.error.message}</Typography>
-  return <TextField
-    disabled={versions.loading || !versions.headSha || earlier.length === 0}
-    onChange={(event) => versions.onSelect(event.target.value || null)}
-    select
-    size="small"
-    slotProps={{ htmlInput: { 'aria-label': '比較元バージョン' }, select: { displayEmpty: true } }}
-    sx={{ minWidth: 220, '& .MuiSelect-select': { py: 0.5 } }}
-    value={versions.compareFrom ?? ''}
-  >
-    <MenuItem value="">{versions.loading ? 'バージョンを読み込み中…' : earlier.length === 0 ? '比較できる過去のバージョンはありません' : versions.compareFrom ? 'バージョン比較をやめる（MR全体）' : '過去のバージョンと比較…'}</MenuItem>
-    {earlier.map((version, index) => {
-      const at = number(index)
-      return <MenuItem key={version.id} value={version.headCommitSha}>{at ? `バージョン${at} · ` : ''}{shortSha(version.headCommitSha)} · {formatVersionTime(version.createdAt)} から最新まで</MenuItem>
-    })}
-    {versions.more ? <MenuItem disabled value="__older">さらに古いバージョンはGitLabで確認してください</MenuItem> : null}
-  </TextField>
-}
-
-function formatVersionTime(value: string): string {
-  const time = Date.parse(value)
-  return Number.isNaN(time) ? '日時不明' : new Intl.DateTimeFormat('ja-JP', { day: 'numeric', hour: '2-digit', minute: '2-digit', month: 'numeric' }).format(time)
-}
-
-function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; reactions?: React.ReactNode }) {
-  const confirm = useConfirm()
-  const { session } = useConnection()
-  // Label colours come from the project's first page of labels; a label not on it shows without one.
-  const labelsQuery = useMemo<LabelsQuery | null>(() => mergeRequest.labels?.length ? { kind: 'labels', page: 1, projectId: mergeRequest.projectId, search: '' } : null, [mergeRequest.labels?.length, mergeRequest.projectId])
-  const labelColors = useGitLabQuery<LabelsQuery>(session?.id ?? null, labelsQuery)
-  const canRerequest = mergeRequest.state === 'opened' && Boolean(mergeRequest.projectPath)
-  const rows: Array<[string, React.ReactNode]> = [
-    ['作成者', `${mergeRequest.author.name} @${mergeRequest.author.username}`],
-    ['ブランチ', <Box component="span" key="branch" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Box>],
-    ['担当', mergeRequest.assignees?.length ? mergeRequest.assignees.map((user) => user.name).join('、') : 'なし'],
-    ['レビュアー', mergeRequest.reviewers?.length ? <Stack component="span" key="reviewers" sx={{ alignItems: 'flex-start' }}>{mergeRequest.reviewers.map((user) => (
-      <Stack component="span" direction="row" key={user.id} sx={{ alignItems: 'center', minHeight: 28 }}>
-        <span>{user.name}</span>
-        {canRerequest && user.id !== session?.user.id ? <Tooltip title="レビューを再依頼"><span><IconButton aria-label={`${user.name}さんにレビューを再依頼`} disabled={editDisabled} onClick={() => onRerequestReview(user)} size="small"><ReplayRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
-      </Stack>
-    ))}</Stack> : 'なし'],
-    ['承認', approvalsLoading ? '承認状態を確認中…' : approvalsError ? `承認状態を利用できません: ${approvalsError.message}` : approvedBy.length ? `${approvedBy.length}人が承認済み（${approvedBy.map((user) => user.name).join('、')}）` : '未承認'],
-    ['ラベル', mergeRequest.labels?.length ? <Stack direction="row" key="labels" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>{mergeRequest.labels.map((label) => <LabelChip color={labelColors.data?.find((item) => item.name === label)?.color} key={label} name={label} />)}</Stack> : 'なし'],
-    ['マイルストーン', mergeRequest.milestone ? `${mergeRequest.milestone.title}${mergeRequest.milestone.dueDate ? `（期限 ${mergeRequest.milestone.dueDate}）` : ''}` : 'なし'],
-  ]
-  return <Box sx={{ display: 'grid', gap: 4, gridTemplateColumns: { lg: 'minmax(0, 1fr) 280px', xs: '1fr' }, maxWidth: 1200 }}>
-    <Box sx={{ minWidth: 0 }}>
-      <Stack direction="row" sx={{ alignItems: 'center', mb: 1 }}>
-        <Typography color="textSecondary" sx={{ flex: 1 }} variant="overline">説明</Typography>
-        {descriptionEdit ? null : <Button disabled={editDisabled} onClick={onStartEdit} size="small" startIcon={<EditOutlinedIcon />}>説明を編集</Button>}
-      </Stack>
-      {descriptionEdit ? <Stack spacing={1}>
-        <MarkdownEditor autoFocus disabled={editDisabled} label="説明を編集" onChange={onChangeEdit} value={descriptionEdit.body} />
-        {descriptionEdit.expected !== (description ?? '') ? <Alert severity="warning">編集中にGitLabの説明が更新されました。保存すると拒否されるので、内容を控えてから取消して開き直してください。</Alert> : null}
-        <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
-          <Button onClick={() => void (async () => { if (descriptionEdit.body === descriptionEdit.expected || await confirm({ cancelLabel: '編集を続ける', confirmLabel: '破棄する', destructive: true, title: '編集中の説明を破棄しますか？' })) onCancelEdit() })()}>取消</Button>
-          <Button disabled={editDisabled || descriptionEdit.body === descriptionEdit.expected} onClick={onSaveEdit} variant="contained">保存</Button>
-        </Stack>
-      </Stack> : <MockMarkdown body={description || '説明はありません。'} />}
-      {reactions ? <Box sx={{ mt: 1.5 }}>{reactions}</Box> : null}
-    </Box>
-    <Box component="dl" sx={{ alignContent: 'start', display: 'grid', gap: 1.5, m: 0 }}>
-      {rows.map(([label, value]) => <Box key={label}><Typography color="textSecondary" component="dt" variant="caption">{label}</Typography><Typography component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }} variant="body2">{value}</Typography></Box>)}
-    </Box>
-  </Box>
-}
-
-function LoadingPanel({ label }: { label: string }) { return <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">{label}</Typography> }
 
 function normalizePosition(position: Position, mergeRequest: MergeRequest): Position {
   return { ...position, baseSha: mergeRequest.diffRefs?.baseSha ?? position.baseSha, headSha: mergeRequest.diffRefs?.headSha ?? position.headSha, startSha: mergeRequest.diffRefs?.startSha ?? position.startSha }
