@@ -458,6 +458,8 @@ export function createAppTheme(mode: PaletteMode) {
             '&.MuiAlert-colorSuccess': { borderColor: alpha(palette.success, 0.35) },
             // A toast floats over lists and diffs, so it needs its own opaque surface.
             '.MuiSnackbar-root &': { backgroundColor: palette.raised, boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.16)}` },
+            // A milestone notice is filled with the success colour instead.
+            '.MuiSnackbar-root &.MuiAlert-filled.MuiAlert-colorSuccess': { backgroundColor: palette.success, borderColor: palette.success, color: mode === 'dark' ? palette.nav : '#ffffff' },
           },
           icon: { fontSize: 18, padding: '8px 0' },
         },

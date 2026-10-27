@@ -66,6 +66,10 @@ describe.each<PaletteMode>(['light', 'dark'])('%s theme contrast', (mode) => {
     }
   })
 
+  it('keeps a filled success notice readable', () => {
+    expect(getContrastRatio(mode === 'dark' ? palette.surface.nav : '#ffffff', palette.success.main)).toBeGreaterThanOrEqual(4.5)
+  })
+
   it('follows the system reduced-motion setting', () => {
     expect(theme.motion.reducedMotion).toBe('system')
   })

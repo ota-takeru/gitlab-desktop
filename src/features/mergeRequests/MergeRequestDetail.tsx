@@ -591,9 +591,12 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       }
       if (!all.length) { draftsResult.refresh(); return }
       if (!await confirm(withOutsideNote({ confirmLabel: `${all.length}件を公開する`, message: '一件ずつ公開します。途中で失敗したら残りは公開しません。', title: `未公開レビュー${all.length}件をすべて公開しますか？` }))) return
+      let published = 0
       for (const draft of all) {
         if (!await publishDraftId(draft.id, draft.discussionId)) break
+        published += 1
       }
+      if (published === all.length) notify({ celebrate: true, message: `レビューを公開しました（${published}件）`, severity: 'success' })
       setDraftPage(1)
     } finally {
       setPublishingAll(false)
@@ -789,6 +792,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         // List pages group by approval; let them pick up the change.
         void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') })
         if (approvalsQuery) await refetchQuery(approvalsQuery)
+        if (kind === 'approve') notify({ celebrate: true, message: `!${mergeRequest.iid} を承認しました`, severity: 'success' })
       }
       return success
     } finally {

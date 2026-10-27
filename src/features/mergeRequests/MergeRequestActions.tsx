@@ -93,11 +93,11 @@ export function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefr
     return () => globalThis.clearTimeout(timer)
   }, [mergeRequest.mergeError, mergeRequest.rebaseInProgress, notify, rebasePolls])
 
-  const run = async (action: GitLabAction, success: string) => {
+  const run = async (action: GitLabAction, success: string, celebrate = false) => {
     setWorking(true)
     try {
       const ok = await onRun(action)
-      if (ok) notify({ message: success, severity: 'success' })
+      if (ok) notify({ celebrate, message: success, severity: 'success' })
       return ok
     } finally {
       setWorking(false)
@@ -155,7 +155,7 @@ export function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefr
         {opened ? <MenuItem onClick={() => choose(() => void setState('close'))} sx={{ color: 'error.main' }}>MRをクローズ…</MenuItem> : null}
         {mergeRequest.state === 'closed' ? <MenuItem onClick={() => choose(() => void setState('reopen'))}>MRを再オープン…</MenuItem> : null}
       </Menu>
-      {editor === 'merge' ? <MergeDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onMerge={(options) => run({ ...ref, kind: 'merge', ...options }, options.autoMerge ? '自動マージを設定しました' : 'マージしました')} /> : null}
+      {editor === 'merge' ? <MergeDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onMerge={(options) => run({ ...ref, kind: 'merge', ...options }, options.autoMerge ? '自動マージを設定しました' : 'マージしました', !options.autoMerge)} /> : null}
       {editor === 'title' ? <TitleDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(title, expectedTitle) => run({ ...ref, expectedTitle, kind: 'setTitle', title }, 'タイトルを変更しました')} /> : null}
       {editor === 'labels' ? <LabelsDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(addLabels, removeLabels) => run({ ...ref, addLabels, kind: 'setLabels', removeLabels }, 'ラベルを変更しました')} /> : null}
       {editor === 'milestone' ? <MilestoneDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(milestoneId, expectedMilestoneId) => run({ ...ref, expectedMilestoneId, kind: 'setMilestone', milestoneId }, 'マイルストーンを変更しました')} /> : null}

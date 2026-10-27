@@ -1,4 +1,6 @@
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -55,14 +57,28 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       </Dialog>
       <Snackbar anchorOrigin={{ horizontal: 'center', vertical: 'bottom' }} autoHideDuration={notice?.onAction ? 8000 : 4000} key={notice?.key} onClose={(_, reason) => { if (reason !== 'clickaway') closeNotice() }} open={notice !== null}>
         <Alert
+          icon={notice?.celebrate && notice.severity === 'success' ? <CelebrationMark /> : undefined}
           action={notice?.onAction ? <Button color="inherit" onClick={() => { notice.onAction?.(); closeNotice() }} size="small">{notice.actionLabel ?? '元に戻す'}</Button> : undefined}
           onClose={closeNotice}
           severity={notice?.severity ?? 'info'}
-          variant="outlined"
+          variant={notice?.celebrate ? 'filled' : 'outlined'}
         >
           {notice?.message}
         </Alert>
       </Snackbar>
     </FeedbackContext.Provider>
   )
+}
+
+/** The check of a milestone notice pops in while a ring spreads from it; still when the system asks for less motion. */
+function CelebrationMark() {
+  return <Box component="span" sx={{
+    display: 'inline-flex',
+    position: 'relative',
+    '@keyframes celebration-pop': { '0%': { transform: 'scale(0.3)' }, '60%': { transform: 'scale(1.2)' }, '100%': { transform: 'scale(1)' } },
+    '@keyframes celebration-ring': { '0%': { opacity: 0.7, transform: 'scale(0.6)' }, '100%': { opacity: 0, transform: 'scale(2.2)' } },
+    '& > svg': { animation: 'celebration-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both' },
+    '&::after': { animation: 'celebration-ring 600ms ease-out 120ms both', border: 2, borderColor: 'currentColor', borderRadius: '50%', content: '""', inset: 0, pointerEvents: 'none', position: 'absolute' },
+    '@media (prefers-reduced-motion: reduce)': { '& > svg, &::after': { animation: 'none' }, '&::after': { display: 'none' } },
+  }}><CheckCircleRoundedIcon fontSize="inherit" /></Box>
 }

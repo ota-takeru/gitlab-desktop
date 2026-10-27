@@ -98,7 +98,7 @@
 | 余白 | 4px単位の4/8/12/16/24/32 |
 | 角丸 | 小4、標準8。画面ごとの任意変更は禁止 |
 | 色 | canvas/surface/text/border/actionと状態色。意味を持たない強い色を増やさない |
-| 動き | 必要な状態変化だけ、100〜160ms程度。reduced-motionに従う |
+| 動き | 必要な状態変化だけ、100〜160ms程度。reduced-motionに従う。承認・マージ・レビューの公開の完了だけは、通知を成功色で塗り、チェックが弾んで輪が広がる（約0.6秒、reduced-motionでは静止） |
 | アイコン | 1つの意味に1つのアイコン、1つのアイコンに1つの意味。行内の状態アイコンは16px。対応表は下記 |
 
 アイコンの対応: プロジェクト`Source`、ディレクトリ`Folder`、ファイル`InsertDriveFile`、上のフォルダ`ArrowUpward`、ブランチ`AltRoute`、MR一覧`RateReview`、通知`NotificationsNone`（未読があれば塗りの`Notifications`と件数のタグ）、設定`Settings`、URLから開く・リンク`Link`、GitLabに接続`Login`、トークンの更新`Key`、再取得`Refresh`、外部で開く`Launch`、固定（MRのみ）`PushPin`、お気に入り（プロジェクトのみ）`Star`、承認済み（状態）`ThumbUpOutlined`（自分の承認は塗りの`ThumbUp`）、Draft`EditNote`、未読`MarkChatUnread`、デフォルトブランチ`Home`、保護`Lock`、マージ済み`CallMerge`、アーカイブ済み`Inventory2`、未公開レビュー`ScheduleSend`、通知の種類（担当`AssignmentInd`、メンション`AlternateEmail`、承認依頼`HowToReg`、レビュー依頼`PersonSearch`、マーク`BookmarkBorder`、CI失敗`ErrorOutline`、マージ不可`Block`）、承認する（操作）`Check`、成功`CheckCircleOutline`、エラー`ErrorOutline`、警告`WarningAmber`、待機`Schedule`、中止・クローズ・ジョブの取消`DoNotDisturbAlt`、ジョブ・パイプラインの再実行`Replay`、手動ジョブの実行`PlayArrow`、ファイルツリーの表示切り替え`ViewSidebar`、ツリー表示`AccountTree`、前後のファイル`KeyboardArrowLeft/Right`、前後の未解決スレッド`KeyboardArrowUp/Down`。スレッドの解決状態は`ResolveToggle`（未解決`RadioButtonUnchecked`／解決済み`CheckCircle`）で表示と切り替えを兼ねる。

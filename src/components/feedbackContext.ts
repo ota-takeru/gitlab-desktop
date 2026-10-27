@@ -21,6 +21,8 @@ export interface NotifyOptions {
   severity?: 'success' | 'info' | 'warning' | 'error'
   actionLabel?: string
   onAction?: () => void
+  /** A milestone such as an approval, a merge or a published review: the notice is filled and its mark pops in. */
+  celebrate?: boolean
 }
 
 export interface Feedback {
