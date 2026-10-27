@@ -3,7 +3,8 @@ import { useState, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GitLabCommandError } from '../../types/gitlab'
-import { AutoUpdateSafetyProvider, useAutoUpdateAllowed, useAutoUpdateSafety } from './AutoUpdateSafety'
+import { AutoUpdateSafetyProvider } from './AutoUpdateSafety'
+import { useAutoUpdateAllowed, useAutoUpdateSafety } from './autoUpdateSafetyContext'
 import { clearGitLabMutationStates, runGitLabMutation, useGitLabMutation } from './useGitLabMutation'
 
 const { acknowledgePendingOperationMock, getPendingOperationMock, isTauriMock, mutateGitLabMock } = vi.hoisted(() => ({ acknowledgePendingOperationMock: vi.fn(), getPendingOperationMock: vi.fn(), isTauriMock: vi.fn(() => false), mutateGitLabMock: vi.fn() }))

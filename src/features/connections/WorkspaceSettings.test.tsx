@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   setSettings: vi.fn(),
 }))
 
-vi.mock('./ConnectionProvider', () => ({
+vi.mock('./connectionContext', () => ({
   useConnection: () => ({ session: {
     id: 'session-1',
     instanceUrl: 'https://gitlab.com',

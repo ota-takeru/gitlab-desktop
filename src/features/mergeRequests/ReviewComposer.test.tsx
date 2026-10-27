@@ -14,7 +14,7 @@ const mentionFixtures = vi.hoisted(() => ({
   ],
 }))
 
-vi.mock('../connections/ConnectionProvider', () => ({ useConnection: () => ({ session: { id: 'session-1' } }) }))
+vi.mock('../connections/connectionContext', () => ({ useConnection: () => ({ session: { id: 'session-1' } }) }))
 vi.mock('../shared/useGitLabQuery', () => ({
   useGitLabQuery: (_sessionId: string | null, query: { search: string } | null) => ({
     data: query?.search === 'al' ? mentionFixtures.users : mentionFixtures.empty,

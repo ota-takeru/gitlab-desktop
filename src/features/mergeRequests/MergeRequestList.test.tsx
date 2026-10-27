@@ -2,11 +2,12 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitLabGroup, GitLabSession, GitLabUser, MergeRequest, MergeRequestsQuery, Project } from '../../types/gitlab'
-import { buildQuery, MergeRequestList } from './MergeRequestList'
+import { MergeRequestList } from './MergeRequestList'
+import { buildQuery } from './mergeRequestSearch'
 
 const { openGitLabUrlMock, queryMock } = vi.hoisted(() => ({ openGitLabUrlMock: vi.fn(), queryMock: vi.fn() }))
 
-vi.mock('../connections/ConnectionProvider', () => ({
+vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: sessionFixture }),
 }))
 

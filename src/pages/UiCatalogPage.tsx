@@ -31,7 +31,7 @@ import { useTheme } from '@mui/material/styles'
 import { useEffect, useState } from 'react'
 
 import { ClientNavItem } from '../components/ClientNavItem'
-import { useConfirm, useNotify } from '../components/Feedback'
+import { useConfirm, useNotify } from '../components/feedbackContext'
 import { AppErrorFallback } from '../components/AppErrorBoundary'
 import { LabelChip } from '../components/LabelChip'
 import { ListRow } from '../components/ListRow'

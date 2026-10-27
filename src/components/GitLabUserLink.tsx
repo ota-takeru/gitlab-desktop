@@ -2,7 +2,7 @@ import Link from '@mui/material/Link'
 import type { ReactNode } from 'react'
 
 import type { GitLabUser } from '../types/gitlab'
-import { useMarkdownLinks } from './MarkdownLinks'
+import { useMarkdownLinks } from './markdownLinksContext'
 
 /** User identities and Markdown mentions share the app's profile navigation. */
 export function GitLabUserLink({ children, user }: { children?: ReactNode; user: GitLabUser }) {

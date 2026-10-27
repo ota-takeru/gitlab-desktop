@@ -7,7 +7,7 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useRef, useState } from 'react'
 import { enableDesktopNotifications } from '../../lib/notifications'
 import { usePersonalWorkspace, type WorkspaceSettings as Settings } from '../shared/personalWorkspace'
-import { useConnection } from './ConnectionProvider'
+import { useConnection } from './connectionContext'
 
 export function WorkspaceSettings() {
   const { session } = useConnection()

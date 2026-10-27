@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   session: null as { id: string; instanceUrl: string } | null,
 }))
 
-vi.mock('../../components/Feedback', () => ({ useNotify: () => mocks.notify }))
+vi.mock('../../components/feedbackContext', () => ({ useNotify: () => mocks.notify }))
 vi.mock('../../lib/gitlab', () => ({
   normalizeGitLabError: (error: unknown) => error instanceof Error ? error : new Error('GitLab error'),
   openExternalUrl: mocks.openExternalUrl,
@@ -18,7 +18,7 @@ vi.mock('../../lib/gitlab', () => ({
   queryGitLab: mocks.queryGitLab,
 }))
 vi.mock('../../lib/runtime', () => ({ isTauri: mocks.isTauri }))
-vi.mock('../connections/ConnectionProvider', () => ({ useConnection: () => ({ session: mocks.session }) }))
+vi.mock('../connections/connectionContext', () => ({ useConnection: () => ({ session: mocks.session }) }))
 
 import { useOpenMarkdownLink } from './useOpenMarkdownLink'
 

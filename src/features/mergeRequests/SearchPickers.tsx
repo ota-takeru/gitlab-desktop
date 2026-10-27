@@ -5,7 +5,7 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { GitLabGroup, GitLabUser, GroupsQuery, Project, ProjectQuery, UsersQuery } from '../../types/gitlab'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 
 interface SearchPickerProps {

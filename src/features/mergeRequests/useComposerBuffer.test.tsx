@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect } from 'react'
 
 import type { GitLabSession, Position } from '../../types/gitlab'
-import { AutoUpdateSafetyProvider, useAutoUpdateAllowed, useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
+import { AutoUpdateSafetyProvider } from '../shared/AutoUpdateSafety'
+import { useAutoUpdateAllowed, useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { appendComposerBuffer, clearComposerBuffer, clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, listUnsafeComposerTargets, rememberComposerTarget, seedComposerBuffer, useComposerBuffer, useRetainedComposerUnsafe } from './useComposerBuffer'
 
 const { getLocalDraftMock, isDesktopRuntimeMock, setLocalDraftMock } = vi.hoisted(() => ({

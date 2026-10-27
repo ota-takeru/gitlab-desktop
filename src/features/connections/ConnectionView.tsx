@@ -20,10 +20,10 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 
-import { useConfirm } from '../../components/Feedback'
+import { useConfirm } from '../../components/feedbackContext'
 import { listGlabConnections, normalizeGitLabError, openTokenCreationPage, type ConnectGitLabInput } from '../../lib/gitlab'
-import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
-import { useConnection } from './ConnectionProvider'
+import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
+import { useConnection } from './connectionContext'
 import { normalizeInstanceInput, readLastInstanceUrl, sameInstance } from './lastInstance'
 
 export function ConnectionView({ compact = false }: { compact?: boolean }) {

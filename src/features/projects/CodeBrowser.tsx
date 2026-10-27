@@ -25,7 +25,7 @@ import { Pager } from '../../components/Pager'
 import { formatFetchedAt } from '../../lib/format'
 import { languageForPath } from '../../lib/syntaxHighlight'
 import type { BlobQuery, BranchesQuery, TreeEntry, TreeQuery } from '../../types/gitlab'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { FullFileView } from '../mergeRequests/DiffViewer'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 

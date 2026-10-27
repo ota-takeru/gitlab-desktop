@@ -18,7 +18,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import type { GitLabUser, Position, UsersQuery } from '../../types/gitlab'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { positionLabel } from './diffLineThreads'
 import { MAX_SUGGESTION_LINES_ABOVE, suggestionBlock } from './suggestions'

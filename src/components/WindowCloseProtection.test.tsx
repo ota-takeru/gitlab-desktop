@@ -2,7 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { AutoUpdateSafetyProvider, useAutoUpdateSafety } from '../features/shared/AutoUpdateSafety'
+import { AutoUpdateSafetyProvider } from '../features/shared/AutoUpdateSafety'
+import { useAutoUpdateSafety } from '../features/shared/autoUpdateSafetyContext'
 import { FeedbackProvider } from './Feedback'
 import { WindowCloseProtection } from './WindowCloseProtection'
 

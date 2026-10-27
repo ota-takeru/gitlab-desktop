@@ -27,7 +27,7 @@ import { StateIcon } from '../../components/StateIcon'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import type { BranchesQuery, GitLabBranch } from '../../types/gitlab'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useRememberedListState } from './listState'
 

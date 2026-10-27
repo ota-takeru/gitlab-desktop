@@ -6,7 +6,7 @@ import { CodeBrowser } from './CodeBrowser'
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }))
 
-vi.mock('../connections/ConnectionProvider', () => ({
+vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: sessionFixture }),
 }))
 vi.mock('../shared/useGitLabQuery', () => ({ useGitLabQuery: queryMock }))

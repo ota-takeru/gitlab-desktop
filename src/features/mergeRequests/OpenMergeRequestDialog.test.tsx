@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ queryGitLab: vi.fn() }))
 
-vi.mock('../connections/ConnectionProvider', () => ({
+vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: {
     id: 'session-1',
     instanceUrl: 'https://gitlab.com',

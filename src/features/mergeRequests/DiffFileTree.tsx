@@ -13,12 +13,8 @@ import type { ReactNode } from 'react'
 
 import type { Diff } from '../../types/gitlab'
 import { fileRowLabel, threadLabel, type FileThreadCount } from './diffLineThreads'
+import { buildFileTree, type FileEntry, type TreeNode } from './diffFileOrder'
 
-export interface FileEntry { diff: Diff; path: string }
-
-interface DirectoryNode { kind: 'directory'; name: string; path: string; children: TreeNode[] }
-interface FileNode { kind: 'file'; name: string; entry: FileEntry }
-type TreeNode = DirectoryNode | FileNode
 
 /**
  * Changed files as a folder tree, as in GitLab's file browser: folders first,
@@ -76,48 +72,4 @@ export function FileThreadMark({ count }: { count?: FileThreadCount }) {
       {count.unresolved || count.total}
     </Box>
   </Tooltip>
-}
-
-/** The files in the order the tree lists them: folders first, then by name. */
-export function fileTreeOrder(entries: FileEntry[]): FileEntry[] {
-  const files: FileEntry[] = []
-  const visit = (nodes: TreeNode[]) => {
-    for (const node of nodes) {
-      if (node.kind === 'file') files.push(node.entry)
-      else visit(node.children)
-    }
-  }
-  visit(buildFileTree(entries))
-  return files
-}
-
-function buildFileTree(entries: FileEntry[]): TreeNode[] {
-  const root: DirectoryNode = { children: [], kind: 'directory', name: '', path: '' }
-  for (const entry of entries) {
-    const parts = entry.path.split('/')
-    let directory = root
-    for (const part of parts.slice(0, -1)) {
-      const path = directory.path ? `${directory.path}/${part}` : part
-      let child = directory.children.find((node): node is DirectoryNode => node.kind === 'directory' && node.path === path)
-      if (!child) {
-        child = { children: [], kind: 'directory', name: part, path }
-        directory.children.push(child)
-      }
-      directory = child
-    }
-    directory.children.push({ entry, kind: 'file', name: parts[parts.length - 1] })
-  }
-  return finish(root.children)
-}
-
-function finish(nodes: TreeNode[]): TreeNode[] {
-  return nodes.map((node) => {
-    if (node.kind === 'file') return node
-    let directory = node
-    while (directory.children.length === 1 && directory.children[0].kind === 'directory') {
-      const only: DirectoryNode = directory.children[0]
-      directory = { ...only, name: `${directory.name}/${only.name}` }
-    }
-    return { ...directory, children: finish(directory.children) }
-  }).sort((left, right) => left.kind === right.kind ? left.name.localeCompare(right.name) : left.kind === 'directory' ? -1 : 1)
 }

@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { describe, expect, it } from 'vitest'
 
 import { ReviewComposer } from '../mergeRequests/ReviewComposer'
-import { AutoUpdateSafetyProvider, useAutoUpdateAllowed, useAutoUpdateSafety } from './AutoUpdateSafety'
+import { AutoUpdateSafetyProvider } from './AutoUpdateSafety'
+import { useAutoUpdateAllowed, useAutoUpdateSafety } from './autoUpdateSafetyContext'
 
 function SafetyIndicator() {
   return <output data-testid="safe">{useAutoUpdateAllowed() ? 'safe' : 'unsafe'}</output>

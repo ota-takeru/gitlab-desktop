@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
 import { getLocalDraft, isDesktopRuntime, setLocalDraft } from '../../lib/localDrafts'
 import type { GitLabSession, Position } from '../../types/gitlab'
-import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
+import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 
 const MAX_COMPOSER_BUFFERS = 100
 const MAX_COMPOSER_BODY_LENGTH = 64 * 1024

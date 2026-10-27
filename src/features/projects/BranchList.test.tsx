@@ -7,7 +7,7 @@ import { forgetRememberedListStates } from './listState'
 
 const { openGitLabUrlMock, queryMock } = vi.hoisted(() => ({ openGitLabUrlMock: vi.fn(), queryMock: vi.fn() }))
 
-vi.mock('../connections/ConnectionProvider', () => ({
+vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: sessionFixture }),
 }))
 vi.mock('../shared/useGitLabQuery', () => ({ useGitLabQuery: queryMock }))

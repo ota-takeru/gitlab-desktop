@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useId, useMemo, useState } from 'react'
 
 import type { GitLabUser, UsersQuery } from '../../types/gitlab'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 
 /** Picks the full list of assignees or reviewers for a merge request. */

@@ -11,7 +11,7 @@ const { queryMock, sessionFixture } = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('../connections/ConnectionProvider', () => ({ useConnection: () => ({ session: sessionFixture }) }))
+vi.mock('../connections/connectionContext', () => ({ useConnection: () => ({ session: sessionFixture }) }))
 vi.mock('../shared/useGitLabQuery', () => ({ useGitLabQuery: queryMock }))
 
 import { GroupSearchPicker, ProjectSearchPicker, UserSearchPicker } from './SearchPickers'

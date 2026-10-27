@@ -27,7 +27,8 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 
 import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/gitlab'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
-import { DiffFileTree, FileThreadMark, fileTreeOrder } from './DiffFileTree'
+import { DiffFileTree, FileThreadMark } from './DiffFileTree'
+import { FILE_LIST_MODE_KEY, readFileListMode, type FileListMode } from './diffFileOrder'
 import { DiffGap, type GapExpansion } from './DiffGap'
 import { BlameCell, BlameProvider } from './BlamePanel'
 import { MarkdownDiffPreview } from './MarkdownDiffPreview'
@@ -547,11 +548,6 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   )
 }
 
-/** The files of a diff page in the order the file list shows them: as the folder tree, or as returned in the list view. */
-export function diffFileOrder(diffs: Diff[]): Diff[] {
-  const entries = diffs.map((diff) => ({ diff, path: diff.newPath || diff.oldPath }))
-  return (readFileListMode() === 'list' ? entries : fileTreeOrder(entries)).map(({ diff }) => diff)
-}
 
 const denseFieldSx = { '& .MuiInputBase-input': { py: 0.5 } }
 const NO_SHOWN_GAPS: ReadonlyMap<string, number> = new Map()
@@ -665,8 +661,6 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
 }
 
 type DiffLayout = 'unified' | 'split'
-type FileListMode = 'tree' | 'list'
-const FILE_LIST_MODE_KEY = 'gitlab-desktop:diff-file-list'
 const TREE_HIDDEN_KEY = 'gitlab-desktop:diff-file-tree-hidden'
 
 function readTreeHidden(): boolean {
@@ -677,13 +671,6 @@ function readTreeHidden(): boolean {
   }
 }
 
-function readFileListMode(): FileListMode {
-  try {
-    return globalThis.localStorage?.getItem(FILE_LIST_MODE_KEY) === 'list' ? 'list' : 'tree'
-  } catch {
-    return 'tree'
-  }
-}
 const DIFF_LAYOUT_KEY = 'gitlab-desktop:diff-layout'
 
 function readDiffLayout(): DiffLayout {

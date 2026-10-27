@@ -7,7 +7,7 @@ import { ProjectView } from './ProjectView'
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }))
 
-vi.mock('../connections/ConnectionProvider', () => ({
+vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: sessionFixture }),
 }))
 

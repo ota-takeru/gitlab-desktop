@@ -9,7 +9,7 @@ import { NotificationNavItem } from './NotificationPanel'
 
 const { gitlabQueryMock, mutationKeys, queryMock, runDetailedMock } = vi.hoisted(() => ({ gitlabQueryMock: vi.fn(), mutationKeys: [] as string[], queryMock: vi.fn(), runDetailedMock: vi.fn() }))
 
-vi.mock('../connections/ConnectionProvider', () => ({ useConnection: () => ({ session: sessionFixture }) }))
+vi.mock('../connections/connectionContext', () => ({ useConnection: () => ({ session: sessionFixture }) }))
 vi.mock('../shared/useGitLabQuery', () => ({ useGitLabQuery: queryMock }))
 vi.mock('../../lib/gitlab', async (importOriginal) => ({ ...await importOriginal<typeof import('../../lib/gitlab')>(), queryGitLab: gitlabQueryMock }))
 vi.mock('../shared/useGitLabMutation', () => ({

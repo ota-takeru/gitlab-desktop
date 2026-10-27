@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { notifyWorkspace } from '../../lib/notifications'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { isNotificationTodo } from '../mergeRequests/todoCache'
 import { usePersonalWorkspace } from './personalWorkspace'
 import { useGitLabQuery } from './useGitLabQuery'

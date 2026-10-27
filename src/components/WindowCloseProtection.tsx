@@ -8,8 +8,8 @@ import { useEffect, useState } from 'react'
 import { isTauri } from '../lib/runtime'
 import { ensureBeforeUnloadProtection, initializeWindowCloseProtection, queueWindowCloseGuard, setCloseDialogs, setLatestWindowUnsafe, type CloseItem } from '../lib/windowSafety'
 import { useRetainedComposerUnsafe } from '../features/mergeRequests/useComposerBuffer'
-import { useAutoUpdateAllowed, useAutoUpdateSafety, useUnsafeSources } from '../features/shared/AutoUpdateSafety'
-import { useChoose, useConfirm, useNotify } from './Feedback'
+import { useAutoUpdateAllowed, useAutoUpdateSafety, useUnsafeSources } from '../features/shared/autoUpdateSafetyContext'
+import { useChoose, useConfirm, useNotify } from './feedbackContext'
 
 type ProtectionStatus = 'starting' | 'ready' | 'failed'
 

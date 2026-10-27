@@ -6,7 +6,7 @@ import { preferenceScope, scopedKey } from '../shared/preferences'
 import { openWorkspaceTab, readWorkspace } from '../shared/personalWorkspace'
 import { MergeRequestTabs } from './MergeRequestTabs'
 
-vi.mock('../connections/ConnectionProvider', () => ({
+vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: sessionFixture }),
 }))
 

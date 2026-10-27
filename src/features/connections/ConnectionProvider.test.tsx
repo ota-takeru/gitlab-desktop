@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { readPinnedProjectIds, readRecentProjectIds, readSavedSearches, scopedKey, writePinnedProjectIds, writeRecentProjectIds, writeSavedSearches } from '../shared/preferences'
-import { ConnectionProvider, useConnection } from './ConnectionProvider'
+import { ConnectionProvider } from './ConnectionProvider'
+import { useConnection } from './connectionContext'
 import { ConnectionView } from './ConnectionView'
 import type { GitLabSession } from '../../types/gitlab'
 

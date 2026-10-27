@@ -32,8 +32,8 @@ const { connection, gitlabQueryMock, invokeMock } = vi.hoisted(() => ({
 
 vi.mock('./connections/ConnectionProvider', () => ({
   ConnectionProvider: ({ children }: { children: ReactNode }) => children,
-  useConnection: () => connection,
 }))
+vi.mock('./connections/connectionContext', () => ({ useConnection: () => connection }))
 vi.mock('./shared/useGitLabQuery', () => ({ useGitLabQuery: gitlabQueryMock }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock, isTauri: () => true }))
 

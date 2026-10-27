@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   observe: vi.fn(),
 }))
 
-vi.mock('../connections/ConnectionProvider', () => ({
+vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: mocks.session }),
 }))
 

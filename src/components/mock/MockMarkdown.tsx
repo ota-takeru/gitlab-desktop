@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm'
 
 import { emojiForName, useEmojiCatalog, type EmojiCatalog } from '../../lib/awardEmoji'
 import { remarkGitLabReferences, resolveMarkdownUrl, type MarkdownLinkBase } from '../../lib/markdownLinks'
-import { useMarkdownLinks } from '../MarkdownLinks'
+import { useMarkdownLinks } from '../markdownLinksContext'
 import { markdownBodySx } from '../markdownBodySx'
 import { rehypeReviewDiff } from '../../lib/markdownReview'
 import type { FullFileDiffAnnotations } from '../../features/mergeRequests/fullFileAnnotations'

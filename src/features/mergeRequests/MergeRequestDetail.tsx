@@ -36,7 +36,8 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { ConfirmScope, useConfirm, useNotify, type ConfirmOptions } from '../../components/Feedback'
+import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
+import { useConfirm, useNotify } from '../../components/feedbackContext'
 import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { GitLabUserLink } from '../../components/GitLabUserLink'
@@ -81,18 +82,20 @@ import type {
   ReviewResourceQuery,
   VersionCompareQuery,
 } from '../../types/gitlab'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useDiscussionWindow } from './useDiscussionWindow'
 import { positionAtLatest } from './discussionScroll'
-import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
-import { clearGitLabMutationStates, useGitLabMutation } from '../shared/useGitLabMutation'
+import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
+import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
 import { readLoadedDiffPages, useDiscussionCode } from './useDiscussionCode'
 import { DiscussionList, type NoteReactions, type OlderDiscussions } from './DiscussionList'
 import type { ThreadActions } from './DiffThreads'
-import { diffFileOrder, DiffViewer } from './DiffViewer'
+import { DiffViewer } from './DiffViewer'
+import { commentScrollPositions } from './composerBuffers'
+import { diffFileOrder } from './diffFileOrder'
 import { LocalChanges } from './LocalChanges'
 import { DiscussionLayout } from './DiscussionLayout'
 import { lineKey, threadsByLine } from './diffLineThreads'
@@ -108,21 +111,14 @@ import type { SuggestionActions } from './SuggestionBlock'
 import { suggestionSourceLines } from './suggestions'
 import { MarkNotificationReadButton } from './NotificationPanel'
 import { useLoadedMergeRequestNotifications } from './todoCache'
-import { appendComposerBuffer, clearComposerBuffer, clearComposerBufferStore, createComposerBackendKey, createComposerBufferKey, moveComposerBuffer, rememberComposerTarget, restoreComposerBuffer, seedComposerBuffer, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
+import { appendComposerBuffer, clearComposerBuffer, createComposerBackendKey, createComposerBufferKey, moveComposerBuffer, rememberComposerTarget, restoreComposerBuffer, seedComposerBuffer, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
 
 export type ReviewTab = 'discussion' | 'changes' | 'overview' | 'pipelines'
 type CommitsQuery = ReviewResourceQuery & { kind: 'commits' }
 type DraftsQuery = ReviewResourceQuery & { kind: 'drafts' }
-const commentScrollPositions = new Map<string, number>()
 /** 「すべて公開」 reads at most this many pages of drafts before publishing. */
 const MAX_DRAFT_PAGES = 50
 
-/** Clear in-memory composer text when a workspace/session is disposed. */
-export function clearComposerBuffers(): void {
-  commentScrollPositions.clear()
-  clearComposerBufferStore()
-  clearGitLabMutationStates()
-}
 
 export interface MergeRequestDetailProps {
   initialMergeRequest: MergeRequest

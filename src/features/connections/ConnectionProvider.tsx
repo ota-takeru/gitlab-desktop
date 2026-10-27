@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import {
   connectGitLab,
@@ -13,32 +13,9 @@ import { reauthenticateGitLab } from '../../lib/session'
 import type { GitLabCommandError, GitLabSession } from '../../types/gitlab'
 import { clearPreferences } from '../shared/preferences'
 import { readLastInstanceUrl, writeLastInstanceUrl } from './lastInstance'
+import { ConnectionContext, type ConnectionContextValue, type ConnectionStatus, type ReauthAccount } from './connectionContext'
 
-export type ConnectionStatus = 'checking' | 'disconnected' | 'connected' | 'error' | 'unsupported'
-
-/** The saved account whose token stopped working; its username is known when it expired during use. */
-export interface ReauthAccount {
-  instanceUrl: string
-  username: string | null
-}
-
-interface ConnectionContextValue {
-  session: GitLabSession | null
-  status: ConnectionStatus
-  error: GitLabCommandError | null
-  connect: (input: ConnectGitLabInput) => Promise<GitLabSession | null>
-  connectFromGlab: (url: string) => Promise<GitLabSession | null>
-  disconnect: () => Promise<void>
-  restore: () => Promise<GitLabSession | null>
-  /** Set after the token expired: the screen stays where it was until the user reconnects. */
-  reauthRequired: ReauthAccount | null
-  /** Restoring the saved connection failed, so retrying it can help. */
-  restoreFailed: boolean
-  /** A new token for the connected (or expired) account, keeping its unsent input and receipts. */
-  refreshToken: (token: string) => Promise<GitLabSession | null>
-}
-
-const ConnectionContext = createContext<ConnectionContextValue | null>(null)
+export type { ConnectionStatus, ReauthAccount } from './connectionContext'
 
 interface AccountIdentity {
   instanceUrl: string
@@ -216,12 +193,6 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   }), [connect, connectFromGlab, disconnect, error, reauthRequired, refreshToken, restore, restoreFailed, session, status])
 
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>
-}
-
-export function useConnection(): ConnectionContextValue {
-  const value = useContext(ConnectionContext)
-  if (!value) throw new Error('useConnection must be used within ConnectionProvider')
-  return value
 }
 
 function isSessionShape(value: GitLabSession | null): value is GitLabSession {

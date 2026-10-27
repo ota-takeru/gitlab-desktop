@@ -13,7 +13,7 @@ import Typography from '@mui/material/Typography'
 
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { useReorder } from '../../components/useReorder'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import { mrRefKey, usePersonalWorkspace, type MrRef, type TabMeta } from '../shared/personalWorkspace'
 
 /**

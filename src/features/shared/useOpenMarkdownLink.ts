@@ -1,10 +1,10 @@
 import { useCallback, useLayoutEffect, useRef } from 'react'
-import { useNotify } from '../../components/Feedback'
+import { useNotify } from '../../components/feedbackContext'
 import { normalizeGitLabError, openExternalUrl, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { parseMergeRequestUrl } from '../../lib/mergeRequestUrl'
 import { isTauri } from '../../lib/runtime'
 import type { GitLabUser } from '../../types/gitlab'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import type { MrRef } from './personalWorkspace'
 
 const RESERVED_PROFILE_PATHS = new Set([

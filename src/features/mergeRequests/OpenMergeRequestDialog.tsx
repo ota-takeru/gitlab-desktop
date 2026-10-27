@@ -9,7 +9,7 @@ import TextField from '@mui/material/TextField'
 import { useEffect, useRef, useState } from 'react'
 import { queryGitLab } from '../../lib/gitlab'
 import { parseMergeRequestUrl } from '../../lib/mergeRequestUrl'
-import { useConnection } from '../connections/ConnectionProvider'
+import { useConnection } from '../connections/connectionContext'
 import type { MrRef } from '../shared/personalWorkspace'
 
 export function OpenMergeRequestDialog({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: (ref: MrRef) => void }) {
