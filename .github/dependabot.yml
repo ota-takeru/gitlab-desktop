@@ -1,0 +1,52 @@
+version: 2
+
+# Weekly, grouped update PRs. A release must be a week old before it is proposed,
+# so a compromised or broken release has time to be noticed and pulled.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      # Packages released together must move together; their peer ranges are exact.
+      tiptap:
+        patterns: ['@tiptap/*']
+      tauri-js:
+        patterns: ['@tauri-apps/*']
+      mui:
+        patterns: ['@mui/*', '@emotion/*']
+      tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ['tauri', 'tauri-*']
+      crates:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
