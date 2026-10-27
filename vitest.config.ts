@@ -22,8 +22,8 @@ export default defineConfig({
       exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/**/*.d.ts', 'src/lib/emojiData.json', 'src/mock/**', 'src/pages/**'],
       reporter: ['text-summary', 'html', 'json-summary'],
       reportsDirectory: 'output/coverage',
-      // A little under the measured coverage (2026-10-27: 83.6 / 79.3 / 83.2 / 87.6), so a drop fails the run.
-      thresholds: { statements: 82, branches: 78, functions: 81, lines: 86 },
+      // A little under the measured coverage (2026-10-27: 84.9 / 80.3 / 84.1 / 88.8), so a drop fails the run.
+      thresholds: { statements: 84, branches: 79, functions: 83, lines: 88 },
     },
   },
 })
