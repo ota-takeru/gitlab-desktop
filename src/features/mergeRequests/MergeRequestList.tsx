@@ -35,7 +35,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FocusEvent, KeyboardEvent, MouseEvent, ReactNode, RefObject } from 'react'
 
 import { ListRow } from '../../components/ListRow'
@@ -682,8 +682,18 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
   }
   const approvalOf = (mergeRequest: MergeRequest): RowApproval | null => {
     const users = approvedBy.get(`${mergeRequest.projectPath}!${mergeRequest.iid}`)
-    return users ? { byMe: users.includes(currentUserId), count: users.length } : null
+    return users ? rowApproval(users.includes(currentUserId), users.length) : null
   }
+  // The rows are memoized: their handlers stay the same functions and reach the latest props here.
+  const latest = useRef({ approvalOf, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, personalWorkspace })
+  useEffect(() => { latest.current = { approvalOf, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, personalWorkspace } })
+  const handlers = useMemo<RowHandlers>(() => ({
+    focus: (mergeRequest) => latest.current.onFocusRow({ approval: approvalText(latest.current.approvalOf(mergeRequest), mergeRequest.state), mergeRequest }),
+    open: (mergeRequest) => latest.current.onOpenMergeRequest(mergeRequest),
+    openPipeline: (url) => latest.current.onOpenPipeline(url),
+    preview: (mergeRequest, closeAt) => latest.current.onPreview({ approval: approvalText(latest.current.approvalOf(mergeRequest), mergeRequest.state), closeAt, mergeRequest }),
+    togglePinned: (mergeRequest) => latest.current.personalWorkspace.togglePinned({ iid: mergeRequest.iid, projectId: mergeRequest.projectId }, { projectPath: mergeRequest.projectPath ?? '', state: mergeRequest.state, title: mergeRequest.title }),
+  }), [])
 
   // Rows show at once; only their approval mark waits for the approvals request.
   const approvalPending = (mergeRequest: MergeRequest) => pendingRows.has(`${mergeRequest.projectPath}!${mergeRequest.iid}`)
@@ -691,14 +701,12 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
     approval={approvalOf(mergeRequest)}
     approvalPending={approvalPending(mergeRequest)}
     key={`${mergeRequest.projectId}:${mergeRequest.iid}`}
-    onFocusRow={() => onFocusRow({ approval: approvalText(approvalOf(mergeRequest), mergeRequest.state), mergeRequest })}
-    onPreview={(closeAt) => onPreview({ approval: approvalText(approvalOf(mergeRequest), mergeRequest.state), closeAt, mergeRequest })}
+    handlers={handlers}
     mergeRequest={mergeRequest}
-    onOpenMergeRequest={onOpenMergeRequest}
-    onOpenPipeline={onOpenPipeline}
     orderBy={orderBy}
-    personalWorkspace={personalWorkspace}
+    pinned={personalWorkspace.isPinned({ iid: mergeRequest.iid, projectId: mergeRequest.projectId })}
     previewing={previewing?.id === mergeRequest.id}
+    unread={personalWorkspace.unreadCount({ iid: mergeRequest.iid, projectId: mergeRequest.projectId })}
     // The MR just returned from keeps the selected look, so the reader sees where they were.
     selected={(selected?.projectId === mergeRequest.projectId && selected.iid === mergeRequest.iid) || recentMrId === `${mergeRequest.projectId}-${mergeRequest.iid}`}
     showProject={showProject}
@@ -731,6 +739,15 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
       ))}
     </Box>
   )
+}
+
+const rowApprovals = new Map<string, RowApproval>()
+/** One object per approval mark, so a memoized row sees the same approval as long as its mark is the same. */
+function rowApproval(byMe: boolean, count: number): RowApproval {
+  const key = `${byMe}:${count}`
+  let approval = rowApprovals.get(key)
+  if (!approval) rowApprovals.set(key, approval = { byMe, count })
+  return approval
 }
 
 /** Records what a loader reports, keeping the same state when nothing changed so its report causes no render. */
@@ -769,27 +786,28 @@ const ROW_ACTIONS_SPACE = 12
 /** Labels shown on a row before the rest fold into 「+N」. */
 const ROW_LABELS = 3
 
-function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, personalWorkspace, previewing, selected, showProject }: { approval: RowApproval | null; approvalPending: boolean; mergeRequest: MergeRequest; onFocusRow: () => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: (closeAt?: PointerSpot) => void; orderBy: OrderBy; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: boolean; selected: boolean; showProject: boolean }) {
-  const ref = { iid: mergeRequest.iid, projectId: mergeRequest.projectId }
+/** What a row does, the same functions for every row and render. */
+interface RowHandlers { focus: (mergeRequest: MergeRequest) => void; open: (mergeRequest: MergeRequest) => void; openPipeline: (url: string) => Promise<void>; preview: (mergeRequest: MergeRequest, closeAt?: PointerSpot) => void; togglePinned: (mergeRequest: MergeRequest) => void }
+
+/** Memoized: opening an MR or moving the preview renders only the rows whose marks change, not the whole list. */
+const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, approvalPending, handlers, mergeRequest, orderBy, pinned, previewing, selected, showProject, unread }: { approval: RowApproval | null; approvalPending: boolean; handlers: RowHandlers; mergeRequest: MergeRequest; orderBy: OrderBy; pinned: boolean; previewing: boolean; selected: boolean; showProject: boolean; unread: number | undefined }) {
   const labels = mergeRequest.labels ?? []
   const hiddenLabels = labels.slice(ROW_LABELS)
   // The time matches the order of the list; GitLab's creation time is used once the MR carries it.
   const createdAt = mergeRequest.createdAt
   const byCreation = orderBy === 'created_at' && Boolean(createdAt)
-  const pinned = personalWorkspace.isPinned(ref)
-  const unread = personalWorkspace.unreadCount(ref)
   // CI is shown only when GitLab included it; the row does not offer a lookup.
   const pipeline = mergeRequest.pipeline
   const hasUnread = unread !== undefined && unread > 0
-  const pinButton = <Tooltip title={pinned ? '固定を外す' : 'サイドバーに固定'}><IconButton aria-label={pinned ? `!${mergeRequest.iid}の固定を外す` : `!${mergeRequest.iid}をサイドバーに固定`} color={pinned ? 'primary' : 'default'} onClick={() => personalWorkspace.togglePinned(ref, { projectPath: mergeRequest.projectPath ?? '', state: mergeRequest.state, title: mergeRequest.title })}>{pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
+  const pinButton = <Tooltip title={pinned ? '固定を外す' : 'サイドバーに固定'}><IconButton aria-label={pinned ? `!${mergeRequest.iid}の固定を外す` : `!${mergeRequest.iid}をサイドバーに固定`} color={pinned ? 'primary' : 'default'} onClick={() => handlers.togglePinned(mergeRequest)}>{pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
 
   return (
     <ListRow
       actions={<>
         {previewing
-          ? <Tooltip title="概要を閉じる (Space / Esc)"><IconButton aria-label={`!${mergeRequest.iid}の概要を閉じる`} aria-pressed color="primary" onClick={() => onPreview()}><VisibilityOffOutlinedIcon /></IconButton></Tooltip>
-          : <Tooltip title="概要をプレビュー (Space)"><IconButton aria-label={`!${mergeRequest.iid}の概要をプレビュー`} onClick={(event) => onPreview(event.detail > 0 ? { x: event.clientX, y: event.clientY } : undefined)}><VisibilityOutlinedIcon /></IconButton></Tooltip>}
-        {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void onOpenPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
+          ? <Tooltip title="概要を閉じる (Space / Esc)"><IconButton aria-label={`!${mergeRequest.iid}の概要を閉じる`} aria-pressed color="primary" onClick={() => handlers.preview(mergeRequest)}><VisibilityOffOutlinedIcon /></IconButton></Tooltip>
+          : <Tooltip title="概要をプレビュー (Space)"><IconButton aria-label={`!${mergeRequest.iid}の概要をプレビュー`} onClick={(event) => handlers.preview(mergeRequest, event.detail > 0 ? { x: event.clientX, y: event.clientY } : undefined)}><VisibilityOutlinedIcon /></IconButton></Tooltip>}
+        {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void handlers.openPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
         {pinned ? null : pinButton}
       </>}
       // The state leads the row as an icon, so a list reads by shape and colour before words.
@@ -797,9 +815,9 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
       // A pinned row keeps its pin in view: the mark and the button to unpin are one control.
       stickyActions={pinned ? pinButton : undefined}
       mrId={`${mergeRequest.projectId}-${mergeRequest.iid}`}
-      onFocus={onFocusRow}
-      onOpen={() => onOpenMergeRequest(mergeRequest)}
-      onPreview={() => onPreview()}
+      onFocus={() => handlers.focus(mergeRequest)}
+      onOpen={() => handlers.open(mergeRequest)}
+      onPreview={() => handlers.preview(mergeRequest)}
       previewing={previewing}
       // The last line keeps ROW_ACTIONS_SPACE for the buttons itself.
       reserveActionsSpace={false}
@@ -824,7 +842,7 @@ function MergeRequestResultRow({ approval, approvalPending, mergeRequest, onFocu
       </Stack>
     </ListRow>
   )
-}
+})
 
 /** Approval beside the state: who approved, or that an open MR has none yet. A placeholder while loading; nothing when unknown. */
 function ApprovalStatus({ approval, pending, state }: { approval: RowApproval | null; pending: boolean; state: string }) {

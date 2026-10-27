@@ -22,7 +22,7 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
 import { useConfirm, useNotify } from '../../components/feedbackContext'
@@ -282,15 +282,20 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }, [discussionWindow.error, latestDiscussions, session, workspace.settings.notifyComments])
   // The other tabs keep their own scroll, from the top at first: the page's one scroll would
   // otherwise open a tab where the previous one was read and move its content as it loads.
-  const tabScrollPositions = useRef(new Map<ReviewTab, number>())
+  // A place is kept with the header's height then and restored for its height now: the header
+  // shrinks once scrolled and the browser moves scrollTop to keep the content still, so a bare
+  // scrollTop shown under the full header would land the reader higher on every return.
+  const scrollPlace = useCallback((host: HTMLElement) => ({ header: headerRef.current?.offsetHeight ?? 0, top: host.scrollTop }), [])
+  const restoreScrollPlace = useCallback((host: HTMLElement, place: { header: number; top: number }) => { host.scrollTop = place.top + (headerRef.current?.offsetHeight ?? 0) - place.header }, [])
+  const tabScrollPositions = useRef(new Map<ReviewTab, { header: number; top: number }>())
   useLayoutEffect(() => {
     const host = sectionRef.current?.closest('main')
     if (!host) return
-    if (activeTab !== 'discussion') host.scrollTop = tabScrollPositions.current.get(activeTab) ?? 0
-    const remember = () => { tabScrollPositions.current.set(activeTab, host.scrollTop) }
+    if (activeTab !== 'discussion') restoreScrollPlace(host, tabScrollPositions.current.get(activeTab) ?? { header: 0, top: 0 })
+    const remember = () => { tabScrollPositions.current.set(activeTab, scrollPlace(host)) }
     host.addEventListener('scroll', remember, { passive: true })
     return () => host.removeEventListener('scroll', remember)
-  }, [activeTab])
+  }, [activeTab, restoreScrollPlace, scrollPlace])
   // Opening the discussion tab shows the first unread comment, or the newest
   // thread when everything is read. The position is applied before paint, and
   // only once the view's content (threads and drafts) has settled, so the
@@ -316,13 +321,14 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     if (!host || !sessionId || !discussionViewSettled || !sectionRef.current) return
     const key = scrollKey()
     const saved = commentScrollPositions.get(key)
-    if (saved !== undefined) host.scrollTop = saved
+    if (saved !== undefined) restoreScrollPlace(host, saved)
     else placeAtLatest(host, sectionRef.current)
-    const remember = () => { commentScrollPositions.set(key, host.scrollTop); if (commentScrollPositions.size > 100) commentScrollPositions.delete(commentScrollPositions.keys().next().value!) }
+    const remember = () => { commentScrollPositions.set(key, scrollPlace(host)); if (commentScrollPositions.size > 100) commentScrollPositions.delete(commentScrollPositions.keys().next().value!) }
     remember()
     host.addEventListener('scroll', remember, { passive: true })
-    return () => { remember(); host.removeEventListener('scroll', remember) }
-  }, [discussionViewSettled, iid, resourceId, sessionId])
+    // Nothing is recorded on leaving: by then the tab is hidden, and the page's scroll fits another tab (or none).
+    return () => host.removeEventListener('scroll', remember)
+  }, [discussionViewSettled, iid, resourceId, restoreScrollPlace, scrollPlace, sessionId])
   useLayoutEffect(() => {
     const target = pendingThread.current
     if (!target || !discussionViewSettled) return
@@ -459,35 +465,50 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [activeTab])
 
-  if (!mergeRequest) {
-    return <Stack spacing={1.5} sx={{ px: 2, py: 2 }}>{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />} sx={{ alignSelf: 'flex-start' }}>{backLabel}</Button> : null}<Alert severity="error">このMRは現在の接続先または権限では表示できません。保存済みの内容は表示しません。</Alert></Stack>
-  }
-
   // Writes to an MR you neither wrote, are assigned to nor review are asked once more, so a wrong MR is not changed by mistake.
-  const outsider = Boolean(session && !isInvolved(mergeRequest, session.user.id))
-  const withOutsideNote = (options: ConfirmOptions): ConfirmOptions => outsider
+  const outsider = Boolean(session && mergeRequest && !isInvolved(mergeRequest, session.user.id))
+  const withOutsideNote = useCallback((options: ConfirmOptions): ConfirmOptions => outsider
     ? { ...options, message: <><Box component="span" sx={{ color: 'warning.main', display: 'block', mb: options.message ? 1 : 0 }}>{OUTSIDE_NOTE}</Box>{options.message}</> }
-    : options
-  const confirmWithOutsideNote = async (options: ConfirmOptions) => {
+    : options, [outsider])
+  // Stable: it is the confirm of the ConfirmScope around the memoized header actions.
+  const confirmWithOutsideNote = useCallback(async (options: ConfirmOptions) => {
     const ok = await confirm(withOutsideNote(options))
     outsideAcknowledged.current = ok && outsider
     return ok
-  }
-  const confirmOutsideWrite = async () => {
+  }, [confirm, outsider, withOutsideNote])
+  const copyHeadSha = useCallback(async (sha: string) => {
+    try {
+      await navigator.clipboard.writeText(sha)
+      notify({ message: 'headのSHAをコピーしました', severity: 'success' })
+    } catch {
+      notify({ message: 'SHAをコピーできませんでした', severity: 'error' })
+    }
+  }, [notify])
+
+  const confirmOutsideWrite = useCallback(async () => {
     if (!outsider) return true
     if (outsideAcknowledged.current) {
       outsideAcknowledged.current = false
       return true
     }
     return confirm({ confirmLabel: '実行する', message: `${OUTSIDE_NOTE}この操作を実行しますか？`, title: '担当外のMRです' })
-  }
+  }, [confirm, outsider])
 
-  const runAction = async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
+  const runMutation = mutation.run
+  const runAction = useCallback(async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
     if (!await confirmOutsideWrite()) return false
-    const success = await mutation.run(action, localDraftKey)
+    const success = await runMutation(action, localDraftKey)
     if (success) refresh?.()
     return success
+  }, [confirmOutsideWrite, runMutation])
+  // Stable, so the memoized header actions render only when the MR or the lock changes.
+  const refreshCurrent = currentResult.refresh
+  const runHeaderAction = useCallback((action: GitLabAction) => runAction(action, refreshCurrent), [refreshCurrent, runAction])
+
+  if (!mergeRequest) {
+    return <Stack spacing={1.5} sx={{ px: 2, py: 2 }}>{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />} sx={{ alignSelf: 'flex-start' }}>{backLabel}</Button> : null}<Alert severity="error">このMRは現在の接続先または権限では表示できません。保存済みの内容は表示しません。</Alert></Stack>
   }
+
 
   const commentPosition = position
   const openCommentPosition = (target: Position) => {
@@ -648,14 +669,6 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       notify({ message: `GitLabで開けませんでした: ${normalizeGitLabError(caught).message}`, severity: 'error' })
     }
   }
-  const copyHeadSha = async (sha: string) => {
-    try {
-      await navigator.clipboard.writeText(sha)
-      notify({ message: 'headのSHAをコピーしました', severity: 'success' })
-    } catch {
-      notify({ message: 'SHAをコピーできませんでした', severity: 'error' })
-    }
-  }
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(mergeRequest.webUrl)
@@ -797,7 +810,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
 
   const pinnedNow = workspace.isPinned({ projectId: resourceId, iid })
-  const approvedBy = approvals && Array.isArray(approvals.approvedBy) ? approvals.approvedBy : []
+  const approvedBy = approvals && Array.isArray(approvals.approvedBy) ? approvals.approvedBy : noUsers
   const myApproved = approvedBy.some((user) => user.id === session?.user.id)
   const approvalDisabled = mutation.isLocked || mutation.isPending || Boolean(approvalWriting) || !mergeRequest.headSha || approvalsResult.loading || !approvals || Boolean(approvalsResult.error)
   const peopleDisabled = mutation.isLocked || mutation.isPending
@@ -899,30 +912,9 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
             {approvalsResult.error && !approvalWriting ? <Tooltip title={`承認状態を取得できませんでした: ${approvalsResult.error.message}`}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? '再取得中…' : '承認状態を再取得'}</Button></span></Tooltip>
               : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? '承認中…' : approvalWriting === 'unapprove' ? '取り消し中…' : approvalsResult.loading && !approvals ? '確認中…' : myApproved ? '自分の承認を取り消す' : '承認する'}</Button>}
           </Box>
-          <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={currentResult.refresh} onRun={(action) => runAction(action, currentResult.refresh)} /></ConfirmScope>
+          <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={refreshCurrent} onRun={runHeaderAction} /></ConfirmScope>
         </Stack>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: 1 }}>
-          <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: compactHeader ? 1 : 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
-        </Stack>
-        {compactHeader ? null : <>
-        <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
-          <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
-          {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label="Draft" size="small" variant="outlined" /> : null}
-          <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}><GitLabUserLink user={mergeRequest.author} /></Box></Typography>
-          <RelativeTime prefix="更新" value={mergeRequest.updatedAt} />
-          <Tooltip title={`${mergeRequest.sourceBranch} → ${mergeRequest.targetBranch}`}><Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%', minWidth: 0 }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography></Tooltip>
-          {mergeRequest.headSha ? <Tooltip describeChild title="headのSHAをコピー"><Chip icon={<ContentCopyRoundedIcon />} label={shortSha(mergeRequest.headSha)} onClick={() => void copyHeadSha(mergeRequest.headSha ?? '')} size="small" sx={{ fontFamily: 'code.fontFamily' }} variant="outlined" /></Tooltip> : null}
-          {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
-          {approvedBy.length ? <StateIcon count={approvedBy.length} icon={myApproved ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={`${approvedBy.length}人が承認済み（${approvedBy.map((user) => user.name).join('、')}）`} tone="success" /> : null}
-          <MergeStatusText mergeRequest={mergeRequest} />
-        </Stack>
-        <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 0.25, rowGap: 0 }}>
-          {([['assignees', '担当'], ['reviewers', 'レビュー']] as const).map(([field, label]) => (
-            // The label, the names and the pencil are one quiet button, so the edit action reads as part of the line.
-            <Tooltip key={field} title={field === 'assignees' ? '担当者を変更' : 'レビュアーを変更'}><span><Button color="inherit" aria-label={`${field === 'assignees' ? '担当' : 'レビュー'}: ${mergeRequest[field]?.length ? mergeRequest[field].map((user) => user.name).join('、') : 'なし'}（${field === 'assignees' ? '担当者' : 'レビュアー'}を変更）`} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => setPeopleEditor(field)} size="small" sx={{ color: 'text.secondary', fontWeight: 400, mx: -0.5, textAlign: 'left', whiteSpace: 'normal', '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 0.5, py: 0 }, '& .MuiButton-endIcon': { color: 'text.secondary', ml: 0.5, opacity: 0.6 }, '& .MuiButton-endIcon > *:nth-of-type(1)': { fontSize: 14 }, '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }, '&:hover .MuiButton-endIcon': { opacity: 1 } }}>{label}: {mergeRequest[field]?.length ? mergeRequest[field].map((user) => user.name).join('、') : 'なし'}</Button></span></Tooltip>
-          ))}
-        </Stack>
-        </>}
+        <MergeRequestSummary approvedBy={approvedBy} compact={compactHeader} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
         {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? '担当者' : 'レビュアー'} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open /> : null}
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, mb: '-1px', mt: 0.5 }}>
           <Tabs aria-label="MR詳細" onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0, ml: -1.5 }} value={activeTab}>
@@ -1092,6 +1084,37 @@ export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof R
   return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>入力を破棄</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
+
+
+const noUsers: GitLabUser[] = []
+
+/** The title, state and people lines of the header, memoized: they change with the MR, not with what the reader does below. */
+const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, compact, mergeRequest, myApproved, onCopyHeadSha, onEditPeople, peopleDisabled }: { approvedBy: GitLabUser[]; compact: boolean; mergeRequest: MergeRequest; myApproved: boolean; onCopyHeadSha: (sha: string) => Promise<void>; onEditPeople: (field: 'assignees' | 'reviewers') => void; peopleDisabled: boolean }) {
+  return <>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: 1 }}>
+      <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: compact ? 1 : 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
+    </Stack>
+    {compact ? null : <>
+    <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
+      <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
+      {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label="Draft" size="small" variant="outlined" /> : null}
+      <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}><GitLabUserLink user={mergeRequest.author} /></Box></Typography>
+      <RelativeTime prefix="更新" value={mergeRequest.updatedAt} />
+      <Tooltip title={`${mergeRequest.sourceBranch} → ${mergeRequest.targetBranch}`}><Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%', minWidth: 0 }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography></Tooltip>
+      {mergeRequest.headSha ? <Tooltip describeChild title="headのSHAをコピー"><Chip icon={<ContentCopyRoundedIcon />} label={shortSha(mergeRequest.headSha)} onClick={() => void onCopyHeadSha(mergeRequest.headSha ?? '')} size="small" sx={{ fontFamily: 'code.fontFamily' }} variant="outlined" /></Tooltip> : null}
+      {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
+      {approvedBy.length ? <StateIcon count={approvedBy.length} icon={myApproved ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={`${approvedBy.length}人が承認済み（${approvedBy.map((user) => user.name).join('、')}）`} tone="success" /> : null}
+      <MergeStatusText mergeRequest={mergeRequest} />
+    </Stack>
+    <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 0.25, rowGap: 0 }}>
+      {([['assignees', '担当'], ['reviewers', 'レビュー']] as const).map(([field, label]) => (
+        // The label, the names and the pencil are one quiet button, so the edit action reads as part of the line.
+        <Tooltip key={field} title={field === 'assignees' ? '担当者を変更' : 'レビュアーを変更'}><span><Button color="inherit" aria-label={`${field === 'assignees' ? '担当' : 'レビュー'}: ${mergeRequest[field]?.length ? mergeRequest[field].map((user) => user.name).join('、') : 'なし'}（${field === 'assignees' ? '担当者' : 'レビュアー'}を変更）`} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => onEditPeople(field)} size="small" sx={{ color: 'text.secondary', fontWeight: 400, mx: -0.5, textAlign: 'left', whiteSpace: 'normal', '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 0.5, py: 0 }, '& .MuiButton-endIcon': { color: 'text.secondary', ml: 0.5, opacity: 0.6 }, '& .MuiButton-endIcon > *:nth-of-type(1)': { fontSize: 14 }, '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }, '&:hover .MuiButton-endIcon': { opacity: 1 } }}>{label}: {mergeRequest[field]?.length ? mergeRequest[field].map((user) => user.name).join('、') : 'なし'}</Button></span></Tooltip>
+      ))}
+    </Stack>
+    </>}
+  </>
+})
 
 function normalizePosition(position: Position, mergeRequest: MergeRequest): Position {
   return { ...position, baseSha: mergeRequest.diffRefs?.baseSha ?? position.baseSha, headSha: mergeRequest.diffRefs?.headSha ?? position.headSha, startSha: mergeRequest.diffRefs?.startSha ?? position.startSha }

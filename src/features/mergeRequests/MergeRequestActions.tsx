@@ -22,7 +22,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useConfirm, useNotify } from '../../components/feedbackContext'
 import { LabelChip } from '../../components/LabelChip'
@@ -58,7 +58,8 @@ export interface MergeRequestActionsProps {
  * milestone and close/reopen. Each write is sent once with what the user saw,
  * so GitLab refuses it when the MR changed meanwhile.
  */
-export function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefresh, onRun }: MergeRequestActionsProps) {
+/** Memoized: the MR page renders on every file or tab switch, the actions only when the MR or the lock changes. */
+export const MergeRequestActions = memo(function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefresh, onRun }: MergeRequestActionsProps) {
   const confirm = useConfirm()
   const notify = useNotify()
   const menuId = useId()
@@ -161,7 +162,7 @@ export function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefr
       {editor === 'milestone' ? <MilestoneDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(milestoneId, expectedMilestoneId) => run({ ...ref, expectedMilestoneId, kind: 'setMilestone', milestoneId }, 'マイルストーンを変更しました')} /> : null}
     </>
   )
-}
+})
 
 /** The merge state in the header's information line, for open MRs. */
 export function MergeStatusText({ mergeRequest }: { mergeRequest: MergeRequest }) {
