@@ -139,6 +139,18 @@ pub enum Query {
         search: String,
         page: u32,
     },
+    User {
+        username: String,
+    },
+    UserById {
+        user_id: String,
+    },
+    UserProjects {
+        user_id: String,
+        search: String,
+        include_archived: bool,
+        page: u32,
+    },
     Groups {
         search: String,
         page: u32,
@@ -234,9 +246,18 @@ pub enum Query {
         sha: String,
     },
     /// Bounded blame for a file at one commit.
-    Blame { project_id: String, path: String, sha: String, start_line: u32, end_line: u32 },
+    Blame {
+        project_id: String,
+        path: String,
+        sha: String,
+        start_line: u32,
+        end_line: u32,
+    },
     /// MR(s) associated with a commit.
-    CommitMergeRequests { project_id: String, sha: String },
+    CommitMergeRequests {
+        project_id: String,
+        sha: String,
+    },
     /// One folder of a repository; without `ref`, GitLab lists the default branch.
     Tree {
         project_id: String,
@@ -632,6 +653,9 @@ mod tests {
         assert_eq!(wire["targetBranch"], "main");
         for value in [
             serde_json::json!({"kind": "users", "search": "alice", "page": 1}),
+            serde_json::json!({"kind": "user", "username": "alice"}),
+            serde_json::json!({"kind": "userById", "userId": "42"}),
+            serde_json::json!({"kind": "userProjects", "userId": "42", "search": "demo", "includeArchived": false, "page": 2}),
             serde_json::json!({"kind": "groups", "search": "platform", "page": 1}),
             serde_json::json!({"kind": "project", "path": "group/project"}),
             serde_json::json!({"kind": "todos", "page": 2}),

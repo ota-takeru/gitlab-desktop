@@ -69,6 +69,7 @@ pub struct ApiResult {
 #[derive(Debug, Clone, Copy)]
 enum ResponseKind {
     Users,
+    User,
     Groups,
     Project,
     Todos,
@@ -207,7 +208,31 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     if let Some((project_id, iid, head_sha)) = diff_revision {
         ensure_head_sha(client, api_base, project_id, iid, head_sha).await?;
     }
-    decode_page(response_kind, &bytes, &headers)
+    let mut result = decode_page(response_kind, &bytes, &headers)?;
+    if let Query::User { username } = query {
+        let exact_user = {
+            let users = result.data.as_array().ok_or_else(|| {
+                unsupported_response("GitLabから想定外の形式のユーザー情報が返されました。")
+            })?;
+            let mut exact_matches = users.iter().filter(|user| {
+                user["username"]
+                    .as_str()
+                    .is_some_and(|value| value.eq_ignore_ascii_case(username))
+            });
+            let exact_user = exact_matches.next().cloned();
+            if exact_matches.next().is_some() {
+                return Err(unsupported_response(
+                    "GitLabから同じユーザーが複数返されました。",
+                ));
+            }
+            exact_user.unwrap_or(Value::Null)
+        };
+        result.data = exact_user;
+        result.next_page = None;
+        result.total_pages = None;
+        result.truncated = false;
+    }
+    Ok(result)
 }
 
 /// Repository files are shown as UTF-8, or as Shift_JIS (Windows-31J) when
@@ -1489,6 +1514,22 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 ],
             )
         }
+        Query::User { username } => {
+            validate_username(username)?;
+            (
+                endpoint(api_base, &["users"])?,
+                ResponseKind::Users,
+                vec![("username".to_owned(), username.clone())],
+            )
+        }
+        Query::UserById { user_id } => {
+            validate_id(user_id, "userId")?;
+            (
+                endpoint(api_base, &["users", user_id])?,
+                ResponseKind::User,
+                Vec::new(),
+            )
+        }
         Query::Groups { search, page } => {
             validate_page(*page)?;
             // Every group the user can see, like the project picker; GitLab
@@ -1594,6 +1635,33 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             }
             (
                 endpoint(api_base, &["projects"])?,
+                ResponseKind::Projects,
+                params,
+            )
+        }
+        Query::UserProjects {
+            user_id,
+            search,
+            include_archived,
+            page,
+        } => {
+            validate_id(user_id, "userId")?;
+            validate_page(*page)?;
+            let mut params = vec![
+                ("order_by".to_owned(), "last_activity_at".to_owned()),
+                ("sort".to_owned(), "desc".to_owned()),
+                ("simple".to_owned(), "true".to_owned()),
+                ("page".to_owned(), page.to_string()),
+                ("per_page".to_owned(), PER_PAGE.to_string()),
+            ];
+            if !include_archived {
+                params.push(("archived".to_owned(), "false".to_owned()));
+            }
+            if !search.is_empty() {
+                params.push(("search".to_owned(), search.clone()));
+            }
+            (
+                endpoint(api_base, &["users", user_id, "projects"])?,
                 ResponseKind::Projects,
                 params,
             )
@@ -1790,15 +1858,31 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
                 vec![("ref".to_owned(), sha.clone())],
             )
         }
-        Query::Blame { project_id, path, sha, start_line, end_line } => {
+        Query::Blame {
+            project_id,
+            path,
+            sha,
+            start_line,
+            end_line,
+        } => {
             validate_id(project_id, "projectId")?;
             validate_path(path)?;
             validate_sha(sha, "sha")?;
-            if *start_line == 0 || *end_line < *start_line || end_line.saturating_sub(*start_line) >= 100 || *end_line > 1_000_000 {
-                return Err(AppError::new("INVALID_INPUT", "Blameは1回につき100行以内で指定してください。"));
+            if *start_line == 0
+                || *end_line < *start_line
+                || end_line.saturating_sub(*start_line) >= 100
+                || *end_line > 1_000_000
+            {
+                return Err(AppError::new(
+                    "INVALID_INPUT",
+                    "Blameは1回につき100行以内で指定してください。",
+                ));
             }
             (
-                endpoint(api_base, &["projects", project_id, "repository", "files", path, "blame"])?,
+                endpoint(
+                    api_base,
+                    &["projects", project_id, "repository", "files", path, "blame"],
+                )?,
                 ResponseKind::Blame,
                 vec![
                     ("ref".to_owned(), sha.clone()),
@@ -1811,7 +1895,17 @@ fn build_query_url(api_base: &Url, query: &Query) -> Result<(Url, ResponseKind),
             validate_id(project_id, "projectId")?;
             validate_sha(sha, "sha")?;
             (
-                endpoint(api_base, &["projects", project_id, "repository", "commits", sha, "merge_requests"])?,
+                endpoint(
+                    api_base,
+                    &[
+                        "projects",
+                        project_id,
+                        "repository",
+                        "commits",
+                        sha,
+                        "merge_requests",
+                    ],
+                )?,
                 ResponseKind::CommitMergeRequests,
                 vec![("per_page".to_owned(), "20".to_owned())],
             )
@@ -2890,6 +2984,7 @@ fn parse_next_page(headers: &HeaderMap) -> Result<Option<u32>, AppError> {
 fn normalize_response(kind: ResponseKind, value: Value) -> Result<Value, AppError> {
     match kind {
         ResponseKind::Users => normalize_array(value, None, normalize_user),
+        ResponseKind::User => normalize_user(&value),
         ResponseKind::Groups => normalize_array(value, None, normalize_group),
         ResponseKind::Project => normalize_project(&value),
         ResponseKind::Todos => normalize_todos(value),
@@ -2902,7 +2997,9 @@ fn normalize_response(kind: ResponseKind, value: Value) -> Result<Value, AppErro
         ResponseKind::Discussions => normalize_array(value, None, normalize_discussion),
         ResponseKind::Commits => normalize_array(value, None, normalize_commit),
         ResponseKind::Blame => normalize_array(value, None, normalize_blame_block),
-        ResponseKind::CommitMergeRequests => normalize_array(value, None, normalize_associated_merge_request),
+        ResponseKind::CommitMergeRequests => {
+            normalize_array(value, None, normalize_associated_merge_request)
+        }
         ResponseKind::CommitDiff => normalize_array(value, None, normalize_diff),
         ResponseKind::Drafts => normalize_array(value, None, normalize_draft),
         ResponseKind::Approvals => normalize_approvals(&value),
@@ -3408,9 +3505,13 @@ fn normalize_line_range(value: &Value) -> Option<Value> {
 
 fn normalize_blame_block(value: &Value) -> Result<Value, AppError> {
     require_object(value, "GitLabから不正なBlame情報が返されました。")?;
-    let commit = value.get("commit").ok_or_else(|| unsupported_response("Blameのコミット情報がありません。"))?;
+    let commit = value
+        .get("commit")
+        .ok_or_else(|| unsupported_response("Blameのコミット情報がありません。"))?;
     require_object(commit, "Blameのコミット情報が不正です。")?;
-    let lines = value.get("lines").and_then(Value::as_array)
+    let lines = value
+        .get("lines")
+        .and_then(Value::as_array)
         .ok_or_else(|| unsupported_response("Blameの行情報が不正です。"))?;
     if lines.len() > 100 {
         return Err(unsupported_response("Blameの行数が上限を超えています。"));
@@ -4107,6 +4208,25 @@ fn validate_award_name(name: &str) -> Result<(), AppError> {
 
 fn validate_user_id(user_id: &str) -> Result<(), AppError> {
     validate_id(user_id, "userId")
+}
+
+fn validate_username(username: &str) -> Result<(), AppError> {
+    if !(2..=255).contains(&username.len())
+        || !username
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        || username.ends_with('.')
+        || !username
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+    {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "usernameの形式が正しくありません。",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_body(value: &str) -> Result<(), AppError> {
@@ -5068,6 +5188,238 @@ mod tests {
         assert!(request.contains("/api/v4/projects?"));
         assert!(request.contains("order_by=last_activity_at") && request.contains("sort=desc"));
         assert!(!request.contains("search_namespaces"));
+    }
+
+    #[test]
+    fn user_lookup_uses_exact_username_and_returns_only_an_exact_match() {
+        let fixture = Fixture::new(vec![response(
+            "200 OK",
+            r#"[{"id":1,"username":"alice2","name":"Alice Two"},{"id":2,"username":"alice","name":"Alice"}]"#,
+            "",
+        )]);
+        let client = Client::builder().build().unwrap();
+        let result = runtime()
+            .block_on(fetch(
+                &client,
+                &fixture.url(),
+                &Query::User {
+                    username: "Alice".to_owned(),
+                },
+            ))
+            .unwrap();
+        assert_eq!(result.data["id"], "2");
+        assert_eq!(result.data["username"], "alice");
+        assert_eq!(result.next_page, None);
+        let request = &fixture.requests.lock().unwrap()[0];
+        assert!(request.starts_with("GET /api/v4/users?username=Alice "));
+        assert!(!request.contains("search="));
+        assert!(!request.contains("active="));
+    }
+
+    #[test]
+    fn user_lookup_returns_null_for_no_match_and_rejects_duplicate_exact_matches() {
+        let no_match = Fixture::new(vec![response("200 OK", "[]", "")]);
+        let client = Client::builder().build().unwrap();
+        let missing = runtime()
+            .block_on(fetch(
+                &client,
+                &no_match.url(),
+                &Query::User {
+                    username: "alice".to_owned(),
+                },
+            ))
+            .unwrap();
+        assert!(missing.data.is_null());
+
+        let duplicate = Fixture::new(vec![response(
+            "200 OK",
+            r#"[{"id":1,"username":"alice","name":"Alice"},{"id":2,"username":"ALICE","name":"Alice 2"}]"#,
+            "",
+        )]);
+        let error = runtime()
+            .block_on(fetch(
+                &client,
+                &duplicate.url(),
+                &Query::User {
+                    username: "alice".to_owned(),
+                },
+            ))
+            .unwrap_err();
+        assert_eq!(error.code, "UNSUPPORTED");
+    }
+
+    #[test]
+    fn user_projects_are_personal_simple_projects_with_search_and_pagination() {
+        let fixture = Fixture::new(vec![response(
+            "200 OK",
+            r#"[{"id":7,"name":"Demo","path_with_namespace":"alice/demo","description":null,"web_url":"https://gitlab.example/alice/demo","archived":false,"last_activity_at":"2026-10-01T09:00:00.000Z"}]"#,
+            "X-Next-Page: 2\r\n",
+        )]);
+        let client = Client::builder().build().unwrap();
+        let result = runtime()
+            .block_on(fetch(
+                &client,
+                &fixture.url(),
+                &Query::UserProjects {
+                    user_id: "42".to_owned(),
+                    search: "demo".to_owned(),
+                    include_archived: false,
+                    page: 1,
+                },
+            ))
+            .unwrap();
+        assert_eq!(result.next_page, Some(2));
+        assert_eq!(result.data[0]["id"], "7");
+        assert_eq!(result.data[0]["description"], "");
+        assert_eq!(result.data[0]["lastActivityAt"], "2026-10-01T09:00:00.000Z");
+        let request = &fixture.requests.lock().unwrap()[0];
+        assert!(request.starts_with("GET /api/v4/users/42/projects?"));
+        assert!(request.contains("order_by=last_activity_at"));
+        assert!(request.contains("sort=desc"));
+        assert!(request.contains("simple=true"));
+        assert!(request.contains("search=demo"));
+        assert!(request.contains("archived=false"));
+        assert!(request.contains("page=1"));
+        assert!(request.contains("per_page=30"));
+        assert!(!request.contains("membership="));
+    }
+
+    #[test]
+    fn user_by_id_uses_the_numeric_users_endpoint_and_normalizes_the_response() {
+        let fixture = Fixture::new(vec![response(
+            "200 OK",
+            r#"{"id":42,"username":"alice","name":"Alice","avatar_url":"https://gitlab.example/avatar.png"}"#,
+            "",
+        )]);
+        let client = Client::builder().build().unwrap();
+        let user = runtime()
+            .block_on(fetch(
+                &client,
+                &fixture.url(),
+                &Query::UserById {
+                    user_id: "42".to_owned(),
+                },
+            ))
+            .unwrap();
+        assert_eq!(user.data["id"], "42");
+        assert_eq!(user.data["username"], "alice");
+        assert_eq!(user.data["avatarUrl"], "https://gitlab.example/avatar.png");
+        assert!(fixture.requests.lock().unwrap()[0].starts_with("GET /api/v4/users/42 HTTP/1.1"));
+    }
+
+    #[test]
+    fn user_and_user_projects_queries_validate_identifiers_and_build_expected_urls() {
+        let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+        let (user_url, _) = build_query_url(
+            &api,
+            &Query::User {
+                username: "alice".to_owned(),
+            },
+        )
+        .unwrap();
+        let user_params = user_url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(user_url.path(), "/api/v4/users");
+        assert_eq!(user_params.get("username").unwrap(), "alice");
+        assert_eq!(user_params.len(), 1);
+        for username in [
+            "",
+            "a",
+            "alice/bob",
+            "alice bob",
+            "alice?x",
+            ".alice",
+            "alice.",
+        ] {
+            assert_eq!(
+                build_query_url(
+                    &api,
+                    &Query::User {
+                        username: username.into()
+                    }
+                )
+                .unwrap_err()
+                .code,
+                "INVALID_INPUT"
+            );
+        }
+        assert!(build_query_url(
+            &api,
+            &Query::User {
+                username: "alice_".into(),
+            }
+        )
+        .is_ok());
+        assert!(build_query_url(
+            &api,
+            &Query::User {
+                username: format!("a{}", "b".repeat(254)),
+            }
+        )
+        .is_ok());
+        assert_eq!(
+            build_query_url(
+                &api,
+                &Query::User {
+                    username: format!("a{}", "b".repeat(255)),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "INVALID_INPUT"
+        );
+
+        assert_eq!(
+            build_query_url(
+                &api,
+                &Query::UserById {
+                    user_id: "alice".into(),
+                }
+            )
+            .unwrap_err()
+            .code,
+            "INVALID_INPUT"
+        );
+
+        let (projects_url, _) = build_query_url(
+            &api,
+            &Query::UserProjects {
+                user_id: "42".to_owned(),
+                search: String::new(),
+                include_archived: true,
+                page: 2,
+            },
+        )
+        .unwrap();
+        let project_params = projects_url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(projects_url.path(), "/api/v4/users/42/projects");
+        assert_eq!(project_params.get("order_by").unwrap(), "last_activity_at");
+        assert_eq!(project_params.get("sort").unwrap(), "desc");
+        assert_eq!(project_params.get("simple").unwrap(), "true");
+        assert_eq!(project_params.get("page").unwrap(), "2");
+        assert_eq!(project_params.get("per_page").unwrap(), "30");
+        assert!(!project_params.contains_key("membership"));
+        assert!(!project_params.contains_key("archived"));
+
+        for (user_id, page) in [("0", 1), ("42x", 1), ("42", 0)] {
+            assert_eq!(
+                build_query_url(
+                    &api,
+                    &Query::UserProjects {
+                        user_id: user_id.to_owned(),
+                        search: String::new(),
+                        include_archived: true,
+                        page,
+                    }
+                )
+                .unwrap_err()
+                .code,
+                "INVALID_INPUT"
+            );
+        }
     }
 
     #[test]
@@ -6282,7 +6634,8 @@ mod tests {
         let mr = normalize_associated_merge_request(&json!({
             "project_id": 7, "iid": 12, "title": "Introduce fix",
             "web_url": "https://gitlab.example/group/repo/-/merge_requests/12", "state": "merged"
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(mr["projectId"], "7");
         assert_eq!(mr["iid"], "12");
     }
@@ -6290,12 +6643,27 @@ mod tests {
     #[test]
     fn blame_query_restricts_range_and_encodes_paths() {
         let base = Url::parse("https://gitlab.example/api/v4/").unwrap();
-        let query = Query::Blame { project_id: "7".to_owned(), path: "src/foo bar.ts".to_owned(), sha: "a".repeat(40), start_line: 2, end_line: 17 };
+        let query = Query::Blame {
+            project_id: "7".to_owned(),
+            path: "src/foo bar.ts".to_owned(),
+            sha: "a".repeat(40),
+            start_line: 2,
+            end_line: 17,
+        };
         let (url, _) = build_query_url(&base, &query).unwrap();
         assert!(url.path().contains("foo%20bar.ts"));
         assert!(url.as_str().contains("range%5Bstart%5D=2"));
-        let bad = Query::Blame { project_id: "7".to_owned(), path: "x.rs".to_owned(), sha: "a".repeat(40), start_line: 1, end_line: 101 };
-        assert_eq!(build_query_url(&base, &bad).unwrap_err().code, "INVALID_INPUT");
+        let bad = Query::Blame {
+            project_id: "7".to_owned(),
+            path: "x.rs".to_owned(),
+            sha: "a".repeat(40),
+            start_line: 1,
+            end_line: 101,
+        };
+        assert_eq!(
+            build_query_url(&base, &bad).unwrap_err().code,
+            "INVALID_INPUT"
+        );
     }
 
     #[test]

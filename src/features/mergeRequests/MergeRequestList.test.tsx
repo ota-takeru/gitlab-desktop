@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { GitLabGroup, GitLabSession, MergeRequest, MergeRequestsQuery, Project } from '../../types/gitlab'
+import type { GitLabGroup, GitLabSession, GitLabUser, MergeRequest, MergeRequestsQuery, Project } from '../../types/gitlab'
 import { buildQuery, MergeRequestList } from './MergeRequestList'
 
 const { openGitLabUrlMock, queryMock } = vi.hoisted(() => ({ openGitLabUrlMock: vi.fn(), queryMock: vi.fn() }))
@@ -136,6 +136,43 @@ describe('MergeRequestList search filters', () => {
     expect(conditionTags()).toEqual(['状態: Open', '作者: 自分'])
     fireEvent.click(own('作成'))
     expect(conditionTags()).toEqual(['状態: Open'])
+  })
+
+  it('keeps a selected author fixed through initial filters, saved searches, and reset', async () => {
+    const author: GitLabUser = { id: '9', name: 'Target User', username: 'target' }
+    const onSearchStateChange = vi.fn()
+    localStorage.setItem(savedSearchKey, JSON.stringify([{
+      authorId: '7',
+      id: 'search-other-author',
+      label: 'Other author search',
+      labels: 'bug',
+      query: 'saved term',
+      state: 'merged',
+    }]))
+
+    render(<MergeRequestList author={author} initialParams={{ authorId: '7', reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} onSearchStateChange={onSearchStateChange} />)
+
+    expect(latestHookMrsQuery()).toMatchObject({ authorId: '9', reviewerId: '42', state: 'opened' })
+    expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'MRをタイトル・説明・MR番号で検索' })).toBeInTheDocument()
+    expect(conditionTags()).toContain('作者: Target User')
+    expect(screen.queryByLabelText('作者の絞り込みを解除')).not.toBeInTheDocument()
+
+    openSearchOptions()
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: '作者' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('作者: Target User'))
+    expect(screen.queryByRole('dialog', { name: '作者の条件' })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+
+    fireEvent.click(screen.getByRole('button', { name: /保存済み検索を管理/u }))
+    fireEvent.click(screen.getByRole('button', { name: 'Other author search' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '保存済み検索' })).not.toBeInTheDocument())
+    expect(latestHookMrsQuery()).toMatchObject({ authorId: '9', labels: ['bug'], search: 'saved term', state: 'merged' })
+    expect(conditionTags()).toContain('作者: Target User')
+
+    fireEvent.click(screen.getByRole('button', { name: '条件をクリア' }))
+    expect(latestHookMrsQuery()).toEqual({ authorId: '9', kind: 'mrs', orderBy: 'updated_at', page: 1, search: '', sort: 'desc', state: 'all' })
+    expect(onSearchStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ authorId: '9', state: 'all' }))
   })
 
   it('shows a project branch as a chip that returns to all the project MRs when removed', () => {

@@ -46,7 +46,7 @@ import { delayedRevealSx, paneResultsSx } from '../../components/paneSx'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
-import type { GitLabCommandError, MergeRequest, MergeRequestState, MergeRequestsQuery, MrApproval, MrApprovalsQuery } from '../../types/gitlab'
+import type { GitLabCommandError, GitLabUser, MergeRequest, MergeRequestState, MergeRequestsQuery, MrApproval, MrApprovalsQuery } from '../../types/gitlab'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
@@ -68,6 +68,8 @@ export interface MergeRequestListProps {
   selected?: MrRef | null
   projectId?: string
   projectName?: string
+  /** Fixes the list to merge requests authored by this user. */
+  author?: GitLabUser
   initialQuery?: string
   initialParams?: Record<string, string>
   onOpenMergeRequest: (mergeRequest: MergeRequest) => void
@@ -101,12 +103,18 @@ interface AppliedSearch extends SearchDraft {
   page: number
 }
 
-export function MergeRequestList({ actions, initialQuery = '', initialParams = {}, navigation, onOpenMergeRequest, onSearchStateChange, projectId, projectName, recentMrId = null, selected }: MergeRequestListProps) {
+export function MergeRequestList(props: MergeRequestListProps) {
+  // Switching the fixed author must not carry one person's draft or applied filters to another.
+  return <MergeRequestListContent key={props.author ? `author:${props.author.id}` : 'all-authors'} {...props} />
+}
+
+function MergeRequestListContent({ actions, author, initialQuery = '', initialParams = {}, navigation, onOpenMergeRequest, onSearchStateChange, projectId, projectName, recentMrId = null, selected }: MergeRequestListProps) {
   const { session } = useConnection()
+  const fixedAuthorId = author?.id
   const personalWorkspace = usePersonalWorkspace(session)
   const scope = useMemo(() => preferenceScope(session?.instanceUrl ?? 'anonymous', session?.user.id ?? 'anonymous'), [session?.instanceUrl, session?.user.id])
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const initial = useMemo(() => makeInitialState(initialParams, initialQuery, projectId, session?.user.id), [initialParams, initialQuery, projectId, session?.user.id])
+  const initial = useMemo(() => makeInitialState(fixedAuthorId !== undefined ? { ...initialParams, authorId: fixedAuthorId } : initialParams, initialQuery, projectId, session?.user.id), [fixedAuthorId, initialParams, initialQuery, projectId, session?.user.id])
   const [draft, setDraft] = useState<SearchDraft>(initial.draft)
   // Every condition is a tag inside the search field; the field's options and a tag open the same editor for one condition.
   const searchFieldRef = useRef<HTMLDivElement>(null)
@@ -125,7 +133,7 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
   const [pipelineOpenError, setPipelineOpenError] = useState<string | null>(null)
   // Full paths of groups chosen in the picker; the condition itself keeps the ID.
   const [groupPaths, setGroupPaths] = useState<Record<string, string>>({})
-  const query = useMemo<MergeRequestsQuery | null>(() => applied && session ? buildQuery(applied, session.user.id) : null, [applied, session])
+  const query = useMemo<MergeRequestsQuery | null>(() => applied && session ? buildQuery(fixedAuthorId !== undefined ? { ...applied, authorId: fixedAuthorId } : applied, session.user.id) : null, [applied, fixedAuthorId, session])
   const result = useGitLabQuery(session?.id ?? null, query, { keepPrevious: true })
   // Pages after the first are loaded as the list is scrolled, for the conditions they were loaded with.
   const pagesKey = useMemo(() => query ? JSON.stringify(query) : '', [query])
@@ -147,12 +155,14 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
   }
 
   const applyDraft = () => {
-    const error = validateDraft(draft, session?.user.id)
+    const nextDraft = author ? { ...draft, authorId: author.id } : draft
+    const error = validateDraft(nextDraft, session?.user.id)
     if (error) {
       setFilterError(error)
       return
     }
-    const next: AppliedSearch = { ...draft, page: 1 }
+    const next: AppliedSearch = { ...nextDraft, page: 1 }
+    setDraft(nextDraft)
     setFilterError(null)
     setApplied(next)
     emitApplied(next)
@@ -193,7 +203,7 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
   const applySavedSearch = (saved: SavedMergeRequestSearch) => {
     const nextDraft: SearchDraft = {
       assignee: saved.assignee ?? '',
-      authorId: saved.authorId ?? '',
+      authorId: author?.id ?? saved.authorId ?? '',
       groupId: saved.groupId ?? '',
       labels: saved.labels ?? '',
       projectId: saved.projectId ?? (saved.groupId ? '' : projectId ?? ''),
@@ -225,8 +235,9 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
    * order change the results immediately, while typed text waits for Enter.
    */
   const applyConditions = (patch: Partial<SearchDraft>) => {
-    const nextDraft = { ...draft, ...patch }
-    const next: AppliedSearch = { ...(applied ?? nextDraft), ...patch, page: 1 }
+    const fixedPatch = author ? { ...patch, authorId: author.id } : patch
+    const nextDraft = { ...draft, ...fixedPatch }
+    const next: AppliedSearch = { ...(applied ?? nextDraft), ...fixedPatch, page: 1 }
     setDraft(nextDraft)
     const error = validateDraft(next, session?.user.id)
     if (error) {
@@ -281,8 +292,8 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
   }
 
   // Exactly one condition on the reader (with text, state and order) is a personal queue: it gets its title and grouping.
-  const personalQueue = personalQueueFor(applied ? serializeSearch(applied) : initialParams, session.user.id)
-  const title = projectName ?? (personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
+  const personalQueue = author ? null : personalQueueFor(applied ? serializeSearch(applied) : initialParams, session.user.id)
+  const title = projectName ?? (author ? `${author.name} のMR` : personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
   const page = applied?.page ?? 1
   const pageEntry = (number: number) => `${pagesKey}#${number}`
   const loaded: Array<PageResult | undefined> = [
@@ -305,12 +316,12 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
   const last = loaded.at(-1)
   const hasNext = Boolean(last?.data && last.nextPage !== null)
   const canLoadMore = hasNext && !result.previous && loaded.length < MAX_LOADED_PAGES
-  const chips = applied ? conditionChips(applied, { conditionNames, currentUserId: session.user.id, fixedProjectId: projectId, groupPaths, rows }) : []
+  const chips = applied ? conditionChips(applied, { conditionNames, currentUserId: session.user.id, fixedAuthor: author, fixedProjectId: projectId, groupPaths, rows }) : []
   // A project's list keeps its project.
-  const addableKinds = CONDITION_KINDS.filter((kind) => !(projectName && (kind === 'project' || kind === 'group')))
+  const addableKinds = CONDITION_KINDS.filter((kind) => !(projectName && (kind === 'project' || kind === 'group')) && !(author && kind === 'author'))
   const shown = applied ?? draft
   // The chips switch between the reader's own MRs: one replaces another, and choosing the one shown removes it.
-  const queueSwitches = projectName ? [] : QUEUE_SWITCHES.map(({ label, queue }) => {
+  const queueSwitches = projectName || author ? [] : QUEUE_SWITCHES.map(({ label, queue }) => {
     const own = ownCondition(queue, session.user.id)
     const active = shown[own.key] === own.value
     const others = QUEUE_SWITCHES.map((other) => ownCondition(other.queue, session.user.id)).filter((other) => other.key !== own.key && shown[other.key] === other.value)
@@ -323,7 +334,7 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
   const fieldChips = chips.filter((chip) => chip.kind !== 'search')
   const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
   const searchTarget = '検索対象はタイトル・説明・MR番号（!123）です。'
-  const defaults = defaultConditions(projectId)
+  const defaults = defaultConditions(projectId, author?.id ?? '')
   const conditionsChanged = !sameConditions(applied ?? draft, defaults) || !sameConditions(draft, defaults)
   const resetConditions = () => {
     const next: AppliedSearch = { ...defaults, page: 1 }
@@ -364,7 +375,7 @@ export function MergeRequestList({ actions, initialQuery = '', initialParams = {
           <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={() => { result.refresh(); setRefreshes((count) => count + 1) }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         </>}
         navigation={navigation}
-        subtitle={projectName ? 'プロジェクトのマージリクエスト' : undefined}
+        subtitle={projectName ? 'プロジェクトのマージリクエスト' : author ? `@${author.username} が作成したマージリクエスト` : undefined}
         title={title}
       >
         <Box component="form" onSubmit={(event) => { event.preventDefault(); applyDraft() }}>
@@ -597,6 +608,7 @@ interface ConditionChip { name: string; label: string; clear?: Partial<SearchDra
 interface ChipContext {
   conditionNames: Record<string, string>
   currentUserId: string
+  fixedAuthor: GitLabUser | undefined
   fixedProjectId: string | undefined
   groupPaths: Record<string, string>
   rows: MergeRequest[]
@@ -606,14 +618,15 @@ interface ChipContext {
  * Every applied condition except the order, as tags. IDs are named from the
  * editor's choices or from the fetched rows when they say who or what the ID is.
  */
-function conditionChips(applied: AppliedSearch, { conditionNames, currentUserId, fixedProjectId, groupPaths, rows }: ChipContext): ConditionChip[] {
+function conditionChips(applied: AppliedSearch, { conditionNames, currentUserId, fixedAuthor, fixedProjectId, groupPaths, rows }: ChipContext): ConditionChip[] {
   const chips: ConditionChip[] = []
   const person = (kind: 'reviewer' | 'assignee' | 'author', id: string) => id === 'self' || id === currentUserId ? '自分' : conditionName(kind, id, conditionNames, rows) ?? `ID ${id}`
   if (applied.search.trim()) chips.push({ clear: { search: '' }, kind: 'search', label: `検索語: ${applied.search.trim()}`, name: '検索語' })
   if (applied.state !== 'all') chips.push({ clear: { state: 'all' }, kind: 'state', label: `状態: ${STATE_NAMES[applied.state]}`, name: '状態' })
   if (applied.reviewer) chips.push({ clear: { reviewer: '' }, kind: 'reviewer', label: `レビュアー: ${person('reviewer', applied.reviewer)}`, name: 'レビュアー' })
   if (applied.assignee) chips.push({ clear: { assignee: '' }, kind: 'assignee', label: `担当者: ${person('assignee', applied.assignee)}`, name: '担当者' })
-  if (applied.authorId) chips.push({ clear: { authorId: '' }, kind: 'author', label: `作者: ${person('author', applied.authorId)}`, name: '作者' })
+  if (fixedAuthor) chips.push({ label: `作者: ${fixedAuthor.name}`, name: '作者' })
+  else if (applied.authorId) chips.push({ clear: { authorId: '' }, kind: 'author', label: `作者: ${person('author', applied.authorId)}`, name: '作者' })
   if (applied.projectId && applied.projectId !== fixedProjectId) {
     const path = conditionName('project', applied.projectId, conditionNames, rows)
     chips.push({ clear: { projectId: '' }, kind: 'project', label: `プロジェクト: ${path || `ID ${applied.projectId}`}`, name: 'プロジェクト' })
@@ -651,8 +664,8 @@ function ownCondition(queue: PersonalQueue, currentUserId: string): { key: 'revi
 
 
 /** What 「条件をクリア」 returns to: every MR, keeping a project's scope. */
-function defaultConditions(projectId: string | undefined): SearchDraft {
-  return { assignee: '', authorId: '', groupId: '', labels: '', orderBy: 'updated_at', projectId: projectId ?? '', reviewer: '', search: '', sort: 'desc', sourceBranch: '', state: 'all', targetBranch: '', updatedAfter: '', updatedBefore: '' }
+function defaultConditions(projectId: string | undefined, authorId = ''): SearchDraft {
+  return { assignee: '', authorId, groupId: '', labels: '', orderBy: 'updated_at', projectId: projectId ?? '', reviewer: '', search: '', sort: 'desc', sourceBranch: '', state: 'all', targetBranch: '', updatedAfter: '', updatedBefore: '' }
 }
 
 function sameConditions(left: SearchDraft, right: SearchDraft): boolean {

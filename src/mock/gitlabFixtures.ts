@@ -26,7 +26,8 @@ function projectIdOf(mockId: string): string {
 function userOf(author: MockAuthor): GitLabUser {
   if (author.handle === '@otata') return fixtureUser
   const username = author.handle.replace(/^@/u, '')
-  return { id: `user-${username}`, name: author.name, username }
+  const ids: Record<string, string> = { 'akari.t': '9100', 'ken.sato': '9110', 'mai.i': '9122', 'ryo.n': '9131' }
+  return { id: ids[username], name: author.name, username }
 }
 
 /** Converts the mock's display times ("12分前", "昨日 09:18", "9月18日") to ISO times before `now`. */
@@ -300,7 +301,15 @@ export function createFixtureData(now: number) {
   addSuggestionThread(mergeRequests[0], now)
   const users = [fixtureUser, ...mergeRequests.flatMap((item) => [item.mergeRequest.author, ...item.discussions.flatMap((discussion) => discussion.notes.map((note) => note.author))])]
     .filter((user, index, all) => all.findIndex((candidate) => candidate.id === user.id) === index)
-  return { groups, labels: fixtureLabels(), mergeRequests, milestones: fixtureMilestones, projects, users }
+  const personalProjects: Project[] = users.map((user, index) => ({
+    archived: false,
+    description: 'ユーザー画面の操作を確認するための固定データです。',
+    id: String(800 + index),
+    name: '個人ツール',
+    pathWithNamespace: `${user.username}/tools`,
+    webUrl: `${fixtureSession.instanceUrl}/${user.username}/tools`,
+  }))
+  return { groups, labels: fixtureLabels(), mergeRequests, milestones: fixtureMilestones, personalProjects, projects, users }
 }
 
 export type FixtureData = ReturnType<typeof createFixtureData>

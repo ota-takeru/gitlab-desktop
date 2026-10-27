@@ -150,8 +150,11 @@ export function installFixtureIpc(state: FixtureState): void {
     if ('page' in request && request.page > 1) return []
     switch (request.kind) {
       case 'projects': return data.projects.filter((project) => matches(`${project.name} ${project.pathWithNamespace}`, request.search))
-      case 'project': return data.projects.find((project) => project.pathWithNamespace === request.path) ?? notFound()
+      case 'project': return [...data.projects, ...data.personalProjects].find((project) => project.pathWithNamespace === request.path) ?? notFound()
       case 'users': return data.users.filter((user) => matches(`${user.name} ${user.username}`, request.search))
+      case 'user': return data.users.find((user) => user.username.toLowerCase() === request.username.toLowerCase()) ?? null
+      case 'userById': return data.users.find((user) => user.id === request.userId) ?? notFound()
+      case 'userProjects': return data.personalProjects.filter((project) => project.pathWithNamespace.split('/')[0] === data.users.find((user) => user.id === request.userId)?.username && (request.includeArchived || !project.archived) && matches(`${project.name} ${project.pathWithNamespace}`, request.search))
       case 'groups': return data.groups.filter((group) => matches(`${group.name} ${group.fullPath}`, request.search))
       // A mention and a direct mention of one MR stack into one notification, a failed pipeline is another,
       // and a review request is left out of them.

@@ -35,6 +35,8 @@ export interface ComposerTarget {
   iid: string
   projectPath?: string
   title?: string
+  /** Which inputs of the MR hold the text, e.g. 「返信」 or 「行コメント（src/a.ts:12）」. */
+  inputs: string[]
 }
 
 const MAX_COMPOSER_TARGET_LABELS = 200
@@ -129,9 +131,41 @@ export function listUnsafeComposerTargets(): ComposerTarget[] {
     if (!isRecord(parsed) || typeof parsed.projectId !== 'string' || typeof parsed.iid !== 'string') continue
     const instanceUrl = isRecord(parsed.account) && typeof parsed.account.instanceUrl === 'string' ? parsed.account.instanceUrl : ''
     const key = composerTargetLabelKey(instanceUrl, parsed.projectId, parsed.iid)
-    if (!targets.has(key)) targets.set(key, { iid: parsed.iid, projectId: parsed.projectId, ...composerTargetLabels.get(key) })
+    const target = targets.get(key) ?? { iid: parsed.iid, inputs: [], projectId: parsed.projectId, ...composerTargetLabels.get(key) }
+    const input = composerInputName(parsed.replyId, parsed.position)
+    if (!target.inputs.includes(input)) target.inputs.push(input)
+    targets.set(key, target)
   }
   return [...targets.values()]
+}
+
+/** What an input of an MR is, from its buffer key: the screen's own name for it. */
+function composerInputName(replyId: unknown, position: unknown): string {
+  if (typeof replyId === 'string' && replyId.startsWith('edit:')) return 'コメントの編集'
+  if (typeof replyId === 'string' && replyId.startsWith('draft-edit:')) return '未公開レビューの編集'
+  if (replyId !== 'new' && replyId !== '') return '返信'
+  if (!isRecord(position)) return '新しいコメント'
+  const path = typeof position.newPath === 'string' && position.newPath ? position.newPath : typeof position.oldPath === 'string' ? position.oldPath : ''
+  const line = typeof position.newLine === 'number' ? position.newLine : typeof position.oldLine === 'number' ? position.oldLine : null
+  return path ? `行コメント（${path}${line === null ? '' : `:${line}`}）` : '行コメント'
+}
+
+/** The name remembered for an MR on any account, for screens that know only its IDs. */
+export function composerTargetName(projectId: string, iid: string): { projectPath?: string; title?: string } {
+  for (const [key, label] of composerTargetLabels) {
+    const [, labelProject, labelIid] = JSON.parse(key) as [string, string, string]
+    if (labelProject === projectId && labelIid === iid) return label
+  }
+  return {}
+}
+
+/**
+ * Empties every input holding text and removes its saved copy, for 「保存せずに終了」.
+ * Results of writes are kept elsewhere and never discarded here.
+ */
+export async function discardComposerBuffers(): Promise<boolean> {
+  for (const [bufferKey, entry] of composerBuffers) if (entry.body) setComposerBody(bufferKey, '')
+  return flushComposerBuffers()
 }
 
 function composerTargetLabelKey(instanceUrl: string, projectId: string, iid: string): string {

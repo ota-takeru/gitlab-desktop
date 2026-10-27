@@ -789,7 +789,7 @@ describe('MergeRequestDetail header, results and pending review', () => {
     try {
       fireEvent.click(await screen.findByRole('button', { name: '下書き「下書きの本文」を編集' }))
       fireEvent.change(await screen.findByRole('textbox', { name: '下書きを編集' }), { target: { value: '直した下書き' } })
-      expect(actual.listUnsafeComposerTargets()).toEqual([{ iid: '120', projectId: '7', projectPath: '', title: 'Read-only integration sample' }])
+      expect(actual.listUnsafeComposerTargets()).toEqual([{ iid: '120', inputs: ['未公開レビューの編集'], projectId: '7', projectPath: '', title: 'Read-only integration sample' }])
       fireEvent.click(screen.getByRole('button', { name: '取消' }))
       await waitFor(() => expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument())
       expect(actual.listUnsafeComposerTargets()).toEqual([])

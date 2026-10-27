@@ -289,13 +289,13 @@ afterEach(() => {
     appendComposerBuffer('opaque-key', 'メモ')
 
     expect(listUnsafeComposerTargets()).toEqual([
-      { iid: '7', projectId: 'project-1', projectPath: 'group/app', title: '検索を速くする' },
-      { iid: '3', projectId: 'project-2' },
+      { iid: '7', inputs: ['新しいコメント', '行コメント（new.ts:12）'], projectId: 'project-1', projectPath: 'group/app', title: '検索を速くする' },
+      { iid: '3', inputs: ['未公開レビューの編集'], projectId: 'project-2' },
     ])
 
     clearComposerBufferStore()
     appendComposerBuffer(createComposerBufferKey(sessionA, 'project-1', '7', 'new'), '本文')
     // Logging out forgets the titles too.
-    expect(listUnsafeComposerTargets()).toEqual([{ iid: '7', projectId: 'project-1' }])
+    expect(listUnsafeComposerTargets()).toEqual([{ iid: '7', inputs: ['新しいコメント'], projectId: 'project-1' }])
   })
 })

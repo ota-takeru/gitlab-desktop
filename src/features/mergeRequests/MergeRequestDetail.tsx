@@ -39,6 +39,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, useConfirm, useNotify, type ConfirmOptions } from '../../components/Feedback'
 import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
+import { GitLabUserLink } from '../../components/GitLabUserLink'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
 import { delayedRevealSx } from '../../components/paneSx'
@@ -913,7 +914,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
           <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
           {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label="Draft" size="small" variant="outlined" /> : null}
-          <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}>{mergeRequest.author.name}</Box></Typography>
+          <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}><GitLabUserLink user={mergeRequest.author} /></Box></Typography>
           <RelativeTime prefix="更新" value={mergeRequest.updatedAt} />
           <Tooltip title={`${mergeRequest.sourceBranch} → ${mergeRequest.targetBranch}`}><Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%', minWidth: 0 }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography></Tooltip>
           {mergeRequest.headSha ? <Tooltip title="headのSHAをコピー"><Chip icon={<ContentCopyRoundedIcon />} label={shortSha(mergeRequest.headSha)} onClick={() => void copyHeadSha(mergeRequest.headSha ?? '')} size="small" sx={{ fontFamily: 'code.fontFamily' }} variant="outlined" /></Tooltip> : null}

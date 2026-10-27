@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { GitLabSession, Project } from '../../types/gitlab'
+import type { GitLabSession, GitLabUser, Project } from '../../types/gitlab'
 import { forgetRememberedListStates } from './listState'
 import { ProjectView } from './ProjectView'
 
@@ -53,6 +53,54 @@ describe('ProjectView', () => {
     expect(seen.at(-1)).toMatchObject({ search: '' })
     fireEvent.submit(screen.getByRole('button', { name: '検索' }).closest('form') as HTMLFormElement)
     expect(seen.at(-1)).toMatchObject({ search: 'platform' })
+  })
+
+  it('queries a selected user without membership filtering, hides shortcuts, and keeps row favourites', () => {
+    const user: GitLabUser = { id: '9', name: 'Target User', username: 'target' }
+    const project: Project = { archived: false, description: '', id: '77', name: 'Desktop', pathWithNamespace: 'target/desktop', webUrl: '' }
+    localStorage.setItem('gitlab-desktop:preferences:https%3A%2F%2Fgitlab.example%2FGitLab:42:pinned', JSON.stringify(['77']))
+    localStorage.setItem('gitlab-desktop:preferences:https%3A%2F%2Fgitlab.example%2FGitLab:42:recent', JSON.stringify(['9002']))
+    queryMock.mockReturnValue({ ...emptyResult, data: [project], snapshot: { ...emptyResult.snapshot, nextPage: 2 } })
+
+    render(<ProjectView navigation={<div>Users</div>} onOpenProject={vi.fn()} user={user} />)
+
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', { includeArchived: false, kind: 'userProjects', page: 1, search: '', userId: '9' }, { keepPrevious: true })
+    expect(screen.getByText('@target の個人領域（グループ内は含みません）')).toBeInTheDocument()
+    expect(screen.getByText('Users')).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: '参加中のプロジェクトだけ' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('プロジェクトへのショートカット')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Desktopをお気に入りから外す' })).toBeInTheDocument()
+    expect(screen.queryByText(/プロフィールが非公開/u)).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'プロジェクトを検索' }), { target: { value: 'platform' } })
+    fireEvent.submit(screen.getByRole('button', { name: '検索' }).closest('form') as HTMLFormElement)
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', { includeArchived: false, kind: 'userProjects', page: 1, search: 'platform', userId: '9' }, { keepPrevious: true })
+    fireEvent.click(screen.getByRole('switch', { name: 'アーカイブ済みを含める' }))
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: true, kind: 'userProjects', page: 1, search: 'platform', userId: '9' }), { keepPrevious: true })
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }))
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: true, kind: 'userProjects', page: 2, search: 'platform', userId: '9' }), { keepPrevious: true })
+  })
+
+  it('keeps each selected user project list state separate', () => {
+    const alice: GitLabUser = { id: '9', name: 'Alice', username: 'alice' }
+    const bob: GitLabUser = { id: '10', name: 'Bob', username: 'bob' }
+    const view = render(<ProjectView onOpenProject={vi.fn()} user={alice} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'プロジェクトを検索' }), { target: { value: 'platform' } })
+    fireEvent.submit(screen.getByRole('button', { name: '検索' }).closest('form') as HTMLFormElement)
+
+    view.rerender(<ProjectView onOpenProject={vi.fn()} user={bob} />)
+    expect(screen.getByRole('textbox', { name: 'プロジェクトを検索' })).toHaveValue('')
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ kind: 'userProjects', search: '', userId: '10' }), { keepPrevious: true })
+
+    view.rerender(<ProjectView onOpenProject={vi.fn()} user={alice} />)
+    expect(screen.getByRole('textbox', { name: 'プロジェクトを検索' })).toHaveValue('platform')
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ kind: 'userProjects', search: 'platform', userId: '9' }), { keepPrevious: true })
+  })
+
+  it('explains that a user project can be hidden by profile visibility or permissions', () => {
+    render(<ProjectView onOpenProject={vi.fn()} user={{ id: '9', name: 'Target User', username: 'target' }} />)
+
+    expect(screen.getByText(/プロフィールが非公開、または閲覧権限がないプロジェクトは表示されない場合があります/u)).toBeInTheDocument()
   })
 
   it('opens persisted pinned and recent ids without fabricating project data', () => {

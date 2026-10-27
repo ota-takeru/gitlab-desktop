@@ -61,6 +61,9 @@ import { useReorder } from '../components/useReorder'
 import { KeyboardShortcutsDialog } from '../features/KeyboardShortcutsDialog'
 import { ProjectShortcuts } from '../features/projects/ProjectView'
 import { GitLabUserAvatar } from '../features/shared/GitLabUserAvatar'
+import { UserNavigation, type UserTab } from '../features/users/UserView'
+import { GitLabUserLink } from '../components/GitLabUserLink'
+import { MarkdownLinkProvider } from '../components/MarkdownLinks'
 import type { AwardEmoji } from '../types/gitlab'
 
 /** `section` is the suffix of a `catalog-*` id, e.g. `#foundation/catalog?section=review`. */
@@ -377,6 +380,14 @@ function CatalogFrameParts() {
         </CardContent>
       </Card>
 
+      <Card component="section" id="catalog-user-navigation">
+        <CardContent sx={{ p: 2.5 }}>
+          <Stack spacing={2}>
+            <Typography component="h2" variant="h2">ユーザーの一覧</Typography>
+            <CatalogUserNavigation />
+          </Stack>
+        </CardContent>
+      </Card>
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { md: 'repeat(2, 1fr)', xs: '1fr' } }}>
         <Card component="section" id="catalog-avatars">
           <CardContent sx={{ p: 2.5 }}>
@@ -496,3 +507,12 @@ const catalogAvatarUsers = [
   { id: 'c', name: 'Chiba' },
   { id: 'd', name: 'Doi' },
 ]
+
+function CatalogUserNavigation() {
+  const [tab, setTab] = useState<UserTab>('mrs')
+  const user = { id: '7', name: '検証ユーザー', username: 'sample' }
+  return <MarkdownLinkProvider instanceUrl="https://fixture.invalid" open={() => setTab('mrs')}>
+    <Typography variant="body2">コメントの作成者: <GitLabUserLink user={user} /></Typography>
+    <PaneHeader navigation={<UserNavigation onTabChange={setTab} tab={tab} user={user} />} title={tab === 'mrs' ? '作成したMR' : 'プロジェクト'} />
+  </MarkdownLinkProvider>
+}

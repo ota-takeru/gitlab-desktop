@@ -18,6 +18,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
@@ -27,7 +28,7 @@ import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
 import { formatFetchedAt } from '../../lib/format'
-import type { Project } from '../../types/gitlab'
+import type { GitLabUser, Project } from '../../types/gitlab'
 import { useConnection } from '../connections/ConnectionProvider'
 import { preferenceScope, readPinnedProjectIds, readRecentProjectIds, writePinnedProjectIds, writeRecentProjectIds } from '../shared/preferences'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
@@ -35,24 +36,37 @@ import { useRememberedListState } from './listState'
 import { type ProjectLabel, readProjectLabels, sameProjectLabel, writeProjectLabels } from './projectLabels'
 
 const defaultConditions = { includeArchived: false, membershipOnly: true, page: 1, search: '', searchInput: '' }
+const userProjectDefaultConditions = { ...defaultConditions, membershipOnly: false }
 
-export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject: (project: Project) => void; onOpenProjectId?: (projectId: string) => void }) {
+interface ProjectViewProps {
+  onOpenProject: (project: Project) => void
+  onOpenProjectId?: (projectId: string) => void
+  user?: GitLabUser
+  navigation?: ReactNode
+}
+
+export function ProjectView(props: ProjectViewProps) {
+  // Selecting another person starts with that person's own remembered conditions.
+  return <ProjectViewContent key={props.user ? `user:${props.user.id}` : 'projects'} {...props} />
+}
+
+function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }: ProjectViewProps) {
   const { session } = useConnection()
+  const userId = user?.id
   const scope = useMemo(() => preferenceScope(session?.instanceUrl ?? 'anonymous', session?.user.id ?? 'anonymous'), [session?.instanceUrl, session?.user.id])
   const searchInputRef = useRef<HTMLInputElement>(null)
   // The conditions outlive the screen, so returning from a project shows the list as it was left.
-  const [conditions, setConditions] = useRememberedListState(`${scope.instanceUrl}:${scope.userId}:projects`, defaultConditions)
+  const stateKey = userId !== undefined ? `${scope.instanceUrl}:${scope.userId}:user-projects:${userId}` : `${scope.instanceUrl}:${scope.userId}:projects`
+  const initialConditions = user ? userProjectDefaultConditions : defaultConditions
+  const [conditions, setConditions] = useRememberedListState(stateKey, initialConditions)
   const { includeArchived, membershipOnly, page, search, searchInput } = conditions
   const [pinned, setPinned] = useState(() => readPinnedProjectIds(scope))
   const [recent, setRecent] = useState(() => readRecentProjectIds(scope))
   const [labels, setLabels] = useState(() => readProjectLabels(scope))
-  const query = useMemo(() => ({
-    includeArchived,
-    kind: 'projects' as const,
-    membership: membershipOnly,
-    page,
-    search: search.trim(),
-  }), [includeArchived, membershipOnly, page, search])
+  const query = useMemo(() => userId !== undefined
+    ? { includeArchived, kind: 'userProjects' as const, page, search: search.trim(), userId }
+    : { includeArchived, kind: 'projects' as const, membership: membershipOnly, page, search: search.trim() },
+  [includeArchived, membershipOnly, page, search, userId])
   const result = useGitLabQuery(session?.id ?? null, query, { keepPrevious: true })
   const projects = useMemo(() => result.data ?? [], [result.data])
 
@@ -100,8 +114,8 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
 
   const projectById = new Map(projects.map((project) => [project.id, project]))
   const shortcutLabel = (id: string): ProjectLabel | undefined => projectById.get(id) ?? labels[id]
-  const conditionsChanged = searchInput.trim() !== '' || search !== '' || includeArchived !== defaultConditions.includeArchived || membershipOnly !== defaultConditions.membershipOnly
-  const clearConditions = () => setConditions(defaultConditions)
+  const conditionsChanged = searchInput.trim() !== '' || search !== '' || includeArchived !== initialConditions.includeArchived || (!user && membershipOnly !== initialConditions.membershipOnly)
+  const clearConditions = () => setConditions(initialConditions)
 
   if (!session) {
     return <PaneEmpty description="GitLabに接続すると、参加しているプロジェクトを検索できます。" icon={<SourceOutlinedIcon fontSize="inherit" />} title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
@@ -109,7 +123,7 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
 
   return (
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
-      <PaneHeader actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} title="プロジェクト">
+      <PaneHeader actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} navigation={navigation} subtitle={user ? `@${user.username} の個人領域（グループ内は含みません）` : undefined} title="プロジェクト">
         <Box component="form" onSubmit={(event) => { event.preventDefault(); setConditions({ page: 1, search: searchInput.trim() }) }}>
           <TextField
             fullWidth
@@ -126,22 +140,22 @@ export function ProjectView({ onOpenProject, onOpenProjectId }: { onOpenProject:
             value={searchInput}
           />
           <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
-            <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': '参加中のプロジェクトだけ' } }} />} label="参加中のみ" slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} sx={{ ml: -0.5 }} />
+            {!user ? <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': '参加中のプロジェクトだけ' } }} />} label="参加中のみ" slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} sx={{ ml: -0.5 }} /> : null}
             <FormControlLabel control={<Switch checked={includeArchived} onChange={(event) => setConditions({ includeArchived: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': 'アーカイブ済みを含める' } }} />} label="アーカイブ済み" slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
             {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 26, ml: 'auto !important', px: 1 }}>条件をクリア</Button> : null}
           </Stack>
         </Box>
       </PaneHeader>
 
-      {pinned.length > 0 || recent.length > 0 ? <ProjectShortcuts ids={pinned} label="お気に入り" labelOf={shortcutLabel} onOpen={openProjectId} secondaryIds={recent} secondaryLabel="最近" /> : null}
+      {!user && (pinned.length > 0 || recent.length > 0) ? <ProjectShortcuts ids={pinned} label="お気に入り" labelOf={shortcutLabel} onOpen={openProjectId} secondaryIds={recent} secondaryLabel="最近" /> : null}
       {/* GitLab returns the projects most recently active first. */}
       <PaneStatus announcement={result.data && !result.previous ? `プロジェクト ${projects.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{projects.length}件取得 · 最近の活動順{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</> : result.loading || result.previous ? 'プロジェクトを読み込み中…' : null}</PaneStatus>
 
       <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
-        {!result.loading && !result.data && !result.error ? <PaneEmpty description="検索条件を変えるか、別のページを取得してください。" icon={<SourceOutlinedIcon fontSize="inherit" />} title="プロジェクトがありません" /> : null}
-        {result.data && projects.length === 0 ? <PaneEmpty description={`適用中の条件: ${projectConditionSummary(search, membershipOnly, includeArchived)}`} icon={<SourceOutlinedIcon fontSize="inherit" />} title="条件に一致するプロジェクトがありません">{conditionsChanged ? <Button onClick={clearConditions} variant="outlined">条件をクリア</Button> : null}</PaneEmpty> : null}
+        {!result.loading && !result.data && !result.error ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : '検索条件を変えるか、別のページを取得してください。'} icon={<SourceOutlinedIcon fontSize="inherit" />} title="プロジェクトがありません" /> : null}
+        {result.data && projects.length === 0 ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : `適用中の条件: ${projectConditionSummary(search, membershipOnly, includeArchived)}`} icon={<SourceOutlinedIcon fontSize="inherit" />} title="条件に一致するプロジェクトがありません">{conditionsChanged ? <Button onClick={clearConditions} variant="outlined">条件をクリア</Button> : null}</PaneEmpty> : null}
         {projects.length ? <Box aria-label="プロジェクト" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>
           {projects.map((project) => {
             const isPinned = pinned.includes(project.id)
@@ -189,4 +203,9 @@ function ShortcutGroup({ icon, ids, label, labelOf, onOpen }: { icon?: React.Rea
 
 function projectConditionSummary(search: string, membershipOnly: boolean, includeArchived: boolean): string {
   return [search ? `検索語「${search}」` : null, membershipOnly ? '参加中のみ' : '参加していないものを含む', includeArchived ? 'アーカイブ済みを含む' : 'アーカイブ済みを除く'].filter(Boolean).join(' · ')
+}
+
+function userProjectEmptyDescription(search: string, includeArchived: boolean): string {
+  const conditions = [search ? `検索語「${search}」` : null, includeArchived ? 'アーカイブ済みを含む' : 'アーカイブ済みを除く'].filter(Boolean).join(' · ')
+  return `適用中の条件: ${conditions}。プロフィールが非公開、または閲覧権限がないプロジェクトは表示されない場合があります。`
 }

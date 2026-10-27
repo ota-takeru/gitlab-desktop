@@ -63,6 +63,7 @@ import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './sh
 import { AutoUpdateSafetyProvider, useAutoUpdateAllowed } from './shared/AutoUpdateSafety'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
 import { useOpenMarkdownLink } from './shared/useOpenMarkdownLink'
+import { UserView, type UserTab } from './users/UserView'
 import { clearGitLabMutationStates } from './shared/useGitLabMutation'
 import { useGitLabQuery } from './shared/useGitLabQuery'
 
@@ -101,7 +102,7 @@ function writeLayoutPreference(key: string, value: boolean): void {
   }
 }
 
-type ClientRoute = 'projects' | 'overview' | 'mrs' | 'branches' | 'code' | 'settings'
+type ClientRoute = 'projects' | 'overview' | 'mrs' | 'branches' | 'code' | 'settings' | 'user'
 /**
  * The MR list's own conditions: the search of all MRs, or one condition on the connected user,
  * switched with the chips under the search field. Notifications open from their own button in the sidebar.
@@ -409,7 +410,11 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     if (current.params.projectName && nextParams.projectId === current.params.projectId) merged.projectName = current.params.projectName
     if (current.params.mr) merged.mr = current.params.mr
     if (current.params.tab) merged.tab = current.params.tab
-    const hash = locationToHash('mrs', merged)
+    if (current.route === 'user') {
+      merged.username = current.params.username
+      if (current.params.userTab) merged.userTab = current.params.userTab
+    }
+    const hash = locationToHash(current.route === 'user' ? 'user' : 'mrs', merged)
     setListEmittedKey(JSON.stringify(withoutSelection(readClientLocation(true, hash).params)))
     window.history.replaceState(window.history.state, '', hash)
     globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
@@ -424,7 +429,11 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     setOpenedMergeRequest(null)
     select(ref)
   }
-  const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef)
+  const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef, (user) => navigate('user', { username: user.username }))
+  const changeUserTab = (tab: UserTab) => {
+    const current = readClientLocation(true)
+    navigate('user', { ...withoutSelection(current.params), userTab: tab })
+  }
 
   // The shown MR always has a sidebar tab, also when reached by Back or a link,
   // or when it is unpinned while shown.
@@ -458,7 +467,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }, [hubTab, listParams, route])
   const mergeRequest = openedMergeRequest?.sessionKey === sessionKey ? openedMergeRequest.mergeRequest : null
   // Each list keeps its own mounted screen, so returning to it is immediate.
-  const listScreenKey = route === 'mrs' ? `mrs:${listMount.key}` : route === 'overview' || route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
+  const listScreenKey = route === 'mrs' || route === 'user' ? `${route}:${listMount.key}` : route === 'overview' || route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
   // Kept screens get the refresh policy inside their own content, so a hidden one does not render again when it changes.
   const refreshAllowed = useQueryRefreshAllowed()
   // Only the first restore at startup: a later connect attempt keeps the form on screen.
@@ -484,7 +493,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
       <Tab label="コード" value="code" />
     </Tabs>
   </Stack> : undefined
-  const backLabel = (route === 'overview' || route === 'branches' || route === 'code') && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
+  const backLabel = route === 'user' ? `@${params.username}に戻る` : (route === 'overview' || route === 'branches' || route === 'code') && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
 
   // Places only; one-off actions such as opening a URL sit beside the search box.
   // An open MR is marked by its tab below, not by these places.
@@ -559,6 +568,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
                 {route === 'overview' && session ? <ProjectOverview instanceUrl={session.instanceUrl} key={params.projectId} navigation={projectNavigation} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} projectUrl={params.projectUrl} sessionId={session.id} /> : null}
+                {route === 'user' ? <UserView initialParams={listParams} onOpenMergeRequest={openMergeRequest} onOpenProject={openProject} onOpenProjectId={openProjectId} onSearchStateChange={updateMergeRequestLocation} onTabChange={changeUserTab} recentMrId={recentMrId} selected={selected} username={params.username} /> : null}
                 {route === 'mrs' ? <MergeRequestList actions={hubActions} key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
                 {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? `プロジェクト ${params.projectId}`, sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
                 {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
@@ -886,7 +896,8 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   // The former pinned list became the sidebar's pinned tabs; its links show the history.
   // The former pinned list and history are covered by the sidebar's tabs; their links start the MR list.
   // So do links to the former To-Do place, now the notification button.
-  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'overview' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' ? routeValue : null
+  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'overview' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' || routeValue === 'user' ? routeValue : null
+  if (route === 'user' && !params.username) { route = start.route; params = start.params }
   if (routeValue === 'mr' && params.projectId && params.iid) {
     // Older links opened a full-page detail; show it over the list the MR list starts with.
     route = start.route

@@ -87,6 +87,15 @@ export interface MergeRequestsQuery {
 }
 
 export interface UsersQuery { kind: 'users'; search: string; page: number }
+export interface UserQuery { kind: 'user'; username: string }
+export interface UserByIdQuery { kind: 'userById'; userId: string }
+export interface UserProjectsQuery {
+  kind: 'userProjects'
+  userId: string
+  search: string
+  includeArchived: boolean
+  page: number
+}
 export interface GroupsQuery { kind: 'groups'; search: string; page: number }
 export interface ProjectLookupQuery { kind: 'project'; path: string }
 /** Pending To-Dos are the unread notifications; `done` lists the read ones instead. */
@@ -325,6 +334,9 @@ export interface JobTrace {
 export type GitLabQuery =
   | ProjectQuery
   | UsersQuery
+  | UserQuery
+  | UserByIdQuery
+  | UserProjectsQuery
   | GroupsQuery
   | ProjectLookupQuery
   | TodosQuery
@@ -546,6 +558,7 @@ export interface FileContent {
 export type QueryData =
   | Project[]
   | Project
+  | GitLabUser
   | GitLabUser[]
   | GitLabGroup[]
   | GitLabTodo[]
@@ -568,6 +581,7 @@ export type QueryData =
   | Pipeline
   | PipelineJob[]
   | JobTrace
+  | null
   | GitLabLabel[]
   | Milestone[]
   | MrVersion[]
@@ -830,6 +844,9 @@ export type UploadAttachmentAction = {
 export type GitLabQueryData<Q extends GitLabQuery> =
   Q extends ProjectQuery ? Project[]
     : Q extends UsersQuery ? GitLabUser[]
+      : Q extends UserQuery ? GitLabUser | null
+        : Q extends UserByIdQuery ? GitLabUser
+          : Q extends UserProjectsQuery ? Project[]
       : Q extends GroupsQuery ? GitLabGroup[]
       : Q extends ProjectLookupQuery ? Project
         : Q extends TodosQuery ? GitLabTodo[]

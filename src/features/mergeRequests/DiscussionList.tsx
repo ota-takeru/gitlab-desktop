@@ -25,6 +25,7 @@ import type { AwardEmoji, Discussion, Note, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/AutoUpdateSafety'
 import { useStableCallback } from '../shared/useStableCallback'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
+import { GitLabUserLink } from '../../components/GitLabUserLink'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
 import { CommentChangeStatus } from './CommentChangeStatus'
 import { positionLabel as formatPositionLabel } from './diffLineThreads'
@@ -391,7 +392,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
       <Box sx={{ minWidth: 0 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 26, minWidth: 0 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
-            <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
+            <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2"><GitLabUserLink user={note.author} /></Typography>
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
             {own ? <Typography color="textSecondary" variant="caption">（自分）</Typography> : null}
             <RelativeTime value={note.createdAt} />
