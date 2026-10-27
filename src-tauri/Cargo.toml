@@ -24,7 +24,7 @@ yaml-rust2 = { version = "0.13", default-features = false }
 time = { version = "0.3", features = ["parsing"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros", "process", "io-util"] }
 tokio-util = "0.7"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 keyring = { version = "3", features = ["windows-native"] }
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
