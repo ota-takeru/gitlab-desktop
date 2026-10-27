@@ -11,6 +11,11 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # typescript-eslint supports TypeScript below 6 only (8.72), so a new major cannot be installed
+      # yet; remove this once typescript-eslint accepts it.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
     groups:
       # Packages released together must move together; their peer ranges are exact.
       tiptap:
