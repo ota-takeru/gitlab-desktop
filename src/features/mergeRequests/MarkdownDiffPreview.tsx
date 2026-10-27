@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { BlameCell } from './BlamePanel'
+import { ChangeMarker } from './ChangeMarker'
 import { markdownDiffChanges, type MarkdownChangeSide } from './markdownDiff'
 import type { ParsedLine } from './diffParser'
 
@@ -54,7 +55,7 @@ function ChangedFragment({ blameEnabled, kind, side }: { blameEnabled: boolean; 
     py: 1,
   })}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mb: 0.5 }}>
-      <Typography sx={{ fontWeight: 600 }} variant="caption">{label} · {lineLabel}行</Typography>
+      <ChangeMarker firstLine={side.firstLine} kind={kind} lastLine={side.lastLine} title={`${lineLabel}行を${label}`} />
       {blameEnabled ? <BlameCell line={side.firstLine} side={sideType} /> : null}
     </Stack>
     <MockMarkdown body={side.text} size="body1" />

@@ -20,7 +20,8 @@ function removedElement(item: RemovedFileLines): ReviewNode {
     type: 'element', tagName: 'div',
     properties: { 'data-review-deleted': 'true', 'data-file-anchor': String(item.anchorLine), 'aria-label': `変更前の削除 ${numbers}行` },
     children: [
-      { type: 'element', tagName: 'strong', properties: {}, children: [text(`− 削除された内容（旧版 ${numbers}行）`)] },
+      // A UI badge rather than a sentence, so it is not mistaken for the document's own text.
+      { type: 'element', tagName: 'span', properties: { 'aria-hidden': 'true', 'data-review-marker': 'remove', title: `旧版の${numbers}行を削除` }, children: [text(`− L${numbers}`)] },
       { type: 'element', tagName: 'pre', properties: {}, children: [text(item.text)] },
     ],
   }

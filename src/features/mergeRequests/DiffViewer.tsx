@@ -31,6 +31,8 @@ import { DiffFileTree, FileThreadMark } from './DiffFileTree'
 import { FILE_LIST_MODE_KEY, readFileListMode, type FileListMode } from './diffFileOrder'
 import { DiffGap, type GapExpansion } from './DiffGap'
 import { BlameCell, BlameProvider } from './BlamePanel'
+import { ChangeMarker } from './ChangeMarker'
+import { changeMarkerStyles } from './changeMarkerStyles'
 import { MarkdownDiffPreview } from './MarkdownDiffPreview'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
@@ -902,14 +904,18 @@ function highlightDiffLines(lines: ParsedLine[], language: string | null): Synta
   return result
 }
 
-function RemovedFullFileLines({ item }: { item: RemovedFileLines }) {
+function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: boolean; item: RemovedFileLines }) {
   const label = item.oldStart === item.oldEnd ? String(item.oldStart) : `${item.oldStart}〜${item.oldEnd}`
-  return <Box aria-label={`旧版の削除 ${label}行`} data-file-anchor={item.anchorLine} data-testid="file-deletion" sx={(theme) => ({
-    bgcolor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 0.5, px: 1.5, py: 0.5,
+  const deletion = <Box aria-label={`旧版の削除 ${label}行`} data-file-anchor={item.anchorLine} data-testid="file-deletion" sx={(theme) => ({
+    bgcolor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', flex: 1, minWidth: 0, my: 0.5, px: 1.5, py: 0.5,
   })}>
-    <Typography sx={{ fontWeight: 600 }} variant="caption">− 旧版で削除 · {label}行</Typography>
+    <ChangeMarker firstLine={item.oldStart} kind="remove" lastLine={item.oldEnd} title={`旧版の${label}行を削除`} />
     <Typography component="pre" sx={{ fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', m: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{item.text}</Typography>
   </Box>
+  // Keep the blame and line-number gutters continuous so removed code lines up with the file's code column.
+  return blameEnabled
+    ? <Stack direction="row"><span className="blame-cell" /><Box sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px' }} />{deletion}</Stack>
+    : deletion
 }
 
 export function FullFileView({ blameEnabled = false, content, diffLines, language, loading, path, targetLine }: { blameEnabled?: boolean; content?: string | null; diffLines?: ParsedLine[]; language: string | null; loading: boolean; path?: string | null; targetLine?: number }) {
@@ -974,6 +980,7 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
           minWidth: 0, px: 2, py: 1.5,
           '& [data-review-change="add"]': { backgroundColor: theme.palette.diff?.addedBackground, boxShadow: `inset 3px 0 0 ${theme.palette.success.main}`, borderRadius: 1, px: 0.5 },
           '& [data-review-deleted="true"]': { backgroundColor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 1, px: 1.5, py: 1 },
+          '& [data-review-marker="remove"]': changeMarkerStyles(theme, 'remove'),
           '& [data-review-deleted="true"] pre': { fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', mb: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' },
         })}><MockMarkdown body={content} renderBlame={blameEnabled ? (line) => <BlameCell line={line} side="new" /> : undefined} review={changeMarkers ?? undefined} size="body1" /></Box>
         : <>
@@ -982,14 +989,14 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
             const fileLine = offset + index + 1
             const additions = changeMarkers?.addedLines.has(fileLine)
             return <Fragment key={fileLine}>
-              {(changeMarkers?.removedByAnchor.get(fileLine) ?? []).map((item, removedIndex) => <RemovedFullFileLines item={item} key={`${item.oldStart}:${removedIndex}`} />)}
+              {(changeMarkers?.removedByAnchor.get(fileLine) ?? []).map((item, removedIndex) => <RemovedFullFileLines blameEnabled={blameEnabled} item={item} key={`${item.oldStart}:${removedIndex}`} />)}
               <Stack data-change={additions ? 'add' : undefined} data-file-line={fileLine} data-testid="file-line" direction="row" sx={(theme) => ({
                 backgroundColor: additions ? theme.palette.diff?.addedBackground : undefined,
                 boxShadow: additions ? `inset 3px 0 0 ${theme.palette.success.main}` : undefined, minHeight: 22,
               })}>{blameEnabled ? <BlameCell line={fileLine} side="new" /> : null}<Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>
             </Fragment>
           })}
-          {offset + visibleLines.length >= lines.length ? (changeMarkers?.removedByAnchor.get(lines.length + 1) ?? []).map((item, index) => <RemovedFullFileLines item={item} key={`last:${item.oldStart}:${index}`} />) : null}
+          {offset + visibleLines.length >= lines.length ? (changeMarkers?.removedByAnchor.get(lines.length + 1) ?? []).map((item, index) => <RemovedFullFileLines blameEnabled={blameEnabled} item={item} key={`last:${item.oldStart}:${index}`} />) : null}
           </Box>
         </>}
   </Box>
