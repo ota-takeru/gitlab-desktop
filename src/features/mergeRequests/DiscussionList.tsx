@@ -39,6 +39,8 @@ const THREAD_WITH_CODE_WIDE = '@container (min-width: 960px)'
 
 interface DiscussionListProps {
   projectId?: string
+  /** The MR, so a comment's renamed or deleted file can be looked up. */
+  iid?: string
   headSha?: string | null
   /** Session used to load GitLab avatars; initials are shown without it. */
   sessionId?: string | null
@@ -90,7 +92,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
   const setEditing = onEditingNoteChange ?? setLocalEditingId
@@ -282,7 +284,7 @@ export function DiscussionList({ projectId, headSha, sessionId, currentUserId, d
                       >{positionLabel}</Button>
                     </Box>
                   ) : <Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', fontFamily: 'code.fontFamily', minWidth: 0 }} variant="caption">{positionLabel}</Typography>}</Tooltip> : <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">MR全体へのスレッド</Typography>}
-                  {position && position.headSha !== headSha && headSha && sessionId && projectId ? <CommentChangeStatus headSha={headSha} position={position} projectId={projectId} sessionId={sessionId} /> : null}
+                  {position && position.headSha !== headSha && headSha && sessionId && projectId ? <CommentChangeStatus headSha={headSha} iid={iid} position={position} projectId={projectId} sessionId={sessionId} /> : null}
                   {isCollapsed && firstNote ? <Tooltip describeChild title={plainExcerpt(firstNote.body, 300)}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 0', minWidth: 0 }} variant="caption">— {firstNote.author.name}: {plainExcerpt(firstNote.body, 80)}</Typography></Tooltip> : null}
                 </Stack>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>

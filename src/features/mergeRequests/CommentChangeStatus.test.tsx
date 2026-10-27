@@ -43,3 +43,31 @@ it('reads nothing for a comment it cannot track', () => {
   expect(screen.getByText('コードの追跡はできません')).toBeInTheDocument()
   expect(queryMock.mock.calls.every(([, query]) => query === null)).toBe(true)
 })
+
+function serveMoved(diff: { oldPath: string; newPath: string; renamedFile?: boolean; deletedFile?: boolean }, renamedContent?: string) {
+  queryMock.mockReset().mockImplementation((_session: string, query: { kind: string; path?: string; sha?: string } | null) => {
+    if (!query) return { data: undefined, error: null, loading: false }
+    if (query.kind === 'versionCompare') return { data: [{ renamedFile: false, deletedFile: false, ...diff }], error: null, loading: false }
+    if (query.sha === oldSha) return { data: { content: 'one\nreturn 1\nthree' }, error: null, loading: false }
+    if (query.path === diff.newPath && renamedContent !== undefined) return { data: { content: renamedContent }, error: null, loading: false }
+    return { data: undefined, error: new Error('404 File Not Found'), loading: false }
+  })
+}
+
+it('follows a file renamed after the comment and compares the code under its new name', () => {
+  serveMoved({ oldPath: 'src/a.ts', newPath: 'src/b.ts', renamedFile: true }, 'zero\none\nreturn 1\nthree')
+  render(<CommentChangeStatus headSha={newSha} iid="7" position={position} projectId="42" sessionId="s" />)
+  expect(screen.getByText('コード一致')).toBeInTheDocument()
+  expect(queryMock).toHaveBeenCalledWith('s', { fromSha: oldSha, iid: '7', kind: 'versionCompare', page: 1, projectId: '42', toSha: newSha })
+  expect(queryMock).toHaveBeenCalledWith('s', { kind: 'file', path: 'src/b.ts', projectId: '42', sha: newSha })
+})
+
+it('reports a deleted file as a change, and an unexplained missing file as a failed check', () => {
+  serveMoved({ oldPath: 'src/a.ts', newPath: 'src/a.ts', deletedFile: true })
+  const { unmount } = render(<CommentChangeStatus headSha={newSha} iid="7" position={position} projectId="42" sessionId="s" />)
+  expect(screen.getByText('コード変更の可能性')).toBeInTheDocument()
+  unmount()
+  serveMoved({ oldPath: 'src/other.ts', newPath: 'src/other2.ts', renamedFile: true })
+  render(<CommentChangeStatus headSha={newSha} iid="7" position={position} projectId="42" sessionId="s" />)
+  expect(screen.getByText('検証不能（取得失敗）')).toBeInTheDocument()
+})
