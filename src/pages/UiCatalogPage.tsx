@@ -36,7 +36,7 @@ import { AppErrorFallback } from '../components/AppErrorBoundary'
 import { LabelChip } from '../components/LabelChip'
 import { ListRow } from '../components/ListRow'
 import { MergeRequestStateGlyph, MergeRequestStateIcon } from '../components/MergeRequestStateIcon'
-import { Kbd, PaneEmpty, PaneHeader, PaneStatus } from '../components/Pane'
+import { Kbd, PaneEmpty, PaneHeader, PaneNavigation, PaneStatus } from '../components/Pane'
 import { Pager } from '../components/Pager'
 import { PipelineStatus } from '../components/PipelineStatus'
 import { RelativeTime } from '../components/RelativeTime'
@@ -187,8 +187,8 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
               </Box>
             </Box>
             <Box sx={{ bgcolor: 'surface.list', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-              <PaneHeader actions={<IconButton aria-label="更新（タブ付きサンプル）" disabled><RefreshRoundedIcon /></IconButton>} navigation={<Tabs aria-label="並列の一覧（サンプル）" value="first"><Tab label="一覧A" value="first" /><Tab label="一覧B" value="second" /></Tabs>} title="タブで切り替える一覧（サンプル）" />
-              <PaneStatus>並列の一覧はタブを見出しの位置に置く</PaneStatus>
+              <PaneHeader actions={<IconButton aria-label="更新（タブ付きサンプル）" disabled><RefreshRoundedIcon /></IconButton>} navigation={<PaneNavigation heading={<Typography component="div" noWrap variant="h1">サンプルの名前</Typography>} tabs={<Tabs aria-label="並列の一覧（サンプル）" value="first"><Tab label="一覧A" value="first" /><Tab label="一覧B" value="second" /></Tabs>} />} title="タブで切り替える一覧（サンプル）" />
+              <PaneStatus>並列の一覧は名前の下のタブで切り替える</PaneStatus>
             </Box>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Kbd>J</Kbd><Kbd>K</Kbd><Typography color="textSecondary" variant="caption">キーボード操作の表示</Typography></Stack>
             <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>

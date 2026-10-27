@@ -28,7 +28,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExterna
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { ClientNavItem } from '../components/ClientNavItem'
 import { useConfirm } from '../components/feedbackContext'
-import { PaneEmpty } from '../components/Pane'
+import { PaneEmpty, PaneNavigation } from '../components/Pane'
 import { KeepAlive } from '../components/KeepAlive'
 import { MarkdownLinkProvider } from '../components/MarkdownLinks'
 import { delayedRevealSx } from '../components/paneSx'
@@ -489,18 +489,18 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }
   // Opening by URL is a one-off action of the MR list, beside its title.
   const hubActions = hubTab ? <Tooltip title="GitLabのURLから開く (Ctrl+O)"><IconButton aria-label="GitLabのURLから開く" onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
-  // A project's screen shows its name beside tabs for its MRs, its branches and its code.
+  // A project's screen shows its name over tabs for its MRs, its branches and its code.
   const projectTab = route === 'overview' || route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
-  const projectNavigation = projectTab ? <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-    <Tooltip title={params.projectName ?? ''}><Typography component="div" noWrap sx={{ flexShrink: 1, minWidth: 0 }} variant="h1">{params.projectName}</Typography></Tooltip>
-    <Tabs aria-label="プロジェクトの表示" onChange={(_, value: 'overview' | 'mrs' | 'branches' | 'code') => navigate(value, { projectId: params.projectId, projectName: params.projectName, ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) })} scrollButtons={false} sx={{ flexShrink: 0 }} value={projectTab} variant="scrollable">
+  const projectNavigation = projectTab ? <PaneNavigation
+    heading={<Tooltip title={params.projectName ?? ''}><Typography component="div" noWrap sx={{ flexShrink: 1, minWidth: 0 }} variant="h1">{params.projectName}</Typography></Tooltip>}
+    tabs={<Tabs aria-label="プロジェクトの表示" onChange={(_, value: 'overview' | 'mrs' | 'branches' | 'code') => navigate(value, { projectId: params.projectId, projectName: params.projectName, ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) })} scrollButtons={false} value={projectTab} variant="scrollable">
       {/* Choosing MR again, e.g. after a branch's MRs, returns to all the project's MRs. */}
       <Tab label="概要" value="overview" />
       <Tab label="MR" onClick={() => { if (projectTab === 'mrs' && Object.keys(listParams).some((key) => key !== 'projectId' && key !== 'projectName')) navigate('mrs', { projectId: params.projectId, projectName: params.projectName }) }} value="mrs" />
       <Tab label="ブランチ" value="branches" />
       <Tab label="コード" value="code" />
-    </Tabs>
-  </Stack> : undefined
+    </Tabs>}
+  /> : undefined
   const backLabel = route === 'user' ? `@${params.username}に戻る` : (route === 'overview' || route === 'branches' || route === 'code') && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
 
   // Places only; one-off actions such as opening a URL sit beside the search box.

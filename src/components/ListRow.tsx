@@ -2,6 +2,7 @@ import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
 import Stack from '@mui/material/Stack'
 import type { ReactNode } from 'react'
+import { paneGutter } from './paneSx'
 
 interface ListRowProps {
   selected?: boolean
@@ -72,7 +73,7 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
           display: 'flex',
           gap: 1,
           justifyContent: 'flex-start',
-          px: 1.5,
+          px: paneGutter,
           py: 1,
           textAlign: 'left',
           width: '100%',
@@ -95,5 +96,5 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
   )
 }
 
-/** One 32px action button with its border and the 8px inset, beyond the row's own 12px padding, plus a gap. */
+/** One 32px action button with its border and the 8px inset, less the row's own 16px padding, plus a gap. */
 const ACTIONS_SPACE = 4.5

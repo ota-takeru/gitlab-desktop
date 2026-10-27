@@ -65,7 +65,7 @@ describe('ProjectView', () => {
     render(<ProjectView navigation={<div>Users</div>} onOpenProject={vi.fn()} user={user} />)
 
     expect(queryMock).toHaveBeenLastCalledWith('session-projects', { includeArchived: false, kind: 'userProjects', page: 1, search: '', userId: '9' }, { keepPrevious: true })
-    expect(screen.getByText('@target の個人領域（グループ内は含みません）')).toBeInTheDocument()
+    expect(screen.queryByText(/個人領域/)).not.toBeInTheDocument()
     expect(screen.getByText('Users')).toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: '参加中のプロジェクトだけ' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('プロジェクトへのショートカット')).not.toBeInTheDocument()

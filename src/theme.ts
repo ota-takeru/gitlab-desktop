@@ -301,7 +301,9 @@ export function createAppTheme(mode: PaletteMode) {
             minHeight: 32,
             padding: '4px 12px',
             fontSize: '0.8125rem',
-            '&.MuiButton-sizeSmall': { minHeight: 32, padding: '4px 12px', fontSize: '0.8125rem' },
+            // MUI's 1.75 line makes a 32.75px button, half a pixel off the 32px icon buttons beside it.
+            lineHeight: 1.5,
+            '&.MuiButton-sizeSmall': { minHeight: 32, padding: '4px 12px', fontSize: '0.8125rem', lineHeight: 1.5 },
           },
           // The ring sits apart from the fill in the text colour, so it shows even when the fill is the focus colour.
           // Disabled fills keep MUI's disabled colours, so a primary button never looks pressable while disabled.
@@ -425,8 +427,11 @@ export function createAppTheme(mode: PaletteMode) {
             fontSize: '0.8125rem',
             '& .MuiOutlinedInput-notchedOutline': { borderColor: palette.inputBorder },
             '&:hover:not(.Mui-focused, .Mui-error, .Mui-disabled) .MuiOutlinedInput-notchedOutline': { borderColor: palette.inkMuted },
-            '& .MuiInputBase-inputSizeSmall': { paddingBottom: 6, paddingTop: 6 },
+            '&.MuiInputBase-sizeSmall .MuiSelect-select': { height: 20, lineHeight: '20px', minHeight: 0 },
           },
+          // A small field or select is 32px, the height of the buttons beside it. MUI marks the size only on the
+          // root, so it is read from the owner state; a field's own sx (a dense toolbar field) still wins.
+          input: ({ ownerState }) => ownerState.size === 'small' ? { paddingBottom: 6, paddingTop: 6, ...(ownerState.multiline ? {} : { height: 20, lineHeight: '20px' }) } : {},
         },
       },
       MuiInputLabel: {
@@ -471,6 +476,9 @@ export function createAppTheme(mode: PaletteMode) {
             color: palette.inkMuted,
             fontSize: '0.75rem',
             fontWeight: 500,
+            lineHeight: 1.5,
+            // The same height as the buttons in the toolbars they share.
+            minHeight: 32,
             padding: '4px 12px',
             textTransform: 'none',
             // The inset bar marks the choice by shape as well as by colour.
@@ -479,8 +487,23 @@ export function createAppTheme(mode: PaletteMode) {
           },
         },
       },
+      // A small checkbox or radio is a 32px square with an 18px box, and its label pulls it back so the
+      // box sits on the column's edge and the label text starts 24px in (`pl: 3` for text under it).
       MuiCheckbox: {
         defaultProps: { size: 'small' },
+        styleOverrides: { sizeSmall: { padding: 7, '& .MuiSvgIcon-root': { fontSize: 18 } } },
+      },
+      MuiRadio: {
+        defaultProps: { size: 'small' },
+        styleOverrides: { sizeSmall: { padding: 7, '& .MuiSvgIcon-root': { fontSize: 18 } } },
+      },
+      MuiFormControlLabel: {
+        styleOverrides: { root: { marginLeft: -8 } },
+      },
+      // Without flex gap a spaced Stack zeroes its children's margins, so offsets such as a back
+      // button's negative margin or a helper text's spacing were silently dropped.
+      MuiStack: {
+        defaultProps: { useFlexGap: true },
       },
       MuiSwitch: {
         defaultProps: { size: 'small' },

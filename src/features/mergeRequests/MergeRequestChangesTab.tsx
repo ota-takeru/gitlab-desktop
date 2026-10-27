@@ -133,7 +133,7 @@ function VersionPicker({ versions }: { versions: VersionChoice }) {
     select
     size="small"
     slotProps={{ htmlInput: { 'aria-label': '比較元バージョン' }, select: { displayEmpty: true } }}
-    sx={{ minWidth: 220, '& .MuiSelect-select': { py: 0.5 } }}
+    sx={{ minWidth: 220 }}
     value={versions.compareFrom ?? ''}
   >
     <MenuItem value="">{versions.loading ? 'バージョンを読み込み中…' : earlier.length === 0 ? '比較できる過去のバージョンはありません' : versions.compareFrom ? 'バージョン比較をやめる（MR全体）' : '過去のバージョンと比較…'}</MenuItem>

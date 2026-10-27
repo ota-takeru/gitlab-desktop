@@ -13,6 +13,7 @@ import { useConfirm } from '../../components/feedbackContext'
 import { MarkdownEditor } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { LabelChip } from '../../components/LabelChip'
+import { statusBarHeight } from '../../components/StatusBar'
 import type { GitLabUser, LabelsQuery, MergeRequest } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
@@ -27,9 +28,9 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
     ['ブランチ', <Box component="span" key="branch" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Box>],
     ['担当', mergeRequest.assignees?.length ? mergeRequest.assignees.map((user) => user.name).join('、') : 'なし'],
     ['レビュアー', mergeRequest.reviewers?.length ? <Stack component="span" key="reviewers" sx={{ alignItems: 'flex-start' }}>{mergeRequest.reviewers.map((user) => (
-      <Stack component="span" direction="row" key={user.id} sx={{ alignItems: 'center', minHeight: 28 }}>
+      <Stack component="span" direction="row" key={user.id} sx={{ alignItems: 'center' }}>
         <span>{user.name}</span>
-        {canRerequest && user.id !== session?.user.id ? <Tooltip title="レビューを再依頼"><span><IconButton aria-label={`${user.name}さんにレビューを再依頼`} disabled={editDisabled} onClick={() => onRerequestReview(user)} size="small"><ReplayRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
+        {canRerequest && user.id !== session?.user.id ? <Tooltip title="レビューを再依頼"><span><IconButton aria-label={`${user.name}さんにレビューを再依頼`} disabled={editDisabled} onClick={() => onRerequestReview(user)} size="small" sx={{ my: -0.5 }}><ReplayRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
       </Stack>
     ))}</Stack> : 'なし'],
     ['承認', approvalsLoading ? '承認状態を確認中…' : approvalsError ? `承認状態を利用できません: ${approvalsError.message}` : approvedBy.length ? `${approvedBy.length}人が承認済み（${approvedBy.map((user) => user.name).join('、')}）` : '未承認'],
@@ -52,7 +53,8 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
       </Stack> : <MockMarkdown body={description || '説明はありません。'} />}
       {reactions ? <Box sx={{ mt: 1.5 }}>{reactions}</Box> : null}
     </Box>
-    <Box component="dl" sx={{ alignContent: 'start', display: 'grid', gap: 1.5, m: 0 }}>
+    {/* Starts level with the 説明 label, which is centred on the 32px row of its edit button. */}
+    <Box component="dl" sx={{ alignContent: 'start', display: 'grid', gap: 1.5, m: 0, pt: 1 }}>
       {rows.map(([label, value]) => <Box key={label}><Typography color="textSecondary" component="dt" variant="caption">{label}</Typography><Typography component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }} variant="body2">{value}</Typography></Box>)}
     </Box>
   </Box>
@@ -89,7 +91,7 @@ export function DescriptionPanel({ description, mergeRequest, onClose, onEdit }:
     return () => window.removeEventListener('keydown', close, true)
   }, [onClose])
   return (
-    <Box aria-label="MRの説明" component="aside" sx={{ bgcolor: 'background.paper', borderColor: 'divider', borderLeft: 1, bottom: 0, boxShadow: 8, display: 'flex', flexDirection: 'column', position: 'fixed', right: 0, top: 0, width: 'min(520px, 50vw)', zIndex: 'drawer' }}>
+    <Box aria-label="MRの説明" component="aside" sx={{ bgcolor: 'background.paper', borderColor: 'divider', borderLeft: 1, bottom: statusBarHeight, boxShadow: 8, display: 'flex', flexDirection: 'column', position: 'fixed', right: 0, top: 'var(--detail-header-height, 0px)', width: 'min(520px, 50vw)', zIndex: 'drawer' }}>
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 2, pr: 0.5, py: 0.5 }}>
         <Typography color="textSecondary" sx={{ flex: 1 }} variant="overline">説明</Typography>
         <Button onClick={onEdit} size="small" startIcon={<EditOutlinedIcon />}>概要タブで編集</Button>

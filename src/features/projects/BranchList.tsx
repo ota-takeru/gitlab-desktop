@@ -109,7 +109,8 @@ function BranchRow({ branch, onOpenInGitLab, onShowMergeRequests }: { branch: Gi
   const actions = branch.webUrl ? <Tooltip title="GitLabで開く"><IconButton aria-label={`${branch.name}をGitLabで開く`} onClick={() => void onOpenInGitLab(branch.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : undefined
   return <ListRow actions={actions} ariaLabel={`${branch.name}のMRを表示`} leading={<AltRouteRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-      <Tooltip enterDelay={600} title={branch.name}><Typography noWrap sx={{ flex: 1, fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{branch.name}</Typography></Tooltip>
+      {/* The name takes only its own width, so its marks and time follow it instead of the row's far edge. */}
+      <Tooltip enterDelay={600} title={branch.name}><Typography noWrap sx={{ flexShrink: 1, fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{branch.name}</Typography></Tooltip>
       {branch.default ? <StateIcon icon={<HomeRoundedIcon fontSize="inherit" />} label="デフォルト" tone="info" /> : null}
       {branch.protected ? <StateIcon icon={<LockRoundedIcon fontSize="inherit" />} label="保護" tone="warning" /> : null}
       {branch.merged ? <StateIcon icon={<CallMergeRoundedIcon fontSize="inherit" />} label="マージ済み" tone="secondary" /> : null}

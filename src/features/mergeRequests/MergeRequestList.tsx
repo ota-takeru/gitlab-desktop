@@ -42,7 +42,7 @@ import { ListRow } from '../../components/ListRow'
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
-import { delayedRevealSx, paneResultsSx } from '../../components/paneSx'
+import { delayedRevealSx, paneGutter, paneResultsSx } from '../../components/paneSx'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
@@ -354,7 +354,6 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
           <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={() => { result.refresh(); setRefreshes((count) => count + 1) }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         </>}
         navigation={navigation}
-        subtitle={projectName ? 'プロジェクトのマージリクエスト' : author ? `@${author.username} が作成したマージリクエスト` : undefined}
         title={title}
       >
         <Box component="form" onSubmit={(event) => { event.preventDefault(); applyDraft() }}>
@@ -562,7 +561,7 @@ function MoreRows({ capped, count, error, loading, onLoad, onRetry, rootRef }: {
     return () => observer.disconnect()
   }, [onLoad, rootRef])
   return (
-    <Box ref={sentinelRef} sx={{ alignItems: 'center', display: 'flex', justifyContent: 'center', minHeight: 48, px: 1.5, py: 1 }}>
+    <Box ref={sentinelRef} sx={{ alignItems: 'center', display: 'flex', justifyContent: 'center', minHeight: 48, px: paneGutter, py: 1 }}>
       {error ? <Alert action={<Button color="inherit" onClick={onRetry}>再試行</Button>} severity="error" sx={{ flex: 1 }}>続きを取得できませんでした: {error.message}</Alert>
         : loading ? <Typography color="textSecondary" role="status" variant="caption">続きを読み込み中…</Typography>
           : capped ? <Typography color="textSecondary" variant="caption">{count}件まで表示しています。続きは条件を絞り込んで検索してください。</Typography>
@@ -717,7 +716,7 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
   if (!grouping || !approvalPages[pageKeys[0]]?.data) {
     return <>
       {loaders}
-      {approvalsError ? <Typography color="textSecondary" component="div" sx={{ px: 1.5, py: 1 }} variant="caption">承認状態を取得できませんでした: {approvalsError.message}</Typography> : null}
+      {approvalsError ? <Typography color="textSecondary" component="div" sx={{ px: paneGutter, py: 1 }} variant="caption">承認状態を取得できませんでした: {approvalsError.message}</Typography> : null}
       <Box aria-label="MR検索結果" component="ul" onKeyDown={moveListRowFocus} role="list" sx={rowListSx}>{mergeRequests.map(row)}</Box>
     </>
   }
@@ -733,7 +732,7 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
       {loaders}
       {sections.filter(([label, items]) => items.length > 0 || label === waitingLabel || label === doneLabel).map(([label, items]) => (
         <Box aria-label={label} component="section" key={label}>
-          <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', borderBottom: 1, borderColor: 'divider', display: 'block', px: 1.5, py: 0.5 }} variant="overline">{label} · {items.length}件</Typography>
+          <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', borderBottom: 1, borderColor: 'divider', display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{label} · {items.length}件</Typography>
           {items.length ? <Box aria-label={label} component="ul" role="list" sx={rowListSx}>{items.map(row)}</Box> : null}
         </Box>
       ))}

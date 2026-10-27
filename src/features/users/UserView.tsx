@@ -8,7 +8,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo } from 'react'
 
-import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
+import { PaneEmpty, PaneHeader, PaneNavigation, PaneStatus } from '../../components/Pane'
 import { formatFetchedAt } from '../../lib/format'
 import type { GitLabUser, MergeRequest, Project } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
@@ -20,19 +20,22 @@ import { useGitLabQuery } from '../shared/useGitLabQuery'
 
 export type UserTab = 'mrs' | 'projects'
 
-/** The same name-and-tabs header used when browsing a project's lists. */
+/** The same name-over-tabs header used for a project's lists. */
 export function UserNavigation({ onTabChange, sessionId, status, tab, user }: { onTabChange: (tab: UserTab) => void; sessionId?: string; status?: string; tab: UserTab; user: GitLabUser }) {
-  return <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-    <GitLabUserAvatar sessionId={sessionId} size={24} user={user} />
-    <Tooltip title={`${user.name} @${user.username}`}><Box sx={{ flexShrink: 1, minWidth: 0 }}>
-      <Typography component="div" noWrap variant="h1">{user.name || user.username}</Typography>
-      <Typography color="textSecondary" component="div" noWrap variant="caption">@{user.username}{status ? ` · ${status}` : ''}</Typography>
-    </Box></Tooltip>
-    <Tabs aria-label="ユーザーの表示" onChange={(_, value: UserTab) => onTabChange(value)} scrollButtons="auto" sx={{ flexShrink: 0 }} value={tab} variant="scrollable">
+  return <PaneNavigation
+    heading={<>
+      <GitLabUserAvatar sessionId={sessionId} size={24} user={user} />
+      {/* Name and username share one baseline. */}
+      <Tooltip title={`${user.name} @${user.username}`}><Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexShrink: 1, minWidth: 0 }}>
+        <Typography component="div" noWrap sx={{ minWidth: 0 }} variant="h1">{user.name || user.username}</Typography>
+        <Typography color="textSecondary" component="div" noWrap sx={{ flexShrink: 0 }} variant="caption">@{user.username}{status ? ` · ${status}` : ''}</Typography>
+      </Stack></Tooltip>
+    </>}
+    tabs={<Tabs aria-label="ユーザーの表示" onChange={(_, value: UserTab) => onTabChange(value)} scrollButtons="auto" value={tab} variant="scrollable">
       <Tab label="作成したMR" value="mrs" />
       <Tab label="プロジェクト" value="projects" />
-    </Tabs>
-  </Stack>
+    </Tabs>}
+  />
 }
 
 export function UserView({ initialParams, onOpenMergeRequest, onOpenProject, onOpenProjectId, onSearchStateChange, onTabChange, recentMrId, selected, username }: {

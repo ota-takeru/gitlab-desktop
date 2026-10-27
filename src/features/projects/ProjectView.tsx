@@ -23,7 +23,7 @@ import type { ReactNode } from 'react'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
-import { paneResultsSx } from '../../components/paneSx'
+import { paneGutter, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
@@ -123,7 +123,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
 
   return (
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
-      <PaneHeader actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} navigation={navigation} subtitle={user ? `@${user.username} の個人領域（グループ内は含みません）` : undefined} title="プロジェクト">
+      <PaneHeader actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} navigation={navigation} title="プロジェクト">
         <Box component="form" onSubmit={(event) => { event.preventDefault(); setConditions({ page: 1, search: searchInput.trim() }) }}>
           <TextField
             fullWidth
@@ -187,7 +187,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
 
 /** Favourite and recent projects as chips above the project list. */
 export function ProjectShortcuts({ ids, label, labelOf, onOpen, secondaryIds, secondaryLabel }: { ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void; secondaryIds: string[]; secondaryLabel: string }) {
-  return <Stack aria-label="プロジェクトへのショートカット" component="section" spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 1 }}><ShortcutGroup icon={<StarRoundedIcon color="primary" fontSize="inherit" />} ids={ids} label={label} labelOf={labelOf} onOpen={onOpen} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} labelOf={labelOf} onOpen={onOpen} /></Stack>
+  return <Stack aria-label="プロジェクトへのショートカット" component="section" spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: paneGutter, py: 1 }}><ShortcutGroup icon={<StarRoundedIcon color="primary" fontSize="inherit" />} ids={ids} label={label} labelOf={labelOf} onOpen={onOpen} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} labelOf={labelOf} onOpen={onOpen} /></Stack>
 }
 
 function ShortcutGroup({ icon, ids, label, labelOf, onOpen }: { icon?: React.ReactNode; ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void }) {

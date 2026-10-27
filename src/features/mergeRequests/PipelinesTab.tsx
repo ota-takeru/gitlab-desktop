@@ -92,7 +92,8 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
   const writesDisabled = disabled || Boolean(busy)
 
   return (
-    <Stack spacing={1.5}>
+    // The overview's reading width, so on a wide window a job's duration and actions stay near its name.
+    <Stack spacing={1.5} sx={{ maxWidth: 1200 }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
         <Typography color="textSecondary" component="h2" variant="overline">パイプライン</Typography>
         <Typography color="textSecondary" role="status" variant="caption">
