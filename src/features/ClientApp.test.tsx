@@ -9,6 +9,7 @@ import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { ClientApp } from './ClientApp'
 import { reportGitLabConnectivity } from './connectivity'
 import { clearComposerBufferStore, createComposerBufferKey, useComposerBuffer } from './mergeRequests/useComposerBuffer'
+import { scopedKey } from './shared/preferences'
 
 /** The chips that switch the MR list between the reader's own MRs. */
 const ownMrs = () => within(screen.getByRole('group', { name: '自分のMR' }))
@@ -317,6 +318,26 @@ it('returns to the list through history, so Back does not reopen the MR', async 
   expect(await screen.findByRole('button', { name: 'レビュー依頼に戻る' })).toBeInTheDocument()
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+})
+
+it('opens an MR on its overview the first time and on the discussion after that', async () => {
+  localStorage.removeItem(scopedKey({ instanceUrl: sessionFixture.instanceUrl, userId: sessionFixture.user.id }, 'personal-workspace'))
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => query?.kind === 'mr'
+    ? { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    : emptyQueryResult())
+  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>
+  const first = render(app())
+  expect(await screen.findByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
+  first.unmount()
+
+  render(app())
+  expect(await screen.findByRole('tab', { name: /議論/u })).toHaveAttribute('aria-selected', 'true')
+  // The overview chosen by hand is named in the location, so Back returns to it.
+  fireEvent.click(screen.getByRole('tab', { name: '概要' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7&tab=overview'))
+  expect(screen.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('preserves MR search filters when returning from an opened request', async () => {

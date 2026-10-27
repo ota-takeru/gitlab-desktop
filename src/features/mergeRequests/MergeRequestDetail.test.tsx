@@ -408,6 +408,45 @@ describe('MergeRequestDetail tabs and description', () => {
     expect(screen.getByRole('tab', { name: '変更' })).toHaveAttribute('aria-selected', 'true')
   })
 
+  it('shows the description beside the discussion and closes it with Esc before leaving the MR', async () => {
+    const onBack = vi.fn()
+    function Harness() {
+      const [tab, setTab] = useState<'discussion' | 'changes' | 'overview' | 'pipelines'>('discussion')
+      return <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={onBack} onTabChange={setTab} tab={tab} />
+    }
+    detailMocks.mergeRequest.description = '横で読む説明'
+    onTestFinished(() => { detailMocks.mergeRequest.description = '' })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><Harness /></ThemeProvider></QueryClientProvider>)
+    const toggle = await screen.findByRole('button', { name: '説明' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(toggle)
+    const panel = screen.getByRole('complementary', { name: 'MRの説明' })
+    expect(within(panel).getByText('横で読む説明')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /議論/u })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('complementary', { name: 'MRの説明' })).not.toBeInTheDocument()
+
+    // D toggles it; leaving the discussion closes it.
+    fireEvent.keyDown(window, { key: 'd' })
+    expect(screen.getByRole('complementary', { name: 'MRの説明' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'd' })
+    expect(screen.queryByRole('complementary', { name: 'MRの説明' })).not.toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'd' })
+    fireEvent.click(screen.getByRole('tab', { name: '変更' }))
+    expect(screen.queryByRole('complementary', { name: 'MRの説明' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
+    expect(screen.queryByRole('complementary', { name: 'MRの説明' })).not.toBeInTheDocument()
+
+    // Editing happens on the overview.
+    fireEvent.click(screen.getByRole('button', { name: '説明' }))
+    fireEvent.click(within(screen.getByRole('complementary', { name: 'MRの説明' })).getByRole('button', { name: '概要タブで編集' }))
+    expect(screen.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('textbox', { name: '説明を編集' })).toBeInTheDocument()
+    expect(onBack).not.toHaveBeenCalled()
+  })
+
   it('saves the edited description together with the description it replaced', async () => {
     renderDetail('overview')
     fireEvent.click(await screen.findByRole('button', { name: '説明を編集' }))

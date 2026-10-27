@@ -139,6 +139,12 @@ function unreadIn(data: WorkspaceData, ref: MrRef, notes: Note[], currentUserId:
   const record = data.reading[mrRefKey(ref)]
   return notes.filter((note) => !note.system && note.author.id !== currentUserId && record?.read[note.id] === undefined).map((note) => note.id)
 }
+/** Whether this device has shown the MR before: it is among the recent MRs or has an open tab, which only showing it adds. */
+export function hasViewedMergeRequest(scope: PreferenceScope, ref: MrRef): boolean {
+  const data = readWorkspaceSnapshot(scope)
+  const refKey = mrRefKey(ref)
+  return [...data.recent, ...data.open].some((item) => mrRefKey(item) === refKey)
+}
 export function workspaceUnreadCount(scope: PreferenceScope, ref: MrRef): number | undefined {
   return unreadCountIn(readWorkspaceSnapshot(scope), ref)
 }

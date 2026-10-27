@@ -59,7 +59,7 @@ import { NotificationNavItem } from './mergeRequests/NotificationPanel'
 import { MergeRequestTabs } from './mergeRequests/MergeRequestTabs'
 import { OpenMergeRequestDialog } from './mergeRequests/OpenMergeRequestDialog'
 import { personalQueueFor } from './mergeRequests/personalQueue'
-import { closeStaleTabs, mrRefKey, openWorkspaceTab, STALE_TAB_MS, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
+import { closeStaleTabs, hasViewedMergeRequest, mrRefKey, openWorkspaceTab, STALE_TAB_MS, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
 import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
@@ -270,7 +270,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
   }, [])
 
-  // An MR opens on its overview; a notification about a comment opens it on the discussion.
+  // An MR opens without a tab, so its screen picks one (see MergeRequestRoute); a notification about a comment opens it on the discussion.
   const select = useCallback((ref: MrRef | null, tab?: ReviewTab) => {
     const current = readClientLocation(Boolean(session))
     // From the settings an MR opens over the list the MR list starts with.
@@ -278,7 +278,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     const targetRoute = current.route === 'settings' ? start.route : current.route
     const base: Record<string, string> = targetRoute === current.route ? withoutSelection(current.params) : { ...start.params }
     if (ref && current.params.mr === `${ref.projectId}-${ref.iid}` && current.params.tab) base.tab = current.params.tab
-    if (tab && tab !== 'overview') base.tab = tab
+    if (tab) base.tab = tab
     navigate(targetRoute, ref ? { ...base, mr: `${ref.projectId}-${ref.iid}` } : base)
   }, [navigate, session])
 
@@ -403,12 +403,10 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }, [navigate])
 
   // Each tab of an MR is a history entry, so Back returns to the previous tab.
+  // The overview is named too: an MR without a tab opens on the one its screen picks.
   const changeMergeRequestTab = useCallback((tab: ReviewTab) => {
     const current = readClientLocation(true)
-    const next = { ...current.params }
-    if (tab === 'overview') delete next.tab
-    else next.tab = tab
-    navigate(current.route, next)
+    navigate(current.route, { ...current.params, tab })
   }, [navigate])
 
   const updateMergeRequestLocation = (nextParams: Record<string, string>) => {
@@ -824,8 +822,12 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
 }
 
 /** Memoized with stable props: showing a kept MR again only reconnects it instead of rendering the whole review again. */
-const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMergeRequest, onBack, onOpenProject, onTabChange, selected, tab }: { backLabel: string; initialMergeRequest: MergeRequest | null; onBack: () => void; onOpenProject: (projectId: string, projectPath?: string) => void; onTabChange: (tab: ReviewTab) => void; selected: MrRef; tab: ReviewTab }) {
+const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMergeRequest, onBack, onOpenProject, onTabChange, selected, tab }: { backLabel: string; initialMergeRequest: MergeRequest | null; onBack: () => void; onOpenProject: (projectId: string, projectPath?: string) => void; onTabChange: (tab: ReviewTab) => void; selected: MrRef; tab: ReviewTab | undefined }) {
   const { session } = useConnection()
+  // Without a tab in the location, an MR opens on its overview the first time this
+  // device shows it and on the discussion after that. Decided once per screen,
+  // before showing it records the MR as viewed.
+  const [openingTab] = useState<ReviewTab>(() => session && hasViewedMergeRequest({ instanceUrl: session.instanceUrl, userId: session.user.id }, selected) ? 'discussion' : 'overview')
   const query = useMemo(() => ({ iid: selected.iid, kind: 'mr' as const, projectId: selected.projectId }), [selected.iid, selected.projectId])
   const lookup = useGitLabQuery(session?.id ?? null, query)
   const accessDenied = lookup.error?.code === 'AUTH_REQUIRED' || lookup.error?.code === 'FORBIDDEN' || lookup.error?.code === 'NOT_FOUND'
@@ -843,7 +845,7 @@ const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMe
       </Stack>
     </PaneEmpty>
   }
-  return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onOpenProject={openProject} onTabChange={onTabChange} tab={tab} />
+  return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} />
 })
 
 /** A refresh of the MR that returns the same data (as when a kept MR shows again) does not render the review again. */
@@ -969,8 +971,9 @@ function withoutSelection(params: Record<string, string>): Record<string, string
   return next
 }
 
-function parseTab(value: string | undefined): ReviewTab {
-  return value === 'changes' || value === 'discussion' || value === 'pipelines' ? value : 'overview'
+/** No tab (or an unknown one) leaves the choice to the MR screen. */
+function parseTab(value: string | undefined): ReviewTab | undefined {
+  return value === 'overview' || value === 'changes' || value === 'discussion' || value === 'pipelines' ? value : undefined
 }
 
 /** Composers, toolbars, menus and forms handle Esc themselves. `data-composer` marks a composer's whole region. */

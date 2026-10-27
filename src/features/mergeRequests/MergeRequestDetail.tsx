@@ -1,5 +1,6 @@
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -21,7 +22,7 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
 import { useConfirm, useNotify } from '../../components/feedbackContext'
@@ -69,7 +70,7 @@ import { appendComposerBuffer, clearComposerBuffer, createComposerBackendKey, cr
 import { ChangesTab } from './MergeRequestChangesTab'
 import { DraftList, type DraftStatus } from './DraftList'
 import { LoadingPanel } from './LoadingPanel'
-import { OverviewTab } from './MergeRequestOverviewTab'
+import { DescriptionPanel, OverviewTab } from './MergeRequestOverviewTab'
 
 export type ReviewTab = 'discussion' | 'changes' | 'overview' | 'pipelines'
 type CommitsQuery = ReviewResourceQuery & { kind: 'commits' }
@@ -125,9 +126,12 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const pendingDiffThread = useRef<{ id: string; path: string } | null>(null)
   const [descriptionEdit, setDescriptionEdit] = useState<{ body: string; expected: string } | null>(null)
   const [replyDiscussion, setReplyDiscussion] = useState<Discussion | null>(null)
+  // The description shown beside the discussion (D); leaving the discussion closes it.
+  const [descriptionOpen, setDescriptionOpen] = useState(false)
+  const closeDescription = useCallback(() => setDescriptionOpen(false), [])
   // Any tab change, including Back, closes the reply; its text stays in the composer buffer.
   const [replyTab, setReplyTab] = useState(activeTab)
-  if (replyTab !== activeTab) { setReplyTab(activeTab); setReplyDiscussion(null) }
+  if (replyTab !== activeTab) { setReplyTab(activeTab); setReplyDiscussion(null); setDescriptionOpen(false) }
   const [viewPosition, setViewPosition] = useState<Position | undefined>()
   const [pendingFileTarget, setPendingFileTarget] = useState<string | null>(null)
   const [draftPage, setDraftPage] = useState(1)
@@ -427,6 +431,17 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       if (isEditableTarget(event.target) || document.querySelector('[role="dialog"]')) return
       event.preventDefault()
       stepUnresolvedRef.current(event.key === 'n' ? 1 : -1)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeTab])
+  useEffect(() => {
+    if (activeTab !== 'discussion') return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.key !== 'd') return
+      if (isEditableTarget(event.target) || document.querySelector('[role="dialog"]')) return
+      event.preventDefault()
+      setDescriptionOpen((open) => !open)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -904,7 +919,8 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
             <Tab label="変更" value="changes" />
             <Tab label="パイプライン" value="pipelines" />
           </Tabs>
-          {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: 'auto' }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}
+          {activeTab === 'discussion' ? <Tooltip describeChild title={descriptionOpen ? '説明を閉じる (D)' : '説明を横に表示 (D)'}><Button aria-keyshortcuts="D" aria-pressed={descriptionOpen} color={descriptionOpen ? 'primary' : 'inherit'} onClick={() => setDescriptionOpen((open) => !open)} size="small" startIcon={<DescriptionOutlinedIcon />} sx={{ flexShrink: 0, ml: 'auto' }}>説明</Button></Tooltip> : null}
+          {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: activeTab === 'discussion' ? 0 : 'auto' }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}
         </Stack>
         {/* Write results stay in view under the header, wherever in a long thread the action was taken. */}
         {positionError || visibleMutationError || verificationError ? <Stack aria-live="polite" spacing={1} sx={{ pb: 1, pt: 1.5 }}>
@@ -918,6 +934,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         {noteAwardsQuery && noteAwardsResult.error ? <Alert action={<Button color="inherit" onClick={noteAwardsResult.refresh}>再試行</Button>} severity="warning">{noteAwardsResult.data ? `保存済みのリアクションを表示中です。更新に失敗しました: ${noteAwardsResult.error.message}` : `コメントのリアクションを取得できませんでした: ${noteAwardsResult.error.message}`}</Alert> : null}
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">コメントが多いため、古いコメントのリアクションは表示していません。GitLabで確認してください。</Alert> : null}
         {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab projectId={resourceId} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
+        {activeTab === 'discussion' && descriptionOpen ? <DescriptionPanel description={mergeRequest.description} mergeRequest={mergeRequest} onClose={closeDescription} onEdit={() => { setActiveTab('overview'); if (!mutation.isLocked && !mutation.isPending) setDescriptionEdit({ body: mergeRequest.description ?? '', expected: mergeRequest.description ?? '' }) }} /> : null}
         {discussionWindow.observers}
         {activeTab === 'changes' && drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">議論タブで公開</Button>} severity="info">未公開レビューが{drafts.length}件あります。公開するまでMRには反映されません。</Alert> : null}
         {activeTab === 'changes' ? <ChangesTab fileSource={session && fileSha ? { projectId: resourceId, sessionId: session.id, sha: fileSha, beforeSha: beforeFileSha } : undefined} threadActions={readOnlyChanges ? undefined : {

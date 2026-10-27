@@ -1,3 +1,4 @@
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded'
 import Alert from '@mui/material/Alert'
@@ -7,7 +8,7 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useConfirm } from '../../components/feedbackContext'
 import { MarkdownEditor } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
@@ -19,9 +20,7 @@ import { useGitLabQuery } from '../shared/useGitLabQuery'
 export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; reactions?: React.ReactNode }) {
   const confirm = useConfirm()
   const { session } = useConnection()
-  // Label colours come from the project's first page of labels; a label not on it shows without one.
-  const labelsQuery = useMemo<LabelsQuery | null>(() => mergeRequest.labels?.length ? { kind: 'labels', page: 1, projectId: mergeRequest.projectId, search: '' } : null, [mergeRequest.labels?.length, mergeRequest.projectId])
-  const labelColors = useGitLabQuery<LabelsQuery>(session?.id ?? null, labelsQuery)
+  const labels = useLabelChips(mergeRequest)
   const canRerequest = mergeRequest.state === 'opened' && Boolean(mergeRequest.projectPath)
   const rows: Array<[string, React.ReactNode]> = [
     ['作成者', `${mergeRequest.author.name} @${mergeRequest.author.username}`],
@@ -34,8 +33,8 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
       </Stack>
     ))}</Stack> : 'なし'],
     ['承認', approvalsLoading ? '承認状態を確認中…' : approvalsError ? `承認状態を利用できません: ${approvalsError.message}` : approvedBy.length ? `${approvedBy.length}人が承認済み（${approvedBy.map((user) => user.name).join('、')}）` : '未承認'],
-    ['ラベル', mergeRequest.labels?.length ? <Stack direction="row" key="labels" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>{mergeRequest.labels.map((label) => <LabelChip color={labelColors.data?.find((item) => item.name === label)?.color} key={label} name={label} />)}</Stack> : 'なし'],
-    ['マイルストーン', mergeRequest.milestone ? `${mergeRequest.milestone.title}${mergeRequest.milestone.dueDate ? `（期限 ${mergeRequest.milestone.dueDate}）` : ''}` : 'なし'],
+    ['ラベル', labels],
+    ['マイルストーン', milestoneText(mergeRequest)],
   ]
   return <Box sx={{ display: 'grid', gap: 4, gridTemplateColumns: { lg: 'minmax(0, 1fr) 280px', xs: '1fr' }, maxWidth: 1200 }}>
     <Box sx={{ minWidth: 0 }}>
@@ -57,4 +56,51 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
       {rows.map(([label, value]) => <Box key={label}><Typography color="textSecondary" component="dt" variant="caption">{label}</Typography><Typography component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }} variant="body2">{value}</Typography></Box>)}
     </Box>
   </Box>
+}
+
+/** The MR's labels as chips, or なし. */
+function useLabelChips(mergeRequest: MergeRequest): React.ReactNode {
+  const { session } = useConnection()
+  // Label colours come from the project's first page of labels; a label not on it shows without one.
+  const labelsQuery = useMemo<LabelsQuery | null>(() => mergeRequest.labels?.length ? { kind: 'labels', page: 1, projectId: mergeRequest.projectId, search: '' } : null, [mergeRequest.labels?.length, mergeRequest.projectId])
+  const labelColors = useGitLabQuery<LabelsQuery>(session?.id ?? null, labelsQuery)
+  return mergeRequest.labels?.length ? <Stack direction="row" key="labels" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>{mergeRequest.labels.map((label) => <LabelChip color={labelColors.data?.find((item) => item.name === label)?.color} key={label} name={label} />)}</Stack> : 'なし'
+}
+
+function milestoneText(mergeRequest: MergeRequest): string {
+  return mergeRequest.milestone ? `${mergeRequest.milestone.title}${mergeRequest.milestone.dueDate ? `（期限 ${mergeRequest.milestone.dueDate}）` : ''}` : 'なし'
+}
+
+/**
+ * The description beside the discussion, read without leaving it: a panel over
+ * the right edge that leaves the threads and their scroll position as they are.
+ * Esc closes it before Esc leaves the MR. Editing stays on the overview tab.
+ */
+export function DescriptionPanel({ description, mergeRequest, onClose, onEdit }: { description: string; mergeRequest: MergeRequest; onClose: () => void; onEdit: () => void }) {
+  const labels = useLabelChips(mergeRequest)
+  useEffect(() => {
+    // Capture runs before the app's Esc, which would return to the list.
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('[role="dialog"]')) return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', close, true)
+    return () => window.removeEventListener('keydown', close, true)
+  }, [onClose])
+  return (
+    <Box aria-label="MRの説明" component="aside" sx={{ bgcolor: 'background.paper', borderColor: 'divider', borderLeft: 1, bottom: 0, boxShadow: 8, display: 'flex', flexDirection: 'column', position: 'fixed', right: 0, top: 0, width: 'min(520px, 50vw)', zIndex: 'drawer' }}>
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 2, pr: 0.5, py: 0.5 }}>
+        <Typography color="textSecondary" sx={{ flex: 1 }} variant="overline">説明</Typography>
+        <Button onClick={onEdit} size="small" startIcon={<EditOutlinedIcon />}>概要タブで編集</Button>
+        <Tooltip title="閉じる (Esc)"><IconButton aria-label="説明を閉じる" onClick={onClose}><CloseRoundedIcon /></IconButton></Tooltip>
+      </Stack>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
+        <MockMarkdown body={description || '説明はありません。'} />
+        <Box component="dl" sx={{ display: 'grid', gap: 1.5, mb: 0, mt: 3 }}>
+          {([['ラベル', labels], ['マイルストーン', milestoneText(mergeRequest)]] as const).map(([label, value]) => <Box key={label}><Typography color="textSecondary" component="dt" variant="caption">{label}</Typography><Typography component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }} variant="body2">{value}</Typography></Box>)}
+        </Box>
+      </Box>
+    </Box>
+  )
 }
