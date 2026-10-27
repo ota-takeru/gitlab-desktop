@@ -24,7 +24,7 @@ concurrency:
 jobs:
   frontend:
     name: Frontend checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out source
@@ -87,7 +87,7 @@ jobs:
     name: Windows checks
     if: always()
     needs: [frontend, rust]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Ensure all checks passed

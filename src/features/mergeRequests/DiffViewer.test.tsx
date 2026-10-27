@@ -130,7 +130,7 @@ describe('DiffViewer', () => {
     expect(screen.getByText(/表示 9601.*10000.*10000行/u)).toBeInTheDocument()
     expect(screen.getAllByTestId('diff-line').at(-1)).toHaveTextContent('line 10000')
     expect(screen.getByRole('button', { name: `次の${DIFF_PAGE_SIZE}行` })).toBeDisabled()
-  }, 15000)
+  })
 
   it('highlights code syntax and marks search matches across highlighted tokens', () => {
     renderViewer(makeDiff('@@ -1 +1 @@\n-const enabled = false\n+const enabled = true\n'))
@@ -175,7 +175,7 @@ describe('DiffViewer', () => {
     const comment = screen.getByRole('button', { name: 'src/example.tsの1201行にコメント' })
     fireEvent.click(comment)
     expect(onComment).toHaveBeenCalledWith(expect.objectContaining({ newLine: 1201, newPath: 'src/example.ts' }))
-  }, 15000)
+  })
 
   it('focuses the selected diff line after switching to its page', async () => {
     const diff = makeDiff(`@@ -1,1800 +1,1800 @@\n${Array.from({ length: 1_800 }, (_, index) => ` line ${index + 1}`).join('\n')}\n`)
@@ -188,7 +188,7 @@ describe('DiffViewer', () => {
     await waitFor(() => expect(selectedLine).toHaveFocus())
     expect(selectedLine).toHaveAttribute('data-line-id')
     expect(screen.getByText(/表示 1201.*1800.*1800行/u)).toBeInTheDocument()
-  }, 15000)
+  })
 
   it('keeps invalid diff positions un-commentable and reports the unsafe state', () => {
     const diff = makeDiff('@@ -1,2 +1,2 @@\n-old\n+new\n')
@@ -218,7 +218,7 @@ describe('DiffViewer', () => {
     fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
     expect(screen.getByText('1/2')).toBeInTheDocument()
     expect(screen.getAllByTestId('diff-line').find((line) => line.dataset.searchActive === 'true')).toHaveTextContent('line 601 needle')
-  }, 15000)
+  })
 
   it('searches across fetched files and marks the active split row', () => {
     const first = makeDiff('@@ -1 +1 @@\n-old\n+new\n', 'src/a.ts')

@@ -151,7 +151,7 @@ describe('DiffViewer unchanged lines', () => {
     expect(screen.getAllByTestId('diff-opened-line')).toHaveLength(600)
     fireEvent.click(screen.getByRole('button', { name: '変更のない398行を表示' }))
     expect(screen.getAllByTestId('diff-opened-line')).toHaveLength(998)
-  }, 15000)
+  })
 
   it('reads the file on demand with the whole-file query and keeps the row when that fails', () => {
     const refresh = vi.fn()

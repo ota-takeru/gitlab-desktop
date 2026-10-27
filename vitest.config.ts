@@ -11,5 +11,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     restoreMocks: true,
+    // Whole screens render in jsdom; a loaded machine running the full suite needs more than the default 5s.
+    testTimeout: 30_000,
   },
 })
