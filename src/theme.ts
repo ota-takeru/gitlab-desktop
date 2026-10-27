@@ -40,6 +40,13 @@ interface FillPalette {
   primaryText: string
 }
 
+/** Each place in the navigation has its own colour, so it is found by colour as well as by its icon and name. */
+export interface PlacePalette {
+  mergeRequests: string
+  projects: string
+  notifications: string
+}
+
 /** Initial avatars use quiet tints that never read as a state colour. */
 interface AvatarTone {
   background: string
@@ -55,6 +62,7 @@ declare module '@mui/material/styles' {
     surface: SurfacePalette
     fill: FillPalette
     avatar: AvatarTone[]
+    place: PlacePalette
   }
 
   interface PaletteOptions {
@@ -63,6 +71,7 @@ declare module '@mui/material/styles' {
     surface?: SurfacePalette
     fill?: FillPalette
     avatar?: AvatarTone[]
+    place?: PlacePalette
   }
 
   interface TypographyVariants {
@@ -116,6 +125,7 @@ interface Tokens {
   tooltip: string
   diff: DiffPalette
   avatar: AvatarTone[]
+  place: PlacePalette
 }
 
 const forcedColors = '@media (forced-colors: active)'
@@ -135,6 +145,7 @@ const tokens: Record<PaletteMode, Tokens> = {
       { background: '#f2eadf', text: '#6b4f2a' },
       { background: '#ece5f3', text: '#58447a' },
     ],
+    place: { mergeRequests: '#2860c4', projects: '#0b6e5f', notifications: '#9a5700' },
   },
   dark: {
     canvas: '#232529', nav: '#101113', list: '#1a1b1f', surface: '#232529', raised: '#2e3036',
@@ -148,6 +159,7 @@ const tokens: Record<PaletteMode, Tokens> = {
       { background: '#3d3428', text: '#e0c9a6' },
       { background: '#352f42', text: '#cdbfe6' },
     ],
+    place: { mergeRequests: '#7aa7ee', projects: '#4fbfa9', notifications: '#e0a650' },
   },
 }
 
@@ -203,6 +215,7 @@ export function createAppTheme(mode: PaletteMode) {
       },
       fill: { primary: palette.primaryFill, primaryHover: palette.primaryFillHover, primaryText: '#ffffff' },
       avatar: palette.avatar,
+      place: palette.place,
     },
     typography: {
       fontSize: 13,

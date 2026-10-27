@@ -527,8 +527,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           {/* Only the tabs scroll, so the places above and the settings below stay in view. */}
           <Box component="nav" aria-label="GitLab client navigation" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
             <List disablePadding>
-              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<RateReviewOutlinedIcon />} label="MR一覧" onClick={openLastHub} selected={!selected && hubTab !== null} title="MR一覧" />
-              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<SourceOutlinedIcon />} label="プロジェクト" onClick={() => navigate('projects')} selected={projectsSelected} title="プロジェクト" />
+              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<RateReviewOutlinedIcon />} label="MR一覧" place="mergeRequests" onClick={openLastHub} selected={!selected && hubTab !== null} title="MR一覧" />
+              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<SourceOutlinedIcon />} label="プロジェクト" place="projects" onClick={() => navigate('projects')} selected={projectsSelected} title="プロジェクト" />
             </List>
             <MergeRequestTabs collapsed={navCollapsed} onOpen={openMergeRequestRef} selected={selected} />
           </Box>

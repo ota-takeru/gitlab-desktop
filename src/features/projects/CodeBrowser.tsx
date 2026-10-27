@@ -128,7 +128,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
 }
 
 function TreeRow({ entry, onOpenFile, onOpenFolder }: { entry: TreeEntry; onOpenFile: () => void; onOpenFolder: () => void }) {
-  const icon = entry.type === 'tree' ? <FolderOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} /> : entry.type === 'commit' ? <LinkRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} /> : <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
+  const icon = entry.type === 'tree' ? <FolderOutlinedIcon sx={{ color: 'place.projects', fontSize: 16 }} /> : entry.type === 'commit' ? <LinkRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} /> : <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
   // A submodule points at another repository, so it has nothing to open here.
   return <ListRow disabled={entry.type === 'commit'} leading={icon} onOpen={entry.type === 'tree' ? onOpenFolder : onOpenFile}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>

@@ -80,7 +80,7 @@ export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpen
   const more = result.snapshot?.nextPage != null
   const title = count || more ? `通知 ${count}${more ? '件以上' : '件'}` : '通知'
   return <>
-    <ClientNavItem collapsed={collapsed} disabled={!session} expanded={Boolean(button)} icon={<NotificationBellIcon count={count} more={more} withCount={collapsed} />} label="通知" onClick={(event) => openAt(event.currentTarget)} selected={Boolean(button)} title={title} trailing={<NotificationCount count={count} more={more} />} />
+    <ClientNavItem collapsed={collapsed} disabled={!session} expanded={Boolean(button)} place="notifications" icon={<NotificationBellIcon count={count} more={more} withCount={collapsed} />} label="通知" onClick={(event) => openAt(event.currentTarget)} selected={Boolean(button)} title={title} trailing={<NotificationCount count={count} more={more} />} />
     <Popover
       anchorEl={anchor}
       anchorOrigin={{ horizontal: 'left', vertical: 'top' }}

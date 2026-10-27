@@ -1,4 +1,4 @@
-import { decomposeColor, getContrastRatio, type PaletteMode } from '@mui/material/styles'
+import { alpha, decomposeColor, getContrastRatio, type PaletteMode } from '@mui/material/styles'
 import { describe, expect, it } from 'vitest'
 
 import { createAppTheme } from './theme'
@@ -56,6 +56,13 @@ describe.each<PaletteMode>(['light', 'dark'])('%s theme contrast', (mode) => {
   it('keeps syntax comments readable on the diff backgrounds', () => {
     for (const background of [palette.diff.addedBackground, palette.diff.deletedBackground]) {
       for (const color of [palette.syntax.comment, palette.syntax.title]) expect(getContrastRatio(color, background), `${color} on ${background}`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('keeps the place colours visible on the navigation and on their selected tint', () => {
+    for (const colour of Object.values(palette.place)) {
+      expect(getContrastRatio(colour, palette.surface.nav)).toBeGreaterThanOrEqual(4.5)
+      expect(getContrastRatio(colour, flatten(alpha(colour, 0.14), palette.surface.nav))).toBeGreaterThanOrEqual(3)
     }
   })
 
