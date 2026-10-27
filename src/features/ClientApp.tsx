@@ -215,6 +215,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const [reconnectOpen, setReconnectOpen] = useState(false)
   if (session && reconnectOpen) setReconnectOpen(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const closeShortcuts = useCallback(() => setShortcutsOpen(false), [])
   const [openedMergeRequest, setOpenedMergeRequest] = useState<{ sessionKey: string; mergeRequest: MergeRequest } | null>(null)
   const [openUrlDialog, setOpenUrlDialog] = useState(false)
   const isNarrowNav = useMediaQuery('(max-width:1000px)')
@@ -552,7 +553,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           <Dialog aria-labelledby="gitlab-connection-title" fullWidth maxWidth="sm" onClose={() => setReconnectOpen(false)} open={reconnectOpen && !session}>
             <DialogContent><ConnectionView /></DialogContent>
           </Dialog>
-          <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} open={shortcutsOpen} />
+          <KeyboardShortcutsDialog onClose={closeShortcuts} open={shortcutsOpen} />
           <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestRef} onOpenPage={openGitLabPage} />
           <Box key={sessionKey} sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {/* The same pane as the restored screen, so nothing moves when it arrives. */}

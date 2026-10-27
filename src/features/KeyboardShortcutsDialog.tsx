@@ -5,7 +5,7 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Typography from '@mui/material/Typography'
-import { Fragment } from 'react'
+import { Fragment, memo } from 'react'
 
 import { Kbd } from '../components/Pane'
 
@@ -43,7 +43,8 @@ const shortcutGroups: Array<{ title: string; items: Array<{ keys: string[][]; la
 ]
 
 /** Every keyboard shortcut of the client in one place; `?` opens it outside text input. */
-export function KeyboardShortcutsDialog({ onClose, open }: { onClose: () => void; open: boolean }) {
+/** Memoized: the closed dialog would otherwise build its whole list again on every navigation. */
+export const KeyboardShortcutsDialog = memo(function KeyboardShortcutsDialog({ onClose, open }: { onClose: () => void; open: boolean }) {
   return (
     <Dialog aria-labelledby="keyboard-shortcuts-title" fullWidth maxWidth="xs" onClose={onClose} open={open}>
       <DialogTitle id="keyboard-shortcuts-title">キーボードショートカット</DialogTitle>
@@ -79,4 +80,4 @@ export function KeyboardShortcutsDialog({ onClose, open }: { onClose: () => void
       </DialogActions>
     </Dialog>
   )
-}
+})

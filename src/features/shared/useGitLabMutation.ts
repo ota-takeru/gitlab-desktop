@@ -42,6 +42,8 @@ interface MutationEntry {
   persistedReceipt: PendingOperation | null
   resetPromise: Promise<boolean> | null
   snapshot: MutationSnapshot
+  /** Whether hydration was ready when `snapshot` got its identity, i.e. the lock state screens last rendered. */
+  snapshotReady: boolean
   /** Settles when the write being sent has finished, whatever its outcome. */
   inFlight: Promise<void> | null
   listeners: Set<() => void>
@@ -74,6 +76,7 @@ function getEntry(sessionId: string | null, resourceKey: string): MutationEntry 
     safetyOwners: new Map(),
     sessionId,
     snapshot: IDLE_SNAPSHOT,
+    snapshotReady: !durable,
   }
   registry.set(key, entry)
   return entry
@@ -124,8 +127,11 @@ function getPersistedReceipt(entry: MutationEntry): PendingOperation | null {
 function notify(entry: MutationEntry): void {
   // Hydration can change the lock state while the visible mutation status is
   // still `idle`. Give useSyncExternalStore a new snapshot identity so that
-  // `isLocked` and auto-update safety are recomputed when the lookup settles.
-  entry.snapshot = { ...entry.snapshot }
+  // `isLocked` is recomputed when the lookup settles, but only then: a lookup
+  // that starts (still locked) would render the whole review again for nothing.
+  const ready = entry.hydration === 'ready'
+  if (ready !== entry.snapshotReady) entry.snapshot = { ...entry.snapshot }
+  entry.snapshotReady = ready
   const unsafe = isUnsafe(entry)
   for (const owner of entry.safetyOwners.values()) owner.setUnsafe?.(unsafe)
   if (!unsafe) {
@@ -144,6 +150,9 @@ function publish(entry: MutationEntry, snapshot: MutationSnapshot): void {
 
 function pruneEntry(entry: MutationEntry): void {
   if (entry.hydration !== 'ready' || entry.listeners.size || entry.safetyOwners.size || entry.snapshot.status === 'pending' || entry.snapshot.status === 'unknown') return
+  // A settled lookup that found nothing to verify stays: a kept, hidden MR that shows again would
+  // otherwise look its receipt up again, with its controls locked and the client rendered twice meanwhile.
+  if (entry.durable && entry.snapshot.status === 'idle' && !entry.persistedReceipt) return
   const key = registryKey(entry.sessionId, entry.resourceKey)
   if (registry.get(key) === entry) registry.delete(key)
 }

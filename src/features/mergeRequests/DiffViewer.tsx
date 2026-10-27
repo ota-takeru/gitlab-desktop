@@ -97,6 +97,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const restoreDiffAnchor = useRef<{ path: string; line: number } | null>(null)
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
   const [blameOpen, setBlameOpen] = useState(false)
+  // Diff-only controls keep their place in the whole-file view, so the header does not rewrap and move the content and the view switch under the pointer.
+  const diffOnlySx = view === 'diff' ? undefined : { visibility: 'hidden' } as const
   const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && (!selectedDiff.deletedFile || fileSource?.beforeSha))
   // GitLab's diff API has no whitespace option, so whitespace-only changes are folded here.
   const [whitespaceIgnored, setWhitespaceIgnored] = useState(readIgnoreWhitespace)
@@ -495,14 +497,14 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               {/* Long paths lose their start, not their name; the isolate keeps a leading '.' in place. */}
               <Tooltip title={displayedPath ?? ''}><Typography noWrap sx={{ direction: 'rtl', fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0, textAlign: 'left' }} variant="body2"><bdi dir="ltr">{displayedPath ?? 'ファイルを選択'}</bdi></Typography></Tooltip>
               {diffs.length > 1 ? <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{displayedIndex + 1}/{diffs.length}</Typography> : null}
-              {selectedDiff && view === 'diff' ? <Typography aria-label={`追加${lineCounts.added}行、削除${lineCounts.removed}行`} component="span" sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap' }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
+              {selectedDiff ? <Typography aria-label={`追加${lineCounts.added}行、削除${lineCounts.removed}行`} component="span" sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap', ...diffOnlySx }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
             </Stack>
             {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title="確認済みにすると次の未確認ファイルを開きます。head SHAまたはファイル差分が変わると未確認に戻ります。"><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={toggleReviewed} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? '確認済み' : '確認済みにする'}</Button></Tooltip> : null}
-            {view === 'diff' ? <Tooltip describeChild title={whitespaceIgnored ? '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示しています。行の位置がずれる可能性があるため、この間は新しい行コメントを書けません。' : '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示します。表示中は新しい行コメントを書けません。'}><ToggleButton onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25 }} value="ignore-whitespace">空白を無視</ToggleButton></Tooltip> : null}
-            {view === 'diff' ? <ToggleButtonGroup aria-label="差分の表示形式" exclusive onChange={(_, next: DiffLayout | null) => { if (next) changeLayout(next) }} size="small" sx={{ flexShrink: 0 }} value={layout}>
+            <Tooltip describeChild title={whitespaceIgnored ? '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示しています。行の位置がずれる可能性があるため、この間は新しい行コメントを書けません。' : '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示します。表示中は新しい行コメントを書けません。'}><ToggleButton onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25, ...diffOnlySx }} value="ignore-whitespace">空白を無視</ToggleButton></Tooltip>
+            <ToggleButtonGroup aria-label="差分の表示形式" exclusive onChange={(_, next: DiffLayout | null) => { if (next) changeLayout(next) }} size="small" sx={{ flexShrink: 0, ...diffOnlySx }} value={layout}>
               <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
               <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
-            </ToggleButtonGroup> : null}
+            </ToggleButtonGroup>
             {canBlame ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
             {view === 'diff' && markdownDiff && parsed.status === 'valid' && !diffSearch.trim() ? <Button aria-label={renderedMarkdownDiff ? 'Markdown差分のソースを表示' : 'Markdown差分をプレビュー表示'} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? 'ソース差分' : 'Markdownプレビュー'}</Button> : null}
              {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) changeFileView(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
