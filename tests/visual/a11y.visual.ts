@@ -17,6 +17,8 @@ async function open(page: Page, hash: string, ready: string) {
   await page.clock.setFixedTime(new Date('2026-01-10T18:00:00+09:00'))
   await page.goto(`/?fixture=ready${hash}`)
   await expect(page.getByText(ready).first()).toBeVisible()
+  // Colours are measured once settled: a button turning enabled is otherwise caught mid-transition.
+  await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' })
 }
 
 for (const theme of ['light', 'dark'] as const) {

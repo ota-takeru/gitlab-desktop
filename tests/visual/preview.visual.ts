@@ -9,7 +9,8 @@ const mr = '#client/mrs?reviewer=self&state=opened&mr=101-42'
 
 test('preview README on project overview', async ({ page }, testInfo) => {
   await page.goto(`${root}#client/projects`)
-  const project = page.getByRole('button', { name: /Desktop Client（platform\/desktop-client）/ })
+  // A project row is named by what it shows: the name, then the path below it.
+  const project = page.getByRole('button', { name: /^Desktop Client .*platform\/desktop-client/u })
   await expect(project).toBeVisible()
   await project.click()
   await expect(page.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
