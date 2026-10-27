@@ -26,6 +26,13 @@
       "capabilities": ["main"]
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["gitlab-desktop"]
+      }
+    }
+  },
   "bundle": {
     "active": false,
     "targets": ["nsis"],

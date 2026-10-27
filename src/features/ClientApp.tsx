@@ -66,6 +66,7 @@ import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
 import { useOpenMarkdownLink } from './shared/useOpenMarkdownLink'
+import { useDeepLinks } from './shared/useDeepLinks'
 import type { GitLabPageLocation } from './shared/gitlabPageLocation'
 import { UserView, type UserTab } from './users/UserView'
 import { clearGitLabMutationStates } from './shared/useGitLabMutation'
@@ -437,6 +438,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }
   const openGitLabPage = useCallback((location: GitLabPageLocation) => navigate(location.route, location.params), [navigate])
   const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef, (user) => navigate('user', { username: user.username }), openGitLabPage)
+  useDeepLinks(openMarkdownLink, session?.instanceUrl)
   const changeUserTab = (tab: UserTab) => {
     const current = readClientLocation(true)
     navigate('user', { ...withoutSelection(current.params), userTab: tab })
