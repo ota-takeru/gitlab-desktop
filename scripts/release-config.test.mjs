@@ -6,7 +6,7 @@ import { test } from 'node:test'
 
 import { createReleaseConfig, UPDATER_ENDPOINT } from './release-config.mjs'
 import { readProjectVersions, validateReleaseTag } from './release-guard.mjs'
-import { decideRelease, isDocumentationOnly } from './release-main.mjs'
+import { decideRelease, isDocumentationOnly, isOutsideApplication } from './release-main.mjs'
 import { createUpdaterManifest, writeReleaseAssets } from './updater-manifest.mjs'
 import { nextVersion, writeProjectVersion } from './version-bump.mjs'
 
@@ -63,6 +63,15 @@ test('documentation-only pushes and other branches are not released', () => {
   strictEqual(decideRelease({ ...mainPush, changedPaths: ['docs/a.md', 'src/App.tsx'] }).autoBump, true)
   strictEqual(decideRelease({ ...mainPush, refName: 'feature' }).shouldRelease, false)
   strictEqual(isDocumentationOnly([]), false)
+})
+
+test('pushes that change only tests, baselines, CI or test settings are not released', () => {
+  const unchangedApp = ['tests/visual/a11y.visual.ts', 'tests/visual/screenshots/sidebar-dark-960x640.png', 'src/features/App.test.tsx', 'src/test/setup.ts', 'src-tauri/src/native/tests.rs', '.github/workflows/ci.yml', '.github/dependabot.yml', 'vitest.config.ts', 'playwright.config.ts', 'scripts/release-config.test.mjs']
+  strictEqual(decideRelease({ ...mainPush, changedPaths: unchangedApp }).shouldRelease, false)
+  for (const shipped of ['src/features/App.tsx', 'src-tauri/src/native.rs', 'package.json', 'package-lock.json', 'src-tauri/Cargo.lock', 'vite.config.ts', 'scripts/release-main.mjs', 'src-tauri/tauri.conf.json']) {
+    strictEqual(decideRelease({ ...mainPush, changedPaths: [...unchangedApp, shipped] }).autoBump, true, shipped)
+  }
+  strictEqual(isOutsideApplication([]), false)
 })
 
 test('tag pushes and manual runs publish the existing tag', () => {

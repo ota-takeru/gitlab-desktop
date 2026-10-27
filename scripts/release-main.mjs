@@ -13,11 +13,30 @@ export function isDocumentationOnly(paths) {
   return paths.length > 0 && paths.every((path) => path.startsWith('docs/') || /\.md$/i.test(path))
 }
 
+// Files that only check, document or automate the project; the installer is built without them.
+const NOT_SHIPPED = [
+  /^docs\//u,
+  /\.md$/iu,
+  /^tests\//u,
+  /\.test\.(?:ts|tsx|mjs)$/u,
+  /^src\/test\//u,
+  /^src-tauri\/src\/(?:.+\/)?tests\.rs$/u,
+  /^\.github\//u,
+  /^(?:vitest|playwright)\.config\.ts$/u,
+  /^eslint\.config\.(?:js|mjs|ts)$/u,
+]
+
+/** Whether every changed file is one the released application does not contain. */
+export function isOutsideApplication(paths) {
+  return paths.length > 0 && paths.every((path) => NOT_SHIPPED.some((pattern) => pattern.test(path)))
+}
+
 /**
  * Decides what a workflow run publishes.
  * - A tag push or a manual run publishes that existing tag.
  * - A main push whose version changed publishes the new version.
- * - A main push without a version change bumps the patch version, unless it only changes documentation.
+ * - A main push without a version change bumps the patch version, unless it only changes files the
+ *   application does not contain: documentation, tests and their baselines, test and lint settings, CI.
  */
 export function decideRelease({ event, refName, refType, tag, version, previousVersion, changedPaths, tagExists }) {
   if (event === 'workflow_dispatch' || (event === 'push' && refType === 'tag')) {
@@ -36,6 +55,7 @@ export function decideRelease({ event, refName, refType, tag, version, previousV
   }
 
   if (isDocumentationOnly(changedPaths)) return { ...NO_RELEASE, reason: 'Only documentation changed; no release will be published.' }
+  if (isOutsideApplication(changedPaths)) return { ...NO_RELEASE, reason: 'Only tests, CI or project settings changed; no release will be published.' }
 
   const releaseTag = `v${nextVersion(version, 'patch')}`
   if (tagExists(releaseTag)) throw new Error(`Release tag ${releaseTag} already exists; bump the version manually before pushing.`)

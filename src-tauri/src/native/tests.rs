@@ -933,6 +933,11 @@ fn normalizes_cloud_and_self_managed_subpath_and_rejects_secrets() {
         account_key("https://a/", "1"),
         account_key("https://a/", "2")
     );
+    // Saved caches and drafts are filed under this key, so its form must not change.
+    assert_eq!(
+        account_key("https://gitlab.example/", "42"),
+        "89a5a67281df6baef3e205921436358caa12c763ec447fa4b0e18a05ae03a763"
+    );
 }
 
 #[test]

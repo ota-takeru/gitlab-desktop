@@ -1,6 +1,6 @@
 # 配布と自動更新
 
-公開リポジトリ `ota-takeru/gitlab-desktop` のmainへpushすると、ドキュメントだけの変更を除き、検査後に署名済みWindows NSISリリースを自動公開します。配布版は起動時と表示中の6時間ごとに更新を確認します。未保存の入力や送信処理がなく、2分間操作がないときに自動インストール・再起動します。更新通知の「後で」から延期できます。
+公開リポジトリ `ota-takeru/gitlab-desktop` のmainへpushすると、アプリに含まれないファイルだけの変更を除き、検査後に署名済みWindows NSISリリースを自動公開します。配布版は起動時と表示中の6時間ごとに更新を確認します。未保存の入力や送信処理がなく、2分間操作がないときに自動インストール・再起動します。更新通知の「後で」から延期できます。
 
 ## GitHub 側の設定
 
@@ -35,7 +35,7 @@ git push origin "v$version"
 
 ビルドジョブが NSIS セットアップファイルと署名ファイルを作り、`scripts/updater-manifest.mjs` で `latest.json` を生成します。公開ジョブはこの3つを同じ公開 GitHub Release にアップロードします。Rust のビルド結果は `Swatinem/rust-cache` で main のキャッシュとして保存し、次回の依存クレートの再コンパイルを省きます。既存の `v<version>` タグを GitHub の Actions 画面から `workflow_dispatch` で選んで再実行することもできます。その場合もタグとバージョンの一致、およびタグがチェックアウトされたコミットを指すことを検証します。
 
-ドキュメントだけを変えた main への push は CI の Windows 検査だけを実行します。それ以外の main への push と merge は上記の自動リリース対象になります。`v*` タグの push と `workflow_dispatch` による既存タグの再実行も利用できます。
+ドキュメント、テスト（単体・Playwright・Rustのテストモジュール）とその基準画像、テストとlintの設定、`.github/`（CI・Dependabot）だけを変えた main への push は、検査だけを実行してリリースしません。判定は`scripts/release-main.mjs`の`isOutsideApplication`にあり、依存関係（`package.json`・lockファイル）やビルド設定（`vite.config.ts`・`tauri.conf.json`）の変更はアプリに影響するためリリース対象です。それ以外の main への push と merge は上記の自動リリース対象になります。`v*` タグの push と `workflow_dispatch` による既存タグの再実行も利用できます。
 
 ## アプリ側の動作
 

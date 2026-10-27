@@ -99,8 +99,8 @@ mainへpushすると、検査後にActionsがタグ・インストーラー・�
 | `npm run design:guard` | テーマ外の生の色、フロントエンドの直接HTTP呼び出しを検出 |
 | `npm test` | フロントエンドの動作テスト |
 | `npm run build` | TypeScriptとViteビルド |
-| `npm run ui:snap` | UIカタログの各節と、固定データで表示した実際のMR一覧・議論・差分を明暗 × 960×640 / 1280×840 で、取得中・失敗・空・古いキャッシュの状態を明暗 × 1280×840 で撮影し、`tests/visual/screenshots` の基準画像と比較。差分は `output/ui-snap/report` で確認 |
-| `npm run ui:snap:update` | 意図した見た目の変更後に基準画像を撮り直す |
+| `npm run ui:snap` | UIカタログの各節と、固定データで表示した実際のMR一覧・議論・差分を明暗 × 960×640 / 1280×840 で、取得中・失敗・空・古いキャッシュの状態を明暗 × 1280×840 で撮影し、基準画像と比較。ローカルではこの端末の基準（`output/ui-snap/baselines`、初回に記録）と比べ、CIでは `tests/visual/screenshots` と比べる。差分は `output/ui-snap/report` で確認 |
+| `npm run ui:snap:update` | 意図した見た目の変更後に、この端末の基準画像を撮り直す。CIの基準画像（`tests/visual/screenshots`）は、GitHub Actions の UI Preview を `update_snapshots` 付きで手動実行し、成果物を取り込んで更新する |
 | `npm run native:check` | Rustの書式・静的検査・テスト |
 | `npm run tauri -- info` | Tauri開発環境の診断 |
 

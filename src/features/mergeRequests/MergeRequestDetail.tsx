@@ -21,7 +21,7 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
 import { useConfirm, useNotify } from '../../components/feedbackContext'
@@ -249,12 +249,17 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const mrAwardsQuery = useMemo<MrAwardsQuery | null>(() => activeTab === 'overview' ? { iid, kind: 'mrAwards', projectId: resourceId } : null, [activeTab, iid, resourceId])
   const mrAwardsResult = useGitLabQuery<MrAwardsQuery>(session?.id ?? null, mrAwardsQuery)
   const mergeRequestNotifications = useLoadedMergeRequestNotifications(session?.id ?? null, resourceId, iid)
-  useEffect(() => { if (session && mergeRequest) workspace.recordRecent({ projectId: resourceId, iid }) }, [session?.id, resourceId, iid, Boolean(mergeRequest)]) // eslint-disable-line react-hooks/exhaustive-deps
+  // These record what is shown when the MR, the account or what is known of the MR changes, reading the latest workspace.
+  const recordRecent = useEffectEvent(() => { if (session && mergeRequest) workspace.recordRecent({ projectId: resourceId, iid }) })
+  const mergeRequestLoaded = Boolean(mergeRequest)
+  useEffect(() => { recordRecent() }, [session?.id, resourceId, iid, mergeRequestLoaded])
   // The sidebar tab shows the title and state as last seen here.
   const tabMeta = mergeRequest ? { projectPath: mergeRequest.projectPath ?? '', state: mergeRequest.state, title: mergeRequest.title } : null
-  useEffect(() => { if (session && tabMeta) workspace.rememberTab({ projectId: resourceId, iid }, tabMeta) }, [session?.id, resourceId, iid, tabMeta?.title, tabMeta?.state, tabMeta?.projectPath]) // eslint-disable-line react-hooks/exhaustive-deps
+  const rememberTab = useEffectEvent(() => { if (session && tabMeta) workspace.rememberTab({ projectId: resourceId, iid }, tabMeta) })
+  useEffect(() => { rememberTab() }, [session?.id, resourceId, iid, tabMeta?.title, tabMeta?.state, tabMeta?.projectPath])
   // The close confirmation names this MR if it holds unsent input.
-  useEffect(() => { if (tabMeta) rememberComposerTarget(session, resourceId, iid, { projectPath: tabMeta.projectPath, title: tabMeta.title }) }, [session, resourceId, iid, tabMeta?.title, tabMeta?.projectPath]) // eslint-disable-line react-hooks/exhaustive-deps
+  const rememberTarget = useEffectEvent(() => { if (tabMeta) rememberComposerTarget(session, resourceId, iid, { projectPath: tabMeta.projectPath, title: tabMeta.title }) })
+  useEffect(() => { rememberTarget() }, [session, resourceId, iid, tabMeta?.title, tabMeta?.projectPath])
   useEffect(() => {
     if (!session || accessDenied) return
     workspace.observe({ projectId: resourceId, iid }, commentNotes, discussionWindow.ready && !discussionWindow.error)
@@ -286,18 +291,22 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     return unreadNotes.sort(compareNotesByTime)[0]?.id ?? null
   }, [commentNotes, currentUserId, unreadNoteIds])
   const latestNoteId = useMemo(() => [...commentNotes].sort(compareNotesByTime).at(-1)?.id ?? null, [commentNotes])
+  // The place is set once the discussion settles; later unread changes must not move it.
+  const sessionId = session?.id
+  const scrollKey = useEffectEvent(() => `${scrollPositionScope}:${sessionId}:${resourceId}:${iid}`)
+  const placeAtLatest = useEffectEvent((host: HTMLElement, section: HTMLElement) => positionAtLatest(host, section, earliestUnreadNoteId, latestNoteId))
   useLayoutEffect(() => {
     const host = sectionRef.current?.closest('main')
-    if (!host || !session || !discussionViewSettled || !sectionRef.current) return
-    const key = `${scrollPositionScope}:${session.id}:${resourceId}:${iid}`
+    if (!host || !sessionId || !discussionViewSettled || !sectionRef.current) return
+    const key = scrollKey()
     const saved = commentScrollPositions.get(key)
     if (saved !== undefined) host.scrollTop = saved
-    else positionAtLatest(host, sectionRef.current, earliestUnreadNoteId, latestNoteId)
+    else placeAtLatest(host, sectionRef.current)
     const remember = () => { commentScrollPositions.set(key, host.scrollTop); if (commentScrollPositions.size > 100) commentScrollPositions.delete(commentScrollPositions.keys().next().value!) }
     remember()
     host.addEventListener('scroll', remember, { passive: true })
     return () => { remember(); host.removeEventListener('scroll', remember) }
-  }, [discussionViewSettled, iid, resourceId, session?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [discussionViewSettled, iid, resourceId, sessionId])
   useLayoutEffect(() => {
     const target = pendingThread.current
     if (!target || !discussionViewSettled) return

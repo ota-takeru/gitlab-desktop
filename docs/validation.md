@@ -1,5 +1,15 @@
 # 検証結果
 
+## v0.15.5〜v0.15.7 と次版の検証（2026-10-27）
+
+- 自動テスト: フロントエンド88ファイル・699件、リリース設定12件、Rust 145件が成功（実機・配布物に依存する7件は除外）。lint（警告0件）、design guard、TypeScript、production build（500kBを超えるチャンクなし）、Rust fmt・clippyが成功。
+- カバレッジ（出荷するコードのみ、`src/mock`・`src/pages`を除く）: 命令84.9%・分岐80.3%・関数84.1%・行88.8%。CIはこれを少し下回る閾値で実行する。
+- アクセシビリティ: axe（WCAG 2.1 A/AA）で、固定データのMR一覧・概要・議論・変更、プロジェクト、コード、設定を明暗両テーマで検査し、違反0件。修正前はリスト構造、表示文字を含まない読み上げ名、差分の行番号のコントラスト、検索欄のARIA属性で違反があった。
+- 画面比較: CI（windows-latest）で作った基準画像とCIで比べ、UIカタログと実画面の20件が一致（[PR #14](https://github.com/ota-takeru/gitlab-desktop/pull/14)、基準画像の作成は[実行40463456826](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40463456826)）。ローカルは端末ごとの基準と比べる。
+- 公開: [v0.15.5](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40441915628)、[v0.15.6](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40458949427)、[v0.15.7](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40464380803)の署名付きリリースが成功。
+- 固定データのプレビューで目視確認したもの: リポジトリ画像の表示経路、旧版コメントの自動照合と警告色、概要タブを先頭にしたMR、ナビゲーションの場所の色（明暗）、承認時の完了通知の色とアニメーション。
+- 未確認: 実際のGitLabでのリポジトリ画像・相対リンク・名前を変えたファイルの照合、インストール後の`gitlab-desktop://`の登録と起動中ウィンドウへの受け渡し、v0.15.7への自動更新。認証情報と実機が必要なため。
+
 ## 入力保護と製品品質の強化（v0.2.0 / 2026-10-04）
 
 - `npm run check`成功。フロントエンド162件、リリース設定3件、Rust54件、合計219件の通常テスト。lint / design guard / TypeScript / production build / Rust fmt / clippyが成功。既存Fast Refresh warning 6件、JSサイズwarningは残っている。

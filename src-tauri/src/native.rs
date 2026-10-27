@@ -162,7 +162,11 @@ pub fn normalize_instance(input: &str) -> Result<Url, AppError> {
 }
 
 fn account_key(instance: &str, user: &str) -> String {
-    format!("{:x}", Sha256::digest(format!("{instance}\n{user}")))
+    // Lowercase hex, as before: the key names each account's saved cache and drafts.
+    Sha256::digest(format!("{instance}\n{user}"))
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn credential_entry(key: &str) -> Result<keyring::Entry, AppError> {
