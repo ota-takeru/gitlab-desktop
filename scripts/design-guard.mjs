@@ -21,7 +21,7 @@ const typographyExempt = (path) => /\.test\.tsx?$/u.test(path) || path.startsWit
 // alongside them so a // inside a string does not start a comment.
 const textExempt = (path) => typographyExempt(path) || path.startsWith(join('src', 'mock')) || path.startsWith(join('src', 'components', 'mock')) || path.startsWith(join('src', 'i18n'))
 const commentOrStringPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/gu
-const japanesePattern = /[　-ヿ㐀-鿿！-｠]+/gu
+const japanesePattern = /[\u3000-\u30ff\u3400-\u9fff\uff01-\uff60]+/gu
 const withoutComments = (source) => source.replace(commentOrStringPattern, (token) => token.startsWith('//') || token.startsWith('/*') ? token.replace(/[^\n]/gu, ' ') : token)
 const violations = []
 const lineOf = (source, index) => source.slice(0, index).split('\n').length
