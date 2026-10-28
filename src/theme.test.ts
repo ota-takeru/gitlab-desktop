@@ -82,6 +82,6 @@ describe('language fonts', () => {
     expect(family('zh-Hant').indexOf('Microsoft JhengHei UI')).toBeLessThan(family('zh-Hant').indexOf('Yu Gothic UI'))
     expect(family('ko').indexOf('Malgun Gothic')).toBeLessThan(family('ko').indexOf('Yu Gothic UI'))
     expect(family('en')).toBe(family('ja'))
-    expect(family('ja')).not.toContain('YaHei')
+    expect(family('ja').indexOf('Yu Gothic UI')).toBeLessThan(family('ja').indexOf('Microsoft YaHei UI'))
   })
 })

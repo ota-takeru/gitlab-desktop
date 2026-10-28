@@ -166,16 +166,20 @@ const tokens: Record<PaletteMode, Tokens> = {
 }
 
 // Han characters take a different form in each CJK language, so the language's own font comes first.
-// Other languages keep the Japanese fonts as the fallback for Japanese text from GitLab.
+// Other languages start with the Japanese fonts for Japanese text from GitLab. The rest follow, so a
+// character a font lacks, such as a simplified Chinese one in Japanese fonts, falls back the same way
+// on every machine.
 const japaneseFonts = '"Noto Sans JP", "Yu Gothic UI", Meiryo'
 const cjkFonts: Partial<Record<Locale, string>> = {
+  ja: japaneseFonts,
   'zh-Hans': '"Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei"',
   'zh-Hant': '"Noto Sans TC", "Microsoft JhengHei UI", "Microsoft JhengHei"',
   ko: '"Noto Sans KR", "Malgun Gothic"',
 }
 
 export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
-  const languageFonts = cjkFonts[locale] ? `${cjkFonts[locale]}, ${japaneseFonts}` : japaneseFonts
+  const first = cjkFonts[locale] ?? japaneseFonts
+  const languageFonts = [first, ...Object.values(cjkFonts).filter((fonts) => fonts !== first)].join(', ')
   const palette = tokens[mode]
   const selected = mode === 'dark' ? alpha(palette.ink, 0.09) : alpha(palette.primary, 0.1)
   // Text on the main colour: white on the light theme's dark blue, dark ink on the dark theme's light blue.
@@ -297,6 +301,10 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             scrollbarWidth: 'thin',
           },
           '::selection': { backgroundColor: alpha(palette.primary, 0.3) },
+          // GitLab text may be Arabic or Hebrew in an otherwise left-to-right page. Each paragraph takes
+          // its direction from its own first letter, so such a title or comment reads and aligns right
+          // to left while the interface text stays as it is.
+          'p, li, dt, dd, h1, h2, h3, h4, h5, h6, blockquote, figcaption, td, th, textarea, input': { unicodeBidi: 'plaintext' },
           // High contrast replaces background colours, so states drawn only with a fill or a bar need a shape.
           [forcedColors]: {
             ':focus-visible': { outlineColor: 'Highlight' },
