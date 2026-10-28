@@ -1,0 +1,12 @@
+{
+  "tabs.label": "Vistas del usuario",
+  "tabs.mergeRequests": "MR creadas",
+  "tabs.projects": "Proyectos",
+  "loading": "Cargando usuario…",
+  "retry": "Reintentar",
+  "notFound.title": "Usuario no encontrado",
+  "notFound.description": "Es posible que el nombre de usuario haya cambiado o que esta conexión no pueda ver al usuario.",
+  "status.saved": "Guardado · {time}",
+  "status.refreshing": "Actualizando…",
+  "refreshFailed": "Mostrando la información guardada del usuario. Error al actualizar: {message}"
+}

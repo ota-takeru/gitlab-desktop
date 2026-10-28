@@ -47,9 +47,9 @@ describe('message files', () => {
     }
   })
 
-  it('translates every message into Japanese', () => {
+  it.each(supportedLocales)('%s translates every message', (locale) => {
     for (const file of Object.keys(en)) {
-      expect(Object.keys(messageFiles.ja[file] ?? {}).sort(), file).toEqual(Object.keys(en[file]).sort())
+      expect(Object.keys(messageFiles[locale]?.[file] ?? {}).sort(), `${locale}: ${file}`).toEqual(Object.keys(en[file]).sort())
     }
   })
 })
@@ -57,12 +57,22 @@ describe('message files', () => {
 describe('matchLocale', () => {
   it('takes the first supported language, by exact tag or base language', () => {
     expect(matchLocale(['ja-JP', 'en-US'])).toBe('ja')
-    expect(matchLocale(['fr-FR', 'en-GB', 'ja'])).toBe('en')
+    expect(matchLocale(['nl-NL', 'en-GB', 'ja'])).toBe('en')
     expect(matchLocale(['EN'])).toBe('en')
   })
 
+  it('matches Chinese by script and other languages by any variant', () => {
+    expect(matchLocale(['zh-TW'])).toBe('zh-Hant')
+    expect(matchLocale(['zh-HK'])).toBe('zh-Hant')
+    expect(matchLocale(['zh-CN'])).toBe('zh-Hans')
+    expect(matchLocale(['zh'])).toBe('zh-Hans')
+    expect(matchLocale(['pt-PT'])).toBe('pt-BR')
+    expect(matchLocale(['de-AT'])).toBe('de')
+  })
+
   it('falls back to English when nothing matches', () => {
-    expect(matchLocale(['fr', 'de-DE'])).toBe('en')
+    expect(matchLocale(['nl', 'sv-SE'])).toBe('en')
+    expect(matchLocale(['not a tag'])).toBe('en')
     expect(matchLocale([])).toBe('en')
   })
 })

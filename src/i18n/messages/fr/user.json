@@ -1,0 +1,12 @@
+{
+  "tabs.label": "Vues de l’utilisateur",
+  "tabs.mergeRequests": "MR créées",
+  "tabs.projects": "Projets",
+  "loading": "Chargement de l’utilisateur…",
+  "retry": "Réessayer",
+  "notFound.title": "Utilisateur introuvable",
+  "notFound.description": "Le nom d’utilisateur a peut-être changé, ou cette connexion ne peut pas voir cet utilisateur.",
+  "status.saved": "Enregistré · {time}",
+  "status.refreshing": "Mise à jour…",
+  "refreshFailed": "Informations utilisateur enregistrées affichées. Échec de l’actualisation : {message}"
+}

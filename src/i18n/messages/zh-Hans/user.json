@@ -1,0 +1,12 @@
+{
+  "tabs.label": "用户视图",
+  "tabs.mergeRequests": "创建的 MR",
+  "tabs.projects": "项目",
+  "loading": "正在加载用户…",
+  "retry": "重试",
+  "notFound.title": "未找到用户",
+  "notFound.description": "用户名可能已更改，或此连接无法查看该用户。",
+  "status.saved": "已保存 · {time}",
+  "status.refreshing": "正在更新…",
+  "refreshFailed": "正在显示已保存的用户信息。刷新失败：{message}"
+}

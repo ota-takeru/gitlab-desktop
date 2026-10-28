@@ -3,7 +3,7 @@ import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { createTheme, ThemeProvider } from '@mui/material/styles'
-import { enUS, jaJP } from '@mui/material/locale'
+import { deDE, enUS, esES, frFR, jaJP, koKR, ptBR, ruRU, zhCN, zhTW } from '@mui/material/locale'
 
 import { createAppTheme } from './theme'
 import { ClientApp } from './features/ClientApp'
@@ -16,7 +16,7 @@ const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./pages/Developm
 const FixtureApp = import.meta.env.DEV ? lazy(() => import('./pages/FixtureApp')) : null
 
 /** MUI's own texts (pagination, autocomplete and so on) follow the app language. */
-const muiLocales: Record<Locale, typeof enUS> = { en: enUS, ja: jaJP }
+const muiLocales: Record<Locale, typeof enUS> = { en: enUS, ja: jaJP, 'zh-Hans': zhCN, 'zh-Hant': zhTW, ko: koKR, de: deDE, fr: frFR, es: esES, 'pt-BR': ptBR, ru: ruRU }
 
 /** Development screens accept `theme=light|dark` (in the hash or the query) to open in a fixed theme without saving it. */
 function routeThemeOverride(route: string): 'light' | 'dark' | null {

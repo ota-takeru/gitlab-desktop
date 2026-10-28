@@ -1,0 +1,8 @@
+{
+  "justNow": "剛剛",
+  "minutesAgo": "{count, plural, other {# 分鐘前}}",
+  "hoursAgo": "{count, plural, other {# 小時前}}",
+  "yesterday": "昨天",
+  "daysAgo": "{count, plural, other {# 天前}}",
+  "unknown": "時間不明"
+}

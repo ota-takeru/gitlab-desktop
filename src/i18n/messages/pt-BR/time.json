@@ -1,0 +1,8 @@
+{
+  "justNow": "agora mesmo",
+  "minutesAgo": "{count, plural, one {há # minuto} other {há # minutos}}",
+  "hoursAgo": "{count, plural, one {há # hora} other {há # horas}}",
+  "yesterday": "ontem",
+  "daysAgo": "{count, plural, one {há # dia} other {há # dias}}",
+  "unknown": "horário desconhecido"
+}

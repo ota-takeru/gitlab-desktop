@@ -1,0 +1,8 @@
+{
+  "justNow": "только что",
+  "minutesAgo": "{count, plural, one {# минуту назад} few {# минуты назад} many {# минут назад} other {# минуты назад}}",
+  "hoursAgo": "{count, plural, one {# час назад} few {# часа назад} many {# часов назад} other {# часа назад}}",
+  "yesterday": "вчера",
+  "daysAgo": "{count, plural, one {# день назад} few {# дня назад} many {# дней назад} other {# дня назад}}",
+  "unknown": "время неизвестно"
+}

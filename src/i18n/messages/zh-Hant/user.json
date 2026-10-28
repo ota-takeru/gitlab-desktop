@@ -1,0 +1,12 @@
+{
+  "tabs.label": "使用者檢視",
+  "tabs.mergeRequests": "建立的 MR",
+  "tabs.projects": "專案",
+  "loading": "正在載入使用者…",
+  "retry": "重試",
+  "notFound.title": "找不到使用者",
+  "notFound.description": "使用者名稱可能已變更，或此連線無法看到該使用者。",
+  "status.saved": "已儲存 · {time}",
+  "status.refreshing": "更新中…",
+  "refreshFailed": "正在顯示已儲存的使用者資訊。重新整理失敗：{message}"
+}
