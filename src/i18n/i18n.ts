@@ -1,15 +1,22 @@
 import { IntlMessageFormat } from 'intl-messageformat'
 
-import en from './messages/en.json'
+import { en as englishFiles } from './messages/en'
 import { readLocalePreference, resolveLocale, saveLocalePreference, sourceLocale, type Locale, type LocalePreference } from './locales'
 
-/** Message keys are the keys of the English source file. */
-export type MessageKey = keyof typeof en
+type Files = typeof englishFiles
+/** A message key is its feature file's name and its key in that file: `settings.title` is `title` in settings.json. */
+export type MessageKey = { [File in keyof Files]: `${File}.${keyof Files[File] & string}` }[keyof Files]
 export type MessageValues = Record<string, string | number>
 type Messages = Partial<Record<MessageKey, string>>
 
+function prefixed(file: string, messages: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(messages).map(([key, message]) => [`${file}.${key}`, message]))
+}
+
+const en = Object.assign({}, ...Object.entries(englishFiles).map(([file, messages]) => prefixed(file, messages))) as Record<MessageKey, string>
+
 // English is bundled as the fallback; other languages load when chosen, so adding one does not grow the start-up bundle.
-const loaders = import.meta.glob<Messages>(['./messages/*.json', '!./messages/en.json'], { import: 'default' })
+const loaders = import.meta.glob<Record<string, string>>(['./messages/*/*.json', '!./messages/en/*.json'], { import: 'default' })
 
 interface State { preference: LocalePreference; locale: Locale; messages: Messages }
 
@@ -20,8 +27,9 @@ const listeners = new Set<() => void>()
 
 async function loadMessages(locale: Locale): Promise<Messages> {
   if (locale === sourceLocale) return en
-  const load = loaders[`./messages/${locale}.json`]
-  return load ? load() : {}
+  const files = Object.entries(loaders).filter(([path]) => path.startsWith(`./messages/${locale}/`))
+  const loaded = await Promise.all(files.map(async ([path, load]) => prefixed(path.slice(path.lastIndexOf('/') + 1, -'.json'.length), await load())))
+  return Object.assign({}, ...loaded) as Messages
 }
 
 async function apply(preference: LocalePreference): Promise<void> {

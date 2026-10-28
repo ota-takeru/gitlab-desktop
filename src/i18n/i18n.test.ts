@@ -4,9 +4,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { formatRelativeTime } from '../lib/format'
 import { currentLocale, setLocalePreference, translate } from './i18n'
 import { matchLocale, readLocalePreference, supportedLocales } from './locales'
-import en from './messages/en.json'
 
-const messageFiles = import.meta.glob<Record<string, string>>('./messages/*.json', { eager: true, import: 'default' })
+// Every language's files, keyed by language, then by feature file.
+const messageFiles: Record<string, Record<string, Record<string, string>>> = {}
+for (const [path, messages] of Object.entries(import.meta.glob<Record<string, string>>('./messages/*/*.json', { eager: true, import: 'default' }))) {
+  const [, locale, file] = /^\.\/messages\/([^/]+)\/([^/]+)\.json$/u.exec(path) ?? []
+  messageFiles[locale] = { ...messageFiles[locale], [file]: messages }
+}
+const en = messageFiles.en
 
 /** Argument names used by a message, including those inside plural and select branches. */
 function argumentNames(message: string, locale: string): string[] {
@@ -27,21 +32,25 @@ afterEach(async () => {
 })
 
 describe('message files', () => {
-  it('has one file per supported language', () => {
-    expect(Object.keys(messageFiles).map((path) => path.replace(/^\.\/messages\/|\.json$/gu, '')).sort()).toEqual([...supportedLocales].sort())
+  it('has a folder per supported language', () => {
+    expect(Object.keys(messageFiles).sort()).toEqual([...supportedLocales].sort())
   })
 
   it.each(supportedLocales)('%s parses and uses the same arguments as English', (locale) => {
-    const messages = messageFiles[`./messages/${locale}.json`]
-    for (const key of Object.keys(messages)) {
-      expect(Object.keys(en), `${locale}: unknown key ${key}`).toContain(key)
-      expect(messages[key].trim(), `${locale}: empty ${key}`).not.toBe('')
-      expect(argumentNames(messages[key], locale), `${locale}: ${key}`).toEqual(argumentNames(en[key as keyof typeof en], 'en'))
+    for (const [file, messages] of Object.entries(messageFiles[locale])) {
+      expect(Object.keys(en), `${locale}: unknown file ${file}`).toContain(file)
+      for (const key of Object.keys(messages)) {
+        expect(Object.keys(en[file]), `${locale}: unknown key ${file}.${key}`).toContain(key)
+        expect(messages[key].trim(), `${locale}: empty ${file}.${key}`).not.toBe('')
+        expect(argumentNames(messages[key], locale), `${locale}: ${file}.${key}`).toEqual(argumentNames(en[file][key], 'en'))
+      }
     }
   })
 
   it('translates every message into Japanese', () => {
-    expect(Object.keys(messageFiles['./messages/ja.json']).sort()).toEqual(Object.keys(en).sort())
+    for (const file of Object.keys(en)) {
+      expect(Object.keys(messageFiles.ja[file] ?? {}).sort(), file).toEqual(Object.keys(en[file]).sort())
+    }
   })
 })
 
