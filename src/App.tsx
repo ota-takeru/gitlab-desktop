@@ -45,7 +45,7 @@ export default function App() {
   const developmentRoute = DevelopmentApp && (route.startsWith('mock') || route.startsWith('foundation'))
   // `?fixture=<state>` keeps the client's own hash routes working.
   const fixtureMode = FixtureApp && new URLSearchParams(window.location.search).has('fixture')
-  const theme = useMemo(() => createTheme(createAppTheme(mode), muiLocales[locale]), [locale, mode])
+  const theme = useMemo(() => createTheme(createAppTheme(mode, locale), muiLocales[locale]), [locale, mode])
   const onColorPreferenceChange = (next: ColorPreference) => {
     saveColorPreference(next)
     setPreference(next)

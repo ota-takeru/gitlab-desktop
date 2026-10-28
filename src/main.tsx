@@ -6,7 +6,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { readColorPreference, resolveColorMode } from './features/colorMode'
-import { initializeLocale } from './i18n/i18n'
+import { currentLocale, initializeLocale } from './i18n/i18n'
 import { createAppTheme } from './theme'
 
 const rootElement = document.getElementById('root')
@@ -29,7 +29,7 @@ void initializeLocale().catch(() => undefined).then(() => createRoot(rootElement
 }).render(
   <StrictMode>
     {/* The root error screen sits outside App's theme, so it reads the saved appearance itself. */}
-    <ThemeProvider theme={createAppTheme(resolveColorMode(readColorPreference()))}>
+    <ThemeProvider theme={createAppTheme(resolveColorMode(readColorPreference()), currentLocale())}>
       <CssBaseline />
       <AppErrorBoundary>
         <App />

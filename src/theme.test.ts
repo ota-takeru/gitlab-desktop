@@ -74,3 +74,14 @@ describe.each<PaletteMode>(['light', 'dark'])('%s theme contrast', (mode) => {
     expect(theme.motion.reducedMotion).toBe('system')
   })
 })
+
+describe('language fonts', () => {
+  it('puts the language font before the Japanese one for Chinese and Korean', () => {
+    const family = (locale: Parameters<typeof createAppTheme>[1]) => createAppTheme('dark', locale).typography.fontFamily ?? ''
+    expect(family('zh-Hans').indexOf('Microsoft YaHei UI')).toBeLessThan(family('zh-Hans').indexOf('Yu Gothic UI'))
+    expect(family('zh-Hant').indexOf('Microsoft JhengHei UI')).toBeLessThan(family('zh-Hant').indexOf('Yu Gothic UI'))
+    expect(family('ko').indexOf('Malgun Gothic')).toBeLessThan(family('ko').indexOf('Yu Gothic UI'))
+    expect(family('en')).toBe(family('ja'))
+    expect(family('ja')).not.toContain('YaHei')
+  })
+})

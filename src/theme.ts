@@ -1,5 +1,7 @@
 import { alpha, createTheme, type PaletteMode } from '@mui/material/styles'
 
+import type { Locale } from './i18n/locales'
+
 interface SyntaxPalette {
   keyword: string
   string: string
@@ -163,7 +165,17 @@ const tokens: Record<PaletteMode, Tokens> = {
   },
 }
 
-export function createAppTheme(mode: PaletteMode) {
+// Han characters take a different form in each CJK language, so the language's own font comes first.
+// Other languages keep the Japanese fonts as the fallback for Japanese text from GitLab.
+const japaneseFonts = '"Noto Sans JP", "Yu Gothic UI", Meiryo'
+const cjkFonts: Partial<Record<Locale, string>> = {
+  'zh-Hans': '"Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei"',
+  'zh-Hant': '"Noto Sans TC", "Microsoft JhengHei UI", "Microsoft JhengHei"',
+  ko: '"Noto Sans KR", "Malgun Gothic"',
+}
+
+export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
+  const languageFonts = cjkFonts[locale] ? `${cjkFonts[locale]}, ${japaneseFonts}` : japaneseFonts
   const palette = tokens[mode]
   const selected = mode === 'dark' ? alpha(palette.ink, 0.09) : alpha(palette.primary, 0.1)
   // Text on the main colour: white on the light theme's dark blue, dark ink on the dark theme's light blue.
@@ -220,7 +232,7 @@ export function createAppTheme(mode: PaletteMode) {
     typography: {
       fontSize: 13,
       fontWeightBold: 600,
-      fontFamily: 'Inter, "Segoe UI Variable Text", "Segoe UI", "Noto Sans JP", "Yu Gothic UI", Meiryo, system-ui, sans-serif',
+      fontFamily: `Inter, "Segoe UI Variable Text", "Segoe UI", ${languageFonts}, system-ui, sans-serif`,
       code: {
         fontFamily: '"Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas, monospace',
         fontSize: '0.8125rem',
