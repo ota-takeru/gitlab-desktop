@@ -6,6 +6,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { readColorPreference, resolveColorMode } from './features/colorMode'
+import { initializeLocale } from './i18n/i18n'
 import { createAppTheme } from './theme'
 
 const rootElement = document.getElementById('root')
@@ -20,7 +21,8 @@ if (!rootElement) {
 // error details elsewhere.
 const ignoreReactError = () => undefined
 
-createRoot(rootElement, {
+// A failed language load leaves the app in English; it still opens.
+void initializeLocale().catch(() => undefined).then(() => createRoot(rootElement, {
   onCaughtError: ignoreReactError,
   onRecoverableError: ignoreReactError,
   onUncaughtError: ignoreReactError,
@@ -34,4 +36,4 @@ createRoot(rootElement, {
       </AppErrorBoundary>
     </ThemeProvider>
   </StrictMode>,
-)
+))

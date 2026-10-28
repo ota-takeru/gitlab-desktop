@@ -2,15 +2,21 @@ import CssBaseline from '@mui/material/CssBaseline'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { ThemeProvider } from '@mui/material/styles'
+import { createTheme, ThemeProvider } from '@mui/material/styles'
+import { enUS, jaJP } from '@mui/material/locale'
 
 import { createAppTheme } from './theme'
 import { ClientApp } from './features/ClientApp'
 import { FeedbackProvider } from './components/Feedback'
 import { readColorPreference, saveColorPreference, useSystemColorMode, type ColorPreference } from './features/colorMode'
+import type { Locale } from './i18n/locales'
+import { useLocale, useT } from './i18n/useT'
 
 const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./pages/DevelopmentApp')) : null
 const FixtureApp = import.meta.env.DEV ? lazy(() => import('./pages/FixtureApp')) : null
+
+/** MUI's own texts (pagination, autocomplete and so on) follow the app language. */
+const muiLocales: Record<Locale, typeof enUS> = { en: enUS, ja: jaJP }
 
 /** Development screens accept `theme=light|dark` (in the hash or the query) to open in a fixed theme without saving it. */
 function routeThemeOverride(route: string): 'light' | 'dark' | null {
@@ -23,6 +29,7 @@ export default function App() {
   const [preference, setPreference] = useState<ColorPreference>(readColorPreference)
   const [routeOverride, setRouteOverride] = useState(() => routeThemeOverride(window.location.hash.replace(/^#/u, '')))
   const systemMode = useSystemColorMode()
+  const locale = useLocale()
   const mode = routeOverride ?? (preference === 'system' ? systemMode : preference)
   const [route, setRoute] = useState(() => window.location.hash.replace(/^#/u, ''))
   useEffect(() => {
@@ -38,7 +45,7 @@ export default function App() {
   const developmentRoute = DevelopmentApp && (route.startsWith('mock') || route.startsWith('foundation'))
   // `?fixture=<state>` keeps the client's own hash routes working.
   const fixtureMode = FixtureApp && new URLSearchParams(window.location.search).has('fixture')
-  const theme = useMemo(() => createAppTheme(mode), [mode])
+  const theme = useMemo(() => createTheme(createAppTheme(mode), muiLocales[locale]), [locale, mode])
   const onColorPreferenceChange = (next: ColorPreference) => {
     saveColorPreference(next)
     setPreference(next)
@@ -64,10 +71,11 @@ export default function App() {
 }
 
 function CatalogLoading() {
+  const t = useT()
   return (
     <Box aria-live="polite" role="status" sx={{ py: 8, textAlign: 'center' }}>
       <Typography color="textSecondary" variant="body2">
-        画面を読み込み中…
+        {t('app.loading')}
       </Typography>
     </Box>
   )

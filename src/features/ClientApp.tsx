@@ -14,9 +14,11 @@ import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
+import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
+import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
@@ -35,6 +37,9 @@ import { delayedRevealSx } from '../components/paneSx'
 import { SettingsSection } from '../components/SettingsSection'
 import { StatusBar } from '../components/StatusBar'
 import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
+import { setLocalePreference } from '../i18n/i18n'
+import { localeNames, supportedLocales, systemLocale, type LocalePreference } from '../i18n/locales'
+import { useLocale, useLocalePreference, useT } from '../i18n/useT'
 import { clearLocalDrafts } from '../lib/localDrafts'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { GitLabCommandError, GitLabSnapshot, MergeRequest, Project } from '../types/gitlab'
@@ -758,29 +763,45 @@ function AppVersionLabel() {
 
 function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceChange, onShowShortcuts }: ColorPreferenceProps & { autoInstallAllowed: boolean; onShowShortcuts: () => void }) {
   const { session } = useConnection()
+  const t = useT()
   return <Box>
     <Box sx={{ pb: 2.5 }}>
-      <Typography component="h1" variant="h1">設定</Typography>
-      <Typography color="textSecondary" sx={{ mt: 0.5 }} variant="body2">GitLabへの接続、表示、この端末に保存するデータを管理します。</Typography>
+      <Typography component="h1" variant="h1">{t('settings.title')}</Typography>
+      <Typography color="textSecondary" sx={{ mt: 0.5 }} variant="body2">{t('settings.description')}</Typography>
     </Box>
-    <SettingsSection description="接続先とアクセス方法" id="settings-connection" title="GitLab接続"><ConnectionView /></SettingsSection>
-    <SettingsSection description="この端末での配色" id="settings-display" title="表示">
-      <ToggleButtonGroup aria-label="配色" exclusive onChange={(_, value: ColorPreference | null) => { if (value && value !== colorPreference) onColorPreferenceChange(value) }} size="small" value={colorPreference}>
-        <ToggleButton value="system">システムに合わせる</ToggleButton>
-        <ToggleButton value="light">ライト</ToggleButton>
-        <ToggleButton value="dark">ダーク</ToggleButton>
+    <SettingsSection description={t('settings.connection.description')} id="settings-connection" title={t('settings.connection.title')}><ConnectionView /></SettingsSection>
+    <SettingsSection description={t('settings.display.description')} id="settings-display" title={t('settings.display.title')}>
+      <ToggleButtonGroup aria-label={t('settings.display.colorScheme')} exclusive onChange={(_, value: ColorPreference | null) => { if (value && value !== colorPreference) onColorPreferenceChange(value) }} size="small" value={colorPreference}>
+        <ToggleButton value="system">{t('settings.display.system')}</ToggleButton>
+        <ToggleButton value="light">{t('settings.display.light')}</ToggleButton>
+        <ToggleButton value="dark">{t('settings.display.dark')}</ToggleButton>
       </ToggleButtonGroup>
     </SettingsSection>
-    <SettingsSection description="表示中のデータの自動取得とデスクトップ通知" id="settings-workspace" title="自動取得と通知"><WorkspaceSettings /></SettingsSection>
-    <SettingsSection description="バージョンと更新の確認" id="settings-update" title="アプリの更新"><UpdatePanel autoInstallAllowed={autoInstallAllowed} /></SettingsSection>
-    <SettingsSection description="一覧の移動やレビューをキーボードで" id="settings-shortcuts" title="キーボードショートカット">
+    <SettingsSection description={t('settings.language.description')} id="settings-language" title={t('settings.language.title')}><LanguageSettings /></SettingsSection>
+    <SettingsSection description={t('settings.workspace.description')} id="settings-workspace" title={t('settings.workspace.title')}><WorkspaceSettings /></SettingsSection>
+    <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} /></SettingsSection>
+    <SettingsSection description={t('settings.shortcuts.description')} id="settings-shortcuts" title={t('settings.shortcuts.title')}>
       <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
-        <Typography color="textSecondary" variant="body2">文字の入力中以外は ? キーでも一覧を開けます。</Typography>
-        <Button onClick={onShowShortcuts} variant="outlined">ショートカット一覧を表示</Button>
+        <Typography color="textSecondary" variant="body2">{t('settings.shortcuts.hint')}</Typography>
+        <Button onClick={onShowShortcuts} variant="outlined">{t('settings.shortcuts.show')}</Button>
       </Stack>
     </SettingsSection>
-    <SettingsSection description="この端末に保存するMR情報と未送信コメント" id="settings-data" title="保存データ"><CacheSettings sessionId={session?.id ?? null} /></SettingsSection>
+    <SettingsSection description={t('settings.data.description')} id="settings-data" title={t('settings.data.title')}><CacheSettings sessionId={session?.id ?? null} /></SettingsSection>
   </Box>
+}
+
+function LanguageSettings() {
+  const t = useT()
+  const locale = useLocale()
+  const preference = useLocalePreference()
+  return <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
+    <TextField label={t('settings.language.label')} onChange={(event) => { void setLocalePreference(event.target.value as LocalePreference) }} select size="small" sx={{ minWidth: 240 }} value={preference}>
+      <MenuItem value="system">{t('settings.language.system', { language: localeNames[systemLocale()] })}</MenuItem>
+      {supportedLocales.map((option) => <MenuItem key={option} lang={option} value={option}>{localeNames[option]}</MenuItem>)}
+    </TextField>
+    {/* Screens move into the message files feature by feature; until then the rest stays Japanese. */}
+    {locale === 'ja' ? null : <Typography color="textSecondary" variant="body2">{t('settings.language.partial')}</Typography>}
+  </Stack>
 }
 
 function CacheSettings({ sessionId }: { sessionId: string | null }) {

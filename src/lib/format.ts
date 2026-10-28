@@ -1,4 +1,5 @@
 import type { StatusTone } from '../components/StatusPill'
+import { currentLocale, translate } from '../i18n/i18n'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -13,13 +14,13 @@ export function formatRelativeTime(value: string | number, now = Date.now()): st
   if (Number.isNaN(timestamp)) return String(value)
   const elapsed = now - timestamp
   if (elapsed < 0) return formatCalendarDate(timestamp, now)
-  if (elapsed < MINUTE) return 'たった今'
-  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}分前`
+  if (elapsed < MINUTE) return translate('time.justNow')
+  if (elapsed < HOUR) return translate('time.minutesAgo', { count: Math.floor(elapsed / MINUTE) })
   // Past an hour, days count local calendar days, so last night reads 「昨日」 rather than hours ago.
   const days = calendarDaysBetween(timestamp, now)
-  if (days === 0) return `${Math.floor(elapsed / HOUR)}時間前`
-  if (days === 1) return '昨日'
-  if (days < 7) return `${days}日前`
+  if (days === 0) return translate('time.hoursAgo', { count: Math.floor(elapsed / HOUR) })
+  if (days === 1) return translate('time.yesterday')
+  if (days < 7) return translate('time.daysAgo', { count: days })
   return formatCalendarDate(timestamp, now)
 }
 
@@ -33,18 +34,18 @@ function calendarDaysBetween(from: number, to: number): number {
 export function formatAbsoluteTime(value: string | number): string {
   const timestamp = typeof value === 'number' ? value : Date.parse(value)
   if (Number.isNaN(timestamp)) return String(value)
-  return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(timestamp)
+  return new Intl.DateTimeFormat(currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(timestamp)
 }
 
 /** Time a saved list was fetched, for the 「保存済み · 時刻」 status shown while it is stale. */
 export function formatFetchedAt(timestamp?: number): string {
-  if (!timestamp) return '時刻不明'
-  return new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit' }).format(timestamp)
+  if (!timestamp) return translate('time.unknown')
+  return new Intl.DateTimeFormat(currentLocale(), { hour: '2-digit', minute: '2-digit' }).format(timestamp)
 }
 
 function formatCalendarDate(timestamp: number, now: number): string {
   const sameYear = new Date(timestamp).getFullYear() === new Date(now).getFullYear()
-  return new Intl.DateTimeFormat('ja-JP', sameYear ? { month: 'numeric', day: 'numeric' } : { year: 'numeric', month: 'numeric', day: 'numeric' }).format(timestamp)
+  return new Intl.DateTimeFormat(currentLocale(), sameYear ? { month: 'numeric', day: 'numeric' } : { year: 'numeric', month: 'numeric', day: 'numeric' }).format(timestamp)
 }
 
 export function formatMergeRequestState(state: string): string {

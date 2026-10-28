@@ -3,6 +3,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+import { setLocalePreference } from '../i18n/i18n'
 import { createAppTheme } from '../theme'
 import type { GitLabSession, GitLabSnapshot, MergeRequest } from '../types/gitlab'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
@@ -481,6 +482,23 @@ it('keeps the account, theme and connection in one settings entry', async () => 
   expect(onColorPreferenceChange).toHaveBeenLastCalledWith('system')
   expect(screen.getByRole('heading', { name: '自動取得と通知' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'アプリの更新' })).toBeInTheDocument()
+})
+
+it('switches the settings page to the chosen language', async () => {
+  window.history.replaceState(null, '', '#client/settings')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={vi.fn()} /></ThemeProvider>)
+
+  expect(await screen.findByRole('heading', { name: '設定' })).toBeInTheDocument()
+  expect(screen.queryByText('一部の画面はまだ日本語で表示されます。')).not.toBeInTheDocument()
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '言語' }))
+  fireEvent.click(screen.getByRole('option', { name: 'English' }))
+
+  expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Match system' })).toBeInTheDocument()
+  expect(screen.getByText('Some screens are still shown in Japanese.')).toBeInTheDocument()
+  expect(document.documentElement.lang).toBe('en')
+  await act(() => setLocalePreference('ja'))
 })
 
 it.each(['#client/pinned', '#client/recent'])('starts the MR list for the former list link %s', async (hash) => {
