@@ -33,6 +33,7 @@ fn main() {
             "find_local_repository",
             "get_local_file",
             "pick_local_repository_folder",
+            "set_text_language",
             "set_window_close_guard",
             "close_app_window",
             "check_app_update",

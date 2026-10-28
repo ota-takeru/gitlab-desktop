@@ -557,6 +557,8 @@ fn preserves_api_subpath_and_encodes_repository_file_path() {
 
 #[test]
 fn decodes_shift_jis_file_when_not_utf8() {
+    // A Japanese interface reads Shift_JIS first whatever the system code page.
+    crate::text_encoding::set_language("ja");
     let (bytes, _, _) = encoding_rs::SHIFT_JIS.encode("SELECT '日本語' -- 表示");
     assert_eq!(
         decode_file_text(bytes.into_owned()).unwrap(),

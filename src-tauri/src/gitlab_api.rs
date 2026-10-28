@@ -247,25 +247,20 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     Ok(result)
 }
 
-/// Repository files are shown as UTF-8, or as Shift_JIS (Windows-31J) when
-/// they are not valid UTF-8, which is common for older Japanese SQL files.
+/// Repository files are shown as UTF-8, or in the legacy encoding they most
+/// likely use (Shift_JIS for older Japanese SQL files on Japanese Windows).
 fn decode_file_text(bytes: Vec<u8>) -> Result<String, AppError> {
     let bytes = match String::from_utf8(bytes) {
         Ok(text) => return Ok(text),
         Err(error) => error.into_bytes(),
     };
-    if !bytes.contains(&0) {
-        if let Some(text) =
-            encoding_rs::SHIFT_JIS.decode_without_bom_handling_and_without_replacement(&bytes)
-        {
-            return Ok(text.into_owned());
-        }
-    }
-    Err(AppError::new(
-        "UNSUPPORTED",
-        "GitLabから返されたファイルはUTF-8またはShift_JISのテキストではないため表示できません。",
-    )
-    .key("native.response.notText"))
+    crate::text_encoding::decode_text(&bytes).ok_or_else(|| {
+        AppError::new(
+            "UNSUPPORTED",
+            "GitLabから返されたファイルはテキストではないため表示できません。",
+        )
+        .key("native.response.notText")
+    })
 }
 
 /// GitLab returns a comparison in one response, so its files are split into

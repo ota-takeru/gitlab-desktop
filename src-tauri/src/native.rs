@@ -1601,7 +1601,7 @@ impl NativeState {
             local_git::WorktreeFile::Text(content) => Ok(serde_json::json!({ "content": content })),
             local_git::WorktreeFile::Binary => Err(AppError::new(
                 "UNSUPPORTED",
-                "このファイルはUTF-8またはShift_JISのテキストではないため表示できません。",
+                "このファイルはテキストではないため表示できません。",
             )
             .key("native.localGit.notText")),
             local_git::WorktreeFile::TooLarge => Err(AppError::new(

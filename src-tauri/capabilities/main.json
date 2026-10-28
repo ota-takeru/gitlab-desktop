@@ -41,6 +41,7 @@
     "allow-find-local-repository",
     "allow-get-local-file",
     "allow-pick-local-repository-folder",
+    "allow-set-text-language",
     "allow-set-window-close-guard",
     "allow-close-app-window",
     "core:event:allow-listen",

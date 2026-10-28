@@ -3,6 +3,7 @@
 //! commits or writes the index: only read commands of the installed `git` run,
 //! in the folder the user linked, with a bounded output and time.
 use crate::dto::AppError;
+use crate::text_encoding::{decode_lossy, decode_text};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -328,7 +329,7 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
         .stdout
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
-        .map(decode)
+        .map(decode_lossy)
         .collect();
     // A cut-off listing ends in a partial path, which is not read.
     let complete_paths = if untracked.truncated {
@@ -599,7 +600,7 @@ fn config_remotes(path: &Path) -> Vec<String> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum WorktreeFile {
     Text(String),
-    /// Not UTF-8 or Shift_JIS text (for example an image).
+    /// Not text in any encoding (for example an image).
     Binary,
     TooLarge,
 }
@@ -661,19 +662,6 @@ pub fn read_worktree_file(root: &Path, relative: &str) -> Result<WorktreeFile, A
     Ok(decode_text(&bytes).map_or(WorktreeFile::Binary, WorktreeFile::Text))
 }
 
-/// UTF-8, then Shift_JIS; text with NUL bytes is treated as binary, as git does.
-fn decode_text(bytes: &[u8]) -> Option<String> {
-    if bytes.contains(&0) {
-        return None;
-    }
-    match std::str::from_utf8(bytes) {
-        Ok(text) => Some(text.to_owned()),
-        Err(_) => encoding_rs::SHIFT_JIS
-            .decode_without_bom_handling_and_without_replacement(bytes)
-            .map(|text| text.into_owned()),
-    }
-}
-
 /// An untracked file as a new-file diff, in git's format. `Err` once the
 /// size budget is spent, so later files are only counted; `None` for a file
 /// that can no longer be read.
@@ -726,16 +714,6 @@ fn new_file_diff(text: &str) -> String {
     diff
 }
 
-fn decode(bytes: &[u8]) -> String {
-    match std::str::from_utf8(bytes) {
-        Ok(text) => text.to_owned(),
-        Err(_) => encoding_rs::SHIFT_JIS
-            .decode_without_bom_handling_and_without_replacement(bytes)
-            .map(|text| text.into_owned())
-            .unwrap_or_else(|| String::from_utf8_lossy(bytes).into_owned()),
-    }
-}
-
 /// git's C-style quoting of a path with special characters.
 fn unquote(value: &str) -> String {
     let Some(inner) = value
@@ -772,7 +750,7 @@ fn unquote(value: &str) -> String {
             None => {}
         }
     }
-    decode(&bytes)
+    decode_lossy(&bytes)
 }
 
 fn strip_side(path: &str, prefix: &str) -> Option<String> {
@@ -799,7 +777,7 @@ pub fn parse_patch(bytes: &[u8], cut_off: bool) -> (Vec<Value>, bool) {
     let truncated = cut_off && blocks.pop().is_some();
     let diffs = blocks
         .into_iter()
-        .map(|block| parse_file(&decode(block)))
+        .map(|block| parse_file(&decode_lossy(block)))
         .collect();
     (diffs, truncated || (cut_off && starts.is_empty()))
 }
@@ -936,6 +914,8 @@ mod tests {
 
     #[test]
     fn shift_jis_files_are_decoded() {
+        // A Japanese interface reads Shift_JIS first whatever the system code page.
+        crate::text_encoding::set_language("ja");
         let (bytes, _, _) = encoding_rs::SHIFT_JIS.encode("+日本語\n");
         let mut patch =
             b"diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -0,0 +1 @@\n".to_vec();
@@ -1031,6 +1011,7 @@ mod tests {
 
     #[test]
     fn worktree_files_stay_inside_the_repository() {
+        crate::text_encoding::set_language("ja");
         let directory =
             std::env::temp_dir().join(format!("gitlab-desktop-file-{}", uuid::Uuid::new_v4()));
         let root = directory.join("repo");

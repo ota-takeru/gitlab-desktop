@@ -9,6 +9,7 @@ mod glab;
 mod local_git;
 mod native;
 mod storage;
+mod text_encoding;
 mod updates;
 
 use dto::{AppError, Session};
@@ -329,6 +330,12 @@ async fn pick_local_repository_folder(
         .and_then(|folder| folder.into_path().ok())
         .map(|path| path.to_string_lossy().into_owned()))
 }
+/// The interface language, which decides the encoding tried first for files
+/// that are not UTF-8.
+#[tauri::command]
+fn set_text_language(language: String) {
+    text_encoding::set_language(&language);
+}
 #[tauri::command]
 fn set_window_close_guard(state: tauri::State<'_, CloseGuard>, unsafe_to_close: bool) {
     state
@@ -452,6 +459,7 @@ pub fn run() {
             find_local_repository,
             get_local_file,
             pick_local_repository_folder,
+            set_text_language,
             set_window_close_guard,
             close_app_window,
             updates::check_app_update,

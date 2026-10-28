@@ -6,7 +6,8 @@ import { ThemeProvider } from '@mui/material/styles'
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { readColorPreference, resolveColorMode } from './features/colorMode'
-import { currentLocale, initializeLocale } from './i18n/i18n'
+import { currentLocale, initializeLocale, subscribeToLocale } from './i18n/i18n'
+import { isTauri, setTextLanguage } from './lib/runtime'
 import { createAppTheme } from './theme'
 
 const rootElement = document.getElementById('root')
@@ -20,6 +21,10 @@ if (!rootElement) {
 // root callbacks deliberately remain silent and never receive application
 // error details elsewhere.
 const ignoreReactError = () => undefined
+
+// Files that are not UTF-8 are read in the encoding the interface language suggests.
+const syncTextLanguage = () => { if (isTauri()) setTextLanguage(currentLocale()).catch(() => undefined) }
+subscribeToLocale(syncTextLanguage)
 
 // The app opens even if no language could load.
 void initializeLocale().catch(() => undefined).then(() => createRoot(rootElement, {

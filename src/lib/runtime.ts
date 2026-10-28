@@ -9,3 +9,8 @@ export function isTauri(): boolean {
 export function getRuntimeInfo(): Promise<RuntimeInfo> {
   return invoke<RuntimeInfo>('runtime_info')
 }
+
+/** Tells the native side the interface language, which decides how files that are not UTF-8 are read. */
+export function setTextLanguage(language: string): Promise<void> {
+  return invoke('set_text_language', { language })
+}
