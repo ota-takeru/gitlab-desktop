@@ -22,6 +22,8 @@
   "workspace.notifyHint": "Vérifie la MR ouverte et les 30 derniers commentaires des 10 MR assignées et à relire mises à jour le plus récemment. Les notifications portent sur les 100 plus récentes. Les notifications n’incluent ni le titre des MR ni le texte des commentaires. Les vérifications ont lieu lorsque l’application est affichée et que l’actualisation automatique est activée.",
   "workspace.permissionDenied": "L’autorisation de notification n’a pas été accordée. Vérifiez les paramètres de notification de Windows.",
   "workspace.enableFailed": "Impossible d’activer les notifications. Vérifiez les paramètres de notification de l’application de bureau.",
+  "local.title": "Dépôts locaux",
+  "local.description": "Dossiers où rechercher les clones pour voir les modifications locales",
   "update.title": "Mises à jour de l’application",
   "update.description": "Version et recherche de mises à jour",
   "shortcuts.title": "Raccourcis clavier",

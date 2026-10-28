@@ -13,8 +13,8 @@ mod updates;
 
 use dto::{AppError, Session};
 use native::{
-    ConnectInput, LocalRepository, MutationInput, NativeState, PendingOperation, QueryInput,
-    UploadInput,
+    ConnectInput, LocalRepository, LocalRepositorySearch, MutationInput, NativeState,
+    PendingOperation, QueryInput, UploadInput,
 };
 use storage::{LocalDraft, Snapshot};
 
@@ -286,10 +286,11 @@ async fn find_local_repository(
     session_id: String,
     project_id: String,
     project_path: String,
-) -> Result<Option<LocalRepository>, AppError> {
+    explicit: bool,
+) -> Result<LocalRepositorySearch, AppError> {
     state
         .native()?
-        .find_local_repository(session_id, project_id, project_path)
+        .find_local_repository(session_id, project_id, project_path, explicit)
         .await
 }
 #[tauri::command]

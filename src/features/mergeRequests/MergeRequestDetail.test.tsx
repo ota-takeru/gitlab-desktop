@@ -89,7 +89,7 @@ const localMocks = vi.hoisted(() => ({
 }))
 vi.mock('../../lib/localRepository', async () => ({
   ...await vi.importActual<typeof import('../../lib/localRepository')>('../../lib/localRepository'),
-  findLocalRepository: vi.fn(async () => null),
+  findLocalRepository: vi.fn(async () => ({ declined: false, repository: null })),
   getLocalChanges: localMocks.getLocalChanges,
   getLocalFile: vi.fn(() => new Promise(() => undefined)),
   getLocalRepository: localMocks.getLocalRepository,

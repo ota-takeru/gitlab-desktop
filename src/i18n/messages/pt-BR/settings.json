@@ -22,6 +22,8 @@
   "workspace.notifyHint": "Verifica o MR aberto e os 30 comentários mais recentes dos 10 MRs atribuídos e em revisão atualizados mais recentemente. As notificações abrangem as 100 mais recentes. As notificações não incluem títulos de MR nem texto de comentários. As verificações ocorrem enquanto o app está visível e a atualização automática está ativada.",
   "workspace.permissionDenied": "A permissão de notificação não foi concedida. Verifique as configurações de notificação do Windows.",
   "workspace.enableFailed": "Não foi possível ativar as notificações. Verifique as configurações de notificação no app de desktop.",
+  "local.title": "Repositórios locais",
+  "local.description": "Pastas onde procurar clones para ver as alterações locais",
   "update.title": "Atualizações do app",
   "update.description": "Versão e verificação de atualizações",
   "shortcuts.title": "Atalhos de teclado",

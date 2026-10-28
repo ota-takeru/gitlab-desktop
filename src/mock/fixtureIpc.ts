@@ -123,7 +123,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'find_local_repository': {
         const projectId = String(payload.projectId)
         if (!localRepositories.has(projectId) && localScanFolders.length) localRepositories.set(projectId, { path: localScanFolders[0], projectPath: String(payload.projectPath) })
-        return localRepositories.get(projectId) ?? null
+        return { declined: false, repository: localRepositories.get(projectId) ?? null }
       }
       case 'check_app_update': return { configured: false, downloaded: false, notes: null, version: null }
       case 'download_app_update': return null

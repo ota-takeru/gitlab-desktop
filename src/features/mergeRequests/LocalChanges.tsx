@@ -13,7 +13,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RelativeTime } from '../../components/RelativeTime'
 import { delayedRevealSx } from '../../components/paneSx'
 import { shortSha } from '../../lib/format'
-import { findLocalRepository, getLocalChanges, getLocalFile, getLocalRepository, getLocalScanFolders, getLocalStatus, linkLocalRepository, pickLocalRepositoryFolder, setLocalScanFolders, summarizeLocalStatus, unlinkLocalRepository, type LocalRepository } from '../../lib/localRepository'
+import { findLocalRepository, findOwnLocalRepositories, getLocalChanges, getLocalFile, getLocalRepository, getLocalScanFolders, getLocalStatus, linkLocalRepository, pickLocalRepositoryFolder, setLocalScanFolders, summarizeLocalStatus, unlinkLocalRepository, type LocalRepository, type OwnProjectSearch } from '../../lib/localRepository'
 import { normalizeGitLabError } from '../../lib/gitlab'
 import { DiffViewer } from './DiffViewer'
 import { useT } from '../../i18n/useT'
@@ -40,17 +40,21 @@ function useLinkedRepository(sessionId: string, projectId: string, projectPath: 
   const client = useQueryClient()
   const repositoryKey = ['localRepository', sessionId, projectId]
   const repository = useQuery({ queryFn: () => getLocalRepository(sessionId, projectId), queryKey: repositoryKey, staleTime: Infinity })
+  const foundKey = ['localRepositoryFind', sessionId, projectId, projectPath]
+  const search = async (explicit: boolean) => {
+    const next = await findLocalRepository(sessionId, projectId, projectPath ?? '', explicit)
+    if (next.repository) client.setQueryData(repositoryKey, next.repository)
+    return next
+  }
   const found = useQuery({
     enabled: repository.data === null && Boolean(projectPath),
-    queryFn: async () => {
-      const next = await findLocalRepository(sessionId, projectId, projectPath ?? '')
-      if (next) client.setQueryData(repositoryKey, next)
-      return next
-    },
-    queryKey: ['localRepositoryFind', sessionId, projectId, projectPath],
+    queryFn: () => search(false),
+    queryKey: foundKey,
     staleTime: 60_000,
   })
-  return { found, linked: repository.data ?? null, repository, repositoryKey }
+  // Asked for by the user, so a project they unlinked is searched for too.
+  const searchNow = () => client.fetchQuery({ queryFn: () => search(true), queryKey: foundKey, staleTime: 0 }).catch(() => undefined)
+  return { found, foundKey, linked: repository.data ?? null, repository, repositoryKey, searchNow }
 }
 
 /**
@@ -77,10 +81,10 @@ export function LocalStatusBadge({ headSha, projectId, projectPath, sessionId, s
  * (unpushed commits, uncommitted edits and untracked files) against the MR head. Read-only:
  * nothing here comments, marks files reviewed, fetches or changes the clone.
  */
-export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, selectedFile, sessionId }: { headSha: string; onSelectFile: (path: string) => void; projectId: string; projectPath: string | null; selectedFile: string | null; sessionId: string }) {
+export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, selectedFile, sessionId, userId }: { headSha: string; onSelectFile: (path: string) => void; projectId: string; projectPath: string | null; selectedFile: string | null; sessionId: string; userId: string }) {
   const t = useT()
   const client = useQueryClient()
-  const { found, linked, repository, repositoryKey } = useLinkedRepository(sessionId, projectId, projectPath)
+  const { found, foundKey, linked, repository, repositoryKey, searchNow } = useLinkedRepository(sessionId, projectId, projectPath)
   // The working tree changes outside the app, so it is read again each time the view opens
   // and when the window regains focus.
   const changes = useQuery({ enabled: Boolean(linked), gcTime: 0, queryFn: () => getLocalChanges(sessionId, projectId, headSha), queryKey: ['localChanges', sessionId, projectId, headSha, linked?.path], staleTime: 0 })
@@ -106,7 +110,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
 
   if (repository.isPending) return <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">{t('review.local.checkingLink')}</Typography>
   if (repository.error) return <Alert severity="error">{t('review.local.linkReadError', { message: normalizeGitLabError(repository.error).message })}</Alert>
-  if (!linked) return <LinkRepository fieldRef={focusOnMount('unlinked')} notFound={found.data === null && !found.isFetching} onLinked={(next) => { focusAfter.current = 'linked'; client.setQueryData(repositoryKey, next) }} projectId={projectId} projectPath={projectPath} searching={found.isFetching} sessionId={sessionId} />
+  if (!linked) return <LinkRepository fieldRef={focusOnMount('unlinked')} onLinked={(next) => { focusAfter.current = 'linked'; client.setQueryData(repositoryKey, next) }} projectId={projectId} projectPath={projectPath} search={{ declined: Boolean(found.data?.declined), error: found.error ? normalizeGitLabError(found.error).message : null, notFound: found.data?.repository === null && !found.isFetching, onSearch: () => void searchNow(), searchedAt: found.dataUpdatedAt, searching: found.isFetching }} sessionId={sessionId} userId={userId} />
 
   const unlink = async () => {
     setUnlinking(true)
@@ -115,7 +119,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
       await unlinkLocalRepository(sessionId, projectId)
       focusAfter.current = 'unlinked'
       // The native side no longer links this project from the scan folders.
-      client.setQueryData(['localRepositoryFind', sessionId, projectId, projectPath], null)
+      client.setQueryData(foundKey, { declined: true, repository: null })
       client.setQueryData(repositoryKey, null)
     } catch (error) {
       setUnlinkError(normalizeGitLabError(error).message)
@@ -163,7 +167,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   )
 }
 
-function LinkRepository({ fieldRef, notFound, onLinked, projectId, projectPath, searching, sessionId }: { fieldRef: (node: HTMLElement | null) => void; notFound: boolean; onLinked: (repository: LocalRepository) => void; projectId: string; projectPath: string | null; searching: boolean; sessionId: string }) {
+function LinkRepository({ fieldRef, onLinked, projectId, projectPath, search, sessionId, userId }: { fieldRef: (node: HTMLElement | null) => void; onLinked: (repository: LocalRepository) => void; projectId: string; projectPath: string | null; search: ProjectSearch; sessionId: string; userId: string }) {
   const t = useT()
   const [path, setPath] = useState('')
   const [linking, setLinking] = useState(false)
@@ -202,22 +206,36 @@ function LinkRepository({ fieldRef, notFound, onLinked, projectId, projectPath, 
         <Button disabled={linking || !projectPath || !path.trim()} sx={{ flexShrink: 0 }} type="submit" variant="contained">{linking ? t('review.local.link.checking') : t('review.local.link.submit')}</Button>
       </Stack>
       {error ? <Alert severity="error">{error}</Alert> : null}
-      <ScanFolders notFound={notFound} projectPath={projectPath} searching={searching} sessionId={sessionId} />
+      <ScanFolders project={projectPath ? { path: projectPath, search } : undefined} sessionId={sessionId} userId={userId} />
     </Stack>
   )
 }
 
+/** The search for this MR's project below the scan folders, as last run. */
+interface ProjectSearch {
+  declined: boolean
+  error: string | null
+  notFound: boolean
+  onSearch: () => void
+  /** When the last search ended; 0 before the first. */
+  searchedAt: number
+  searching: boolean
+}
+
 /**
  * The folders where clones are looked for, so projects are linked without
- * choosing each folder. Saving them searches again for this project.
+ * choosing each folder. Saving them searches again for this MR's project, and
+ * the projects of the user's own open MRs can be searched for at once.
  */
-function ScanFolders({ notFound, projectPath, searching, sessionId }: { notFound: boolean; projectPath: string | null; searching: boolean; sessionId: string }) {
+export function ScanFolders({ project, sessionId, userId }: { project?: { path: string; search: ProjectSearch }; sessionId: string; userId: string }) {
   const t = useT()
   const client = useQueryClient()
   const foldersKey = ['localScanFolders', sessionId]
   const folders = useQuery({ queryFn: () => getLocalScanFolders(sessionId), queryKey: foldersKey, staleTime: Infinity })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [ownSearching, setOwnSearching] = useState(false)
+  const [ownResults, setOwnResults] = useState<OwnProjectSearch[] | null>(null)
   const saved = folders.data ?? []
   const save = async (next: string[]) => {
     setSaving(true)
@@ -240,6 +258,27 @@ function ScanFolders({ notFound, projectPath, searching, sessionId }: { notFound
       setError(normalizeGitLabError(cause).message)
     }
   }
+  const searchOwn = async () => {
+    setOwnSearching(true)
+    setError(null)
+    try {
+      setOwnResults(await findOwnLocalRepositories(sessionId, userId))
+      // Open MRs show the clones linked here without searching again.
+      await client.invalidateQueries({ queryKey: ['localRepository', sessionId] })
+      await client.invalidateQueries({ queryKey: ['localRepositoryFind', sessionId] })
+    } catch (cause) {
+      setError(normalizeGitLabError(cause).message)
+    } finally {
+      setOwnSearching(false)
+    }
+  }
+  const search = project?.search
+  const busy = saving || ownSearching || Boolean(search?.searching)
+  const projectStatus = !project || !search ? null
+    : search.searching ? t('review.local.scan.searching')
+    : search.declined ? t('review.local.scan.declined', { project: project.path })
+    : saved.length && search.notFound ? t('review.local.scan.notFound', { project: project.path })
+    : null
   return (
     <Stack aria-label={t('review.local.scan.label')} component="section" spacing={0.5} sx={{ pt: 1 }}>
       <Typography variant="body2">{t('review.local.scan.description')}</Typography>
@@ -248,12 +287,37 @@ function ScanFolders({ notFound, projectPath, searching, sessionId }: { notFound
         <Tooltip title={folder}><Typography noWrap sx={{ ...codeSx, flex: '0 1 auto', minWidth: 0 }} variant="caption">{folder}</Typography></Tooltip>
         <Button aria-label={t('review.local.scan.removeLabel', { folder })} disabled={saving} onClick={() => void save(saved.filter((known) => known !== folder))} size="small" sx={{ flexShrink: 0 }}>{t('review.local.scan.remove')}</Button>
       </Stack>)}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
         <Button disabled={saving || folders.isPending} onClick={() => void add()} size="small" sx={{ flexShrink: 0 }} variant="outlined">{t('review.local.scan.add')}</Button>
-        {searching ? <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.searching')}</Typography> : saved.length && notFound && projectPath ? <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.notFound', { project: projectPath })}</Typography> : null}
+        {project && search ? <Button disabled={busy || !saved.length} onClick={search.onSearch} size="small" sx={{ flexShrink: 0 }}>{t('review.local.scan.searchProject')}</Button> : null}
+        <Button disabled={busy || !saved.length} onClick={() => void searchOwn()} size="small" sx={{ flexShrink: 0 }}>{t('review.local.scan.searchOwn')}</Button>
       </Stack>
+      {projectStatus ? <Typography color="textSecondary" role="status" variant="caption">{projectStatus}{!search?.searching && search?.searchedAt ? <> <RelativeTime prefix={t('review.local.scan.searchedAt')} value={new Date(search.searchedAt).toISOString()} /></> : null}</Typography> : null}
+      {search?.error ? <Alert severity="error">{t('review.local.scan.searchError', { message: search.error })}</Alert> : null}
+      {ownSearching ? <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.searchingOwn')}</Typography> : ownResults ? <OwnSearchResults results={ownResults} /> : null}
       {folders.error ? <Alert severity="error">{t('review.local.scan.readError', { message: normalizeGitLabError(folders.error).message })}</Alert> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
+    </Stack>
+  )
+}
+
+/** What the search for the projects of the user's own open MRs found, one line per project. */
+function OwnSearchResults({ results }: { results: OwnProjectSearch[] }) {
+  const t = useT()
+  if (!results.length) return <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.ownNone')}</Typography>
+  const linked = results.filter((item) => item.result?.repository).length
+  return (
+    <Stack aria-label={t('review.local.scan.ownResults')} component="section" spacing={0.25}>
+      <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.ownSummary', { count: results.length, linked })}</Typography>
+      {results.map((item) => <Typography key={item.projectId} noWrap variant="caption">
+        <Box component="span" sx={codeSx}>{item.projectPath}</Box>{' — '}
+        <Box component="span" sx={{ color: item.error ? 'error.main' : item.result?.repository ? 'text.primary' : 'text.secondary' }}>
+          {item.error ? t('review.local.scan.ownError', { message: item.error })
+            : item.result?.repository ? item.result.repository.path
+            : item.result?.declined ? t('review.local.scan.ownDeclined')
+            : t('review.local.scan.ownNotFound')}
+        </Box>
+      </Typography>)}
     </Stack>
   )
 }

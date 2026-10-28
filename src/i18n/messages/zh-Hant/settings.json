@@ -22,6 +22,8 @@
   "workspace.notifyHint": "會檢查開啟中的 MR，以及最近更新的 10 個已指派與審查中 MR 的最新 30 則留言。通知涵蓋最新的 100 則。通知不包含 MR 標題或留言內容。檢查會在應用程式顯示中且自動重新整理開啟時執行。",
   "workspace.permissionDenied": "未取得通知權限。請檢查 Windows 的通知設定。",
   "workspace.enableFailed": "無法開啟通知。請檢查桌面應用程式的通知設定。",
+  "local.title": "本機存放庫",
+  "local.description": "為查看本機變更而尋找複製的資料夾",
   "update.title": "應用程式更新",
   "update.description": "版本與更新檢查",
   "shortcuts.title": "鍵盤快速鍵",

@@ -22,6 +22,8 @@
   "workspace.notifyHint": "检查当前打开的 MR，以及最近更新的 10 个指派给我的 MR 和待审核 MR 的最新 30 条评论。通知覆盖最新的 100 条。通知不包含 MR 标题或评论内容。检查在应用显示且自动刷新开启时进行。",
   "workspace.permissionDenied": "未获得通知权限。请检查 Windows 通知设置。",
   "workspace.enableFailed": "无法开启通知。请检查桌面应用中的通知设置。",
+  "local.title": "本地仓库",
+  "local.description": "为查看本地更改而查找克隆的文件夹",
   "update.title": "应用更新",
   "update.description": "版本和更新检查",
   "shortcuts.title": "键盘快捷键",

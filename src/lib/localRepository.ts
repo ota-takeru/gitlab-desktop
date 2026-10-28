@@ -1,8 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 
 import { translate } from '../i18n/i18n'
-import { GitLabCommandError, type Diff } from '../types/gitlab'
-import { isTauri, normalizeGitLabError } from './gitlab'
+import { GitLabCommandError, type Diff, type GitLabSnapshot, type MergeRequest } from '../types/gitlab'
+import { isTauri, normalizeGitLabError, queryGitLab } from './gitlab'
 
 /** A project's clone on this computer, linked by the user. */
 export interface LocalRepository {
@@ -96,9 +96,58 @@ export function setLocalScanFolders(sessionId: string, folders: string[]): Promi
   return call('set_local_scan_folders', { folders, sessionId })
 }
 
-/** The linked clone, or else one found below the scan folders and linked; null when none is found. */
-export function findLocalRepository(sessionId: string, projectId: string, projectPath: string): Promise<LocalRepository | null> {
-  return call('find_local_repository', { projectId, projectPath, sessionId })
+/** The outcome of looking for a project's clone below the scan folders. */
+export interface LocalRepositorySearch {
+  /** The linked clone, or the one found and linked; null when none is found. */
+  repository: LocalRepository | null
+  /** The user unlinked the project, so it is linked only when searched for explicitly. */
+  declined: boolean
+}
+
+/**
+ * The linked clone, or else one found below the scan folders and linked. A
+ * project the user unlinked is searched for only when `explicit`.
+ */
+export function findLocalRepository(sessionId: string, projectId: string, projectPath: string, explicit = false): Promise<LocalRepositorySearch> {
+  return call('find_local_repository', { explicit, projectId, projectPath, sessionId })
+}
+
+/** Pages of the user's open MRs read for their projects, per condition. */
+const OWN_MR_PAGES = 3
+
+/** A project of the user's open MRs and what the search found for it. */
+export interface OwnProjectSearch {
+  projectId: string
+  projectPath: string
+  result: LocalRepositorySearch | null
+  error: string | null
+}
+
+/**
+ * Looks for the clones of the projects of open MRs the user authored or is
+ * assigned to, linking those found, as when each MR is opened.
+ */
+export async function findOwnLocalRepositories(sessionId: string, userId: string): Promise<OwnProjectSearch[]> {
+  const projects = new Map<string, string>()
+  for (const own of [{ authorId: userId }, { assigneeId: userId }]) {
+    for (let page: number | null = 1; page !== null && page <= OWN_MR_PAGES;) {
+      const snapshot: GitLabSnapshot<MergeRequest[]> | null = await queryGitLab({ mode: 'network', query: { kind: 'mrs', page, search: '', state: 'opened', ...own }, sessionId })
+      for (const mergeRequest of snapshot?.data ?? []) {
+        if (mergeRequest.projectPath && !projects.has(mergeRequest.projectId)) projects.set(mergeRequest.projectId, mergeRequest.projectPath)
+      }
+      page = snapshot?.nextPage ?? null
+    }
+  }
+  // One project at a time, so the folders are not walked for many projects at once.
+  const results: OwnProjectSearch[] = []
+  for (const [projectId, projectPath] of projects) {
+    try {
+      results.push({ error: null, projectId, projectPath, result: await findLocalRepository(sessionId, projectId, projectPath) })
+    } catch (error) {
+      results.push({ error: normalizeGitLabError(error).message, projectId, projectPath, result: null })
+    }
+  }
+  return results
 }
 
 /** What the 「ローカルの変更」 button says about the clone: work not yet pushed, or why it cannot be compared. */

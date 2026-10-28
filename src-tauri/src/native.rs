@@ -1500,32 +1500,41 @@ impl NativeState {
 
     /// The project's clone: the linked one, or else the first clone of the
     /// project found below the scan folders, which is then linked after the
-    /// same checks as a folder the user chose. Null when there is none.
+    /// same checks as a folder the user chose. A project the user unlinked is
+    /// searched for only when `explicit`, as when the user asks for the search.
     pub async fn find_local_repository(
         &self,
         id: String,
         project: String,
         project_path: String,
-    ) -> Result<Option<LocalRepository>, AppError> {
+        explicit: bool,
+    ) -> Result<LocalRepositorySearch, AppError> {
         if let Some(linked) = self.local_repository(id.clone(), project.clone()).await? {
-            return Ok(Some(linked));
+            return Ok(LocalRepositorySearch {
+                repository: Some(linked),
+                declined: false,
+            });
         }
         validate_project_id(&project)?;
         let session = self.active(&id)?;
         let wanted_project = project.clone();
         let scanned = session.clone();
-        let folders = self
+        let (folders, declined) = self
             .blocking(move |inner| {
                 ensure_active(inner, &scanned)?;
-                let declined = local_scan_declined(&inner.store, &scanned.account)?;
-                if declined.contains(&wanted_project) {
-                    return Ok(Vec::new());
-                }
-                local_scan_folders(&inner.store, &scanned.account)
+                let declined =
+                    local_scan_declined(&inner.store, &scanned.account)?.contains(&wanted_project);
+                Ok((
+                    local_scan_folders(&inner.store, &scanned.account)?,
+                    declined,
+                ))
             })
             .await?;
-        if folders.is_empty() {
-            return Ok(None);
+        if folders.is_empty() || (declined && !explicit) {
+            return Ok(LocalRepositorySearch {
+                repository: None,
+                declined,
+            });
         }
         let instance = normalize_instance(&session.public.instance_url)?;
         let wanted = project_path.clone();
@@ -1535,18 +1544,22 @@ impl NativeState {
         })
         .await
         .map_err(|_| storage_error())?;
-        match found {
-            Some(folder) => self
-                .link_local_repository(
+        let repository = match found {
+            Some(folder) => Some(
+                self.link_local_repository(
                     id,
                     project,
                     project_path,
                     folder.to_string_lossy().into_owned(),
                 )
-                .await
-                .map(Some),
-            None => Ok(None),
-        }
+                .await?,
+            ),
+            None => None,
+        };
+        Ok(LocalRepositorySearch {
+            declined: declined && repository.is_none(),
+            repository,
+        })
     }
 }
 
@@ -1608,6 +1621,15 @@ const MAX_LOCAL_REPOSITORIES: usize = 500;
 pub struct LocalRepository {
     pub path: String,
     pub project_path: String,
+}
+
+/// The outcome of looking for a project's clone below the scan folders.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalRepositorySearch {
+    pub repository: Option<LocalRepository>,
+    /// The user unlinked the project, so it is not linked automatically.
+    pub declined: bool,
 }
 
 fn validate_project_id(project: &str) -> Result<(), AppError> {

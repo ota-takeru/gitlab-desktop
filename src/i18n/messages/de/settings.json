@@ -22,6 +22,8 @@
   "workspace.notifyHint": "Geprüft werden der geöffnete MR sowie die letzten 30 Kommentare der 10 zuletzt aktualisierten zugewiesenen MRs und Review-MRs. Benachrichtigungen umfassen die 100 neuesten. Sie enthalten keine MR-Titel und keinen Kommentartext. Die Prüfung läuft, solange die App angezeigt wird und die automatische Aktualisierung aktiv ist.",
   "workspace.permissionDenied": "Die Berechtigung für Benachrichtigungen wurde nicht erteilt. Prüfen Sie die Windows-Benachrichtigungseinstellungen.",
   "workspace.enableFailed": "Benachrichtigungen konnten nicht aktiviert werden. Prüfen Sie die Benachrichtigungseinstellungen der Desktop-App.",
+  "local.title": "Lokale Repositories",
+  "local.description": "Ordner, in denen nach Klonen gesucht wird, um lokale Änderungen anzuzeigen",
   "update.title": "App-Updates",
   "update.description": "Version und Suche nach Updates",
   "shortcuts.title": "Tastenkürzel",

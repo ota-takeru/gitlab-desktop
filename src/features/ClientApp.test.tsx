@@ -38,6 +38,7 @@ vi.mock('./connections/ConnectionProvider', () => ({
 vi.mock('./connections/connectionContext', () => ({ useConnection: () => connection }))
 vi.mock('./shared/useGitLabQuery', () => ({ useGitLabQuery: gitlabQueryMock }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock, isTauri: () => true }))
+vi.mock('../lib/localRepository', async () => ({ ...await vi.importActual<typeof import('../lib/localRepository')>('../lib/localRepository'), getLocalScanFolders: async () => [] }))
 
 const sessionFixture: GitLabSession = { id: 'session-1', instanceUrl: 'https://gitlab.com', serverVersion: null, user: { id: '1', name: 'One', username: 'one' } }
 const mergeRequestFixture: MergeRequest = {

@@ -22,6 +22,8 @@
   "workspace.notifyHint": "Checks the open MR and the latest 30 comments of the 10 most recently updated assigned and review MRs. Notifications cover the 100 newest. Notifications don't include MR titles or comment text. Checks run while the app is shown and auto refresh is on.",
   "workspace.permissionDenied": "Notification permission wasn't granted. Check the Windows notification settings.",
   "workspace.enableFailed": "Couldn't turn on notifications. Check the notification settings in the desktop app.",
+  "local.title": "Local repositories",
+  "local.description": "Folders searched for clones, to see local changes",
   "update.title": "App updates",
   "update.description": "Version and update checks",
   "shortcuts.title": "Keyboard shortcuts",

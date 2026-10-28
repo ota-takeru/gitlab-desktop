@@ -8,6 +8,7 @@ import { createAppTheme } from '../../theme'
 
 const mocks = vi.hoisted(() => ({
   findLocalRepository: vi.fn(),
+  findOwnLocalRepositories: vi.fn(),
   getLocalChanges: vi.fn(),
   getLocalFile: vi.fn(),
   getLocalRepository: vi.fn(),
@@ -27,14 +28,14 @@ const changes = { aheadCount: 0, branch: 'feature', comparedSha: 'a'.repeat(40),
 
 function renderLocal(projectPath: string | null = 'group/app') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><LocalChanges headSha={'a'.repeat(40)} onSelectFile={vi.fn()} projectId="7" projectPath={projectPath} selectedFile={null} sessionId="s1" /></ThemeProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><LocalChanges headSha={'a'.repeat(40)} onSelectFile={vi.fn()} projectId="7" projectPath={projectPath} selectedFile={null} sessionId="s1" userId="u1" /></ThemeProvider></QueryClientProvider>)
 }
 
 describe('LocalChanges', () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset())
     mocks.getLocalFile.mockResolvedValue({ content: 'one\ntwo\n' })
-    mocks.findLocalRepository.mockResolvedValue(null)
+    mocks.findLocalRepository.mockResolvedValue({ declined: false, repository: null })
     mocks.getLocalScanFolders.mockResolvedValue([])
   })
 
@@ -195,7 +196,7 @@ describe('local changes found without opening the view', () => {
 
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset())
-    mocks.findLocalRepository.mockResolvedValue(null)
+    mocks.findLocalRepository.mockResolvedValue({ declined: false, repository: null })
     mocks.getLocalScanFolders.mockResolvedValue([])
   })
 
@@ -230,7 +231,7 @@ describe('local changes found without opening the view', () => {
     mocks.getLocalRepository.mockResolvedValue(null)
     renderBadge()
 
-    await waitFor(() => expect(mocks.findLocalRepository).toHaveBeenCalledWith('s1', '7', 'group/app'))
+    await waitFor(() => expect(mocks.findLocalRepository).toHaveBeenCalledWith('s1', '7', 'group/app', false))
     expect(screen.getByRole('button', { name: 'ローカルの変更' })).toBeInTheDocument()
     expect(mocks.getLocalStatus).not.toHaveBeenCalled()
   })
@@ -250,7 +251,7 @@ describe('local changes found without opening the view', () => {
     renderLocal()
 
     const section = await screen.findByRole('region', { name: 'cloneを探すフォルダ' })
-    mocks.findLocalRepository.mockResolvedValue({ path: 'C:/src/app', projectPath: 'group/app' })
+    mocks.findLocalRepository.mockResolvedValue({ declined: false, repository: { path: 'C:/src/app', projectPath: 'group/app' } })
     await waitFor(() => expect(within(section).getByRole('button', { name: '探すフォルダを追加…' })).toBeEnabled())
     fireEvent.click(within(section).getByRole('button', { name: '探すフォルダを追加…' }))
 
@@ -267,6 +268,43 @@ describe('local changes found without opening the view', () => {
 
     expect(await screen.findByText('登録したフォルダに group/app のcloneは見つかりませんでした。')).toBeInTheDocument()
     expect(screen.getByText('C:\\src')).toBeInTheDocument()
+  })
+
+  it('searches again for the project when asked, even one the user unlinked', async () => {
+    mocks.getLocalRepository.mockResolvedValue(null)
+    mocks.getLocalScanFolders.mockResolvedValue(['C:\\src'])
+    mocks.findLocalRepository.mockResolvedValue({ declined: true, repository: null })
+    mocks.getLocalChanges.mockResolvedValue(changes)
+    renderLocal()
+
+    expect(await screen.findByText('group/app は紐付けを解除したため自動では紐付けません。「このプロジェクトを探す」で探せます。')).toBeInTheDocument()
+    mocks.findLocalRepository.mockResolvedValue({ declined: false, repository: { path: 'C:/src/app', projectPath: 'group/app' } })
+    fireEvent.click(screen.getByRole('button', { name: 'このプロジェクトを探す' }))
+
+    expect(await screen.findByText('two')).toBeInTheDocument()
+    expect(mocks.findLocalRepository).toHaveBeenLastCalledWith('s1', '7', 'group/app', true)
+  })
+
+  it("searches for the projects of the user's own MRs at once and lists what was found", async () => {
+    mocks.getLocalRepository.mockResolvedValue(null)
+    mocks.getLocalScanFolders.mockResolvedValue(['C:\\src'])
+    mocks.findOwnLocalRepositories.mockResolvedValue([
+      { error: null, projectId: '8', projectPath: 'group/api', result: { declined: false, repository: { path: 'C:/src/api', projectPath: 'group/api' } } },
+      { error: null, projectId: '9', projectPath: 'group/web', result: { declined: false, repository: null } },
+      { error: null, projectId: '10', projectPath: 'group/old', result: { declined: true, repository: null } },
+    ])
+    renderLocal()
+
+    const section = await screen.findByRole('region', { name: 'cloneを探すフォルダ' })
+    await waitFor(() => expect(within(section).getByRole('button', { name: '自分のMRのプロジェクトをまとめて探す' })).toBeEnabled())
+    fireEvent.click(within(section).getByRole('button', { name: '自分のMRのプロジェクトをまとめて探す' }))
+
+    const results = await screen.findByRole('region', { name: '自分のMRのプロジェクトを探した結果' })
+    expect(mocks.findOwnLocalRepositories).toHaveBeenCalledWith('s1', 'u1')
+    expect(within(results).getByText('自分が作成者または担当者のオープンなMRの3プロジェクトを探し、1件が紐付いています。')).toBeInTheDocument()
+    expect(within(results).getByText('C:/src/api')).toBeInTheDocument()
+    expect(within(results).getByText('見つかりませんでした')).toBeInTheDocument()
+    expect(within(results).getByText('紐付けを解除したため紐付けていません')).toBeInTheDocument()
   })
 })
 

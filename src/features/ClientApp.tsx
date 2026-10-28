@@ -49,6 +49,7 @@ import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog'
 import { ConnectionProvider } from './connections/ConnectionProvider'
 import { useConnection } from './connections/connectionContext'
 import { ConnectionView } from './connections/ConnectionView'
+import { ScanFolders } from './mergeRequests/LocalChanges'
 import { MergeRequestDetail, type ReviewTab } from './mergeRequests/MergeRequestDetail'
 import { clearComposerBuffers } from './mergeRequests/composerBuffers'
 import { clearGitLabCache } from '../lib/gitlab'
@@ -784,6 +785,7 @@ function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceCh
     </SettingsSection>
     <SettingsSection description={t('settings.language.description')} id="settings-language" title={t('settings.language.title')}><LanguageSettings /></SettingsSection>
     <SettingsSection description={t('settings.workspace.description')} id="settings-workspace" title={t('settings.workspace.title')}><WorkspaceSettings /></SettingsSection>
+    {session ? <SettingsSection description={t('settings.local.description')} id="settings-local" title={t('settings.local.title')}><ScanFolders sessionId={session.id} userId={session.user.id} /></SettingsSection> : null}
     <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} /></SettingsSection>
     <SettingsSection description={t('settings.shortcuts.description')} id="settings-shortcuts" title={t('settings.shortcuts.title')}>
       <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
