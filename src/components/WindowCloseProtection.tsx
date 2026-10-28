@@ -5,6 +5,8 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useEffect, useState } from 'react'
 
+import { translate } from '../i18n/i18n'
+import { useT } from '../i18n/useT'
 import { isTauri } from '../lib/runtime'
 import { ensureBeforeUnloadProtection, initializeWindowCloseProtection, queueWindowCloseGuard, setCloseDialogs, setLatestWindowUnsafe, type CloseItem } from '../lib/windowSafety'
 import { useRetainedComposerUnsafe } from '../features/mergeRequests/useComposerBuffer'
@@ -21,6 +23,7 @@ type ProtectionStatus = 'starting' | 'ready' | 'failed'
  * handling alive across error-boundary recovery and React StrictMode cycles.
  */
 export function WindowCloseProtection() {
+  const t = useT()
   const allowed = useAutoUpdateAllowed()
   const retainedComposerUnsafe = useRetainedComposerUnsafe()
   const { setUnsafe: setRetainedComposerUnsafe } = useAutoUpdateSafety('retained-composers', { persistOnUnmount: true })
@@ -75,8 +78,8 @@ export function WindowCloseProtection() {
   if (status !== 'failed' || !isTauri()) return null
   return <Alert role="status" severity="warning">
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-      <Typography variant="body2">終了保護を有効にできませんでした。終了前にもう一度お試しください。</Typography>
-      <Button onClick={() => { setStatus('starting'); setRetry((current) => current + 1) }} size="small" variant="outlined">再試行</Button>
+      <Typography variant="body2">{t('common.closeProtection.enableFailed')}</Typography>
+      <Button onClick={() => { setStatus('starting'); setRetry((current) => current + 1) }} size="small" variant="outlined">{t('common.closeProtection.retry')}</Button>
     </Stack>
   </Alert>
 }
@@ -86,7 +89,7 @@ function withItems(message: string | undefined, items: CloseItem[] | undefined) 
   if (!items?.length) return message
   return <>
     {message}
-    <Box aria-label="未送信の内容がある画面" component="ul" sx={{ m: 0, mt: 1, pl: 2.5 }}>
+    <Box aria-label={translate('common.closeProtection.unsentScreens')} component="ul" sx={{ m: 0, mt: 1, pl: 2.5 }}>
       {items.map(({ detail, name }) => <Box component="li" key={name}>
         <Typography noWrap title={name} variant="body2">{name}</Typography>
         {detail ? <Typography color="textSecondary" component="div" variant="caption">{detail}</Typography> : null}

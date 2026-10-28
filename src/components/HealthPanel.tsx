@@ -10,6 +10,8 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 
+import { translate } from '../i18n/i18n'
+import { useT } from '../i18n/useT'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { RuntimeHealthState } from '../types/runtime'
 import { StatusPill, type StatusTone } from './StatusPill'
@@ -17,35 +19,36 @@ import { StatusPill, type StatusTone } from './StatusPill'
 function statusCopy(state: RuntimeHealthState, inTauri: boolean) {
   if (state.status === 'pending') {
     return {
-      label: '確認中',
+      label: translate('common.health.pending.label'),
       tone: 'info' as StatusTone,
-      message: 'Rust バックエンドから実行環境を取得しています。',
+      message: translate('common.health.pending.message'),
     }
   }
   if (state.status === 'success') {
     return {
-      label: '接続済み',
+      label: translate('common.health.success.label'),
       tone: 'success' as StatusTone,
-      message: 'デスクトップブリッジが応答しました。',
+      message: translate('common.health.success.message'),
     }
   }
   if (state.status === 'error') {
     return {
-      label: '接続エラー',
+      label: translate('common.health.error.label'),
       tone: 'error' as StatusTone,
-      message: state.message ?? '実行環境を確認できませんでした。',
+      message: state.message ?? translate('common.health.error.message'),
     }
   }
   return {
-    label: inTauri ? '未確認' : 'ブラウザプレビュー',
+    label: inTauri ? translate('common.health.idle.label') : translate('common.health.browserPreview'),
     tone: inTauri ? ('default' as StatusTone) : ('warning' as StatusTone),
     message: inTauri
-      ? 'GitLab 接続の前に、Rust 側の実行環境を確認できます。'
-      : 'ブラウザプレビューでは Rust コマンドを呼び出せません。デスクトップ起動時に確認できます。',
+      ? translate('common.health.idle.message')
+      : translate('common.health.idle.previewMessage'),
   }
 }
 
 export function HealthPanel() {
+  const t = useT()
   const inTauri = isTauri()
   const [state, setState] = useState<RuntimeHealthState>({ status: 'idle' })
   const copy = statusCopy(state, inTauri)
@@ -54,7 +57,7 @@ export function HealthPanel() {
     if (!isTauri()) {
       setState({
         status: 'error',
-        message: 'ブラウザプレビューのため Rust コマンドを実行できません。',
+        message: t('common.health.previewCommandUnavailable'),
       })
       return
     }
@@ -64,7 +67,7 @@ export function HealthPanel() {
       const info = await getRuntimeInfo()
       setState({ status: 'success', info })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Rust コマンドが失敗しました。'
+      const message = error instanceof Error ? error.message : t('common.health.commandFailed')
       setState({ status: 'error', message })
     }
   }
@@ -85,14 +88,14 @@ export function HealthPanel() {
               <MemoryOutlinedIcon sx={{ color: 'primary.main', mt: 0.25 }} />
               <Stack spacing={0.5}>
                 <Typography component="h2" id="runtime-health-title" variant="h2">
-                  開発環境のヘルスチェック
+                  {t('common.health.title')}
                 </Typography>
                 <Typography color="textSecondary" variant="body2">
-                  GitLab のデータへ接続する前に、このアプリと Rust ブリッジの状態を確認します。
+                  {t('common.health.description')}
                 </Typography>
               </Stack>
             </Stack>
-            <StatusPill label={inTauri ? 'Tauri デスクトップ' : 'ブラウザプレビュー'} tone={inTauri ? 'info' : 'warning'} />
+            <StatusPill label={inTauri ? t('common.health.tauriDesktop') : t('common.health.browserPreview')} tone={inTauri ? 'info' : 'warning'} />
           </Stack>
 
           <Divider />
@@ -137,7 +140,7 @@ export function HealthPanel() {
               startIcon={state.status === 'pending' ? <ScheduleRoundedIcon /> : <MemoryOutlinedIcon />}
               variant="contained"
             >
-              {state.status === 'pending' ? '確認中…' : 'Rust 環境を確認'}
+              {state.status === 'pending' ? t('common.health.checking') : t('common.health.check')}
             </Button>
           </Stack>
 
@@ -148,9 +151,9 @@ export function HealthPanel() {
               spacing={{ xs: 1, sm: 3 }}
               sx={{ bgcolor: 'action.hover', borderRadius: 2, p: 1.5 }}
             >
-              <RuntimeValue label="App version" value={state.info.appVersion} />
-              <RuntimeValue label="OS" value={state.info.os} />
-              <RuntimeValue label="Architecture" value={state.info.arch} />
+              <RuntimeValue label={t('common.health.appVersion')} value={state.info.appVersion} />
+              <RuntimeValue label={t('common.health.os')} value={state.info.os} />
+              <RuntimeValue label={t('common.health.architecture')} value={state.info.arch} />
             </Stack>
           ) : null}
         </Stack>

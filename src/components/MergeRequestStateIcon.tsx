@@ -5,6 +5,7 @@ import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import Box from '@mui/material/Box'
 import Tooltip from '@mui/material/Tooltip'
 
+import { useLocale } from '../i18n/useT'
 import { formatMergeRequestState } from '../lib/format'
 
 /** The MR state's icon, also used inside the state pill of headers. Open is the split icon turned over, as in GitLab. */
@@ -18,6 +19,8 @@ export function MergeRequestStateGlyph({ state }: { state: string }) {
 
 /** Compact MR state marker for list rows. The state name is the accessible label and tooltip. */
 export function MergeRequestStateIcon({ state }: { state: string }) {
+  // The label is read from the current language; subscribing re-renders it when that changes.
+  useLocale()
   const label = formatMergeRequestState(state)
   const opened = state === 'opened' || state === 'open'
   const color = opened ? 'success.main' : state === 'merged' ? 'secondary.main' : 'text.secondary'

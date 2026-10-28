@@ -3,12 +3,12 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { getLocalDraft, isDesktopRuntime, setLocalDraft } from '../../lib/localDrafts'
 import type { GitLabSession, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
+import { translate } from '../../i18n/i18n'
 
 const MAX_COMPOSER_BUFFERS = 100
 const MAX_COMPOSER_BODY_LENGTH = 64 * 1024
 const MAX_COMPOSER_KEY_LENGTH = 4096
 const COMPOSER_SAVE_DEBOUNCE_MS = 500
-const LOCAL_DRAFT_SAVE_ERROR = 'この端末への保存に失敗しました。入力は保持されています。'
 
 export type ComposerPersistenceStatus = 'memory' | 'hydrating' | 'saving' | 'saved' | 'error'
 
@@ -141,13 +141,13 @@ export function listUnsafeComposerTargets(): ComposerTarget[] {
 
 /** What an input of an MR is, from its buffer key: the screen's own name for it. */
 function composerInputName(replyId: unknown, position: unknown): string {
-  if (typeof replyId === 'string' && replyId.startsWith('edit:')) return 'コメントの編集'
-  if (typeof replyId === 'string' && replyId.startsWith('draft-edit:')) return '未公開レビューの編集'
-  if (replyId !== 'new' && replyId !== '') return '返信'
-  if (!isRecord(position)) return '新しいコメント'
+  if (typeof replyId === 'string' && replyId.startsWith('edit:')) return translate('review.input.editComment')
+  if (typeof replyId === 'string' && replyId.startsWith('draft-edit:')) return translate('review.input.editDraft')
+  if (replyId !== 'new' && replyId !== '') return translate('review.input.reply')
+  if (!isRecord(position)) return translate('review.input.newComment')
   const path = typeof position.newPath === 'string' && position.newPath ? position.newPath : typeof position.oldPath === 'string' ? position.oldPath : ''
   const line = typeof position.newLine === 'number' ? position.newLine : typeof position.oldLine === 'number' ? position.oldLine : null
-  return path ? `行コメント（${path}${line === null ? '' : `:${line}`}）` : '行コメント'
+  return path ? translate('review.input.lineCommentAt', { location: `${path}${line === null ? '' : `:${line}`}` }) : translate('review.input.lineComment')
 }
 
 /** The name remembered for an MR on any account, for screens that know only its IDs. */
@@ -297,7 +297,7 @@ export function seedComposerBuffer(bufferKey: string, text: string): boolean {
 function setComposerBody(bufferKey: string, nextBody: string): boolean {
   const currentEntry = getOrCreateEntry(bufferKey)
   if (new TextEncoder().encode(nextBody).byteLength > MAX_COMPOSER_BODY_LENGTH) {
-    currentEntry.error = 'コメントは64 KiB以内で入力してください。超過した内容は保存されていません。'
+    currentEntry.error = translate('review.input.tooLong')
     notify(currentEntry)
     return false
   }
@@ -307,7 +307,7 @@ function setComposerBody(bufferKey: string, nextBody: string): boolean {
     return true
   }
   if (nextBody && !currentEntry.body && countNonEmptyBuffers() >= MAX_COMPOSER_BUFFERS) {
-    currentEntry.error = '未送信コメントは100件まで保持できます。既存の入力を送信または破棄してください。'
+    currentEntry.error = translate('review.input.tooMany')
     notify(currentEntry)
     return false
   }
@@ -394,13 +394,13 @@ async function hydrateEntry(entry: BufferEntry, sessionId: string | null): Promi
     if (entry.revision === revision && draft?.body) {
       if (new TextEncoder().encode(draft.body).byteLength > MAX_COMPOSER_BODY_LENGTH) {
         entry.status = 'error'
-        entry.error = LOCAL_DRAFT_SAVE_ERROR
+        entry.error = translate('review.input.saveFailed')
       } else if (!entry.body && countNonEmptyBuffers() < MAX_COMPOSER_BUFFERS) {
         entry.body = draft.body
         entry.status = 'saved'
       } else if (!entry.body) {
         entry.status = 'error'
-        entry.error = '未送信コメントは100件まで保持できます。既存の入力を送信または破棄してください。'
+        entry.error = translate('review.input.tooMany')
       } else {
         entry.status = 'saved'
       }
@@ -412,7 +412,7 @@ async function hydrateEntry(entry: BufferEntry, sessionId: string | null): Promi
     if (!isActiveEntry(entry, generation) || entry.sessionId !== sessionId) return
     entry.hydrationSessionId = null
     entry.status = 'error'
-    entry.error = LOCAL_DRAFT_SAVE_ERROR
+    entry.error = translate('review.input.saveFailed')
     notify(entry)
   }
 }
@@ -456,7 +456,7 @@ function enqueuePersist(entry: BufferEntry, sessionId: string, body: string, rev
     } catch {
       if (isActiveEntry(entry, generation) && entry.sessionId === sessionId && entry.revision === revision) {
         entry.status = 'error'
-        entry.error = LOCAL_DRAFT_SAVE_ERROR
+        entry.error = translate('review.input.saveFailed')
         entry.persistFailed = true
         notify(entry)
       }

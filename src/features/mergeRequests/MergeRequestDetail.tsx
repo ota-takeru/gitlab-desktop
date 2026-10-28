@@ -36,7 +36,9 @@ import { applyOwnReaction } from '../../lib/awardEmoji'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
-import { formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
+import { translate } from '../../i18n/i18n'
+import { useT } from '../../i18n/useT'
+import { formatFetchedAt, formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { projectUrlOf } from '../../lib/markdownLinks'
@@ -45,6 +47,7 @@ import { useConnection } from '../connections/connectionContext'
 import { usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useDiscussionWindow } from './useDiscussionWindow'
+import { formatNames } from './mergeActions'
 import { positionAtLatest } from './discussionScroll'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useGitLabMutation } from '../shared/useGitLabMutation'
@@ -92,7 +95,8 @@ export interface MergeRequestDetailProps {
   onTabChange?: (tab: ReviewTab) => void
 }
 
-export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMergeRequest, onBack, onOpenProject, onTabChange, tab }: MergeRequestDetailProps) {
+export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.back'), initialMergeRequest, onBack, onOpenProject, onTabChange, tab }: MergeRequestDetailProps) {
+  const t = useT()
   const { session } = useConnection()
   const workspace = usePersonalWorkspace(session)
   const sectionRef = useRef<HTMLElement | null>(null)
@@ -184,7 +188,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     if (!session) return null
     if (!await confirmOutsideWrite()) return null
     const flushed = await flushComposerBuffers().catch(() => false)
-    if (!flushed) throw normalizeGitLabError({ code: 'STORAGE', message: '入力の保存を確認できないため、添付を停止しました。' })
+    if (!flushed) throw normalizeGitLabError({ code: 'STORAGE', message: t('mergeRequest.detail.attachmentStopped') })
     let markdown: string | null = null
     const result = await mutation.runDetailed({ kind: 'uploadAttachment', projectId: resourceId, iid, fileName: file.name }, undefined, async () => {
       markdown = await uploadGitLabAttachment({ file, iid, projectId: resourceId, sessionId: session.id })
@@ -276,10 +280,10 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     const previous = previousCommentIds.current
     if (previous?.sessionId === session.id && workspace.settings.notifyComments) {
       const added = currentNotes.filter((note) => previous.notes.has(note.id) && previous.notes.get(note.id) !== (note.updatedAt || note.createdAt) || !previous.notes.has(note.id) && Date.parse(note.createdAt) > Math.max(0, ...Array.from(previous.notes.values(), (date) => Date.parse(date))))
-      if (added.length) void notifyWorkspace(`開いているMRに新着コメントが${added.length}件あります。`).catch(() => undefined)
+      if (added.length) void notifyWorkspace(t('mergeRequest.detail.newComments', { count: added.length })).catch(() => undefined)
     }
     previousCommentIds.current = { sessionId: session.id, notes: new Map([...(previous?.sessionId === session.id ? previous.notes : []), ...currentNotes.map((note) => [note.id, note.updatedAt || note.createdAt] as const)]) }
-  }, [discussionWindow.error, latestDiscussions, session, workspace.settings.notifyComments])
+  }, [discussionWindow.error, latestDiscussions, session, t, workspace.settings.notifyComments])
   // The other tabs keep their own scroll, from the top at first: the page's one scroll would
   // otherwise open a tab where the previous one was read and move its content as it loads.
   // A place is kept with the header's height then and restored for its height now: the header
@@ -343,10 +347,10 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       if (diffsResult.data!.some((diff) => diff.newPath === pendingFileTarget || diff.oldPath === pendingFileTarget)) { setPendingFileTarget(null); return }
       const next = diffsResult.snapshot?.nextPage
       if (next && next <= 10) setChangePage(next)
-      else { setPendingFileTarget(null); setViewPosition(undefined); setPositionError('対象ファイルを取得した差分で見つけられませんでした。GitLabで確認してください。') }
+      else { setPendingFileTarget(null); setViewPosition(undefined); setPositionError(t('mergeRequest.position.fileNotFound')) }
     }, 0)
     return () => globalThis.clearTimeout(timer)
-  }, [activeTab, diffsResult.data, diffsResult.loading, diffsResult.refreshing, diffsResult.snapshot?.nextPage, pendingFileTarget])
+  }, [activeTab, diffsResult.data, diffsResult.loading, diffsResult.refreshing, diffsResult.snapshot?.nextPage, pendingFileTarget, t])
 
   useLayoutEffect(() => {
     const pending = pendingDiffThread.current
@@ -377,7 +381,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     // Past the last thread of the shown file, the diff continues in the next file that has one.
     if (index < 0 && inDiff && stepToUnresolvedFile(unresolvedDiscussions, direction)) return
     if (!threads.length) {
-      notify({ message: inDiff ? '差分に未解決のスレッドはありません。' : '表示中の議論に未解決のスレッドはありません。' })
+      notify({ message: inDiff ? t('mergeRequest.detail.noUnresolvedInDiff') : t('mergeRequest.detail.noUnresolvedInDiscussion') })
       return
     }
     if (index < 0) index = direction === 1 ? 0 : threads.length - 1
@@ -468,8 +472,8 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   // Writes to an MR you neither wrote, are assigned to nor review are asked once more, so a wrong MR is not changed by mistake.
   const outsider = Boolean(session && mergeRequest && !isInvolved(mergeRequest, session.user.id))
   const withOutsideNote = useCallback((options: ConfirmOptions): ConfirmOptions => outsider
-    ? { ...options, message: <><Box component="span" sx={{ color: 'warning.main', display: 'block', mb: options.message ? 1 : 0 }}>{OUTSIDE_NOTE}</Box>{options.message}</> }
-    : options, [outsider])
+    ? { ...options, message: <><Box component="span" sx={{ color: 'warning.main', display: 'block', mb: options.message ? 1 : 0 }}>{t('mergeRequest.outsider.note')}</Box>{options.message}</> }
+    : options, [outsider, t])
   // Stable: it is the confirm of the ConfirmScope around the memoized header actions.
   const confirmWithOutsideNote = useCallback(async (options: ConfirmOptions) => {
     const ok = await confirm(withOutsideNote(options))
@@ -479,11 +483,11 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const copyHeadSha = useCallback(async (sha: string) => {
     try {
       await navigator.clipboard.writeText(sha)
-      notify({ message: 'headのSHAをコピーしました', severity: 'success' })
+      notify({ message: t('mergeRequest.detail.headShaCopied'), severity: 'success' })
     } catch {
-      notify({ message: 'SHAをコピーできませんでした', severity: 'error' })
+      notify({ message: t('mergeRequest.detail.headShaCopyFailed'), severity: 'error' })
     }
-  }, [notify])
+  }, [notify, t])
 
   const confirmOutsideWrite = useCallback(async () => {
     if (!outsider) return true
@@ -491,8 +495,8 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       outsideAcknowledged.current = false
       return true
     }
-    return confirm({ confirmLabel: '実行する', message: `${OUTSIDE_NOTE}この操作を実行しますか？`, title: '担当外のMRです' })
-  }, [confirm, outsider])
+    return confirm({ confirmLabel: t('mergeRequest.outsider.confirm'), message: t('mergeRequest.outsider.message'), title: t('mergeRequest.outsider.title') })
+  }, [confirm, outsider, t])
 
   const runMutation = mutation.run
   const runAction = useCallback(async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
@@ -506,14 +510,14 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   const runHeaderAction = useCallback((action: GitLabAction) => runAction(action, refreshCurrent), [refreshCurrent, runAction])
 
   if (!mergeRequest) {
-    return <Stack spacing={1.5} sx={{ px: 2, py: 2 }}>{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />} sx={{ alignSelf: 'flex-start' }}>{backLabel}</Button> : null}<Alert severity="error">このMRは現在の接続先または権限では表示できません。保存済みの内容は表示しません。</Alert></Stack>
+    return <Stack spacing={1.5} sx={{ px: 2, py: 2 }}>{onBack ? <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />} sx={{ alignSelf: 'flex-start' }}>{backLabel}</Button> : null}<Alert severity="error">{t('mergeRequest.detail.accessDenied')}</Alert></Stack>
   }
 
 
   const commentPosition = position
   const openCommentPosition = (target: Position) => {
     setViewPosition(isPositionCurrent(target, mergeRequest) ? target : undefined)
-    setPositionError(isPositionCurrent(target, mergeRequest) ? null : 'このコメントは古い版の行に付いています。最新のファイルを表示します。')
+    setPositionError(isPositionCurrent(target, mergeRequest) ? null : t('mergeRequest.position.outdatedComment'))
     setSelectedCommit(null); setCompareVersion(null); setFileView('diff'); setChangePage(1)
     setSelectedFile(target.newPath || target.oldPath)
     setPendingFileTarget(target.newPath || target.oldPath)
@@ -521,7 +525,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
   const submitComment = async (body: string, thread: boolean, targetPosition?: Position) => {
     if (targetPosition && !isPositionCurrent(targetPosition, mergeRequest)) {
-      setPositionError('MRのheadが変わったため、この行位置は古くなっています。差分を更新して行を選び直してください。')
+      setPositionError(t('mergeRequest.position.headChanged'))
       return false
     }
     setPositionError(null)
@@ -533,7 +537,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
   const saveDraft = async (body: string, targetPosition?: Position) => {
     if (targetPosition && !isPositionCurrent(targetPosition, mergeRequest)) {
-      setPositionError('MRのheadが変わったため、この行位置は古くなっています。差分を更新して行を選び直してください。')
+      setPositionError(t('mergeRequest.position.headChanged'))
       return false
     }
     setPositionError(null)
@@ -576,7 +580,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   })
   const reactionsDisabled = !session || mutation.isLocked || mutation.isPending
   const noteReactions: NoteReactions = { awardsByNote, disabled: reactionsDisabled, onToggle: (note, name, add) => toggleReaction(name, add, note.id) }
-  const renderNoteReactions = (note: Note) => <ReactionBar awards={awardsByNote.get(note.id) ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={`${note.author.name}のコメント`} onToggle={(name, add) => toggleReaction(name, add, note.id)} />
+  const renderNoteReactions = (note: Note) => <ReactionBar awards={awardsByNote.get(note.id) ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={t('mergeRequest.reactions.noteLabel', { name: note.author.name })} onToggle={(name, add) => toggleReaction(name, add, note.id)} />
   // Applying commits to the source branch, so the MR, its diffs and the threads all change.
   const suggestionActions: SuggestionActions | undefined = session ? {
     currentUserId: session.user.id,
@@ -603,7 +607,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
   // Publishing shows the comment to everyone on the MR and cannot be taken back as a draft.
   const publishDraft = async (draft: Draft) => {
-    if (!await confirm(withOutsideNote({ confirmLabel: '公開する', message: plainExcerpt(draft.body, 120), title: 'この下書きを公開しますか？' }))) return false
+    if (!await confirm(withOutsideNote({ confirmLabel: t('mergeRequest.drafts.publishConfirm'), message: plainExcerpt(draft.body, 120), title: t('mergeRequest.drafts.publishTitle') }))) return false
     return publishDraftId(draft.id, draft.discussionId)
   }
 
@@ -616,7 +620,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }
   const editDraft = (draft: Draft, body: string) => runAction({ body, draftId: draft.id, iid, kind: 'editDraft', projectId: resourceId }, draftsResult.refresh)
   const publishSelectedDrafts = async () => {
-    if (!selectedDrafts.length || !await confirm(withOutsideNote({ confirmLabel: `${selectedDrafts.length}件を公開する`, message: '一件ずつ公開します。途中で失敗したら残りは公開しません。', title: `選択した下書き${selectedDrafts.length}件を公開しますか？` }))) return
+    if (!selectedDrafts.length || !await confirm(withOutsideNote({ confirmLabel: t('mergeRequest.drafts.publishCount', { count: selectedDrafts.length }), message: t('mergeRequest.drafts.publishManyMessage'), title: t('mergeRequest.drafts.publishSelectedTitle', { count: selectedDrafts.length }) }))) return
     for (const draftId of selectedDrafts) {
       if (!await publishDraftId(draftId)) break
     }
@@ -627,9 +631,9 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
     const all = new Map<string, Draft>()
     let page: number | null = 1
     for (let count = 0; page !== null; count += 1) {
-      if (count >= MAX_DRAFT_PAGES) throw new Error('未公開レビューが多すぎるため、まとめて公開できません。GitLabで公開してください。')
+      if (count >= MAX_DRAFT_PAGES) throw new Error(t('mergeRequest.drafts.tooMany'))
       const snapshot: GitLabSnapshot<Draft[]> | null = await queryGitLab<DraftsQuery>({ mode: 'network', query: { iid, kind: 'drafts', page, projectId: resourceId } as DraftsQuery, requestId: createRequestId('drafts-all'), sessionId: session.id })
-      if (!snapshot) throw new Error('未公開レビューを取得できませんでした。')
+      if (!snapshot) throw new Error(t('mergeRequest.drafts.fetchFailed'))
       for (const draft of snapshot.data) all.set(draft.id, draft)
       page = snapshot.nextPage
     }
@@ -643,17 +647,17 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       try {
         all = await fetchAllDrafts()
       } catch (caught) {
-        notify({ message: `未公開レビューを取得できませんでした: ${normalizeGitLabError(caught).message}`, severity: 'error' })
+        notify({ message: t('mergeRequest.drafts.fetchFailedWithError', { error: normalizeGitLabError(caught).message }), severity: 'error' })
         return
       }
       if (!all.length) { draftsResult.refresh(); return }
-      if (!await confirm(withOutsideNote({ confirmLabel: `${all.length}件を公開する`, message: '一件ずつ公開します。途中で失敗したら残りは公開しません。', title: `未公開レビュー${all.length}件をすべて公開しますか？` }))) return
+      if (!await confirm(withOutsideNote({ confirmLabel: t('mergeRequest.drafts.publishCount', { count: all.length }), message: t('mergeRequest.drafts.publishManyMessage'), title: t('mergeRequest.drafts.publishAllTitle', { count: all.length }) }))) return
       let published = 0
       for (const draft of all) {
         if (!await publishDraftId(draft.id, draft.discussionId)) break
         published += 1
       }
-      if (published === all.length) notify({ celebrate: true, message: `レビューを公開しました（${published}件）`, severity: 'success' })
+      if (published === all.length) notify({ celebrate: true, message: t('mergeRequest.drafts.published', { count: published }), severity: 'success' })
       setDraftPage(1)
     } finally {
       setPublishingAll(false)
@@ -666,15 +670,15 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       await openGitLabUrl(session.id, url)
     } catch (caught) {
       // The review page remains usable if an OS/browser open is unavailable.
-      notify({ message: `GitLabで開けませんでした: ${normalizeGitLabError(caught).message}`, severity: 'error' })
+      notify({ message: t('mergeRequest.detail.openFailed', { error: normalizeGitLabError(caught).message }), severity: 'error' })
     }
   }
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(mergeRequest.webUrl)
-      notify({ message: 'MRのリンクをコピーしました', severity: 'success' })
+      notify({ message: t('mergeRequest.detail.linkCopied'), severity: 'success' })
     } catch {
-      notify({ message: 'リンクをコピーできませんでした', severity: 'error' })
+      notify({ message: t('mergeRequest.detail.linkCopyFailed'), severity: 'error' })
     }
   }
   const refetchQuery = async (query: GitLabQuery) => {
@@ -747,7 +751,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
       case 'uploadAttachment':
         // Project uploads do not appear in MR discussions until commented.
         // Require the user to inspect the project on GitLab before unlocking.
-        if (!await confirm({ cancelLabel: 'まだ確認していない', confirmLabel: '確認した', message: 'アップロードした添付はMRの議論には表示されません。GitLabのプロジェクト側で添付の有無を確認してください。', title: '添付の送信結果を確認しましたか？' })) {
+        if (!await confirm({ cancelLabel: t('mergeRequest.unknownWrite.attachmentNotChecked'), confirmLabel: t('mergeRequest.unknownWrite.attachmentChecked'), message: t('mergeRequest.unknownWrite.attachmentMessage'), title: t('mergeRequest.unknownWrite.attachmentTitle') })) {
           setVerifyingUnknown(false)
           return
         }
@@ -796,7 +800,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         sessionId: session.id,
       })))
       if (snapshots.some((snapshot) => !snapshot)) {
-        throw new Error('最新状態を取得できませんでした。')
+        throw new Error(t('mergeRequest.unknownWrite.refetchFailed'))
       }
       // Make the confirmed response visible before enabling acknowledgement;
       // another background refresh must not leave the old snapshot on screen.
@@ -823,15 +827,15 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
   }, currentResult.refresh)
   const rerequestReview = async (user: GitLabUser) => {
     const projectPath = mergeRequest.projectPath
-    if (!projectPath || !await confirmWithOutsideNote({ confirmLabel: '再依頼する', message: `${user.name}さんにレビューの依頼が通知されます。`, title: `${user.name}さんにレビューを再依頼しますか？` })) return
-    if (await runAction({ iid, kind: 'rerequestReview', projectId: resourceId, projectPath, userId: user.id }, currentResult.refresh)) notify({ message: `${user.name}さんにレビューを再依頼しました`, severity: 'success' })
+    if (!projectPath || !await confirmWithOutsideNote({ confirmLabel: t('mergeRequest.rerequest.confirm'), message: t('mergeRequest.rerequest.message', { name: user.name }), title: t('mergeRequest.rerequest.title', { name: user.name }) })) return
+    if (await runAction({ iid, kind: 'rerequestReview', projectId: resourceId, projectPath, userId: user.id }, currentResult.refresh)) notify({ message: t('mergeRequest.rerequest.done', { name: user.name }), severity: 'success' })
   }
   // The button stays busy until the approvals are read back, so a second click cannot approve twice.
   const toggleApproval = async () => {
     if (!mergeRequest.headSha || approvalWriting) return false
     const confirmed = await confirm(withOutsideNote(myApproved
-      ? { confirmLabel: '承認を取り消す', destructive: true, message: '必要な承認数を満たさなくなり、マージできなくなる場合があります。', title: `!${mergeRequest.iid} の承認を取り消しますか？` }
-      : { confirmLabel: '承認する', message: `表示中のhead ${shortSha(mergeRequest.headSha)} を承認します。承認はMRの参加者に通知されます。`, title: `!${mergeRequest.iid} を承認しますか？` }))
+      ? { confirmLabel: t('mergeRequest.approval.revokeConfirm'), destructive: true, message: t('mergeRequest.approval.revokeMessage'), title: t('mergeRequest.approval.revokeTitle', { iid: mergeRequest.iid }) }
+      : { confirmLabel: t('mergeRequest.approval.approve'), message: t('mergeRequest.approval.approveMessage', { sha: shortSha(mergeRequest.headSha) }), title: t('mergeRequest.approval.approveTitle', { iid: mergeRequest.iid }) }))
     if (!confirmed) return false
     const kind = myApproved ? 'unapprove' : 'approve'
     setApprovalWriting(kind)
@@ -841,7 +845,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         // List pages group by approval; let them pick up the change.
         void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') })
         if (approvalsQuery) await refetchQuery(approvalsQuery)
-        if (kind === 'approve') notify({ celebrate: true, message: `!${mergeRequest.iid} を承認しました`, severity: 'success' })
+        if (kind === 'approve') notify({ celebrate: true, message: t('mergeRequest.approval.approved', { iid: mergeRequest.iid }), severity: 'success' })
       }
       return success
     } finally {
@@ -899,49 +903,49 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32 }}>
           {onBack ? <Tooltip title={`${backLabel} (Esc)`}><IconButton aria-label={backLabel} onClick={onBack} sx={{ ml: -1 }}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
-            <Tooltip title={mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`}><Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, px: 1 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`}</Box></Button></Tooltip>
+            <Tooltip title={mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}><Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, px: 1 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}</Box></Button></Tooltip>
             <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="body2">!{mergeRequest.iid}</Typography>
-            {currentResult.stale ? <Tooltip title="保存済みのMR概要を表示中です。最新の状態を取得しています。"><Typography color="textSecondary" noWrap sx={{ flexShrink: 0, pl: 0.5 }} variant="caption">保存済み · {formatFetchedAt(currentResult.snapshot?.fetchedAt)}</Typography></Tooltip> : null}
+            {currentResult.stale ? <Tooltip title={t('mergeRequest.detail.staleTooltip')}><Typography color="textSecondary" noWrap sx={{ flexShrink: 0, pl: 0.5 }} variant="caption">{t('mergeRequest.common.savedAt', { time: formatFetchedAt(currentResult.snapshot?.fetchedAt) })}</Typography></Tooltip> : null}
           </Stack>
-          <Tooltip title={pinnedNow ? '固定を外す' : 'サイドバーに固定'}><IconButton aria-label={pinnedNow ? '固定を外す' : 'サイドバーに固定'} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid }, tabMeta ?? undefined)}>{pinnedNow ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
-          <Tooltip title={refreshing ? '更新中…' : '最新の状態を取得'}><span><IconButton aria-label="更新" disabled={refreshing} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
-          <Tooltip title="GitLabで開く"><IconButton aria-label="GitLabで開く" onClick={() => void openInGitLab()}><LaunchRoundedIcon /></IconButton></Tooltip>
-          <Tooltip title="リンクをコピー"><IconButton aria-label="リンクをコピー" onClick={() => void copyLink()}><LinkRoundedIcon /></IconButton></Tooltip>
-          {session && mergeRequestNotifications[0] ? <Tooltip title={mergeRequestNotifications.length > 1 ? `このMRの未読の通知 ${mergeRequestNotifications.length}件のうち1件を既読にします` : 'このMRの通知を既読にします'}><Box component="span" sx={{ pl: 1 }}><MarkNotificationReadButton sessionId={session.id} todo={mergeRequestNotifications[0]} /></Box></Tooltip> : null}
+          <Tooltip title={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')}><IconButton aria-label={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid }, tabMeta ?? undefined)}>{pinnedNow ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
+          <Tooltip title={refreshing ? t('mergeRequest.common.refreshing') : t('mergeRequest.detail.refreshTooltip')}><span><IconButton aria-label={t('mergeRequest.detail.refresh')} disabled={refreshing} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
+          <Tooltip title={t('mergeRequest.common.openInGitLab')}><IconButton aria-label={t('mergeRequest.common.openInGitLab')} onClick={() => void openInGitLab()}><LaunchRoundedIcon /></IconButton></Tooltip>
+          <Tooltip title={t('mergeRequest.detail.copyLink')}><IconButton aria-label={t('mergeRequest.detail.copyLink')} onClick={() => void copyLink()}><LinkRoundedIcon /></IconButton></Tooltip>
+          {session && mergeRequestNotifications[0] ? <Tooltip title={mergeRequestNotifications.length > 1 ? t('mergeRequest.detail.markOneRead', { count: mergeRequestNotifications.length }) : t('mergeRequest.detail.markRead')}><Box component="span" sx={{ pl: 1 }}><MarkNotificationReadButton sessionId={session.id} todo={mergeRequestNotifications[0]} /></Box></Tooltip> : null}
           <Box sx={{ pl: 1 }}>
-            {approvalsResult.error && !approvalWriting ? <Tooltip title={`承認状態を取得できませんでした: ${approvalsResult.error.message}`}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? '再取得中…' : '承認状態を再取得'}</Button></span></Tooltip>
-              : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? '承認中…' : approvalWriting === 'unapprove' ? '取り消し中…' : approvalsResult.loading && !approvals ? '確認中…' : myApproved ? '自分の承認を取り消す' : '承認する'}</Button>}
+            {approvalsResult.error && !approvalWriting ? <Tooltip title={t('mergeRequest.approval.loadFailed', { error: approvalsResult.error.message })}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? t('mergeRequest.approval.retrying') : t('mergeRequest.approval.retry')}</Button></span></Tooltip>
+              : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? t('mergeRequest.approval.approving') : approvalWriting === 'unapprove' ? t('mergeRequest.approval.revoking') : approvalsResult.loading && !approvals ? t('mergeRequest.common.checking') : myApproved ? t('mergeRequest.approval.revoke') : t('mergeRequest.approval.approve')}</Button>}
           </Box>
           <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={refreshCurrent} onRun={runHeaderAction} /></ConfirmScope>
         </Stack>
         <MergeRequestSummary approvedBy={approvedBy} compact={compactHeader} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
-        {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? '担当者' : 'レビュアー'} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open /> : null}
+        {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open /> : null}
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, mb: '-1px', mt: 0.5 }}>
-          <Tabs aria-label="MR詳細" onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0, ml: -1.5 }} value={activeTab}>
-            <Tab label="概要" value="overview" />
-            <Tab label={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><span>議論</span>{unresolvedCount > 0 ? <Chip aria-label={`未解決${unresolvedCount}件`} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Stack>} value="discussion" />
-            <Tab label="変更" value="changes" />
-            <Tab label="パイプライン" value="pipelines" />
+          <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0, ml: -1.5 }} value={activeTab}>
+            <Tab label={t('mergeRequest.detail.tabOverview')} value="overview" />
+            <Tab label={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><span>{t('mergeRequest.detail.tabDiscussion')}</span>{unresolvedCount > 0 ? <Chip aria-label={t('mergeRequest.detail.unresolvedCount', { count: unresolvedCount })} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Stack>} value="discussion" />
+            <Tab label={t('mergeRequest.detail.tabChanges')} value="changes" />
+            <Tab label={t('mergeRequest.detail.tabPipelines')} value="pipelines" />
           </Tabs>
-          {activeTab === 'discussion' ? <Tooltip describeChild title={descriptionOpen ? '説明を閉じる (D)' : '説明を横に表示 (D)'}><Button aria-keyshortcuts="D" aria-pressed={descriptionOpen} color={descriptionOpen ? 'primary' : 'inherit'} onClick={() => setDescriptionOpen((open) => !open)} size="small" startIcon={<DescriptionOutlinedIcon />} sx={{ flexShrink: 0, ml: 'auto' }}>説明</Button></Tooltip> : null}
+          {activeTab === 'discussion' ? <Tooltip describeChild title={descriptionOpen ? t('mergeRequest.detail.hideDescription') : t('mergeRequest.detail.showDescription')}><Button aria-keyshortcuts="D" aria-pressed={descriptionOpen} color={descriptionOpen ? 'primary' : 'inherit'} onClick={() => setDescriptionOpen((open) => !open)} size="small" startIcon={<DescriptionOutlinedIcon />} sx={{ flexShrink: 0, ml: 'auto' }}>{t('mergeRequest.overview.description')}</Button></Tooltip> : null}
           {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: activeTab === 'discussion' ? 0 : 'auto' }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}
         </Stack>
         {/* Write results stay in view under the header, wherever in a long thread the action was taken. */}
         {positionError || visibleMutationError || verificationError ? <Stack aria-live="polite" spacing={1} sx={{ pb: 1, pt: 1.5 }}>
           {positionError ? <Alert onClose={() => setPositionError(null)} severity="warning">{positionError}</Alert> : null}
-          {visibleMutationError ? <Alert action={mutation.status === 'unknown' ? <Button color="inherit" disabled={verifyingUnknown} onClick={() => { if (!mutation.unknownAction) void retryUnknownReceipt(); else if (verificationReady) void acknowledgeVerifiedOutcome(); else void verifyUnknownOutcome() }}>{verifyingUnknown ? '確認中…' : !mutation.unknownAction ? '確認記録を再取得' : verificationReady ? '再取得結果を確認した' : 'サーバーから再取得'}</Button> : undefined} onClose={mutation.status === 'unknown' ? undefined : () => setDismissedError(visibleMutationError)} severity={mutation.status === 'unknown' ? 'warning' : 'error'}>{mutation.status === 'unknown' ? verificationReady ? '最新状態を再取得しました。結果を画面で確認してから再送停止を解除してください。' : `${actionLabel(mutation.unknownAction)}の結果を確認できないため、このMRへの再送を停止しています。` : visibleMutationError.message}</Alert> : null}
-          {verificationError ? <Alert onClose={() => setVerificationError(null)} severity="error">確認用の再取得に失敗しました: {verificationError}</Alert> : null}
+          {visibleMutationError ? <Alert action={mutation.status === 'unknown' ? <Button color="inherit" disabled={verifyingUnknown} onClick={() => { if (!mutation.unknownAction) void retryUnknownReceipt(); else if (verificationReady) void acknowledgeVerifiedOutcome(); else void verifyUnknownOutcome() }}>{verifyingUnknown ? t('mergeRequest.common.checking') : !mutation.unknownAction ? t('mergeRequest.unknownWrite.reloadReceipt') : verificationReady ? t('mergeRequest.unknownWrite.acknowledge') : t('mergeRequest.unknownWrite.refetch')}</Button> : undefined} onClose={mutation.status === 'unknown' ? undefined : () => setDismissedError(visibleMutationError)} severity={mutation.status === 'unknown' ? 'warning' : 'error'}>{mutation.status === 'unknown' ? verificationReady ? t('mergeRequest.unknownWrite.refetched') : t('mergeRequest.unknownWrite.locked', { action: actionLabel(mutation.unknownAction) }) : visibleMutationError.message}</Alert> : null}
+          {verificationError ? <Alert onClose={() => setVerificationError(null)} severity="error">{t('mergeRequest.unknownWrite.verifyFailed', { error: verificationError })}</Alert> : null}
         </Stack> : null}
       </Box>
 
       <Stack spacing={1} sx={{ px: 2, py: 2 }}>
-        {noteAwardsQuery && noteAwardsResult.error ? <Alert action={<Button color="inherit" onClick={noteAwardsResult.refresh}>再試行</Button>} severity="warning">{noteAwardsResult.data ? `保存済みのリアクションを表示中です。更新に失敗しました: ${noteAwardsResult.error.message}` : `コメントのリアクションを取得できませんでした: ${noteAwardsResult.error.message}`}</Alert> : null}
-        {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">コメントが多いため、古いコメントのリアクションは表示していません。GitLabで確認してください。</Alert> : null}
+        {noteAwardsQuery && noteAwardsResult.error ? <Alert action={<Button color="inherit" onClick={noteAwardsResult.refresh}>{t('mergeRequest.reactions.retry')}</Button>} severity="warning">{noteAwardsResult.data ? t('mergeRequest.reactions.refreshFailed', { error: noteAwardsResult.error.message }) : t('mergeRequest.reactions.noteLoadFailed', { error: noteAwardsResult.error.message })}</Alert> : null}
+        {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.reactions.truncated')}</Alert> : null}
         {/* Visited tabs stay mounted, hidden, so switching back shows them at once with their scroll, input and highlighted code. */}
         <Box><KeepAlive activeKey={activeTab} max={4}>
         {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab projectId={resourceId} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {activeTab === 'changes' ? <Stack spacing={1}>
-        {drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">議論タブで公開</Button>} severity="info">未公開レビューが{drafts.length}件あります。公開するまでMRには反映されません。</Alert> : null}
+        {drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">{t('mergeRequest.drafts.publishInDiscussion')}</Button>} severity="info">{t('mergeRequest.drafts.pending', { count: drafts.length })}</Alert> : null}
         <ChangesTab fileSource={session && fileSha ? { projectId: resourceId, sessionId: session.id, sha: fileSha, beforeSha: beforeFileSha } : undefined} threadActions={readOnlyChanges ? undefined : {
           disabled: mutation.isLocked || mutation.isPending,
           onReply: setReplyDiscussion,
@@ -951,9 +955,9 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
           replyComposer,
         }} pendingDrafts={readOnlyChanges ? undefined : drafts} lineComposer={lineComposer} discussions={readOnlyChanges ? undefined : discussions} compareBaseSha={mergeRequest.diffRefs?.baseSha} discussionHeadSha={mergeRequestHeadSha} discussionsIncomplete={discussionWindow.hasOlder} onOpenDiscussion={(discussionId) => { pendingThread.current = discussionId; setActiveTab('discussion') }} reviewContext={session && !readOnlyChanges && mergeRequestHeadSha ? { instanceUrl: session.instanceUrl, userId: session.user.id, projectId: resourceId, mergeRequestIid: iid, revision: mergeRequestHeadSha } : undefined} allowComments={!readOnlyChanges} changeNextPage={changesResult.snapshot?.nextPage ?? null} changePage={changePage} commitPage={commitPage} changesError={changesResult.error} changesLoading={Boolean(pendingFileTarget) || changesResult.loading} changesTruncated={comparing && changesResult.snapshot?.completeness === 'truncated'} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} local={session && mergeRequestHeadSha ? { active: showingLocal, badge: <LocalStatusBadge headSha={mergeRequestHeadSha} projectId={resourceId} projectPath={mergeRequest.projectPath ?? null} sessionId={session.id} sourceBranch={mergeRequest.sourceBranch} />, content: <LocalChanges headSha={mergeRequestHeadSha} onSelectFile={setSelectedFile} projectId={resourceId} projectPath={mergeRequest.projectPath ?? null} selectedFile={selectedFile} sessionId={session.id} />, onSelect: () => { setLocalChanges(!showingLocal); setSelectedCommit(null); setCompareVersion(null); setSelectedFile(null); setFileView(null); setChangePage(1) } } : undefined} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={resolvedFileView} onComment={commentOnLines} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onPrevChangePage={() => setChangePage((current) => Math.max(1, current - 1))} onPrevCommitPage={() => setCommitPage((current) => Math.max(1, current - 1))} onSelectCommit={(sha) => { setSelectedCommit(sha); setCompareVersion(null); setLocalChanges(false); setSelectedFile(null); setFileView(null); setChangePage(1) }} onSelectFile={(path) => { setSelectedFile(path); setFileView(null) }} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} suggestionActions={readOnlyChanges ? undefined : suggestionActions} versions={{ compareFrom: comparing ? compareVersion : null, error: versionsResult.error, headSha: mergeRequestHeadSha, items: (versionsResult.data ?? []) as MrVersion[], loading: versionsResult.loading, more: (versionsResult.snapshot?.nextPage ?? null) !== null, onSelect: (sha) => { setCompareVersion(sha); setSelectedCommit(null); setLocalChanges(false); setSelectedFile(null); setFileView(null); setChangePage(1) } }} /></Stack> : null}
         {activeTab === 'overview' ? <OverviewTab approvedBy={approvedBy} approvalsError={approvalsResult.error} approvalsLoading={approvalsResult.loading} description={mergeRequest.description} descriptionEdit={descriptionEdit} editDisabled={mutation.isLocked || mutation.isPending} mergeRequest={mergeRequest} onRerequestReview={(user) => void rerequestReview(user)} onCancelEdit={() => setDescriptionEdit(null)} onChangeEdit={(body) => setDescriptionEdit((current) => current ? { ...current, body } : current)} onSaveEdit={() => void saveDescription()} onStartEdit={() => setDescriptionEdit({ body: mergeRequest.description ?? '', expected: mergeRequest.description ?? '' })} reactions={<Stack spacing={0.5}>
-          <ReactionBar awards={mrAwardsResult.data ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label="このMR" onToggle={(name, add) => toggleReaction(name, add)} />
-          {mrAwardsResult.loading ? <Typography color="textSecondary" role="status" variant="caption">リアクションを読み込み中…</Typography> : null}
-          {mrAwardsResult.error ? <Typography color={mrAwardsResult.data ? 'textSecondary' : 'error'} variant="caption">{mrAwardsResult.data ? `保存済みのリアクションを表示中です。更新に失敗しました: ${mrAwardsResult.error.message}` : `リアクションを取得できませんでした: ${mrAwardsResult.error.message}`}</Typography> : null}
+          <ReactionBar awards={mrAwardsResult.data ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={t('mergeRequest.reactions.mrLabel')} onToggle={(name, add) => toggleReaction(name, add)} />
+          {mrAwardsResult.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('mergeRequest.reactions.loading')}</Typography> : null}
+          {mrAwardsResult.error ? <Typography color={mrAwardsResult.data ? 'textSecondary' : 'error'} variant="caption">{mrAwardsResult.data ? t('mergeRequest.reactions.refreshFailed', { error: mrAwardsResult.error.message }) : t('mergeRequest.reactions.loadFailed', { error: mrAwardsResult.error.message })}</Typography> : null}
         </Stack>} /> : null}
         {activeTab === 'pipelines' ? <ConfirmScope confirm={confirmWithOutsideNote}><PipelinesTab disabled={mutation.isLocked || mutation.isPending} iid={iid} onOpenUrl={(url) => void openInGitLab(url)} onRunAction={(action) => runAction(action)} projectId={resourceId} sessionId={session?.id ?? null} /></ConfirmScope> : null}
         </KeepAlive></Box>
@@ -966,6 +970,7 @@ export function MergeRequestDetail({ backLabel = '一覧に戻る', initialMerge
 }
 
 function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
+  const t = useT()
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
   const openThread = (discussionId: string) => {
@@ -981,14 +986,14 @@ function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeC
       )}
       navigator={discussions.length ? <UnresolvedThreadNav discussions={discussions} olderNotLoaded={older.hasOlder} onSelect={openThread} /> : null}
       side={<>
-        {draftError && !drafts.length ? <Alert severity="error">下書きを取得できませんでした: {draftError.message}</Alert> : null}
-        {draftError && drafts.length ? <Alert severity="warning">保存済みの下書きを表示中です。更新に失敗しました: {draftError.message}</Alert> : null}
+        {draftError && !drafts.length ? <Alert severity="error">{t('mergeRequest.drafts.loadFailed', { error: draftError.message })}</Alert> : null}
+        {draftError && drafts.length ? <Alert severity="warning">{t('mergeRequest.drafts.refreshFailed', { error: draftError.message })}</Alert> : null}
         {(!draftLoading || drafts.length) && (!draftError || drafts.length) ? <DraftList disabled={mutationDisabled} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} drafts={drafts} nextPage={draftNextPage} page={draftPage} publishingAll={publishingAll} statuses={draftStatuses} selected={selectedDrafts} onDelete={onDeleteDraft} onEdit={onEditDraft} onNextPage={onNextDraftPage} onOpenPosition={onOpenPosition} onPrevPage={onPrevDraftPage} onPublish={onPublishDraft} onPublishAll={onPublishAllDrafts} onPublishSelected={onPublishSelectedDrafts} onSelect={onSelectDraft} onSetEdit={onSetDraftEdit} sessionId={session?.id ?? null} /> : null}
       </>}
       threads={<>
         {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
-        {discussionError && discussions.length ? <Alert severity="warning">保存済みの議論を表示中です。更新に失敗しました: {discussionError.message}</Alert> : null}
-        {loading && !discussions.length ? <LoadingPanel label="議論を読み込み中…" /> : null}
+        {discussionError && discussions.length ? <Alert severity="warning">{t('mergeRequest.detail.discussionRefreshFailed', { error: discussionError.message })}</Alert> : null}
+        {loading && !discussions.length ? <LoadingPanel label={t('mergeRequest.detail.discussionLoading')} /> : null}
         {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList projectId={projectId} iid={iid} headSha={headSha} reactions={reactions} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
       </>}
     />
@@ -1050,20 +1055,21 @@ interface DiscussionTabProps {
 }
 
 export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof ReviewComposer>, 'onChange' | 'value'> & { bufferKey: string }) {
+  const t = useT()
   const { session } = useConnection()
   const { body, change, discard, error, persistenceStatus } = useComposerBuffer(props.bufferKey, session?.id ?? null)
   const notify = useNotify()
   const discardInput = () => {
     // The text is offered back, so one click never loses it.
     const previous = discard()
-    if (previous) notify({ actionLabel: '元に戻す', message: '入力を破棄しました', onAction: () => { restoreComposerBuffer(props.bufferKey, previous) } })
+    if (previous) notify({ actionLabel: t('mergeRequest.composer.undo'), message: t('mergeRequest.composer.discarded'), onAction: () => { restoreComposerBuffer(props.bufferKey, previous) } })
   }
   const [flushError, setFlushError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const persistenceLabel = persistenceStatus === 'hydrating' || persistenceStatus === 'saving'
-    ? '保存中…'
+    ? t('mergeRequest.common.saving')
     : persistenceStatus === 'saved' && body
-      ? 'この端末に保存済み'
+      ? t('mergeRequest.composer.savedLocally')
       : null
   const flushBeforeSubmit = async (submit: () => Promise<boolean>): Promise<boolean> => {
     setFlushError(null)
@@ -1071,7 +1077,7 @@ export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof R
     try {
       const flushed = await flushComposerBuffers().catch(() => false)
       if (!flushed) {
-        setFlushError('入力の保存を確認できないため、投稿を停止しました。')
+        setFlushError(t('mergeRequest.composer.submitStopped'))
         return false
       }
       return await submit()
@@ -1081,7 +1087,7 @@ export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof R
   }
   const onSubmitComment = (nextBody: string, thread: boolean, position?: Position) => flushBeforeSubmit(() => props.onSubmitComment(nextBody, thread, position))
   const onSaveDraft = (nextBody: string, position?: Position) => flushBeforeSubmit(() => props.onSaveDraft(nextBody, position))
-  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>入力を破棄</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
+  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>{t('mergeRequest.composer.discard')}</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
 
@@ -1090,6 +1096,7 @@ const noUsers: GitLabUser[] = []
 
 /** The title, state and people lines of the header, memoized: they change with the MR, not with what the reader does below. */
 const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, compact, mergeRequest, myApproved, onCopyHeadSha, onEditPeople, peopleDisabled }: { approvedBy: GitLabUser[]; compact: boolean; mergeRequest: MergeRequest; myApproved: boolean; onCopyHeadSha: (sha: string) => Promise<void>; onEditPeople: (field: 'assignees' | 'reviewers') => void; peopleDisabled: boolean }) {
+  const t = useT()
   return <>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: 1 }}>
       <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: compact ? 1 : 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
@@ -1097,19 +1104,19 @@ const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, comp
     {compact ? null : <>
     <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
       <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
-      {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label="Draft" size="small" variant="outlined" /> : null}
+      {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label={t('mergeRequest.summary.draft')} size="small" variant="outlined" /> : null}
       <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}><GitLabUserLink user={mergeRequest.author} /></Box></Typography>
-      <RelativeTime prefix="更新" value={mergeRequest.updatedAt} />
+      <RelativeTime prefix={t('mergeRequest.common.updated')} value={mergeRequest.updatedAt} />
       <Tooltip title={`${mergeRequest.sourceBranch} → ${mergeRequest.targetBranch}`}><Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%', minWidth: 0 }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography></Tooltip>
-      {mergeRequest.headSha ? <Tooltip describeChild title="headのSHAをコピー"><Chip icon={<ContentCopyRoundedIcon />} label={shortSha(mergeRequest.headSha)} onClick={() => void onCopyHeadSha(mergeRequest.headSha ?? '')} size="small" sx={{ fontFamily: 'code.fontFamily' }} variant="outlined" /></Tooltip> : null}
+      {mergeRequest.headSha ? <Tooltip describeChild title={t('mergeRequest.summary.copyHeadSha')}><Chip icon={<ContentCopyRoundedIcon />} label={shortSha(mergeRequest.headSha)} onClick={() => void onCopyHeadSha(mergeRequest.headSha ?? '')} size="small" sx={{ fontFamily: 'code.fontFamily' }} variant="outlined" /></Tooltip> : null}
       {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
-      {approvedBy.length ? <StateIcon count={approvedBy.length} icon={myApproved ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={`${approvedBy.length}人が承認済み（${approvedBy.map((user) => user.name).join('、')}）`} tone="success" /> : null}
+      {approvedBy.length ? <StateIcon count={approvedBy.length} icon={myApproved ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={t('mergeRequest.common.approvedBy', { count: approvedBy.length, names: formatNames(approvedBy.map((user) => user.name)) })} tone="success" /> : null}
       <MergeStatusText mergeRequest={mergeRequest} />
     </Stack>
     <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 0.25, rowGap: 0 }}>
-      {([['assignees', '担当'], ['reviewers', 'レビュー']] as const).map(([field, label]) => (
+      {([['assignees', 'mergeRequest.people.assigneesList'], ['reviewers', 'mergeRequest.people.reviewersList']] as const).map(([field, label]) => (
         // The label, the names and the pencil are one quiet button, so the edit action reads as part of the line.
-        <Tooltip key={field} title={field === 'assignees' ? '担当者を変更' : 'レビュアーを変更'}><span><Button color="inherit" aria-label={`${field === 'assignees' ? '担当' : 'レビュー'}: ${mergeRequest[field]?.length ? mergeRequest[field].map((user) => user.name).join('、') : 'なし'}（${field === 'assignees' ? '担当者' : 'レビュアー'}を変更）`} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => onEditPeople(field)} size="small" sx={{ color: 'text.secondary', fontWeight: 400, mx: -0.5, textAlign: 'left', whiteSpace: 'normal', '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 0.5, py: 0 }, '& .MuiButton-endIcon': { color: 'text.secondary', ml: 0.5, opacity: 0.6 }, '& .MuiButton-endIcon > *:nth-of-type(1)': { fontSize: 14 }, '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }, '&:hover .MuiButton-endIcon': { opacity: 1 } }}>{label}: {mergeRequest[field]?.length ? mergeRequest[field].map((user) => user.name).join('、') : 'なし'}</Button></span></Tooltip>
+        <Tooltip key={field} title={field === 'assignees' ? t('mergeRequest.summary.changeAssignees') : t('mergeRequest.summary.changeReviewers')}><span><Button color="inherit" aria-label={t(field === 'assignees' ? 'mergeRequest.summary.editAssignees' : 'mergeRequest.summary.editReviewers', { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => onEditPeople(field)} size="small" sx={{ color: 'text.secondary', fontWeight: 400, mx: -0.5, textAlign: 'left', whiteSpace: 'normal', '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 0.5, py: 0 }, '& .MuiButton-endIcon': { color: 'text.secondary', ml: 0.5, opacity: 0.6 }, '& .MuiButton-endIcon > *:nth-of-type(1)': { fontSize: 14 }, '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }, '&:hover .MuiButton-endIcon': { opacity: 1 } }}>{t(label, { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })}</Button></span></Tooltip>
       ))}
     </Stack>
     </>}
@@ -1132,7 +1139,6 @@ function oldestNoteId(notes: Note[]): string | null {
   return [...notes].sort(compareNotesByTime)[0].id
 }
 
-function formatFetchedAt(timestamp?: number): string { if (!timestamp) return '時刻不明'; return new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit' }).format(timestamp) }
 function compareNotesByTime(left: Note, right: Note): number {
   const leftTime = Date.parse(left.createdAt)
   const rightTime = Date.parse(right.createdAt)
@@ -1142,44 +1148,42 @@ function compareNotesByTime(left: Note, right: Note): number {
 /** Names the write whose result is unknown, for the notice that stops resending. */
 function actionLabel(action: GitLabAction | null): string {
   switch (action?.kind) {
-    case 'comment': return 'コメントの投稿'
-    case 'reply': return '返信の投稿'
-    case 'editNote': return 'コメントの編集'
-    case 'deleteNote': return 'コメントの削除'
-    case 'resolve': return 'スレッドの解決状態の変更'
-    case 'saveDraft': return 'レビューへの追加'
-    case 'editDraft': return '下書きの編集'
-    case 'deleteDraft': return '下書きの削除'
-    case 'publishDraft': return '下書きの公開'
-    case 'approve': return '承認'
-    case 'unapprove': return '承認の取り消し'
-    case 'setAssignees': return '担当者の変更'
-    case 'setReviewers': return 'レビュアーの変更'
-    case 'setDescription': return '説明の編集'
-    case 'merge': return action.autoMerge ? '自動マージの設定' : 'マージ'
-    case 'cancelAutoMerge': return '自動マージの取り消し'
-    case 'rebase': return 'リベース'
-    case 'setState': return action.stateEvent === 'close' ? 'MRのクローズ' : 'MRの再オープン'
-    case 'setTitle': return 'タイトルの変更'
-    case 'setLabels': return 'ラベルの変更'
-    case 'setMilestone': return 'マイルストーンの変更'
-    case 'requestChanges': return '変更の要求'
-    case 'rerequestReview': return 'レビューの再依頼'
-    case 'uploadAttachment': return '添付ファイルのアップロード'
-    case 'addAward': return 'リアクションの追加'
-    case 'removeAward': return 'リアクションの取り消し'
-    case 'markTodoDone': return '通知の既読'
-    case 'retryJob': return 'ジョブの再実行'
-    case 'cancelJob': return 'ジョブのキャンセル'
-    case 'playJob': return '手動ジョブの実行'
-    case 'retryPipeline': return 'パイプラインの再実行'
-    case 'cancelPipeline': return 'パイプラインのキャンセル'
-    case 'applySuggestions': return '提案の適用'
-    default: return '直前の操作'
+    case 'comment': return translate('mergeRequest.writeAction.comment')
+    case 'reply': return translate('mergeRequest.writeAction.reply')
+    case 'editNote': return translate('mergeRequest.writeAction.editNote')
+    case 'deleteNote': return translate('mergeRequest.writeAction.deleteNote')
+    case 'resolve': return translate('mergeRequest.writeAction.resolve')
+    case 'saveDraft': return translate('mergeRequest.writeAction.saveDraft')
+    case 'editDraft': return translate('mergeRequest.writeAction.editDraft')
+    case 'deleteDraft': return translate('mergeRequest.writeAction.deleteDraft')
+    case 'publishDraft': return translate('mergeRequest.writeAction.publishDraft')
+    case 'approve': return translate('mergeRequest.writeAction.approve')
+    case 'unapprove': return translate('mergeRequest.writeAction.unapprove')
+    case 'setAssignees': return translate('mergeRequest.writeAction.setAssignees')
+    case 'setReviewers': return translate('mergeRequest.writeAction.setReviewers')
+    case 'setDescription': return translate('mergeRequest.writeAction.setDescription')
+    case 'merge': return action.autoMerge ? translate('mergeRequest.writeAction.setAutoMerge') : translate('mergeRequest.writeAction.merge')
+    case 'cancelAutoMerge': return translate('mergeRequest.writeAction.cancelAutoMerge')
+    case 'rebase': return translate('mergeRequest.writeAction.rebase')
+    case 'setState': return action.stateEvent === 'close' ? translate('mergeRequest.writeAction.close') : translate('mergeRequest.writeAction.reopen')
+    case 'setTitle': return translate('mergeRequest.writeAction.setTitle')
+    case 'setLabels': return translate('mergeRequest.writeAction.setLabels')
+    case 'setMilestone': return translate('mergeRequest.writeAction.setMilestone')
+    case 'requestChanges': return translate('mergeRequest.writeAction.requestChanges')
+    case 'rerequestReview': return translate('mergeRequest.writeAction.rerequestReview')
+    case 'uploadAttachment': return translate('mergeRequest.writeAction.uploadAttachment')
+    case 'addAward': return translate('mergeRequest.writeAction.addAward')
+    case 'removeAward': return translate('mergeRequest.writeAction.removeAward')
+    case 'markTodoDone': return translate('mergeRequest.writeAction.markTodoDone')
+    case 'retryJob': return translate('mergeRequest.writeAction.retryJob')
+    case 'cancelJob': return translate('mergeRequest.writeAction.cancelJob')
+    case 'playJob': return translate('mergeRequest.writeAction.playJob')
+    case 'retryPipeline': return translate('mergeRequest.writeAction.retryPipeline')
+    case 'cancelPipeline': return translate('mergeRequest.writeAction.cancelPipeline')
+    case 'applySuggestions': return translate('mergeRequest.writeAction.applySuggestions')
+    default: return translate('mergeRequest.writeAction.unknown')
   }
 }
-
-const OUTSIDE_NOTE = 'あなたはこのMRの作者・担当者・レビュアーではありません。'
 
 function isInvolved(mergeRequest: MergeRequest, userId: string): boolean {
   return mergeRequest.author.id === userId || Boolean(mergeRequest.assignees?.some((user) => user.id === userId) || mergeRequest.reviewers?.some((user) => user.id === userId))

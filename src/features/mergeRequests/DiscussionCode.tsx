@@ -6,6 +6,7 @@ import type { Diff, FileQuery, Position } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { splitFileLines, type ParsedLine } from './diffParser'
 import { diffExcerpt, LINES_AFTER, LINES_BEFORE } from './diffExcerpt'
+import { useT } from '../../i18n/useT'
 
 export interface CurrentDiffs {
   find: (path: string) => Diff | undefined
@@ -18,10 +19,11 @@ export interface CurrentDiffs {
  * file as it was at the commented commit when the diff cannot show them.
  */
 export function DiscussionCode({ current, position, projectId, sessionId }: { current: CurrentDiffs | null; position: Position; projectId: string; sessionId: string }) {
+  const t = useT()
   const diff = current?.find(position.newPath || position.oldPath)
   const excerpt = useMemo(() => diff && !diff.tooLarge ? diffExcerpt(diff, position) : null, [diff, position])
   if (excerpt) return <DiffExcerpt lines={excerpt.lines} target={excerpt.target} />
-  if (current?.searching) return <CodeMessage>コードを読み込み中…</CodeMessage>
+  if (current?.searching) return <CodeMessage>{t('review.code.loading')}</CodeMessage>
   return <FileExcerpt outdated={!current} position={position} projectId={projectId} sessionId={sessionId} />
 }
 
@@ -37,7 +39,8 @@ const codeSx = {
 const numberSx = { color: 'text.secondary', px: 0.5, textAlign: 'right', userSelect: 'none' } as const
 
 function DiffExcerpt({ lines, target }: { lines: ParsedLine[]; target: number }) {
-  return <Box aria-label="コメント対象の差分" component="figure" role="group" sx={{ m: 0 }}>
+  const t = useT()
+  return <Box aria-label={t('review.code.diffLabel')} component="figure" role="group" sx={{ m: 0 }}>
     {lines.map((line, index) => (
       <Box
         data-kind={line.kind}
@@ -63,6 +66,7 @@ function DiffExcerpt({ lines, target }: { lines: ParsedLine[]; target: number })
 }
 
 function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: boolean; position: Position; projectId: string; sessionId: string }) {
+  const t = useT()
   // Removed lines exist only in the base version; other lines in the commented head.
   const onNewSide = position.newLine !== undefined
   const line = (onNewSide ? position.newLine : position.oldLine) ?? 0
@@ -72,14 +76,14 @@ function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: b
   const result = useGitLabQuery<FileQuery>(sessionId, query)
   const lines = useMemo(() => result.data ? splitFileLines(result.data.content) : null, [result.data])
   if (!query) return null
-  if (result.error && !lines) return <CodeMessage>コードを取得できませんでした: {result.error.message}</CodeMessage>
-  if (!lines) return <CodeMessage>コードを読み込み中…</CodeMessage>
-  if (line < 1 || line > lines.length) return <CodeMessage>コメント対象の行がファイルにありません。</CodeMessage>
+  if (result.error && !lines) return <CodeMessage>{t('review.code.error', { message: result.error.message })}</CodeMessage>
+  if (!lines) return <CodeMessage>{t('review.code.loading')}</CodeMessage>
+  if (line < 1 || line > lines.length) return <CodeMessage>{t('review.code.lineMissing')}</CodeMessage>
   const start = Math.max(1, line - LINES_BEFORE)
   const end = Math.min(lines.length, line + LINES_AFTER)
   return <Box>
-    {outdated ? <Typography color="textSecondary" component="div" sx={{ px: 1, py: 0.5 }} variant="caption">コメント時点のコード（{sha.slice(0, 8)}）。その後の変更で現在の差分とは異なります。</Typography> : null}
-    <Box aria-label="コメント対象のコード" component="figure" role="group" sx={{ m: 0 }}>
+    {outdated ? <Typography color="textSecondary" component="div" sx={{ px: 1, py: 0.5 }} variant="caption">{t('review.code.outdated', { sha: sha.slice(0, 8) })}</Typography> : null}
+    <Box aria-label={t('review.code.label')} component="figure" role="group" sx={{ m: 0 }}>
       {lines.slice(start - 1, end).map((text, index) => {
         const number = start + index
         return <Box

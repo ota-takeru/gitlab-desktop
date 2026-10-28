@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography'
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { useT } from '../../i18n/useT'
 import type { Diff } from '../../types/gitlab'
 import { fileRowLabel, threadLabel, type FileThreadCount } from './diffLineThreads'
 import { buildFileTree, type FileEntry, type TreeNode } from './diffFileOrder'
@@ -21,6 +22,7 @@ import { buildFileTree, type FileEntry, type TreeNode } from './diffFileOrder'
  * and a folder with only one folder inside shows as one row (`src/features`).
  */
 export function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isReviewed, onSelect, threadCount }: { displayedPath: string | null; entries: FileEntry[]; expandAll: boolean; fileMark: (diff: Diff) => ReactNode; isReviewed: (path: string) => boolean; onSelect: (path: string) => void; threadCount?: (path: string) => FileThreadCount | undefined }) {
+  const t = useT()
   const tree = useMemo(() => buildFileTree(entries), [entries])
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const toggle = (path: string) => setCollapsed((current) => {
@@ -38,7 +40,7 @@ export function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isRe
       const indent = 1 + depth * 1.5
       if (node.kind === 'directory') {
         const open = isOpen(node.path)
-        rows.push(<ListItemButton aria-expanded={open} aria-label={`フォルダ ${node.path}`} key={`d:${node.path}`} onClick={() => toggle(node.path)} sx={{ gap: 0.5, pl: indent, pr: 1, py: 0.25 }} title={node.path}>
+        rows.push(<ListItemButton aria-expanded={open} aria-label={t('review.fileTree.folder', { path: node.path })} key={`d:${node.path}`} onClick={() => toggle(node.path)} sx={{ gap: 0.5, pl: indent, pr: 1, py: 0.25 }} title={node.path}>
           <Box component="span" sx={{ color: 'text.secondary', display: 'flex' }}>{open ? <ExpandMoreRoundedIcon fontSize="inherit" /> : <ChevronRightRoundedIcon fontSize="inherit" />}</Box>
           <FolderOutlinedIcon fontSize="inherit" sx={{ color: 'text.secondary' }} />
           <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="body2">{node.name}</Typography>
@@ -54,7 +56,7 @@ export function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isRe
         {fileMark(diff)}
         <Typography noWrap sx={{ flex: 1, fontWeight: selected ? 600 : 400, minWidth: 0 }} variant="body2">{node.name}</Typography>
         <FileThreadMark count={threads} />
-        {reviewed ? <Tooltip title="確認済み"><DoneRoundedIcon aria-label="確認済み" color="success" fontSize="small" /></Tooltip> : null}
+        {reviewed ? <Tooltip title={t('review.fileTree.reviewed')}><DoneRoundedIcon aria-label={t('review.fileTree.reviewed')} color="success" fontSize="small" /></Tooltip> : null}
       </ListItemButton>)
     }
   }

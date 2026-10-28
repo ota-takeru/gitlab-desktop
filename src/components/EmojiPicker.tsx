@@ -11,6 +11,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
+import { useT } from '../i18n/useT'
 import { EMOJI_CATEGORIES, REACTION_CHOICES, readRecentReactions, rememberRecentReaction, searchEmoji, useEmojiCatalog, type EmojiChoice } from '../lib/awardEmoji'
 
 const COLUMNS = 9
@@ -33,12 +34,13 @@ export function EmojiPicker({ anchorEl, label, mine, onClose, onPick }: {
   onClose: () => void
   onPick: (name: string) => void
 }) {
+  const t = useT()
   return <Popover
     anchorEl={anchorEl}
     anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
     onClose={onClose}
     open={Boolean(anchorEl)}
-    slotProps={{ paper: { 'aria-label': `${label}に付ける絵文字`, role: 'dialog' } }}
+    slotProps={{ paper: { 'aria-label': t('common.emoji.dialog', { label }), role: 'dialog' } }}
   >
     {/* Mounted only while open, so the search and the tab start fresh each time. */}
     {anchorEl ? <PickerBody mine={mine} onPick={(name) => {
@@ -50,6 +52,7 @@ export function EmojiPicker({ anchorEl, label, mine, onClose, onPick }: {
 
 function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name: string) => void }) {
   const { catalog, failed } = useEmojiCatalog()
+  const t = useT()
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<number | typeof RECENT>(RECENT)
   const [active, setActive] = useState(0)
@@ -107,17 +110,17 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
           setActive(0)
         }}
         onKeyDown={leaveSearch}
-        placeholder="検索（いいね、thumbsup など）"
+        placeholder={t('common.emoji.searchPlaceholder')}
         size="small"
         slotProps={{
-          htmlInput: { 'aria-label': '絵文字を検索' },
+          htmlInput: { 'aria-label': t('common.emoji.search') },
           input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> },
         }}
         value={query}
       />
     </Box>
     <Tabs
-      aria-label="絵文字の分類"
+      aria-label={t('common.emoji.categories')}
       onChange={(_, value: number | typeof RECENT) => {
         setTab(value)
         setQuery('')
@@ -127,21 +130,21 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
       value={searching ? false : tab}
       variant="fullWidth"
     >
-      <Tab aria-label="よく使う" icon={<HistoryRoundedIcon fontSize="small" />} title="よく使う" value={RECENT} />
-      {EMOJI_CATEGORIES.map((name, index) => <Tab aria-label={name} key={name} label={CATEGORY_ICONS[index]} title={name} value={index} />)}
+      <Tab aria-label={t('common.emoji.recent')} icon={<HistoryRoundedIcon fontSize="small" />} title={t('common.emoji.recent')} value={RECENT} />
+      {EMOJI_CATEGORIES.map((name, index) => <Tab aria-label={t(name)} key={name} label={CATEGORY_ICONS[index]} title={t(name)} value={index} />)}
     </Tabs>
     <Box onKeyDown={moveInGrid} ref={gridRef} sx={{ height: CELL * 7 + 16, overflowY: 'auto', px: 1.5, py: 1, scrollbarGutter: 'stable' }}>
       {!catalog ? <Stack spacing={1} sx={{ alignItems: 'center', justifyContent: 'center', height: '100%' }}>
         {failed
-          ? <Typography color="error" variant="body2">絵文字の一覧を読み込めませんでした。閉じて開き直すと再試行します。</Typography>
-          : <><CircularProgress size={20} /><Typography color="textSecondary" variant="caption">絵文字を読み込み中…</Typography></>}
+          ? <Typography color="error" variant="body2">{t('common.emoji.loadFailed')}</Typography>
+          : <><CircularProgress size={20} /><Typography color="textSecondary" variant="caption">{t('common.emoji.loading')}</Typography></>}
       </Stack> : shown.length === 0 ? <Typography color="textSecondary" sx={{ pt: 2, textAlign: 'center' }} variant="body2">
-        「{query.trim()}」に一致する絵文字はありません
-      </Typography> : <Box aria-label={searching ? '検索結果' : tab === RECENT ? 'よく使う' : EMOJI_CATEGORIES[tab]} role="group" sx={{ display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, ${CELL}px)` }}>
+        {t('common.emoji.noResults', { query: query.trim() })}
+      </Typography> : <Box aria-label={searching ? t('common.emoji.results') : tab === RECENT ? t('common.emoji.recent') : t(EMOJI_CATEGORIES[tab])} role="group" sx={{ display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, ${CELL}px)` }}>
         {shown.map((choice, index) => {
           const given = mine.has(choice.name)
           return <Box
-            aria-label={`${choice.emoji} ${choice.label}（:${choice.name}:）${given ? '、付けています' : ''}`}
+            aria-label={t(given ? 'common.emoji.choiceGiven' : 'common.emoji.choice', { emoji: choice.emoji, label: choice.label, name: choice.name })}
             aria-pressed={given}
             component="button"
             key={choice.name}
@@ -177,7 +180,7 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
       {preview ? <>
         <Box aria-hidden sx={{ fontSize: 28, lineHeight: 1 }}>{preview.emoji}</Box>
         <Box sx={{ minWidth: 0 }}>
-          <Typography noWrap variant="body2">{preview.label}{mine.has(preview.name) ? '（付けています）' : ''}</Typography>
+          <Typography noWrap variant="body2">{mine.has(preview.name) ? t('common.emoji.previewGiven', { label: preview.label }) : preview.label}</Typography>
           <Typography color="textSecondary" noWrap sx={{ display: 'block', fontFamily: 'code.fontFamily' }} variant="caption">:{preview.name}:</Typography>
         </Box>
       </> : null}

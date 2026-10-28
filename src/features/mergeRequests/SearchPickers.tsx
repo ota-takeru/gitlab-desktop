@@ -4,6 +4,8 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useState } from 'react'
 
+import { translate } from '../../i18n/i18n'
+import { useT } from '../../i18n/useT'
 import type { GitLabGroup, GitLabUser, GroupsQuery, Project, ProjectQuery, UsersQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
@@ -26,6 +28,7 @@ interface PickerOption {
 }
 
 export function UserSearchPicker({ selectedName, ...props }: SearchPickerProps) {
+  const t = useT()
   const { session } = useConnection()
   const [searchText, setSearchText] = useState('')
   const debouncedSearch = useDebouncedSearch(searchText)
@@ -40,7 +43,7 @@ export function UserSearchPicker({ selectedName, ...props }: SearchPickerProps) 
       {...props}
       fallback={(value) => savedIdOption(value, selectedName)}
       loading={result.loading || result.refreshing}
-      noOptionsText={result.error ? 'ユーザー候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力してください' : '候補がありません'}
+      noOptionsText={result.error ? t('mrList.picker.usersFailed') : searchText.trim().length < 2 ? t('mrList.picker.minChars') : t('mrList.picker.noOptions')}
       onSearchTextChange={setSearchText}
       options={options}
       queryError={result.error?.message ?? null}
@@ -49,6 +52,7 @@ export function UserSearchPicker({ selectedName, ...props }: SearchPickerProps) 
 }
 
 export function ProjectSearchPicker({ selectedName, ...props }: SearchPickerProps) {
+  const t = useT()
   const { session } = useConnection()
   const [searchText, setSearchText] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -76,7 +80,7 @@ export function ProjectSearchPicker({ selectedName, ...props }: SearchPickerProp
       fallback={(value) => savedIdOption(value, selectedName)}
       loading={result.loading || result.refreshing}
       onChange={(id) => props.onChange(id, result.data?.find((project) => project.id === id)?.pathWithNamespace ?? '')}
-      noOptionsText={result.error ? 'プロジェクト候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力するか、開いて候補を表示してください' : '候補がありません'}
+      noOptionsText={result.error ? t('mrList.picker.projectsFailed') : searchText.trim().length < 2 ? t('mrList.picker.minCharsOrBrowse') : t('mrList.picker.noOptions')}
       onClose={() => setOpen(false)}
       onOpen={() => { setOpen(true); if (!searchText.trim()) setBrowseEmpty(true) }}
       onSearchTextChange={(value, reason) => {
@@ -99,6 +103,7 @@ export function GroupSearchPicker({ onChange, selectedPath, ...props }: Omit<Sea
   /** The full path of the selected ID, when the caller knows it. */
   selectedPath?: string
 }) {
+  const t = useT()
   const { session } = useConnection()
   const [searchText, setSearchText] = useState('')
   const debouncedSearch = useDebouncedSearch(searchText)
@@ -113,7 +118,7 @@ export function GroupSearchPicker({ onChange, selectedPath, ...props }: Omit<Sea
       {...props}
       fallback={(value) => savedGroupOption(value, selectedPath)}
       loading={result.loading || result.refreshing}
-      noOptionsText={result.error ? 'グループ候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力してください' : '候補がありません'}
+      noOptionsText={result.error ? t('mrList.picker.groupsFailed') : searchText.trim().length < 2 ? t('mrList.picker.minChars') : t('mrList.picker.noOptions')}
       onChange={(id) => onChange(id, result.data?.find((group) => group.id === id)?.fullPath ?? '')}
       onSearchTextChange={setSearchText}
       options={options}
@@ -134,6 +139,7 @@ function CandidatePicker({ ariaLabel, autoFocus, fallback, label, loading, noOpt
   options: PickerOption[]
   queryError: string | null
 }) {
+  const t = useT()
   const selected = options.find((option) => option.id === value) ?? fallback(value)
   const pickerOptions = selected && !options.some((option) => option.id === selected.id) ? [selected, ...options] : options
 
@@ -143,7 +149,7 @@ function CandidatePicker({ ariaLabel, autoFocus, fallback, label, loading, noOpt
       getOptionLabel={getOptionLabel}
       isOptionEqualToValue={(option, candidate) => option.id === candidate.id}
       loading={loading}
-      loadingText="検索中…"
+      loadingText={t('mrList.picker.searching')}
       noOptionsText={noOptionsText}
       onChange={(_, option) => onChange(option?.id ?? '', option?.name ?? '')}
       onClose={onClose}
@@ -170,13 +176,13 @@ function CandidatePicker({ ariaLabel, autoFocus, fallback, label, loading, noOpt
 /** Only a real ID stands in for a person or project whose candidate is not loaded, named when the caller knows it; anything else is no choice yet. */
 function savedIdOption(value: string, name?: string): PickerOption | null {
   if (!/^[1-9]\d*$/u.test(value)) return null
-  return name ? { detail: `ID ${value}`, id: value, name } : { detail: '保存済みのID', id: value, name: `ID ${value}` }
+  return name ? { detail: `ID ${value}`, id: value, name } : { detail: translate('mrList.picker.savedId'), id: value, name: `ID ${value}` }
 }
 
 function savedGroupOption(value: string, fullPath: string | undefined): PickerOption | null {
   const trimmed = value.trim()
   if (!trimmed) return null
-  if (!/^[1-9]\d*$/u.test(trimmed)) return { detail: '保存済みのグループパス', id: value, name: trimmed }
+  if (!/^[1-9]\d*$/u.test(trimmed)) return { detail: translate('mrList.picker.savedGroupPath'), id: value, name: trimmed }
   return fullPath ? { detail: `ID ${trimmed}`, id: value, name: fullPath } : savedIdOption(trimmed)
 }
 

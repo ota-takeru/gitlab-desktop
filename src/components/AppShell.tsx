@@ -14,6 +14,8 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
 
+import type { MessageKey } from '../i18n/i18n'
+import { useT } from '../i18n/useT'
 import { ClientNavItem } from './ClientNavItem'
 
 export type PageKey =
@@ -32,35 +34,36 @@ interface AppShellProps {
 }
 
 const primaryNav = [
-  { key: 'overview', label: '概要', icon: InsightsOutlinedIcon },
-  { key: 'merge-requests', label: 'MR', icon: RateReviewOutlinedIcon },
-  { key: 'issues', label: 'イシュー', icon: ReportProblemOutlinedIcon },
-  { key: 'pipelines', label: 'パイプライン', icon: TimelineOutlinedIcon },
-] as const satisfies ReadonlyArray<{ key: PageKey; label: string; icon: typeof InsightsOutlinedIcon }>
+  { key: 'overview', label: 'common.shell.overview', icon: InsightsOutlinedIcon },
+  { key: 'merge-requests', label: 'common.shell.mergeRequests', icon: RateReviewOutlinedIcon },
+  { key: 'issues', label: 'common.shell.issues', icon: ReportProblemOutlinedIcon },
+  { key: 'pipelines', label: 'common.shell.pipelines', icon: TimelineOutlinedIcon },
+] as const satisfies ReadonlyArray<{ key: PageKey; label: MessageKey; icon: typeof InsightsOutlinedIcon }>
 
 /** Development-only frame around the UI catalog, laid out like the client's navigation. */
 export function AppShell({ children, mode, onModeChange, onPageChange, page }: AppShellProps) {
+  const t = useT()
   return (
     <Box sx={{ bgcolor: 'background.default', display: 'flex', minHeight: '100vh' }}>
       <Box component="aside" sx={{ bgcolor: 'surface.nav', borderRight: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', flexShrink: 0, height: '100vh', position: 'sticky', px: 1, py: 1, top: 0, width: 208 }}>
         <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', minHeight: 36, mb: 1, pl: 1 }}>
           <Typography component="div" noWrap variant="h3">GitLab Desktop</Typography>
         </Stack>
-        <Box component="nav" aria-label="開発用ナビゲーション" sx={{ flex: 1 }}>
+        <Box component="nav" aria-label={t('common.shell.devNavigation')} sx={{ flex: 1 }}>
           <List disablePadding>
             {primaryNav.map(({ icon: Icon, key, label }) => (
-              <ClientNavItem collapsed={false} icon={<Icon />} key={key} label={label} onClick={() => onPageChange(key)} selected={page === key} title={label} />
+              <ClientNavItem collapsed={false} icon={<Icon />} key={key} label={t(label)} onClick={() => onPageChange(key)} selected={page === key} title={t(label)} />
             ))}
           </List>
           <Divider sx={{ my: 1 }} />
           <List disablePadding>
-            <ClientNavItem collapsed={false} icon={<WidgetsOutlinedIcon />} label="UIカタログ" onClick={() => onPageChange('catalog')} selected={page === 'catalog'} title="UIカタログ" />
+            <ClientNavItem collapsed={false} icon={<WidgetsOutlinedIcon />} label={t('common.shell.catalog')} onClick={() => onPageChange('catalog')} selected={page === 'catalog'} title={t('common.shell.catalog')} />
           </List>
         </Box>
         <Stack direction="row" sx={{ alignItems: 'center', borderTop: 1, borderColor: 'divider', justifyContent: 'space-between', pl: 1, pt: 1 }}>
-          <Typography color="textSecondary" variant="caption">開発用の画面</Typography>
-          <Tooltip title={mode === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え'}>
-            <IconButton aria-label={mode === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え'} onClick={onModeChange}>
+          <Typography color="textSecondary" variant="caption">{t('common.shell.devScreen')}</Typography>
+          <Tooltip title={mode === 'dark' ? t('common.shell.switchToLight') : t('common.shell.switchToDark')}>
+            <IconButton aria-label={mode === 'dark' ? t('common.shell.switchToLight') : t('common.shell.switchToDark')} onClick={onModeChange}>
               {mode === 'dark' ? <LightModeOutlinedIcon /> : <DarkModeOutlinedIcon />}
             </IconButton>
           </Tooltip>

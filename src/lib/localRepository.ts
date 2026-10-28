@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import { translate } from '../i18n/i18n'
 import { GitLabCommandError, type Diff } from '../types/gitlab'
 import { isTauri, normalizeGitLabError } from './gitlab'
 
@@ -33,7 +34,7 @@ export interface LocalChanges {
 }
 
 async function call<T>(command: string, args: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) throw new GitLabCommandError({ code: 'UNSUPPORTED', message: 'ブラウザプレビューではローカルリポジトリを読めません。デスクトップ版で利用してください。' })
+  if (!isTauri()) throw new GitLabCommandError({ code: 'UNSUPPORTED', message: translate('common.localRepository.browserUnavailable') })
   try {
     return await invoke<T>(command, args)
   } catch (error) {
@@ -102,14 +103,14 @@ export function findLocalRepository(sessionId: string, projectId: string, projec
 
 /** What the 「ローカルの変更」 button says about the clone: work not yet pushed, or why it cannot be compared. */
 export function summarizeLocalStatus(status: LocalStatus, sourceBranch?: string): { label: string; tone: 'changes' | 'warning' | 'quiet' } {
-  if (!status.containsMrHead && status.branch !== sourceBranch) return { label: '別ブランチ', tone: 'quiet' }
+  if (!status.containsMrHead && status.branch !== sourceBranch) return { label: translate('common.localRepository.otherBranch'), tone: 'quiet' }
   const uncommitted = status.changedCount + status.untrackedCount
   const ahead = status.containsMrHead ? status.aheadCount ?? 0 : 0
   const parts = [
-    uncommitted || status.countMore ? `未コミット${uncommitted}${status.countMore ? '+' : ''}` : null,
-    ahead ? `未push${ahead}` : null,
-    !status.mrHeadPresent ? '未fetch' : !status.containsMrHead ? '要pull' : null,
+    uncommitted || status.countMore ? translate(status.countMore ? 'common.localRepository.uncommittedMore' : 'common.localRepository.uncommitted', { count: uncommitted }) : null,
+    ahead ? translate('common.localRepository.unpushed', { count: ahead }) : null,
+    !status.mrHeadPresent ? translate('common.localRepository.notFetched') : !status.containsMrHead ? translate('common.localRepository.pullNeeded') : null,
   ].filter(Boolean)
-  if (!parts.length) return { label: '変更なし', tone: 'quiet' }
+  if (!parts.length) return { label: translate('common.localRepository.noChanges'), tone: 'quiet' }
   return { label: parts.join(' · '), tone: uncommitted || status.countMore || ahead ? 'changes' : 'warning' }
 }

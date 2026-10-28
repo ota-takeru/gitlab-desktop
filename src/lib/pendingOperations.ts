@@ -1,5 +1,6 @@
 import { invoke, isTauri as tauriIsTauri } from '@tauri-apps/api/core'
 
+import { translate } from '../i18n/i18n'
 import { normalizeGitLabError } from './gitlab'
 import type { GitLabAction } from '../types/gitlab'
 
@@ -44,10 +45,10 @@ export async function acknowledgePendingOperation(input: PendingOperationLookup 
 }
 
 function parsePendingOperation(value: unknown): PendingOperation {
-  if (!value || typeof value !== 'object') throw new Error('保留中の投稿記録が不正です。')
+  if (!value || typeof value !== 'object') throw new Error(translate('common.gitlab.invalidPendingOperation'))
   const candidate = value as { id?: unknown; action?: unknown; startedAt?: unknown }
   if (typeof candidate.id !== 'string' || !candidate.id || !Number.isFinite(candidate.startedAt) || !isGitLabAction(candidate.action)) {
-    throw new Error('保留中の投稿記録が不正です。')
+    throw new Error(translate('common.gitlab.invalidPendingOperation'))
   }
   return { action: candidate.action, id: candidate.id, startedAt: candidate.startedAt as number }
 }

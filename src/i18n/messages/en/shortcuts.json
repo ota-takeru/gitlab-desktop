@@ -1,1 +1,24 @@
-{}
+{
+  "title": "Keyboard shortcuts",
+  "close": "Close",
+  "list.title": "Lists and navigation",
+  "list.nextPrevious": "Next/previous MR",
+  "list.moveRow": "Move between rows",
+  "list.open": "Open",
+  "list.preview": "Preview the MR overview",
+  "list.filter": "Search in the list",
+  "list.searchAll": "Search all MRs",
+  "list.openUrl": "Open from URL",
+  "list.back": "Back to the list",
+  "list.history": "Back/forward (reorders tabs when on an MR list tab)",
+  "list.reorderTabs": "Reorder MR tabs in the sidebar (when on a tab)",
+  "review.title": "MR review",
+  "review.nextThread": "Next/previous unresolved thread",
+  "review.description": "Show the description beside the Discussion tab",
+  "review.nextFile": "Next/previous file",
+  "review.selectLines": "Select multiple lines from a line's \"+\" (Enter to comment)",
+  "review.addToReview": "Add to review",
+  "review.postNow": "Post now",
+  "help.title": "Help",
+  "help.show": "Show this list"
+}

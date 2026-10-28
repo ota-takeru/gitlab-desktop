@@ -24,6 +24,7 @@ import { paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
+import { useT } from '../../i18n/useT'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import type { BranchesQuery, GitLabBranch } from '../../types/gitlab'
@@ -37,6 +38,7 @@ import { useRememberedListState } from './listState'
  */
 export function BranchList({ navigation, onShowMergeRequests, projectId, projectName }: { navigation?: ReactNode; onShowMergeRequests: (branch: string) => void; projectId: string; projectName: string }) {
   const { session } = useConnection()
+  const t = useT()
   const searchInputRef = useRef<HTMLInputElement>(null)
   // Kept per project for the session, so returning from a branch's MRs shows the list as it was left.
   const [conditions, setConditions] = useRememberedListState(`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:branches:${projectId}`, { page: 1, search: '', searchInput: '' })
@@ -62,43 +64,43 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
   }
 
   if (!session) {
-    return <PaneEmpty description="GitLabに接続すると、プロジェクトのブランチを表示できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
+    return <PaneEmpty description={t('project.connect.branches')} title={t('project.connect.title')}><Button href="#client/settings" variant="contained">{t('project.connect.openSettings')}</Button></PaneEmpty>
   }
 
-  const freshness = result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''
+  const freshness = result.stale ? ` · ${t('project.status.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) })}` : result.refreshing ? ` · ${t('project.status.refreshing')}` : ''
   const clearSearch = () => setConditions({ page: 1, search: '', searchInput: '' })
   return (
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader
-        actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>}
+        actions={<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>}
         navigation={navigation}
-        subtitle="更新の新しい順。行を選ぶと、そのブランチから作られたMRを表示します"
-        title={`${projectName}のブランチ`}
+        subtitle={t('project.branches.subtitle')}
+        title={t('project.branches.title', { project: projectName })}
       >
         <Box component="form" onSubmit={(event) => { event.preventDefault(); setConditions({ page: 1, search: searchInput.trim() }) }}>
           <TextField
             fullWidth
             inputRef={searchInputRef}
             onChange={(event) => setConditions({ searchInput: event.target.value })}
-            placeholder="ブランチ名"
+            placeholder={t('project.branches.searchPlaceholder')}
             slotProps={{
-              htmlInput: { 'aria-label': 'ブランチを検索' },
+              htmlInput: { 'aria-label': t('project.branches.searchLabel') },
               input: {
                 startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>,
-                endAdornment: <InputAdornment position="end"><Tooltip title="検索 (Enter)"><IconButton aria-label="検索" edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
+                endAdornment: <InputAdornment position="end"><Tooltip title={t('project.search.submitTooltip')}><IconButton aria-label={t('project.search.submit')} edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
               },
             }}
             value={searchInput}
           />
         </Box>
       </PaneHeader>
-      <PaneStatus announcement={result.data && !result.previous ? `ブランチ ${result.data.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{result.data.length}件取得{page > 1 || result.snapshot?.nextPage != null ? ` · ページ ${page}` : ''}{freshness}</> : result.loading || result.previous ? 'ブランチを読み込み中…' : null}</PaneStatus>
+      <PaneStatus announcement={result.data && !result.previous ? t('project.branches.announcement', { count: result.data.length, page }) : null}>{result.data && !result.previous ? <>{t('project.status.fetched', { count: result.data.length })}{page > 1 || result.snapshot?.nextPage != null ? ` · ${t('project.status.page', { page })}` : ''}{freshness}</> : result.loading || result.previous ? t('project.branches.loading') : null}</PaneStatus>
       <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
-        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
-        {openError ? <Alert onClose={() => setOpenError(null)} severity="error" sx={{ m: 1.5 }}>GitLabで開けませんでした: {openError}</Alert> : null}
-        {result.data && result.data.length === 0 ? <PaneEmpty description={search ? `適用中の条件: 検索語「${search}」` : 'このプロジェクトにはブランチがありません。'} icon={<AltRouteRoundedIcon fontSize="inherit" />} title={search ? '一致するブランチがありません' : 'ブランチはありません'}>{search ? <Button onClick={clearSearch} variant="outlined">検索をクリア</Button> : null}</PaneEmpty> : null}
-        {result.data?.length ? <Box aria-label="ブランチ" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((branch) => <BranchRow branch={branch} key={branch.name} onOpenInGitLab={openInGitLab} onShowMergeRequests={onShowMergeRequests} />)}</Box> : null}
+        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
+        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('project.status.refreshFailed', { message: result.error.message })}</Alert> : null}
+        {openError ? <Alert onClose={() => setOpenError(null)} severity="error" sx={{ m: 1.5 }}>{t('project.branches.openFailed', { message: openError })}</Alert> : null}
+        {result.data && result.data.length === 0 ? <PaneEmpty description={search ? t('project.branches.appliedSearch', { search }) : t('project.branches.empty.description')} icon={<AltRouteRoundedIcon fontSize="inherit" />} title={search ? t('project.branches.noMatch.title') : t('project.branches.empty.title')}>{search ? <Button onClick={clearSearch} variant="outlined">{t('project.branches.clearSearch')}</Button> : null}</PaneEmpty> : null}
+        {result.data?.length ? <Box aria-label={t('project.branches.label')} component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((branch) => <BranchRow branch={branch} key={branch.name} onOpenInGitLab={openInGitLab} onShowMergeRequests={onShowMergeRequests} />)}</Box> : null}
       </Box>
       {result.data && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setConditions({ page: result.snapshot!.nextPage! })} onPrevious={() => setConditions({ page: Math.max(1, page - 1) })} page={page} /></Box> : null}
     </Box>
@@ -106,14 +108,15 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
 }
 
 function BranchRow({ branch, onOpenInGitLab, onShowMergeRequests }: { branch: GitLabBranch; onOpenInGitLab: (url: string) => Promise<void>; onShowMergeRequests: (branch: string) => void }) {
-  const actions = branch.webUrl ? <Tooltip title="GitLabで開く"><IconButton aria-label={`${branch.name}をGitLabで開く`} onClick={() => void onOpenInGitLab(branch.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : undefined
-  return <ListRow actions={actions} ariaLabel={`${branch.name}のMRを表示`} leading={<AltRouteRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
+  const t = useT()
+  const actions = branch.webUrl ? <Tooltip title={t('project.branches.openInGitLab')}><IconButton aria-label={t('project.branches.openNamedInGitLab', { branch: branch.name })} onClick={() => void onOpenInGitLab(branch.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : undefined
+  return <ListRow actions={actions} ariaLabel={t('project.branches.showMergeRequests', { branch: branch.name })} leading={<AltRouteRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
       {/* The name takes only its own width, so its marks and time follow it instead of the row's far edge. */}
       <Tooltip enterDelay={600} title={branch.name}><Typography noWrap sx={{ flexShrink: 1, fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{branch.name}</Typography></Tooltip>
-      {branch.default ? <StateIcon icon={<HomeRoundedIcon fontSize="inherit" />} label="デフォルト" tone="info" /> : null}
-      {branch.protected ? <StateIcon icon={<LockRoundedIcon fontSize="inherit" />} label="保護" tone="warning" /> : null}
-      {branch.merged ? <StateIcon icon={<CallMergeRoundedIcon fontSize="inherit" />} label="マージ済み" tone="secondary" /> : null}
+      {branch.default ? <StateIcon icon={<HomeRoundedIcon fontSize="inherit" />} label={t('project.branches.default')} tone="info" /> : null}
+      {branch.protected ? <StateIcon icon={<LockRoundedIcon fontSize="inherit" />} label={t('project.branches.protected')} tone="warning" /> : null}
+      {branch.merged ? <StateIcon icon={<CallMergeRoundedIcon fontSize="inherit" />} label={t('project.branches.merged')} tone="secondary" /> : null}
       {branch.commit?.committedDate ? <RelativeTime value={branch.commit.committedDate} /> : null}
     </Stack>
     {branch.commit ? <Typography color="textSecondary" component="div" noWrap sx={{ mt: 0.25 }} title={`${branch.commit.shortId} ${branch.commit.title}${branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}`} variant="caption">

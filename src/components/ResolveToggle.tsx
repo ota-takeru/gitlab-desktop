@@ -3,19 +3,22 @@ import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUnch
 import Button from '@mui/material/Button'
 import Tooltip from '@mui/material/Tooltip'
 
+import { useT } from '../i18n/useT'
+
 /**
  * A thread's resolution state and the control that changes it, in one button:
  * 「未解決」 resolves the thread, 「解決済み」 reopens it. The accessible name is
  * the visible state followed by the action the button takes.
  */
 export function ResolveToggle({ dense = false, disabled = false, onToggle, pending = false, resolved }: { dense?: boolean; disabled?: boolean; onToggle: (resolve: boolean) => void; pending?: boolean; resolved: boolean }) {
-  const action = resolved ? '未解決に戻す' : '解決する'
-  const state = pending ? '更新中…' : resolved ? '解決済み' : '未解決'
-  return <Tooltip describeChild title={resolved ? '未解決に戻す' : '解決済みにする'}>
+  const t = useT()
+  const action = resolved ? t('common.resolve.unresolve') : t('common.resolve.resolve')
+  const state = pending ? t('common.resolve.updating') : resolved ? t('common.resolve.resolved') : t('common.resolve.unresolved')
+  return <Tooltip describeChild title={resolved ? t('common.resolve.unresolve') : t('common.resolve.markResolved')}>
     <span>
       <Button
         aria-busy={pending || undefined}
-        aria-label={`${state}: ${action}`}
+        aria-label={t('common.resolve.label', { state, action })}
         color={resolved ? 'success' : 'inherit'}
         disabled={disabled || pending}
         onClick={() => onToggle(!resolved)}

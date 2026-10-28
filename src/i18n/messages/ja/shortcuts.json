@@ -1,1 +1,24 @@
-{}
+{
+  "title": "キーボードショートカット",
+  "close": "閉じる",
+  "list.title": "一覧と移動",
+  "list.nextPrevious": "次/前のMR",
+  "list.moveRow": "行移動",
+  "list.open": "開く",
+  "list.preview": "MRの概要をプレビュー",
+  "list.filter": "一覧内検索",
+  "list.searchAll": "すべてのMRを検索",
+  "list.openUrl": "URLから開く",
+  "list.back": "一覧へ戻る",
+  "list.history": "戻る/進む（MR一覧のタブ上ではタブを並べ替え）",
+  "list.reorderTabs": "サイドバーのMRタブを並べ替え（タブ上で）",
+  "review.title": "MRのレビュー",
+  "review.nextThread": "次/前の未解決スレッド",
+  "review.description": "議論タブで説明を横に表示",
+  "review.nextFile": "次/前のファイル",
+  "review.selectLines": "行の「+」で複数行を選択（Enterでコメント）",
+  "review.addToReview": "レビューに追加",
+  "review.postNow": "今すぐ投稿",
+  "help.title": "ヘルプ",
+  "help.show": "この一覧を表示"
+}

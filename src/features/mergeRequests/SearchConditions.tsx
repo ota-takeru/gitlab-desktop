@@ -6,6 +6,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import { useState } from 'react'
 
+import { useT } from '../../i18n/useT'
 import type { MergeRequestState } from '../../types/gitlab'
 import { CONDITION_NAMES, STATE_NAMES, type ConditionKind } from './conditionNames'
 import { GroupSearchPicker, ProjectSearchPicker, UserSearchPicker } from './SearchPickers'
@@ -43,6 +44,7 @@ export function ConditionEditor({ anchorEl, currentUserId, groupPath, kind, name
   onClose: () => void
   values: ConditionValues
 }) {
+  const t = useT()
   const apply = (patch: Partial<ConditionValues>, label?: string) => {
     onApply(patch, label)
     onClose()
@@ -52,7 +54,7 @@ export function ConditionEditor({ anchorEl, currentUserId, groupPath, kind, name
     anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
     onClose={onClose}
     open={Boolean(anchorEl && kind)}
-    slotProps={{ paper: { 'aria-label': kind ? `${CONDITION_NAMES[kind]}の条件` : undefined, role: 'dialog', sx: { mt: 0.5, p: kind === 'state' ? 0.5 : 1.5, width: kind === 'state' ? 200 : 360 } } }}
+    slotProps={{ paper: { 'aria-label': kind ? t('mrList.editor.dialog', { condition: t(CONDITION_NAMES[kind]) }) : undefined, role: 'dialog', sx: { mt: 0.5, p: kind === 'state' ? 0.5 : 1.5, width: kind === 'state' ? 200 : 360 } } }}
   >
     {kind ? <EditorBody apply={apply} currentUserId={currentUserId} groupPath={groupPath} kind={kind} nameOf={nameOf} values={values} /> : null}
   </Popover>
@@ -66,9 +68,10 @@ function EditorBody({ apply, currentUserId, groupPath, kind, nameOf, values }: {
   nameOf?: (kind: 'reviewer' | 'assignee' | 'author' | 'project', id: string) => string | undefined
   values: ConditionValues
 }) {
+  const t = useT()
   if (kind === 'state') {
     return <MenuList autoFocusItem dense>
-      {(['opened', 'merged', 'closed', 'all'] as const).map((state) => <MenuItem key={state} onClick={() => apply({ state })} selected={values.state === state}>{STATE_NAMES[state]}</MenuItem>)}
+      {(['opened', 'merged', 'closed', 'all'] as const).map((state) => <MenuItem key={state} onClick={() => apply({ state })} selected={values.state === state}>{t(STATE_NAMES[state])}</MenuItem>)}
     </MenuList>
   }
   if (kind === 'reviewer' || kind === 'assignee' || kind === 'author') {
@@ -77,49 +80,51 @@ function EditorBody({ apply, currentUserId, groupPath, kind, nameOf, values }: {
     const current = values[field]
     return <Stack spacing={1}>
       <UserSearchPicker
-        ariaLabel={`MRの${CONDITION_NAMES[kind]}`}
+        ariaLabel={t('mrList.editor.field', { condition: t(CONDITION_NAMES[kind]) })}
         autoFocus
-        label={CONDITION_NAMES[kind]}
+        label={t(CONDITION_NAMES[kind])}
         onChange={(id, label) => { if (id) apply({ [field]: id }, label) }}
         selectedName={current && current !== self ? nameOf?.(kind, current) : undefined}
         value={current === self ? '' : current}
       />
-      <Button onClick={() => apply({ [field]: self })} sx={{ alignSelf: 'flex-start' }} variant={current === self ? 'contained' : 'outlined'}>自分</Button>
+      <Button onClick={() => apply({ [field]: self })} sx={{ alignSelf: 'flex-start' }} variant={current === self ? 'contained' : 'outlined'}>{t('mrList.editor.self')}</Button>
     </Stack>
   }
   if (kind === 'project') {
-    return <ProjectSearchPicker ariaLabel="MRのプロジェクト" autoFocus label="プロジェクト" onChange={(id, label) => { if (id) apply({ groupId: '', projectId: id }, label) }} selectedName={values.projectId ? nameOf?.('project', values.projectId) : undefined} value={values.projectId} />
+    return <ProjectSearchPicker ariaLabel={t('mrList.editor.field', { condition: t(CONDITION_NAMES.project) })} autoFocus label={t(CONDITION_NAMES.project)} onChange={(id, label) => { if (id) apply({ groupId: '', projectId: id }, label) }} selectedName={values.projectId ? nameOf?.('project', values.projectId) : undefined} value={values.projectId} />
   }
   if (kind === 'group') {
-    return <GroupSearchPicker ariaLabel="MRのグループ" autoFocus label="グループ" onChange={(id, fullPath) => { if (id) apply({ groupId: id, projectId: '' }, fullPath) }} selectedPath={groupPath} value={values.groupId} />
+    return <GroupSearchPicker ariaLabel={t('mrList.editor.field', { condition: t(CONDITION_NAMES.group) })} autoFocus label={t(CONDITION_NAMES.group)} onChange={(id, fullPath) => { if (id) apply({ groupId: id, projectId: '' }, fullPath) }} selectedPath={groupPath} value={values.groupId} />
   }
   if (kind === 'updated') return <UpdatedEditor apply={apply} values={values} />
   return <TextEditor apply={apply} kind={kind} values={values} />
 }
 
 const TEXT_FIELDS = {
-  labels: { field: 'labels', helper: '複数指定する場合はカンマで区切ります。' },
-  sourceBranch: { field: 'sourceBranch', helper: 'ブランチ名の完全一致' },
-  targetBranch: { field: 'targetBranch', helper: 'ブランチ名の完全一致' },
+  labels: { field: 'labels', helper: 'mrList.editor.labelsHelper' },
+  sourceBranch: { field: 'sourceBranch', helper: 'mrList.editor.branchHelper' },
+  targetBranch: { field: 'targetBranch', helper: 'mrList.editor.branchHelper' },
 } as const
 
 function TextEditor({ apply, kind, values }: { apply: (patch: Partial<ConditionValues>) => void; kind: keyof typeof TEXT_FIELDS; values: ConditionValues }) {
+  const t = useT()
   const { field, helper } = TEXT_FIELDS[kind]
   const [value, setValue] = useState(values[field])
   return <Stack component="form" direction="row" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); apply({ [field]: value.trim() }) }} spacing={1} sx={{ alignItems: 'flex-start' }}>
-    <TextField autoFocus fullWidth helperText={helper} label={CONDITION_NAMES[kind]} onChange={(event) => setValue(event.target.value)} slotProps={{ htmlInput: { 'aria-label': `MRの${CONDITION_NAMES[kind]}` } }} value={value} />
-    <Button disabled={!value.trim()} type="submit" variant="contained">適用</Button>
+    <TextField autoFocus fullWidth helperText={t(helper)} label={t(CONDITION_NAMES[kind])} onChange={(event) => setValue(event.target.value)} slotProps={{ htmlInput: { 'aria-label': t('mrList.editor.field', { condition: t(CONDITION_NAMES[kind]) }) } }} value={value} />
+    <Button disabled={!value.trim()} type="submit" variant="contained">{t('mrList.editor.apply')}</Button>
   </Stack>
 }
 
 function UpdatedEditor({ apply, values }: { apply: (patch: Partial<ConditionValues>) => void; values: ConditionValues }) {
+  const t = useT()
   const [after, setAfter] = useState(values.updatedAfter.slice(0, 10))
   const [before, setBefore] = useState(values.updatedBefore.slice(0, 10))
   return <Stack component="form" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); apply({ updatedAfter: after, updatedBefore: before }) }} spacing={1}>
     <Stack direction="row" spacing={1}>
-      <TextField autoFocus label="開始" onChange={(event) => setAfter(event.target.value)} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（開始）' }, inputLabel: { shrink: true } }} type="date" value={after} />
-      <TextField label="終了" onChange={(event) => setBefore(event.target.value)} slotProps={{ htmlInput: { 'aria-label': 'MRの更新日（終了）' }, inputLabel: { shrink: true } }} type="date" value={before} />
+      <TextField autoFocus label={t('mrList.editor.updatedFrom')} onChange={(event) => setAfter(event.target.value)} slotProps={{ htmlInput: { 'aria-label': t('mrList.editor.updatedFromAria') }, inputLabel: { shrink: true } }} type="date" value={after} />
+      <TextField label={t('mrList.editor.updatedTo')} onChange={(event) => setBefore(event.target.value)} slotProps={{ htmlInput: { 'aria-label': t('mrList.editor.updatedToAria') }, inputLabel: { shrink: true } }} type="date" value={before} />
     </Stack>
-    <Button disabled={!after && !before} sx={{ alignSelf: 'flex-end' }} type="submit" variant="contained">適用</Button>
+    <Button disabled={!after && !before} sx={{ alignSelf: 'flex-end' }} type="submit" variant="contained">{t('mrList.editor.apply')}</Button>
   </Stack>
 }

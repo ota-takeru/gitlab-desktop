@@ -22,6 +22,8 @@ import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { positionLabel } from './diffLineThreads'
 import { MAX_SUGGESTION_LINES_ABOVE, suggestionBlock } from './suggestions'
+import { translate } from '../../i18n/i18n'
+import { useT } from '../../i18n/useT'
 
 interface ReviewComposerProps {
   attachmentTargetKey?: string
@@ -69,6 +71,7 @@ export function ReviewComposer({
   targetPosition,
   value,
 }: ReviewComposerProps) {
+  const t = useT()
   const [thread, setThread] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -142,7 +145,7 @@ export function ReviewComposer({
   const uploadAttachment = async (file: File) => {
     if (!onUploadAttachment || disabled || pending || submittingRef.current || uploadingRef.current) return
     if (file.size > MAX_GITLAB_ATTACHMENT_BYTES) {
-      setAttachmentError('添付ファイルは10 MiB以下にしてください。')
+      setAttachmentError(t('review.attachment.tooLarge'))
       return
     }
 
@@ -207,20 +210,20 @@ export function ReviewComposer({
 
   const close = replyDiscussionId ? onCancelReply : onClearPosition
   const targetLabel = targetPosition ? positionLabel(targetPosition) : ''
-  const suggestionHint = suggestionLines === null ? '変更前の行（削除行）で終わるコメントには提案を付けられません' : '選択した行の現在の内容から変更提案を作成します'
+  const suggestionHint = suggestionLines === null ? t('review.composer.suggestion.unavailable') : t('review.composer.suggestion.hint')
   const insertSuggestion = () => {
     const lines = suggestionLines?.()
-    if (!lines) { setSuggestionError('選択した行の内容を差分から読み取れませんでした。差分を更新してから行を選び直してください。'); return }
-    if (lines.length - 1 > MAX_SUGGESTION_LINES_ABOVE) { setSuggestionError(`提案はコメント行から上${MAX_SUGGESTION_LINES_ABOVE}行までです。範囲を狭めてください。`); return }
+    if (!lines) { setSuggestionError(t('review.composer.suggestion.unreadable')); return }
+    if (lines.length - 1 > MAX_SUGGESTION_LINES_ABOVE) { setSuggestionError(t('review.composer.suggestion.tooMany', { count: MAX_SUGGESTION_LINES_ABOVE })); return }
     setSuggestionError(null)
     editorRef.current?.insertBlock(suggestionBlock(lines))
   }
   return (
     // A reply opens in place of the thread's reply field, so it has no frame or heading of its own.
-    <Paper component="section" aria-label="レビューコメント入力" data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.5 }} variant="outlined">
+    <Paper component="section" aria-label={t('review.composer.label')} data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.5 }} variant="outlined">
       <Stack spacing={1}>
         {replyDiscussionId ? null : <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
-          <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? `${targetLabel} にコメント` : 'コメントを追加'}</Typography>
+          <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? t('review.composer.commentOn', { target: targetLabel }) : t('review.composer.addComment')}</Typography>
           {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={targetLabel} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} variant="outlined" /> : null}
         </Stack>}
         <MarkdownEditor
@@ -228,28 +231,28 @@ export function ReviewComposer({
           autoFocus={Boolean(replyDiscussionId) || inlineTarget}
           controlsId={mentionListShown ? mentionListId : null}
           disabled={controlsDisabled}
-          label="コメント本文"
+          label={t('review.composer.body')}
           onChange={updateValue}
           onKeyDown={handleKeyDown}
           onMentionQueryChange={enableMentions ? (query) => { setMentionQuery(query); setActiveMentionIndex(0) } : undefined}
           onPasteImage={onUploadAttachment ? (file) => { void uploadAttachment(file) } : undefined}
-          placeholder={replyAuthor ? `${replyAuthor}に返信` : 'Markdownでコメントを書けます'}
+          placeholder={replyAuthor ? t('review.composer.replyTo', { author: replyAuthor }) : t('review.composer.placeholder')}
           ref={editorRef}
           toolbarEnd={onUploadAttachment || suggestionLines !== undefined ? <>
             {suggestionLines !== undefined ? (
               <Tooltip title={suggestionHint}>
                 <span>
-                  <Button disabled={controlsDisabled || !suggestionLines} onClick={insertSuggestion} size="small" startIcon={<DifferenceOutlinedIcon />}>提案を挿入</Button>
+                  <Button disabled={controlsDisabled || !suggestionLines} onClick={insertSuggestion} size="small" startIcon={<DifferenceOutlinedIcon />}>{t('review.composer.suggestion.insert')}</Button>
                 </span>
               </Tooltip>
             ) : null}
             {onUploadAttachment ? (
-            <Tooltip title="ファイルを添付（コメント投稿前にGitLabへアップロード・10 MiBまで。画像は貼り付けでも可）">
+            <Tooltip title={t('review.composer.attach.tooltip')}>
               <span>
-                <IconButton aria-label={uploading ? '添付ファイルをアップロード中…' : 'ファイルを添付'} component="label" disabled={targetControlsDisabled} size="small">
+                <IconButton aria-label={uploading ? t('review.composer.attach.uploading') : t('review.composer.attach.button')} component="label" disabled={targetControlsDisabled} size="small">
                   <AttachFileRoundedIcon />
                   <input
-                    aria-label="添付ファイルを選択"
+                    aria-label={t('review.composer.attach.input')}
                     hidden
                     onChange={(event) => {
                       const file = event.currentTarget.files?.[0]
@@ -265,22 +268,22 @@ export function ReviewComposer({
           </> : null}
           value={value}
         />
-        {uploading ? <Typography aria-live="polite" color="textSecondary" variant="caption">添付ファイルをアップロード中です。投稿先は変更できませんが、本文の入力は続けられます。</Typography> : null}
+        {uploading ? <Typography aria-live="polite" color="textSecondary" variant="caption">{t('review.composer.attach.uploadingNotice')}</Typography> : null}
         {attachmentError ? <Alert onClose={() => setAttachmentError(null)} severity="error">{attachmentError}</Alert> : null}
         {suggestionError ? <Alert onClose={() => setSuggestionError(null)} severity="warning">{suggestionError}</Alert> : null}
         {enableMentions ? <MentionSuggestions id={mentionListId} onSelect={insertMention} onUsersChange={onMentionCandidatesChange} search={controlsDisabled ? '' : mentionQuery ?? ''} selectedIndex={activeMentionIndex} /> : null}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 1 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
             {/* Line comments always start a resolvable thread. */}
-            {!replyDiscussionId && !targetPosition ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label="解決可能なスレッドとして投稿" sx={{ mr: 0 }} /> : null}
-            {uploading ? null : <Typography color="textSecondary" variant="caption">Ctrl+Enter: レビューに追加 · Ctrl+Shift+Enter: 今すぐ投稿</Typography>}
+            {!replyDiscussionId && !targetPosition ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label={t('review.composer.thread')} sx={{ mr: 0 }} /> : null}
+            {uploading ? null : <Typography color="textSecondary" variant="caption">{t('review.composer.shortcuts')}</Typography>}
           </Stack>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
-            {replyDiscussionId || inlineTarget ? <Tooltip title="入力した本文は保持されます (Esc)"><span><Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) close() }} size="small">閉じる</Button></span></Tooltip> : null}
+            {replyDiscussionId || inlineTarget ? <Tooltip title={t('review.composer.closeTooltip')}><span><Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) close() }} size="small">{t('review.composer.close')}</Button></span></Tooltip> : null}
             {/* GitLab's two actions: keep it in the pending review, or publish it now. */}
-            <Tooltip title="未公開レビューに追加し、あとでまとめて公開します (Ctrl+Enter)"><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('draft')} startIcon={<AddCommentRoundedIcon />} variant="outlined">レビューに追加</Button></span></Tooltip>
-            <Tooltip title="すぐにMRへ投稿します (Ctrl+Shift+Enter)"><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('comment')} startIcon={<SendRoundedIcon />} variant="outlined">
-              {uploading ? '添付ファイルをアップロード中…' : pending || submitting ? '送信中…' : replyDiscussionId ? '返信' : 'コメントを投稿'}
+            <Tooltip title={t('review.composer.addToReviewTooltip')}><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('draft')} startIcon={<AddCommentRoundedIcon />} variant="outlined">{t('review.composer.addToReview')}</Button></span></Tooltip>
+            <Tooltip title={t('review.composer.postNowTooltip')}><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('comment')} startIcon={<SendRoundedIcon />} variant="outlined">
+              {uploading ? t('review.composer.attach.uploading') : pending || submitting ? t('review.composer.sending') : replyDiscussionId ? t('review.composer.reply') : t('review.composer.post')}
             </Button></span></Tooltip>
           </Stack>
         </Stack>
@@ -290,6 +293,7 @@ export function ReviewComposer({
 }
 
 function MentionSuggestions({ id, onSelect, onUsersChange, search, selectedIndex }: { id: string; onSelect: (user: GitLabUser) => void; onUsersChange: (users: GitLabUser[]) => void; search: string; selectedIndex: number }) {
+  const t = useT()
   const { session } = useConnection()
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -311,10 +315,10 @@ function MentionSuggestions({ id, onSelect, onUsersChange, search, selectedIndex
   if (search.trim().length < 2) return null
   return (
     <Paper sx={{ maxHeight: 180, overflowY: 'auto', p: 0.5 }} variant="outlined">
-      {search.trim() !== debouncedSearch || result.loading ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">ユーザー候補を検索中…</Typography> : null}
-      {search.trim() === debouncedSearch && !result.loading && users.length === 0 ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">候補がありません。</Typography> : null}
+      {search.trim() !== debouncedSearch || result.loading ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">{t('review.mention.searching')}</Typography> : null}
+      {search.trim() === debouncedSearch && !result.loading && users.length === 0 ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">{t('review.mention.none')}</Typography> : null}
       {/* The editor keeps the focus; ↑/↓ move aria-activedescendant through these options. */}
-      <Box aria-label="メンション候補" component="ul" id={id} role="listbox" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+      <Box aria-label={t('review.mention.label')} component="ul" id={id} role="listbox" sx={{ listStyle: 'none', m: 0, p: 0 }}>
         {users.slice(0, 8).map((user, index) => (
           <Box
             aria-selected={index === selectedIndex}
@@ -347,10 +351,10 @@ const composerChipSx = {
 
 function getAttachmentErrorMessage(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : ''
-  if (code === 'TOO_LARGE') return '添付ファイルは10 MiB以下にしてください。'
-  if (code === 'FORBIDDEN') return 'GitLabが添付を拒否しました。プロジェクトの権限を確認してください。'
-  if (code === 'AUTH_REQUIRED') return 'GitLabに接続してから添付してください。'
-  if (code === 'STORAGE') return '入力の保存を確認できないため、添付を停止しました。'
-  if (code === 'UNKNOWN_OUTCOME') return 'アップロード結果を確認できません。GitLabで添付の有無を確認してから再試行してください。'
-  return '添付ファイルをアップロードできませんでした。GitLabへの接続と権限を確認してください。'
+  if (code === 'TOO_LARGE') return translate('review.attachment.tooLarge')
+  if (code === 'FORBIDDEN') return translate('review.attachment.forbidden')
+  if (code === 'AUTH_REQUIRED') return translate('review.attachment.authRequired')
+  if (code === 'STORAGE') return translate('review.attachment.storage')
+  if (code === 'UNKNOWN_OUTCOME') return translate('review.attachment.unknownOutcome')
+  return translate('review.attachment.failed')
 }

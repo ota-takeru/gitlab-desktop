@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo } from 'react'
 import { useQueryRefreshAllowed, useQueryRetention } from './QueryRefreshPolicy'
+import { translate } from '../../i18n/i18n'
 
 import { cancelGitLabRequest, createRequestId, normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
 import {
@@ -81,7 +82,7 @@ export function useGitLabQuery<Q extends GitLabQuery>(
       // React Query only calls queryFn while enabled, but keep this guard for
       // type safety and for future callers that manually refetch a disabled key.
       if (!sessionId || !query) {
-        return Promise.reject(new GitLabCommandError({ code: 'AUTH_REQUIRED', message: 'GitLabに接続してください。' }))
+        return Promise.reject(new GitLabCommandError({ code: 'AUTH_REQUIRED', message: translate('common.gitlab.connectRequired') }))
       }
       // A refresh of data already on screen goes straight to the network: publishing
       // the older disk copy first would flip the view to 「保存済み」 and back.
@@ -189,7 +190,7 @@ async function fetchGitLabQuery<Q extends GitLabQuery>(
 
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) {
-    throw new GitLabCommandError({ code: 'CANCELLED', message: 'GitLabリクエストをキャンセルしました。' })
+    throw new GitLabCommandError({ code: 'CANCELLED', message: translate('common.gitlab.requestCancelled') })
   }
 }
 

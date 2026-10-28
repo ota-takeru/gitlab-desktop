@@ -10,6 +10,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Snackbar from '@mui/material/Snackbar'
 import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { useT } from '../i18n/useT'
 import { FeedbackContext, type Choice, type ConfirmOptions, type Feedback, type NotifyOptions } from './feedbackContext'
 
 export type { Choice, ChoiceOptions, ConfirmOptions, NotifyOptions } from './feedbackContext'
@@ -26,6 +27,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<ConfirmOptions & { alternativeLabel?: string } | null>(null)
   const resolveRef = useRef<((value: Choice) => void) | null>(null)
   const [notice, setNotice] = useState<(NotifyOptions & { key: number }) | null>(null)
+  const t = useT()
 
   const choose = useCallback((options: ConfirmOptions & { alternativeLabel?: string }) => new Promise<Choice>((resolve) => {
     resolveRef.current?.('cancel')
@@ -49,7 +51,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         <DialogTitle id="confirm-dialog-title">{pending?.title}</DialogTitle>
         {pending?.message ? <DialogContent><DialogContentText component="div" variant="body2">{pending.message}</DialogContentText></DialogContent> : null}
         <DialogActions>
-          <Button autoFocus onClick={() => settle('cancel')}>{pending?.cancelLabel ?? 'キャンセル'}</Button>
+          <Button autoFocus onClick={() => settle('cancel')}>{pending?.cancelLabel ?? t('common.feedback.cancel')}</Button>
           {/* The alternative gives something up, so it reads as a warning beside the main action. */}
           {pending?.alternativeLabel ? <Button color="error" onClick={() => settle('alternative')}>{pending.alternativeLabel}</Button> : null}
           <Button color={pending?.destructive ? 'error' : 'primary'} onClick={() => settle('confirm')} variant="contained">{pending?.confirmLabel}</Button>
@@ -58,7 +60,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       <Snackbar anchorOrigin={{ horizontal: 'center', vertical: 'bottom' }} autoHideDuration={notice?.onAction ? 8000 : 4000} key={notice?.key} onClose={(_, reason) => { if (reason !== 'clickaway') closeNotice() }} open={notice !== null}>
         <Alert
           icon={notice?.celebrate && notice.severity === 'success' ? <CelebrationMark /> : undefined}
-          action={notice?.onAction ? <Button color="inherit" onClick={() => { notice.onAction?.(); closeNotice() }} size="small">{notice.actionLabel ?? '元に戻す'}</Button> : undefined}
+          action={notice?.onAction ? <Button color="inherit" onClick={() => { notice.onAction?.(); closeNotice() }} size="small">{notice.actionLabel ?? t('common.feedback.undo')}</Button> : undefined}
           onClose={closeNotice}
           severity={notice?.severity ?? 'info'}
           variant={notice?.celebrate ? 'filled' : 'outlined'}

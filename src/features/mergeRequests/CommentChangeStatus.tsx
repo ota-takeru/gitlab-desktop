@@ -6,6 +6,7 @@ import { useMemo } from 'react'
 import type { FileQuery, Position, VersionCompareQuery } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { compareCommentCode, type CommentCodeResult } from './commentChange'
+import { useT } from '../../i18n/useT'
 
 /** Checks the commented code as soon as the thread is shown. "Old version" is not
  * equivalent to "modified code", so no affirmative status is shown before both reads.
@@ -21,6 +22,7 @@ export function CommentChangeStatus({ headSha, iid, position, projectId, session
   projectId: string
   sessionId: string
 }) {
+  const t = useT()
   const path = position.newPath || position.oldPath
   const comparable = position.positionType === 'text' && Boolean(position.newLine && path && position.headSha)
   const beforeQuery = useMemo<FileQuery | null>(() => comparable
@@ -48,21 +50,21 @@ export function CommentChangeStatus({ headSha, iid, position, projectId, session
   const failed = before.error || (lookingForMove || moved ? null : after.error) || compare.error || renamed.error
   let result: CommentCodeResult | null = null
   if (!failed && moved?.deletedFile) {
-    result = { state: 'changed', explanation: 'コメントしたファイルは現在の版で削除されています。' }
+    result = { state: 'changed', explanation: t('review.codeStatus.fileDeleted') }
   } else if (!failed && before.data && current.data) {
     result = compareCommentCode(before.data.content, current.data.content, position)
-    if (renamedPath) result = { ...result, explanation: `${result.explanation}（ファイル名の変更: ${path} → ${renamedPath}）` }
+    if (renamedPath) result = { ...result, explanation: t('review.codeStatus.renamed', { explanation: result.explanation, path, renamedPath }) }
   }
   const loading = before.loading || after.loading || lookingForMove
   return <Box sx={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-    <Tooltip title="GitLabの古い版へのコメントです。コードが変更されたとは限りません。">
-      <Typography color="textSecondary" variant="caption">旧版</Typography>
+    <Tooltip title={t('review.codeStatus.outdatedHint')}>
+      <Typography color="textSecondary" variant="caption">{t('review.codeStatus.outdated')}</Typography>
     </Tooltip>
-    {!comparable ? <Typography color="textSecondary" variant="caption">コードの追跡はできません</Typography> : null}
-    {comparable && loading && !result && !failed ? <Typography color="textSecondary" role="status" variant="caption">コードを照合中…</Typography> : null}
-    {comparable && failed ? <Tooltip title={failed.message}><Typography color="textSecondary" variant="caption">検証不能（取得失敗）</Typography></Tooltip> : null}
+    {!comparable ? <Typography color="textSecondary" variant="caption">{t('review.codeStatus.notTrackable')}</Typography> : null}
+    {comparable && loading && !result && !failed ? <Typography color="textSecondary" role="status" variant="caption">{t('review.codeStatus.checking')}</Typography> : null}
+    {comparable && failed ? <Tooltip title={failed.message}><Typography color="textSecondary" variant="caption">{t('review.codeStatus.loadFailed')}</Typography></Tooltip> : null}
     {result ? <Tooltip title={result.explanation}><Typography color={result.state === 'changed' ? 'warning' : 'textSecondary'} variant="caption">
-      {result.state === 'unchanged' ? 'コード一致' : result.state === 'changed' ? 'コード変更の可能性' : '検証不能'}
+      {result.state === 'unchanged' ? t('review.codeStatus.unchanged') : result.state === 'changed' ? t('review.codeStatus.changed') : t('review.codeStatus.unknown')}
     </Typography></Tooltip> : null}
   </Box>
 }

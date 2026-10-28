@@ -49,11 +49,11 @@ function formatCalendarDate(timestamp: number, now: number): string {
 }
 
 export function formatMergeRequestState(state: string): string {
-  if (state === 'opened' || state === 'open') return 'Open'
-  if (state === 'merged') return 'Merged'
-  if (state === 'closed') return 'Closed'
-  if (state === 'locked') return 'Locked'
-  return state || 'Unknown'
+  if (state === 'opened' || state === 'open') return translate('common.mergeRequestState.open')
+  if (state === 'merged') return translate('common.mergeRequestState.merged')
+  if (state === 'closed') return translate('common.mergeRequestState.closed')
+  if (state === 'locked') return translate('common.mergeRequestState.locked')
+  return state || translate('common.mergeRequestState.unknown')
 }
 
 export function shortSha(value: string): string {

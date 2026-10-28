@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 
+import type { MessageKey } from '../i18n/i18n'
 import type { AwardEmoji, GitLabUser } from '../types/gitlab'
 
 /** The reactions 「よく使う」 offers before the user has picked any. */
 export const REACTION_CHOICES = ['thumbsup', 'thumbsdown', 'smile', 'tada', 'confused', 'heart', 'rocket', 'eyes'] as const
 
 /** The picker's categories, in the order of GitLab's emoji list (see scripts/generate-emoji-data.mjs). */
-export const EMOJI_CATEGORIES = ['顔', '人', '動物と自然', '食べ物', '旅行と場所', '活動', '物', '記号'] as const
+export const EMOJI_CATEGORIES = ['common.emoji.category.faces', 'common.emoji.category.people', 'common.emoji.category.nature', 'common.emoji.category.food', 'common.emoji.category.travel', 'common.emoji.category.activities', 'common.emoji.category.objects', 'common.emoji.category.symbols'] as const satisfies readonly MessageKey[]
 
 export interface EmojiChoice {
   name: string

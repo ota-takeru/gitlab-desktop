@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef } from 'react'
 import { useNotify } from '../../components/feedbackContext'
+import { translate } from '../../i18n/i18n'
 import { normalizeGitLabError, openExternalUrl, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { parseGitLabPageUrl } from '../../lib/gitlabPageUrl'
 import { parseMergeRequestUrl } from '../../lib/mergeRequestUrl'
@@ -121,10 +122,10 @@ export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, on
       }
       const project = await queryGitLab({ sessionId, mode: 'network', query: { kind: 'project', path: mergeRequest.path } })
       if (!isCurrent()) return
-      if (!project?.data.id) throw new Error('プロジェクトを取得できませんでした。')
+      if (!project?.data.id) throw new Error(translate('common.link.projectNotFound'))
       openMergeRequestRef.current({ projectId: project.data.id, iid: mergeRequest.iid })
     } catch (caught) {
-      if (isCurrent()) notify({ message: `リンクを開けませんでした: ${normalizeGitLabError(caught).message}`, severity: 'error' })
+      if (isCurrent()) notify({ message: translate('common.link.openFailed', { message: normalizeGitLabError(caught).message }), severity: 'error' })
     }
   }, [instanceUrl, notify, sessionId])
   const openLink = useCallback((url: string) => { void open(url) }, [open])

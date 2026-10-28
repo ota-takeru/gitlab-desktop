@@ -22,6 +22,7 @@ import { useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
 import { listGlabConnections, normalizeGitLabError, openTokenCreationPage, type ConnectGitLabInput } from '../../lib/gitlab'
+import { useT } from '../../i18n/useT'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useConnection } from './connectionContext'
 import { normalizeInstanceInput, readLastInstanceUrl, sameInstance } from './lastInstance'
@@ -29,6 +30,7 @@ import { normalizeInstanceInput, readLastInstanceUrl, sameInstance } from './las
 export function ConnectionView({ compact = false }: { compact?: boolean }) {
   const { connect, connectFromGlab, disconnect, error, reauthRequired, refreshToken, restore, restoreFailed, session, status } = useConnection()
   const confirm = useConfirm()
+  const t = useT()
   const { setUnsafe: setPatUnsafe } = useAutoUpdateSafety('pat-form')
   const [url, setUrl] = useState(() => reauthRequired?.instanceUrl ?? readLastInstanceUrl() ?? 'https://gitlab.com')
   const [token, setToken] = useState('')
@@ -47,11 +49,11 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
   const handleSubmit = async () => {
     const normalizedUrl = normalizeInstanceInput(url)
     if (!isHttpsUrl(normalizedUrl)) {
-      setValidation('GitLab URLはhttps://から始めてください。')
+      setValidation(t('connection.connect.urlInvalid'))
       return
     }
     if (!token.trim()) {
-      setValidation('Personal Access Tokenを入力してください。')
+      setValidation(t('connection.token.required'))
       return
     }
     setValidation(null)
@@ -83,9 +85,9 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
       setGlabTargets(safeTargets)
       if (safeTargets.length === 1) setSelectedGlabTarget(safeTargets[0])
       if (savedUrls.length === 0) setGlabNoConnections(true)
-      else if (safeTargets.length === 0) setGlabListError('HTTPS形式の接続先を読み取れませんでした。glabの設定を確認するか、下のPATフォームをお使いください。')
+      else if (safeTargets.length === 0) setGlabListError(t('connection.glab.noHttps'))
     } catch {
-      setGlabListError('glabの保存済み接続先を読み取れませんでした。設定を確認するか、下のPATフォームをお使いください。')
+      setGlabListError(t('connection.glab.readFailed'))
     } finally {
       setGlabListLoading(false)
     }
@@ -93,7 +95,7 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
 
   const handleGlabConnect = async () => {
     if (!glabTargets.includes(selectedGlabTarget) || !isSafeGlabUrl(selectedGlabTarget)) {
-      setGlabListError('glabの保存済み接続先を選択してください。')
+      setGlabListError(t('connection.glab.selectRequired'))
       return
     }
     setValidation(null)
@@ -113,17 +115,17 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
 
   const handleDisconnect = async () => {
     const confirmed = await confirm({
-      confirmLabel: '切断する',
+      confirmLabel: t('connection.disconnect.confirm'),
       destructive: true,
-      message: 'GitLabの資格情報、キャッシュ、この端末に保存された未送信コメント、結果未確認の投稿記録が削除されます。トークンだけを替えるときは「トークンを更新」を使ってください。',
-      title: 'GitLabから切断しますか？',
+      message: t('connection.disconnect.message'),
+      title: t('connection.disconnect.title'),
     })
     if (confirmed) void disconnect()
   }
 
   const handleTokenRefresh = async () => {
     if (!token.trim()) {
-      setValidation('Personal Access Tokenを入力してください。')
+      setValidation(t('connection.token.required'))
       return
     }
     setValidation(null)
@@ -140,7 +142,7 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
   const openTokenPage = async (instanceUrl: string) => {
     const normalized = normalizeInstanceInput(instanceUrl)
     if (!isHttpsUrl(normalized)) {
-      setTokenLinkStatus('先にhttps://で始まるGitLab URLを入力してください。')
+      setTokenLinkStatus(t('connection.token.urlFirst'))
       return
     }
     try {
@@ -151,7 +153,7 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
     }
   }
   const tokenPageLink = (instanceUrl: string) => <>
-    <Button onClick={() => void openTokenPage(instanceUrl)} size="small" startIcon={<LaunchRoundedIcon />} sx={{ alignSelf: 'flex-start' }} variant="text">アクセストークンを作成</Button>
+    <Button onClick={() => void openTokenPage(instanceUrl)} size="small" startIcon={<LaunchRoundedIcon />} sx={{ alignSelf: 'flex-start' }} variant="text">{t('connection.token.create')}</Button>
     {tokenLinkStatus ? <Typography color="textSecondary" role="status" sx={{ overflowWrap: 'anywhere' }} variant="caption">{tokenLinkStatus}</Typography> : null}
   </>
 
@@ -165,7 +167,7 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
                 <CheckCircleOutlineRoundedIcon color="success" />
                 <Box sx={{ minWidth: 0 }}>
                   <Typography component="h3" id="gitlab-connection-title" sx={{ fontWeight: 600 }} variant="body1">
-                    GitLab接続済み
+                    {t('connection.connected.title')}
                   </Typography>
                   <Typography color="textSecondary" noWrap title={session.instanceUrl} variant="body2">
                     {session.instanceUrl}
@@ -174,37 +176,37 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
               </Stack>
               <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
                 <Button disabled={status === 'checking' || tokenFormOpen} onClick={() => { setValidation(null); setTokenFormOpen(true) }} startIcon={<KeyRoundedIcon />} variant="outlined">
-                  トークンを更新
+                  {t('connection.token.update')}
                 </Button>
                 <Button color="error" disabled={status === 'checking'} onClick={() => void handleDisconnect()} startIcon={<LogoutRoundedIcon />} variant="outlined">
-                  切断
+                  {t('connection.disconnect.button')}
                 </Button>
               </Stack>
             </Stack>
             {tokenFormOpen ? <Stack component="form" noValidate onSubmit={(event) => { event.preventDefault(); void handleTokenRefresh() }} spacing={1.5}>
-              <Typography color="textSecondary" variant="body2">同じアカウント（@{session.user.username}）の新しいトークンで接続し直します。未送信コメントと送信結果の確認記録は残ります。別のアカウントのトークンは使えません。</Typography>
+              <Typography color="textSecondary" variant="body2">{t('connection.token.updateDescription', { username: session.user.username })}</Typography>
               {validation ? <Alert onClose={() => setValidation(null)} severity="warning">{validation}</Alert> : null}
               <TextField
                 autoComplete="off"
                 autoFocus
                 fullWidth
-                helperText="閲覧は read_api、コメントや承認には api スコープが必要です。"
-                label="新しいPersonal Access Token"
+                helperText={t('connection.token.scopeHint')}
+                label={t('connection.token.newLabel')}
                 onChange={(event) => { setToken(event.target.value); setPatUnsafe(Boolean(event.target.value)) }}
                 type="password"
                 value={token}
               />
               {tokenPageLink(session.instanceUrl)}
               <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
-                <Button disabled={status === 'checking'} onClick={() => { setToken(''); setPatUnsafe(false); setValidation(null); setTokenFormOpen(false) }} variant="text">キャンセル</Button>
-                <Button disabled={status === 'checking'} type="submit" variant="contained">{status === 'checking' ? '更新中…' : 'トークンを更新'}</Button>
+                <Button disabled={status === 'checking'} onClick={() => { setToken(''); setPatUnsafe(false); setValidation(null); setTokenFormOpen(false) }} variant="text">{t('connection.cancel')}</Button>
+                <Button disabled={status === 'checking'} type="submit" variant="contained">{status === 'checking' ? t('connection.token.updating') : t('connection.token.update')}</Button>
               </Stack>
             </Stack> : null}
             <Divider />
             <Stack direction={{ md: 'row', xs: 'column' }} spacing={2}>
-              <ConnectionValue label="ユーザー" value={`@${session.user.username}`} />
-              <ConnectionValue label="表示名" value={session.user.name} />
-              <ConnectionValue label="GitLabバージョン" value={session.serverVersion ?? '取得できませんでした'} />
+              <ConnectionValue label={t('connection.connected.user')} value={`@${session.user.username}`} />
+              <ConnectionValue label={t('connection.connected.name')} value={session.user.name} />
+              <ConnectionValue label={t('connection.connected.version')} value={session.serverVersion ?? t('connection.connected.versionUnavailable')} />
             </Stack>
             {error ? <ConnectionError error={error.message} /> : null}
           </Stack>
@@ -221,17 +223,17 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
             <LoginRoundedIcon color="primary" sx={{ mt: 0.25 }} />
             <Box>
               <Typography component="h3" id="gitlab-connection-title" sx={{ fontWeight: 600 }} variant="body1">
-                {reauthRequired ? '再認証が必要です' : 'GitLabに接続'}
+                {reauthRequired ? t('connection.reauth.title') : t('connection.connect.title')}
               </Typography>
               <Typography color="textSecondary" variant="body2">
                 {reauthRequired
-                  ? `${reauthRequired.username ? `@${reauthRequired.username} の` : '保存済みの'}トークンが使えなくなりました。同じアカウントの新しいトークンを入力すると、未送信コメントと送信結果の確認記録を保ったまま再接続します。`
-                  : '接続先を選び、レビューを始めましょう。'}
+                  ? reauthRequired.username ? t('connection.reauth.descriptionUser', { username: reauthRequired.username }) : t('connection.reauth.descriptionSaved')
+                  : t('connection.connect.description')}
               </Typography>
             </Box>
           </Stack>
           {status === 'unsupported' ? (
-            <Alert severity="warning">ブラウザプレビューでは接続できません。デスクトップ版を起動してください。</Alert>
+            <Alert severity="warning">{t('connection.connect.unsupported')}</Alert>
           ) : null}
           {validation ? <Alert onClose={() => setValidation(null)} severity="warning">{validation}</Alert> : null}
           {error && !glabDialogOpen ? <ConnectionError error={error.message} /> : null}
@@ -243,36 +245,36 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
               variant="outlined"
               sx={{ alignSelf: 'flex-start' }}
             >
-              {glabListLoading ? '接続先を確認中…' : 'glabの認証情報で接続'}
+              {glabListLoading ? t('connection.glab.checking') : t('connection.glab.connect')}
             </Button>
-            <Typography color="textSecondary" variant="caption">glabに保存された接続先から選び、接続を開始します。</Typography>
+            <Typography color="textSecondary" variant="caption">{t('connection.glab.hint')}</Typography>
             <Divider />
-            <Typography sx={{ fontWeight: 600 }} variant="body2">アクセストークンで接続</Typography>
+            <Typography sx={{ fontWeight: 600 }} variant="body2">{t('connection.connect.withToken')}</Typography>
             <TextField
               fullWidth
-              helperText="GitLab.com または社内GitLabの HTTPS URL（ホスト名だけでも可）"
-              label="GitLab URL"
+              helperText={t('connection.connect.urlHint')}
+              label={t('connection.connect.urlLabel')}
               onChange={(event) => setUrl(event.target.value)}
               value={url}
             />
             <TextField
               fullWidth
               autoComplete="off"
-              helperText="閲覧は read_api、コメントや承認には api スコープが必要です。"
-              label="Personal Access Token"
+              helperText={t('connection.token.scopeHint')}
+              label={t('connection.token.label')}
               onChange={(event) => { setToken(event.target.value); setPatUnsafe(Boolean(event.target.value)) }}
               type="password"
               value={token}
             />
             {tokenPageLink(url)}
-            <Typography color="textSecondary" variant="caption">認証情報はWindows資格情報ストアに保存されます。</Typography>
+            <Typography color="textSecondary" variant="caption">{t('connection.connect.storage')}</Typography>
             <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1} sx={{ justifyContent: 'flex-end' }}>
               {/* Only a failed restore can succeed on retry; without a saved connection there is nothing to restore. */}
               {restoreFailed ? <Button disabled={status === 'checking'} onClick={() => void restore()} startIcon={<RefreshRoundedIcon />} variant="text">
-                保存済みの接続を再試行
+                {t('connection.connect.retryRestore')}
               </Button> : null}
               <Button disabled={status === 'checking' || status === 'unsupported'} startIcon={<LoginRoundedIcon />} type="submit" variant="contained">
-                {status === 'checking' ? '接続中…' : '接続する'}
+                {status === 'checking' ? t('connection.connect.connecting') : t('connection.connect.submit')}
               </Button>
             </Stack>
           </Stack>
@@ -285,15 +287,15 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
         onClose={() => { if (!glabConnecting) setGlabDialogOpen(false) }}
         open={glabDialogOpen}
       >
-        <DialogTitle id="glab-connections-title">glabに保存された接続先</DialogTitle>
+        <DialogTitle id="glab-connections-title">{t('connection.glab.dialogTitle')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-            <Typography color="textSecondary" variant="body2">選択した接続先の保存済み認証で接続します。</Typography>
-            {glabListLoading ? <Typography aria-live="polite" color="textSecondary" role="status" variant="body2">glabの設定を確認しています…</Typography> : null}
-            {glabNoConnections ? <Alert severity="info">glabに保存済みの接続先がありません。glabでログインするか、下のPATフォームから接続してください。</Alert> : null}
+            <Typography color="textSecondary" variant="body2">{t('connection.glab.dialogDescription')}</Typography>
+            {glabListLoading ? <Typography aria-live="polite" color="textSecondary" role="status" variant="body2">{t('connection.glab.loading')}</Typography> : null}
+            {glabNoConnections ? <Alert severity="info">{t('connection.glab.none')}</Alert> : null}
             {glabListError ? <Alert severity="warning">{glabListError}</Alert> : null}
             {glabTargets.length > 0 ? <RadioGroup
-              aria-label="glabでログイン済みのGitLab接続先"
+              aria-label={t('connection.glab.targetsLabel')}
               onChange={(event) => setSelectedGlabTarget(event.target.value)}
               value={selectedGlabTarget}
             >
@@ -303,13 +305,13 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button disabled={glabConnecting} onClick={() => setGlabDialogOpen(false)} variant="text">キャンセル</Button>
+          <Button disabled={glabConnecting} onClick={() => setGlabDialogOpen(false)} variant="text">{t('connection.cancel')}</Button>
           <Button
             disabled={!selectedGlabTarget || glabListLoading || glabConnecting || status === 'checking'}
             onClick={() => void handleGlabConnect()}
             variant="contained"
           >
-            {glabConnecting ? '接続中…' : 'この接続先に接続'}
+            {glabConnecting ? t('connection.connect.connecting') : t('connection.glab.connectTarget')}
           </Button>
         </DialogActions>
       </Dialog>

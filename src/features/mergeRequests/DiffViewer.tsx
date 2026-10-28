@@ -46,6 +46,8 @@ import { positionLines } from './diffLineThreads'
 import type { SuggestionActions } from './SuggestionBlock'
 import { positionIndexRange, rangePosition } from './suggestions'
 import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
+import { translate } from '../../i18n/i18n'
+import { useT } from '../../i18n/useT'
 
 export const DIFF_PAGE_SIZE = 600
 export const FILE_PAGE_SIZE = 1000
@@ -91,6 +93,7 @@ interface DiffViewerProps {
 }
 
 export function DiffViewer({ allowComments = true, allowFileView = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, fileSource, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, suggestionActions, view }: DiffViewerProps) {
+  const t = useT()
   const selectedDiffIndex = diffs.findIndex((diff) => (diff.newPath || diff.oldPath) === selectedFile)
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
@@ -346,11 +349,11 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const fileSearchField = (inTree: boolean) => <TextField
               fullWidth
               onChange={(event) => setFileSearch(event.target.value)}
-              placeholder={inTree ? 'ファイル名で絞り込み' : 'ファイル名を検索'}
+              placeholder={inTree ? t('review.fileTree.filter') : t('review.fileTree.search')}
               size="small"
               sx={denseFieldSx}
               value={fileSearch}
-              slotProps={{ htmlInput: { 'aria-label': 'ファイル名を検索' }, input: { endAdornment: inTree ? undefined : <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{fileSearch.trim() ? `${displayedFileMatchIndex >= 0 ? displayedFileMatchIndex + 1 : 0}/${fileSearchMatches.length}` : ''}</Typography><Tooltip title="前の一致ファイル"><span><IconButton aria-label="前の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title="次の一致ファイル"><span><IconButton aria-label="次の一致ファイル" disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
+              slotProps={{ htmlInput: { 'aria-label': t('review.fileTree.search') }, input: { endAdornment: inTree ? undefined : <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{fileSearch.trim() ? `${displayedFileMatchIndex >= 0 ? displayedFileMatchIndex + 1 : 0}/${fileSearchMatches.length}` : ''}</Typography><Tooltip title={t('review.fileTree.previousMatch')}><span><IconButton aria-label={t('review.fileTree.previousMatch')} disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title={t('review.fileTree.nextMatch')}><span><IconButton aria-label={t('review.fileTree.nextMatch')} disabled={!fileSearch.trim() || fileSearchMatches.length === 0} onClick={() => navigateFileSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
             />
 
   const composerOpen = Boolean(lineComposer)
@@ -467,81 +470,81 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   return (
     <Box ref={rootRef}>
       <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'flex-start', minHeight: 420 }}>
-        <Box component="nav" aria-label="変更ファイル" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: treeShown ? 'flex' : 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 40px)`, minWidth: 0, position: 'sticky', top: 'var(--detail-header-height, 0px)' }}>
+        <Box component="nav" aria-label={t('review.fileTree.title')} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: treeShown ? 'flex' : 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 40px)`, minWidth: 0, position: 'sticky', top: 'var(--detail-header-height, 0px)' }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
-            <Typography color="textSecondary" variant="overline">変更ファイル</Typography>
+            <Typography color="textSecondary" variant="overline">{t('review.fileTree.title')}</Typography>
             <Typography color="textSecondary" sx={{ flex: 1 }} variant="caption">{fileSearchMatches.length}/{diffs.length}</Typography>
-            <ToggleButtonGroup aria-label="変更ファイルの表示形式" exclusive onChange={(_, next: FileListMode | null) => { if (next) changeFileListMode(next) }} size="small" value={fileListMode}>
-              <Tooltip title="フォルダごとのツリー"><ToggleButton aria-label="ツリー表示" sx={{ px: 1, py: 0.25 }} value="tree"><AccountTreeOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
-              <Tooltip title="ファイルの一覧"><ToggleButton aria-label="一覧表示" sx={{ px: 1, py: 0.25 }} value="list"><ViewListOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
+            <ToggleButtonGroup aria-label={t('review.fileTree.mode')} exclusive onChange={(_, next: FileListMode | null) => { if (next) changeFileListMode(next) }} size="small" value={fileListMode}>
+              <Tooltip title={t('review.fileTree.treeTooltip')}><ToggleButton aria-label={t('review.fileTree.tree')} sx={{ px: 1, py: 0.25 }} value="tree"><AccountTreeOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
+              <Tooltip title={t('review.fileTree.listTooltip')}><ToggleButton aria-label={t('review.fileTree.list')} sx={{ px: 1, py: 0.25 }} value="list"><ViewListOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup>
           </Stack>
-          {reviewState.enabled ? <Typography color="textSecondary" component="div" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 0.25 }} variant="caption">確認済み {reviewedCount}/{diffs.length}</Typography> : null}
+          {reviewState.enabled ? <Typography color="textSecondary" component="div" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 0.25 }} variant="caption">{t('review.fileTree.reviewedCount', { reviewed: reviewedCount, total: diffs.length })}</Typography> : null}
           {/* The file-name search filters the tree, so it sits on top of it. */}
           {treeShown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, p: 0.5 }}>{fileSearchField(true)}</Box> : null}
           {/* The rows are buttons, not list items. */}
           <List component="div" disablePadding sx={{ overflowY: 'auto', p: 0.5 }}>
             {fileListMode === 'tree' ? <DiffFileTree displayedPath={displayedPath} entries={fileSearchMatches} expandAll={Boolean(fileSearch.trim())} fileMark={(diff) => <FileKindMark diff={diff} />} isReviewed={reviewState.isReviewed} onSelect={onSelectFile} threadCount={(path) => threadCounts.get(path)} /> : fileSearchMatches.map(({ diff, path }) => {
               const { directory, name } = splitPath(path)
-              const kind = diff.tooLarge ? '取得制限' : diff.untracked ? '未追跡' : diff.newFile ? '新規' : diff.deletedFile ? '削除' : diff.renamedFile ? `名前変更: ${diff.oldPath}` : null
-              return <ListItemButton aria-label={fileRowLabel(path, threadCounts.get(path), reviewState.isReviewed(path))} key={`${diff.oldPath}\0${path}`} onClick={() => onSelectFile(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }} title={path}><ListItemText primary={<Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography><FileThreadMark count={threadCounts.get(path)} />{reviewState.isReviewed(path) ? <Tooltip title="確認済み"><DoneRoundedIcon aria-label="確認済み" color="success" fontSize="small" /></Tooltip> : null}</Stack>} secondary={<Typography color="textSecondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton>
+              const kind = diff.tooLarge ? t('review.fileTree.kind.tooLarge') : diff.untracked ? t('review.fileTree.kind.untracked') : diff.newFile ? t('review.fileTree.kind.new') : diff.deletedFile ? t('review.fileTree.kind.deleted') : diff.renamedFile ? t('review.fileTree.kind.renamed', { path: diff.oldPath }) : null
+              return <ListItemButton aria-label={fileRowLabel(path, threadCounts.get(path), reviewState.isReviewed(path))} key={`${diff.oldPath}\0${path}`} onClick={() => onSelectFile(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }} title={path}><ListItemText primary={<Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography><FileThreadMark count={threadCounts.get(path)} />{reviewState.isReviewed(path) ? <Tooltip title={t('review.fileTree.reviewed')}><DoneRoundedIcon aria-label={t('review.fileTree.reviewed')} color="success" fontSize="small" /></Tooltip> : null}</Stack>} secondary={<Typography color="textSecondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton>
             })}
-            {fileSearchMatches.length === 0 ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="caption">{diffs.length === 0 ? '変更ファイルはありません。' : '一致するファイルはありません。'}</Typography></Box> : null}
+            {fileSearchMatches.length === 0 ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="caption">{diffs.length === 0 ? t('review.fileTree.empty') : t('review.fileTree.noMatch')}</Typography></Box> : null}
           </List>
         </Box>
         <Box ref={fileTopRef} sx={{ '--composer-sticky-top': 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px))', border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, overflow: 'clip', scrollMarginTop: BELOW_DETAIL_HEADER }}>
           {/* The controls wrap below the path rather than squeezing it. */}
           <Stack ref={fileHeaderRef} direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', flexWrap: 'wrap', minHeight: 40, position: 'sticky', px: 1, py: 0.5, rowGap: 0.5, top: 'var(--detail-header-height, 0px)', zIndex: 2 }}>
-            {treeFits ? <Tooltip title={treeShown ? 'ファイルツリーを隠す' : 'ファイルツリーを表示'}><IconButton aria-label={treeShown ? 'ファイルツリーを隠す' : 'ファイルツリーを表示'} aria-pressed={treeShown} onClick={toggleTree}><ViewSidebarOutlinedIcon /></IconButton></Tooltip> : null}
-            <Tooltip title="前のファイル（[）"><span><IconButton aria-keyshortcuts="[" aria-label="前のファイル" disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowLeftRoundedIcon /></IconButton></span></Tooltip>
-            <Tooltip title="次のファイル（]）"><span><IconButton aria-keyshortcuts="]" aria-label="次のファイル" disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowRightRoundedIcon /></IconButton></span></Tooltip>
+            {treeFits ? <Tooltip title={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')}><IconButton aria-label={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')} aria-pressed={treeShown} onClick={toggleTree}><ViewSidebarOutlinedIcon /></IconButton></Tooltip> : null}
+            <Tooltip title={t('review.diff.previousFileTooltip')}><span><IconButton aria-keyshortcuts="[" aria-label={t('review.diff.previousFile')} disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowLeftRoundedIcon /></IconButton></span></Tooltip>
+            <Tooltip title={t('review.diff.nextFileTooltip')}><span><IconButton aria-keyshortcuts="]" aria-label={t('review.diff.nextFile')} disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowRightRoundedIcon /></IconButton></span></Tooltip>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: '1 1 280px', minWidth: 0 }}>
               {/* Long paths lose their start, not their name; the isolate keeps a leading '.' in place. */}
-              <Tooltip title={displayedPath ?? ''}><Typography noWrap sx={{ direction: 'rtl', fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0, textAlign: 'left' }} variant="body2"><bdi dir="ltr">{displayedPath ?? 'ファイルを選択'}</bdi></Typography></Tooltip>
+              <Tooltip title={displayedPath ?? ''}><Typography noWrap sx={{ direction: 'rtl', fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0, textAlign: 'left' }} variant="body2"><bdi dir="ltr">{displayedPath ?? t('review.diff.selectFile')}</bdi></Typography></Tooltip>
               {diffs.length > 1 ? <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{displayedIndex + 1}/{diffs.length}</Typography> : null}
-              {selectedDiff ? <Typography aria-label={`追加${lineCounts.added}行、削除${lineCounts.removed}行`} component="span" sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap', ...diffOnlySx }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
+              {selectedDiff ? <Typography aria-label={t('review.diff.lineCounts', { added: lineCounts.added, removed: lineCounts.removed })} component="span" sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap', ...diffOnlySx }} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{lineCounts.added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{lineCounts.removed}</Box></Typography> : null}
             </Stack>
-            {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title="確認済みにすると次の未確認ファイルを開きます。head SHAまたはファイル差分が変わると未確認に戻ります。"><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={toggleReviewed} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? '確認済み' : '確認済みにする'}</Button></Tooltip> : null}
-            <Tooltip describeChild title={whitespaceIgnored ? '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示しています。行の位置がずれる可能性があるため、この間は新しい行コメントを書けません。' : '空白（インデント・行末・語間）の違いだけの変更を未変更の行として表示します。表示中は新しい行コメントを書けません。'}><ToggleButton onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25, ...diffOnlySx }} value="ignore-whitespace">空白を無視</ToggleButton></Tooltip>
-            <ToggleButtonGroup aria-label="差分の表示形式" exclusive onChange={(_, next: DiffLayout | null) => { if (next) changeLayout(next) }} size="small" sx={{ flexShrink: 0, ...diffOnlySx }} value={layout}>
-              <Tooltip title="統合表示（変更前後を1列に）"><ToggleButton aria-label="統合表示" value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
-              <Tooltip title="左右に並べて比較（左: 変更前 / 右: 変更後）"><ToggleButton aria-label="左右に並べて比較" value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
+            {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title={t('review.diff.markReviewedHint')}><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={toggleReviewed} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? t('review.fileTree.reviewed') : t('review.diff.markReviewed')}</Button></Tooltip> : null}
+            <Tooltip describeChild title={whitespaceIgnored ? t('review.diff.whitespace.ignoredHint') : t('review.diff.whitespace.hint')}><ToggleButton onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25, ...diffOnlySx }} value="ignore-whitespace">{t('review.diff.whitespace.toggle')}</ToggleButton></Tooltip>
+            <ToggleButtonGroup aria-label={t('review.diff.layout')} exclusive onChange={(_, next: DiffLayout | null) => { if (next) changeLayout(next) }} size="small" sx={{ flexShrink: 0, ...diffOnlySx }} value={layout}>
+              <Tooltip title={t('review.diff.unifiedTooltip')}><ToggleButton aria-label={t('review.diff.unified')} value="unified"><ViewStreamOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
+              <Tooltip title={t('review.diff.splitTooltip')}><ToggleButton aria-label={t('review.diff.split')} value="split"><VerticalSplitOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup>
-            {canBlame ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>Blame</Button> : null}
-            {view === 'diff' && markdownDiff && parsed.status === 'valid' && !diffSearch.trim() ? <Button aria-label={renderedMarkdownDiff ? 'Markdown差分のソースを表示' : 'Markdown差分をプレビュー表示'} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? 'ソース差分' : 'Markdownプレビュー'}</Button> : null}
-             {allowFileView ? <ToggleButtonGroup aria-label="差分とファイル全体の切り替え" exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) changeFileView(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
-              <ToggleButton value="diff">差分</ToggleButton>
-              <ToggleButton value="file">ファイル全体</ToggleButton>
+            {canBlame ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>{t('review.diff.blame')}</Button> : null}
+            {view === 'diff' && markdownDiff && parsed.status === 'valid' && !diffSearch.trim() ? <Button aria-label={renderedMarkdownDiff ? t('review.diff.markdown.showSource') : t('review.diff.markdown.showPreview')} onClick={() => setMarkdownMode({ key: markdownModeKey, mode: renderedMarkdownDiff ? 'source' : 'preview' })} size="small" variant="outlined">{renderedMarkdownDiff ? t('review.diff.markdown.source') : t('review.diff.markdown.preview')}</Button> : null}
+             {allowFileView ? <ToggleButtonGroup aria-label={t('review.diff.viewToggle')} exclusive onChange={(_, next: 'diff' | 'file' | null) => { if (next) changeFileView(next) }} size="small" sx={{ flexShrink: 0 }} value={view}>
+              <ToggleButton value="diff">{t('review.diff.view.diff')}</ToggleButton>
+              <ToggleButton value="file">{t('review.diff.view.file')}</ToggleButton>
             </ToggleButtonGroup> : null}
           </Stack>
            {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
-            <Tooltip describeChild placement="bottom-start" title="表示中の差分ページを検索します。他のページは対象外です。"><TextField
+            <Tooltip describeChild placement="bottom-start" title={t('review.diff.search.hint')}><TextField
               fullWidth
               onChange={(event) => { setDiffSearch(event.target.value); setActiveSearch(null) }}
-              placeholder="差分内を検索"
+              placeholder={t('review.diff.search.placeholder')}
               size="small"
               sx={denseFieldSx}
               value={diffSearch}
-              slotProps={{ htmlInput: { 'aria-label': '差分内を検索' }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{diffSearch.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><Tooltip title="前の検索結果"><span><IconButton aria-label="前の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title="次の検索結果"><span><IconButton aria-label="次の差分内検索結果" disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
+              slotProps={{ htmlInput: { 'aria-label': t('review.diff.search.placeholder') }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{diffSearch.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><Tooltip title={t('review.diff.search.previousTooltip')}><span><IconButton aria-label={t('review.diff.search.previous')} disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title={t('review.diff.search.nextTooltip')}><span><IconButton aria-label={t('review.diff.search.next')} disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
             /></Tooltip>
             {treeShown ? null : fileSearchField(false)}
           </Stack>
-          {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">一致するファイルはありません。</Typography> : null}
-          {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">この差分は大きすぎるため省略されています。</Typography></Stack></Box> : null}
-          {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">GitLabが省略した差分です。全体を正常な空ファイルとして扱っていません。</Typography></Box> : null}
+          {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.fileTree.noMatch')}</Typography> : null}
+          {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">{t('review.diff.tooLarge')}</Typography></Stack></Box> : null}
+          {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">{t('review.diff.collapsed')}</Typography></Box> : null}
           {view === 'file' ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{canBlame && fileSource && selectedDiff
             ? <BlameProvider enabled={blameOpen} initialNewLine={fileAnchor?.path === displayedPath ? fileAnchor.line : 1} key={`${fileSource.sha}:${displayedPath}:full`} lines={[]} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>
                 <FullFileView blameEnabled={blameOpen} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />
               </BlameProvider>
             : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />}</MarkdownLinkProvider> : <>
-            {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">差分の一部を検証できないため、コメント位置を無効化しています。</Typography> : null}
-            {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルは空白の変更のみです。</Typography> : null}
-            {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">空白の変更を無視して表示中です。行の位置がずれる可能性があるため、新しい行コメントは書けません。</Typography> : null}
-            {pendingRangeLabel ? <Typography color="primary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{positionLines(pendingRangeLabel)}行目を選択中です。Enterでこの範囲にコメント、Escで選択を解除します。</Typography> : null}
-            {threadView && lineThreads.outdated > 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">このファイルの古い版へのコメント{lineThreads.outdated}件は差分に表示していません。議論タブで確認できます。</Typography> : null}
-            {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">古い議論は未取得のため、読み込み済みのコメントだけを表示しています。</Typography> : null}
-            {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">取得済みの差分に一致する行はありません。</Typography> : null}
+            {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.invalid')}</Typography> : null}
+            {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.whitespaceOnly')}</Typography> : null}
+            {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.whitespace.ignoredNotice')}</Typography> : null}
+            {pendingRangeLabel ? <Typography color="primary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.rangeSelected', { lines: positionLines(pendingRangeLabel) })}</Typography> : null}
+            {threadView && lineThreads.outdated > 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.outdatedHidden', { count: lineThreads.outdated })}</Typography> : null}
+            {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.discussionsIncomplete')}</Typography> : null}
+            {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.search.noMatch')}</Typography> : null}
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={displayLines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, displayLines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {blameOpen && canBlame && fileSource && selectedDiff
               ? <BlameProvider beforeSha={fileSource.beforeSha} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} lines={rows} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
@@ -569,14 +572,15 @@ function FileKindMark({ diff }: { diff: Diff }) {
 }
 
 function PageControls({ offset, pageSize, total, onNext, onPrevious }: { offset: number; pageSize: number; total: number; onNext: () => void; onPrevious: () => void }) {
+  const t = useT()
   if (total <= pageSize && offset === 0) return null
   const end = Math.min(total, offset + pageSize)
   const previous = offset
   const remaining = Math.max(0, total - end)
-  return <Stack aria-label="行ページ" direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 1.5, py: 1 }}>
-    <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">表示 {offset + 1}–{end} / {total}行{remaining > 0 ? `（残り${remaining}行）` : ''}</Typography>
-    <Button aria-label={`前の${pageSize}行`} disabled={previous === 0} onClick={onPrevious} size="small">前へ</Button>
-    <Button aria-label={`次の${pageSize}行`} disabled={remaining === 0} onClick={onNext} size="small">次へ</Button>
+  return <Stack aria-label={t('review.diff.page.label')} direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 1.5, py: 1 }}>
+    <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{remaining > 0 ? t('review.diff.page.rangeRemaining', { start: String(offset + 1), end: String(end), total: String(total), remaining: String(remaining) }) : t('review.diff.page.range', { start: String(offset + 1), end: String(end), total: String(total) })}</Typography>
+    <Button aria-label={t('review.diff.page.previousLines', { count: String(pageSize) })} disabled={previous === 0} onClick={onPrevious} size="small">{t('review.diff.page.previous')}</Button>
+    <Button aria-label={t('review.diff.page.nextLines', { count: String(pageSize) })} disabled={remaining === 0} onClick={onNext} size="small">{t('review.diff.page.next')}</Button>
   </Stack>
 }
 
@@ -589,11 +593,9 @@ interface LineSelection {
   onKeyDown: (index: number, event: React.KeyboardEvent) => void
 }
 
-const LINE_ACTION_TITLE = 'この行にコメント（Shift+クリック・ドラッグ・Shift+↑↓で複数行）'
-
 /** The 「+」 of a commentable line; it also extends a multi-line choice. A plain element, as a page holds many rows. */
 function lineAction(index: number, label: string, selection: LineSelection) {
-  return <button aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown" aria-label={label} className="diff-action line-action" data-line-action={index} onClick={(event) => selection.onAction(index, event)} onKeyDown={(event) => selection.onKeyDown(index, event)} onMouseDown={(event) => selection.onDragStart(index, event)} title={LINE_ACTION_TITLE} type="button">+</button>
+  return <button aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown" aria-label={label} className="diff-action line-action" data-line-action={index} onClick={(event) => selection.onAction(index, event)} onKeyDown={(event) => selection.onKeyDown(index, event)} onMouseDown={(event) => selection.onDragStart(index, event)} title={translate('review.diff.lineActionTitle')} type="button">+</button>
 }
 
 /** Follows a gutter drag over the rows, which carry their line index. */
@@ -605,6 +607,7 @@ function dragOver(selection: LineSelection) {
 }
 
 function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+  const t = useT()
   const skipped = diffGaps(lines, startIndex)
   // Opened unchanged lines: plain context rows, outside paging and search.
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
@@ -640,7 +643,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
       '& .diff-row[data-kind="add"] .diff-prefix': { color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
     })}>
-      {lines.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
+      {lines.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
       <div className="diff-rows" onMouseOver={allowComments ? dragOver(lineSelection) : undefined}>
         {lines.map((line, index) => {
           const isSelectedPosition = matchesPosition(line, selectedPosition)
@@ -654,7 +657,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
               <span className="diff-gutter">
                 <span className="diff-number">{line.oldLine ?? ''}</span>
                 <span className="diff-number">{line.newLine ?? ''}</span>
-                {position && allowComments ? lineAction(lineIndex, `${line.newPath}の${line.newLine ?? line.oldLine}行にコメント`, lineSelection) : null}
+                {position && allowComments ? lineAction(lineIndex, t('review.diff.commentOnLine', { path: line.newPath, line: String(line.newLine ?? line.oldLine) }), lineSelection) : null}
               </span>
               <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(tokens[index] ?? [{ text: line.text }], searchTerm)}</span>
             </div>
@@ -761,6 +764,7 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
 }
 
 function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+  const t = useT()
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
   const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
     // Context rows offer one comment action, on the new side, with both line numbers.
@@ -769,8 +773,8 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
     const number = side === 'old' ? line?.oldLine : line?.newLine
     const kind = !line ? 'empty' : line.kind
     const label = side === 'old' && line?.kind === 'remove'
-      ? `${line.oldPath}の変更前${line.oldLine}行にコメント`
-      : line ? `${line.newPath}の${line.newLine ?? line.oldLine}行にコメント` : ''
+      ? t('review.diff.commentOnOldLine', { path: line.oldPath, line: String(line.oldLine) })
+      : line ? t('review.diff.commentOnLine', { path: line.newPath, line: String(line.newLine ?? line.oldLine) }) : ''
     const chosen = allowComments && lineIndex !== undefined && lineSelection.isChosen(lineIndex)
     return <>
       {blameEnabled ? <BlameCell line={number} side={side} /> : null}
@@ -821,7 +825,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
       '& .split-number[data-range="true"]': { boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
       '& .diff-gap > span': { position: 'static' },
     })} onMouseOver={allowComments ? dragOver(lineSelection) : undefined}>
-      {rows.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">表示できる差分がありません。</Typography> : null}
+      {rows.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
       {rows.map((row) => {
         const selected = Boolean(selectedPosition && ((row.left && matchesPosition(row.left, selectedPosition)) || (row.right && matchesPosition(row.right, selectedPosition))))
         const activeSearch = row.leftIndex === activeSearchMatch || row.rightIndex === activeSearchMatch
@@ -905,11 +909,12 @@ function highlightDiffLines(lines: ParsedLine[], language: string | null): Synta
 }
 
 function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: boolean; item: RemovedFileLines }) {
-  const label = item.oldStart === item.oldEnd ? String(item.oldStart) : `${item.oldStart}〜${item.oldEnd}`
-  const deletion = <Box aria-label={`旧版の削除 ${label}行`} data-file-anchor={item.anchorLine} data-testid="file-deletion" sx={(theme) => ({
+  const t = useT()
+  const label = item.oldStart === item.oldEnd ? String(item.oldStart) : t('review.lineRange', { start: String(item.oldStart), end: String(item.oldEnd) })
+  const deletion = <Box aria-label={t('review.fullFile.removedLines', { lines: label })} data-file-anchor={item.anchorLine} data-testid="file-deletion" sx={(theme) => ({
     bgcolor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', flex: 1, minWidth: 0, my: 0.5, px: 1.5, py: 0.5,
   })}>
-    <ChangeMarker firstLine={item.oldStart} kind="remove" lastLine={item.oldEnd} title={`旧版の${label}行を削除`} />
+    <ChangeMarker firstLine={item.oldStart} kind="remove" lastLine={item.oldEnd} title={t('review.fullFile.removedTitle', { lines: label })} />
     <Typography component="pre" sx={{ fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', m: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{item.text}</Typography>
   </Box>
   // Keep the blame and line-number gutters continuous so removed code lines up with the file's code column.
@@ -919,6 +924,7 @@ function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: b
 }
 
 export function FullFileView({ blameEnabled = false, content, diffLines, language, loading, path, targetLine }: { blameEnabled?: boolean; content?: string | null; diffLines?: ParsedLine[]; language: string | null; loading: boolean; path?: string | null; targetLine?: number }) {
+  const t = useT()
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
   const focus = targetLine ?? 0
@@ -962,8 +968,8 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
     }
   }, [content, markdown, offset, showSource, targetLine])
 
-  if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体を読み込み中…</Typography>
-  if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">ファイル全体は未取得です。ファイルを選び直して取得してください。</Typography>
+  if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.loading')}</Typography>
+  if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.notLoaded')}</Typography>
 
   return <Box ref={rootRef} sx={blameEnabled ? (theme: Theme) => ({
     '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
@@ -972,11 +978,11 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
     '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   }) : undefined}>
     {markdown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
-      <Button aria-label={showSource ? 'Markdownをレンダリング' : 'Markdownのソースを表示'} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? 'Markdown表示' : 'ソース表示'}</Button>
+      <Button aria-label={showSource ? t('review.fullFile.renderMarkdown') : t('review.fullFile.showMarkdownSource')} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? t('review.fullFile.markdown') : t('review.fullFile.source')}</Button>
     </Box> : null}
-    {annotations && !annotations.consistent ? <Typography color="warning.main" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">取得したファイルと差分の行が一致しないため、変更箇所の色付けを省略しています。</Typography> : null}
-    {!content ? <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">空ファイルです。</Typography>
-      : markdown && !showSource ? <Box aria-label="Markdownプレビュー" sx={(theme) => ({
+    {annotations && !annotations.consistent ? <Typography color="warning.main" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">{t('review.fullFile.inconsistent')}</Typography> : null}
+    {!content ? <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.empty')}</Typography>
+      : markdown && !showSource ? <Box aria-label={t('review.fullFile.markdownPreview')} sx={(theme) => ({
           minWidth: 0, px: 2, py: 1.5,
           '& [data-review-change="add"]': { backgroundColor: theme.palette.diff?.addedBackground, boxShadow: `inset 3px 0 0 ${theme.palette.success.main}`, borderRadius: 1, px: 0.5 },
           '& [data-review-deleted="true"]': { backgroundColor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 1, px: 1.5, py: 1 },

@@ -1,1 +1,12 @@
-{}
+{
+  "tabs.label": "User views",
+  "tabs.mergeRequests": "Created MRs",
+  "tabs.projects": "Projects",
+  "loading": "Loading user…",
+  "retry": "Retry",
+  "notFound.title": "User not found",
+  "notFound.description": "The username may have changed, or this connection can't see the user.",
+  "status.saved": "Saved · {time}",
+  "status.refreshing": "Updating…",
+  "refreshFailed": "Showing saved user information. Refresh failed: {message}"
+}

@@ -5,6 +5,7 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import { useState } from 'react'
 
+import { useT } from '../i18n/useT'
 import { applyOwnReaction, emojiForName, groupReactions, useEmojiCatalog } from '../lib/awardEmoji'
 import type { AwardEmoji } from '../types/gitlab'
 import { EmojiPicker } from './EmojiPicker'
@@ -32,13 +33,14 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
   /** Resolves to whether GitLab accepted the change; until then the chip already shows it, and reverts if refused. */
   onToggle: (name: string, add: boolean) => Promise<boolean> | void
 }) {
+  const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [sending, setSending] = useState<SendingReaction | null>(null)
   // Loaded here too, so reactions others gave with less common emoji display as emoji.
   const { catalog } = useEmojiCatalog()
   // The change shows at once, like GitLab's own page; the reactions read back from GitLab replace it.
   const pending = sending?.base === awards ? sending : null
-  const shown = pending ? applyOwnReaction(awards, pending.name, pending.add, { id: currentUserId, name: '自分', username: '' }) : awards
+  const shown = pending ? applyOwnReaction(awards, pending.name, pending.add, { id: currentUserId, name: t('common.reactions.you'), username: '' }) : awards
   const groups = groupReactions(shown, currentUserId)
   const mine = new Set(groups.filter((group) => group.mine).map((group) => group.name))
   const toggle = (name: string, add: boolean) => {
@@ -54,12 +56,12 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
   return <Stack direction="row" sx={{ alignItems: 'center', columnGap: 0.5, flexWrap: 'wrap', rowGap: 0.5 }}>
     {groups.map((group) => {
       const emoji = emojiForName(group.name, catalog)
-      const names = group.users.map((user) => user.name).join('、')
+      const names = group.users.map((user) => user.name).join(t('common.list.separator'))
       const isSending = pending?.name === group.name && !pending.accepted
-      return <Tooltip describeChild key={group.name} title={`${names}${group.mine ? '（クリックで外す）' : '（クリックで付ける）'}`}>
+      return <Tooltip describeChild key={group.name} title={group.mine ? t('common.reactions.clickToRemove', { names }) : t('common.reactions.clickToAdd', { names })}>
         <Chip
           aria-busy={isSending || undefined}
-          aria-label={`${emoji} ${group.users.length}人`}
+          aria-label={t('common.reactions.chip', { emoji, count: group.users.length })}
           aria-pressed={group.mine}
           clickable
           color={group.mine ? 'primary' : 'default'}
@@ -71,9 +73,9 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
         />
       </Tooltip>
     })}
-    <Tooltip title="リアクションを追加">
+    <Tooltip title={t('common.reactions.add')}>
       <span>
-        <IconButton aria-haspopup="dialog" aria-label={`${label}にリアクションを追加`} disabled={disabled} onClick={(event) => setAnchor(event.currentTarget)} size="small">
+        <IconButton aria-haspopup="dialog" aria-label={t('common.reactions.addTo', { label })} disabled={disabled} onClick={(event) => setAnchor(event.currentTarget)} size="small">
           <AddReactionOutlinedIcon fontSize="small" />
         </IconButton>
       </span>

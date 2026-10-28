@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { translate } from '../../i18n/i18n'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useConnection } from '../connections/connectionContext'
 import { isNotificationTodo } from '../mergeRequests/todoCache'
@@ -24,7 +25,7 @@ export function WorkspaceMonitor() {
     const current = seen.current
     if (current?.sessionId === session.id) {
       const added = result.data.filter((todo) => isNotificationTodo(todo) && !current.ids.has(todo.id))
-      if (added.length) void notifyWorkspace(`新しい通知が${added.length}件あります。`).catch(() => undefined)
+      if (added.length) void notifyWorkspace(translate('common.notifications.newTodos', { count: added.length })).catch(() => undefined)
     }
     seen.current = { sessionId: session.id, ids: new Set([...(current?.sessionId === session.id ? current.ids : []), ...result.data.map((todo) => todo.id)].slice(-1000)) }
   }, [result.data, result.error, result.snapshot?.source, session, settings.notifyTodos])
@@ -46,7 +47,7 @@ function WatchedComments({ mergeRequest }: { mergeRequest: MergeRequest }) {
       const added = notes.filter((note) => previous.current!.has(note.id) ? previous.current!.get(note.id) !== (note.updatedAt || note.createdAt) : Date.parse(note.createdAt) > latest)
       const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
       const currentlyOpen = window.location.hash.startsWith('#client/mr?') && params.get('projectId') === mergeRequest.projectId && params.get('iid') === mergeRequest.iid
-      if (added.length && !currentlyOpen) void notifyWorkspace(`担当・レビューMRに新着コメントが${added.length}件あります。`).catch(() => undefined)
+      if (added.length && !currentlyOpen) void notifyWorkspace(translate('common.notifications.newComments', { count: added.length })).catch(() => undefined)
     }
     previous.current = new Map(notes.map((note) => [note.id, note.updatedAt || note.createdAt]))
   }, [mergeRequest, result.data, result.error, result.snapshot?.source, session, workspace])

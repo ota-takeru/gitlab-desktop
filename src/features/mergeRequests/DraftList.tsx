@@ -19,8 +19,10 @@ import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/Ma
 import type { Draft, Position } from '../../types/gitlab'
 import { plainExcerpt } from './discussionText'
 import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
+import { useT } from '../../i18n/useT'
 
 export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
+  const t = useT()
   const confirm = useConfirm()
   if (!drafts.length && page === 1) return null
   const selectedDrafts = drafts.filter((draft) => selected.includes(draft.id))
@@ -28,34 +30,34 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, n
   return (
     <Paper component="section" aria-labelledby="draft-list-title" sx={{ bgcolor: 'surface.raised', p: 1.5 }} variant="outlined">
       <Stack spacing={1}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><PublishRoundedIcon color="primary" fontSize="small" /><Typography color="textSecondary" component="h2" id="draft-list-title" variant="overline">未公開レビュー</Typography><Chip label={paged ? `このページ ${drafts.length}件` : `${drafts.length}件`} size="small" variant="outlined" /><Tooltip title="全ページの下書きを読み直し、一件ずつ公開します。途中で失敗したら残りは公開しません。"><Box component="span" sx={{ ml: 'auto' }}><Button disabled={disabled || publishingAll} onClick={() => void onPublishAll()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{publishingAll ? '公開中…' : 'すべて公開'}</Button></Box></Tooltip></Stack>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><PublishRoundedIcon color="primary" fontSize="small" /><Typography color="textSecondary" component="h2" id="draft-list-title" variant="overline">{t('review.drafts.title')}</Typography><Chip label={paged ? t('review.drafts.countOnPage', { count: drafts.length }) : t('review.drafts.count', { count: drafts.length })} size="small" variant="outlined" /><Tooltip title={t('review.drafts.publishAllHint')}><Box component="span" sx={{ ml: 'auto' }}><Button disabled={disabled || publishingAll} onClick={() => void onPublishAll()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{publishingAll ? t('review.drafts.publishing') : t('review.drafts.publishAll')}</Button></Box></Tooltip></Stack>
         <List disablePadding>
           {drafts.map((draft) => {
             const status = statuses[draft.id] ?? 'idle'
             const excerpt = plainExcerpt(draft.body, 80)
-            const name = `下書き「${plainExcerpt(draft.body, 20)}」`
+            const name = t('review.drafts.name', { excerpt: plainExcerpt(draft.body, 20) })
             const editing = draftEditId === draft.id
             const place = draft.position ? `${draft.position.newPath}:${draft.position.newLine ?? draft.position.oldLine ?? 'file'}` : null
             const position = draft.position
-            const secondary = status === 'unknown' ? '結果不明 · 更新して確認してください' : status === 'success' ? '公開済み' : status === 'error' ? '公開に失敗しました'
-              : position && place ? <Tooltip title={place}><Button aria-label={`差分へ移動: ${place}`} disabled={disabled} onClick={() => onOpenPosition(position)} size="small" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', fontWeight: 400, justifyContent: 'flex-start', maxWidth: '100%', minHeight: 24, minWidth: 0, px: 0.5 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place} への行コメント</Box></Button></Tooltip>
-                : draft.discussionId ? '既存スレッドへの返信' : '新規コメント'
+            const secondary = status === 'unknown' ? t('review.drafts.status.unknown') : status === 'success' ? t('review.drafts.status.success') : status === 'error' ? t('review.drafts.status.error')
+              : position && place ? <Tooltip title={place}><Button aria-label={t('review.drafts.goToDiff', { place })} disabled={disabled} onClick={() => onOpenPosition(position)} size="small" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', fontWeight: 400, justifyContent: 'flex-start', maxWidth: '100%', minHeight: 24, minWidth: 0, px: 0.5 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('review.drafts.lineComment', { place })}</Box></Button></Tooltip>
+                : draft.discussionId ? t('review.drafts.reply') : t('review.drafts.newComment')
             return <ListItem key={draft.id} disableGutters sx={{ alignItems: 'stretch', flexDirection: 'column' }}>
               <Stack direction="row" sx={{ alignItems: 'center', minWidth: 0 }}>
-                <Checkbox checked={selected.includes(draft.id)} disabled={disabled} slotProps={{ input: { 'aria-label': `${name}を選択` } }} onChange={() => onSelect(draft.id)} size="small" />
-                <ListItemText primary={<Tooltip title={draft.body}><Typography noWrap variant="body2">{excerpt || '（本文なし）'}</Typography></Tooltip>} secondary={secondary} slotProps={{ secondary: { component: 'div', noWrap: true } }} sx={{ minWidth: 0, my: 0 }} />
+                <Checkbox checked={selected.includes(draft.id)} disabled={disabled} slotProps={{ input: { 'aria-label': t('review.drafts.select', { name }) } }} onChange={() => onSelect(draft.id)} size="small" />
+                <ListItemText primary={<Tooltip title={draft.body}><Typography noWrap variant="body2">{excerpt || t('review.drafts.noBody')}</Typography></Tooltip>} secondary={secondary} slotProps={{ secondary: { component: 'div', noWrap: true } }} sx={{ minWidth: 0, my: 0 }} />
                 <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
-                  <Tooltip title="下書きを編集"><span><IconButton aria-label={`${name}を編集`} disabled={disabled || editing || status === 'pending' || status === 'unknown' || status === 'success'} onClick={() => onSetEdit(draft.id)} size="small"><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
-                  <Tooltip title="下書きを公開"><span><IconButton aria-label={`${name}を公開`} disabled={disabled || status === 'pending' || status === 'unknown'} onClick={() => void onPublish(draft)} size="small"><PublishRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
-                  <Tooltip title="下書きを削除"><span><IconButton aria-label={`${name}を削除`} disabled={disabled || status === 'pending'} onClick={() => void confirm({ cancelLabel: '残す', confirmLabel: '削除する', destructive: true, message: excerpt, title: 'この下書きを削除しますか？' }).then((ok) => { if (ok) void onDelete(draft) })} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
+                  <Tooltip title={t('review.drafts.editTooltip')}><span><IconButton aria-label={t('review.drafts.edit', { name })} disabled={disabled || editing || status === 'pending' || status === 'unknown' || status === 'success'} onClick={() => onSetEdit(draft.id)} size="small"><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
+                  <Tooltip title={t('review.drafts.publishTooltip')}><span><IconButton aria-label={t('review.drafts.publish', { name })} disabled={disabled || status === 'pending' || status === 'unknown'} onClick={() => void onPublish(draft)} size="small"><PublishRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
+                  <Tooltip title={t('review.drafts.deleteTooltip')}><span><IconButton aria-label={t('review.drafts.delete', { name })} disabled={disabled || status === 'pending'} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: excerpt, title: t('review.drafts.delete.title') }).then((ok) => { if (ok) void onDelete(draft) })} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
                 </Stack>
               </Stack>
               {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} onClose={() => onSetEdit(null)} onSave={(body) => onEdit(draft, body)} sessionId={sessionId} /> : null}
             </ListItem>
           })}
         </List>
-        {selectedDrafts.length > 0 ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">選択中 {selectedDrafts.length}件 · 公開は一件ずつ実行されます</Typography><Button disabled={disabled} onClick={() => void onPublishSelected()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">選択を公開</Button></Stack> : null}
-        {paged ? <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}><Button aria-label="下書きの前のページ" disabled={page <= 1} onClick={onPrevPage} size="small">前へ</Button><Typography color="textSecondary" variant="caption">ページ {page}</Typography><Button aria-label="下書きの次のページ" disabled={nextPage === null} onClick={onNextPage} size="small">次へ</Button></Stack> : null}
+        {selectedDrafts.length > 0 ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.drafts.selected', { count: selectedDrafts.length })}</Typography><Button disabled={disabled} onClick={() => void onPublishSelected()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{t('review.drafts.publishSelected')}</Button></Stack> : null}
+        {paged ? <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}><Button aria-label={t('review.drafts.page.previous')} disabled={page <= 1} onClick={onPrevPage} size="small">{t('review.diff.page.previous')}</Button><Typography color="textSecondary" variant="caption">{t('review.drafts.page.current', { page })}</Typography><Button aria-label={t('review.drafts.page.next')} disabled={nextPage === null} onClick={onNextPage} size="small">{t('review.diff.page.next')}</Button></Stack> : null}
       </Stack>
     </Paper>
   )
@@ -66,6 +68,7 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, n
  * buffer, so closing (Esc) or leaving the tab keeps it; 取消 of a changed text asks first.
  */
 function DraftEditor({ bufferKey, disabled, draft, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+  const t = useT()
   const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
   const confirm = useConfirm()
   const [saving, setSaving] = useState(false)
@@ -83,7 +86,7 @@ function DraftEditor({ bufferKey, disabled, draft, onClose, onSave, sessionId }:
     onClose()
   }
   const cancel = async () => {
-    if (changed && !await confirm({ cancelLabel: '編集を続ける', confirmLabel: '破棄する', destructive: true, title: '下書きの編集を破棄しますか？' })) return
+    if (changed && !await confirm({ cancelLabel: t('review.editor.discard.cancel'), confirmLabel: t('review.editor.discard.confirm'), destructive: true, title: t('review.drafts.discard.title') })) return
     change('')
     onClose()
   }
@@ -106,11 +109,11 @@ function DraftEditor({ bufferKey, disabled, draft, onClose, onSave, sessionId }:
     return false
   }
   return <Stack data-composer="" spacing={1} sx={{ pb: 1, pt: 0.5 }}>
-    <MarkdownEditor autoFocus disabled={disabled || saving} label="下書きを編集" onChange={change} onKeyDown={handleKeyDown} value={body} />
+    <MarkdownEditor autoFocus disabled={disabled || saving} label={t('review.drafts.editTooltip')} onChange={change} onKeyDown={handleKeyDown} value={body} />
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
-      <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">Ctrl+Enter: 保存 · Esc: 閉じる（入力は保持）</Typography>
-      <Button disabled={saving} onClick={() => void cancel()} size="small">取消</Button>
-      <Button disabled={disabled || saving || !changed || !body.trim()} onClick={() => void save()} size="small" variant="contained">{saving ? '保存中…' : '保存'}</Button>
+      <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
+      <Button disabled={saving} onClick={() => void cancel()} size="small">{t('review.editor.cancel')}</Button>
+      <Button disabled={disabled || saving || !changed || !body.trim()} onClick={() => void save()} size="small" variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
     </Stack>
   </Stack>
 }

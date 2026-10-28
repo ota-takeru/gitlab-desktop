@@ -27,6 +27,8 @@ import { paneGutter, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
+import { translate } from '../../i18n/i18n'
+import { useT } from '../../i18n/useT'
 import { formatFetchedAt } from '../../lib/format'
 import type { GitLabUser, Project } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
@@ -52,6 +54,7 @@ export function ProjectView(props: ProjectViewProps) {
 
 function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }: ProjectViewProps) {
   const { session } = useConnection()
+  const t = useT()
   const userId = user?.id
   const scope = useMemo(() => preferenceScope(session?.instanceUrl ?? 'anonymous', session?.user.id ?? 'anonymous'), [session?.instanceUrl, session?.user.id])
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -118,48 +121,48 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
   const clearConditions = () => setConditions(initialConditions)
 
   if (!session) {
-    return <PaneEmpty description="GitLabに接続すると、参加しているプロジェクトを検索できます。" icon={<SourceOutlinedIcon fontSize="inherit" />} title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
+    return <PaneEmpty description={t('project.connect.projects')} icon={<SourceOutlinedIcon fontSize="inherit" />} title={t('project.connect.title')}><Button href="#client/settings" variant="contained">{t('project.connect.openSettings')}</Button></PaneEmpty>
   }
 
   return (
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
-      <PaneHeader actions={<Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} navigation={navigation} title="プロジェクト">
+      <PaneHeader actions={<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} navigation={navigation} title={t('project.list.title')}>
         <Box component="form" onSubmit={(event) => { event.preventDefault(); setConditions({ page: 1, search: searchInput.trim() }) }}>
           <TextField
             fullWidth
             inputRef={searchInputRef}
             onChange={(event) => setConditions({ searchInput: event.target.value })}
-            placeholder="名前・パス・namespaceで検索"
+            placeholder={t('project.list.searchPlaceholder')}
             slotProps={{
-              htmlInput: { 'aria-label': 'プロジェクトを検索' },
+              htmlInput: { 'aria-label': t('project.list.searchLabel') },
               input: {
                 startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>,
-                endAdornment: <InputAdornment position="end"><Tooltip title="検索 (Enter)"><IconButton aria-label="検索" edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
+                endAdornment: <InputAdornment position="end"><Tooltip title={t('project.search.submitTooltip')}><IconButton aria-label={t('project.search.submit')} edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
               },
             }}
             value={searchInput}
           />
           <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
-            {!user ? <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': '参加中のプロジェクトだけ' } }} />} label="参加中のみ" slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} sx={{ ml: -0.5 }} /> : null}
-            <FormControlLabel control={<Switch checked={includeArchived} onChange={(event) => setConditions({ includeArchived: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': 'アーカイブ済みを含める' } }} />} label="アーカイブ済み" slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
-            {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 26, ml: 'auto !important', px: 1 }}>条件をクリア</Button> : null}
+            {!user ? <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.membershipOnlyLabel') } }} />} label={t('project.list.membershipOnly')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} sx={{ ml: -0.5 }} /> : null}
+            <FormControlLabel control={<Switch checked={includeArchived} onChange={(event) => setConditions({ includeArchived: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.includeArchivedLabel') } }} />} label={t('project.list.archived')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
+            {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 26, ml: 'auto !important', px: 1 }}>{t('project.list.clearConditions')}</Button> : null}
           </Stack>
         </Box>
       </PaneHeader>
 
-      {!user && (pinned.length > 0 || recent.length > 0) ? <ProjectShortcuts ids={pinned} label="お気に入り" labelOf={shortcutLabel} onOpen={openProjectId} secondaryIds={recent} secondaryLabel="最近" /> : null}
+      {!user && (pinned.length > 0 || recent.length > 0) ? <ProjectShortcuts ids={pinned} label={t('project.list.favourites')} labelOf={shortcutLabel} onOpen={openProjectId} secondaryIds={recent} secondaryLabel={t('project.list.recent')} /> : null}
       {/* GitLab returns the projects most recently active first. */}
-      <PaneStatus announcement={result.data && !result.previous ? `プロジェクト ${projects.length}件（ページ ${page}）` : null}>{result.data && !result.previous ? <>{projects.length}件取得 · 最近の活動順{page > 1 || result.snapshot?.nextPage ? ` · ページ ${page}` : ''}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}{result.snapshot?.completeness === 'truncated' ? ' · 省略あり' : ''}</> : result.loading || result.previous ? 'プロジェクトを読み込み中…' : null}</PaneStatus>
+      <PaneStatus announcement={result.data && !result.previous ? t('project.list.announcement', { count: projects.length, page }) : null}>{result.data && !result.previous ? <>{t('project.status.fetched', { count: projects.length })} · {t('project.list.order')}{page > 1 || result.snapshot?.nextPage ? ` · ${t('project.status.page', { page })}` : ''}{result.stale ? ` · ${t('project.status.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) })}` : result.refreshing ? ` · ${t('project.status.refreshing')}` : ''}{result.snapshot?.completeness === 'truncated' ? ` · ${t('project.list.truncated')}` : ''}</> : result.loading || result.previous ? t('project.list.loading') : null}</PaneStatus>
 
       <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
-        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの一覧を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
-        {!result.loading && !result.data && !result.error ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : '検索条件を変えるか、別のページを取得してください。'} icon={<SourceOutlinedIcon fontSize="inherit" />} title="プロジェクトがありません" /> : null}
-        {result.data && projects.length === 0 ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : `適用中の条件: ${projectConditionSummary(search, membershipOnly, includeArchived)}`} icon={<SourceOutlinedIcon fontSize="inherit" />} title="条件に一致するプロジェクトがありません">{conditionsChanged ? <Button onClick={clearConditions} variant="outlined">条件をクリア</Button> : null}</PaneEmpty> : null}
-        {projects.length ? <Box aria-label="プロジェクト" component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>
+        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
+        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('project.status.refreshFailed', { message: result.error.message })}</Alert> : null}
+        {!result.loading && !result.data && !result.error ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : t('project.list.empty.description')} icon={<SourceOutlinedIcon fontSize="inherit" />} title={t('project.list.empty.title')} /> : null}
+        {result.data && projects.length === 0 ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : t('project.conditions.applied', { conditions: projectConditionSummary(search, membershipOnly, includeArchived) })} icon={<SourceOutlinedIcon fontSize="inherit" />} title={t('project.list.noMatch.title')}>{conditionsChanged ? <Button onClick={clearConditions} variant="outlined">{t('project.list.clearConditions')}</Button> : null}</PaneEmpty> : null}
+        {projects.length ? <Box aria-label={t('project.list.label')} component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>
           {projects.map((project) => {
             const isPinned = pinned.includes(project.id)
-            const favouriteButton = <Tooltip title={isPinned ? 'お気に入りから外す' : 'お気に入りに追加'}><IconButton aria-label={isPinned ? `${project.name}をお気に入りから外す` : `${project.name}をお気に入りに追加`} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project)}>{isPinned ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}</IconButton></Tooltip>
+            const favouriteButton = <Tooltip title={isPinned ? t('project.list.favourite.remove') : t('project.list.favourite.add')}><IconButton aria-label={isPinned ? t('project.list.favourite.removeNamed', { name: project.name }) : t('project.list.favourite.addNamed', { name: project.name })} color={isPinned ? 'primary' : 'default'} onClick={() => togglePinned(project)}>{isPinned ? <StarRoundedIcon /> : <StarBorderRoundedIcon />}</IconButton></Tooltip>
             return (
               <ListRow key={project.id}
                 actions={!isPinned ? favouriteButton : undefined}
@@ -170,8 +173,8 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
               >
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
                   <Tooltip enterDelay={600} title={project.name}><Typography noWrap sx={{ fontWeight: 600, minWidth: 0 }} variant="body2">{project.name}</Typography></Tooltip>
-                  {project.archived ? <StateIcon icon={<Inventory2OutlinedIcon fontSize="inherit" />} label="アーカイブ済み" /> : null}
-                  {project.lastActivityAt ? <RelativeTime prefix="活動" value={project.lastActivityAt} /> : null}
+                  {project.archived ? <StateIcon icon={<Inventory2OutlinedIcon fontSize="inherit" />} label={t('project.list.archived')} /> : null}
+                  {project.lastActivityAt ? <RelativeTime prefix={t('project.list.activity')} value={project.lastActivityAt} /> : null}
                 </Stack>
                 <Tooltip enterDelay={600} title={project.pathWithNamespace}><Typography color="textSecondary" component="div" noWrap variant="caption">{project.pathWithNamespace}</Typography></Tooltip>
                 {project.description ? <Typography color="textSecondary" component="div" noWrap sx={{ mt: 0.25 }} title={project.description} variant="caption">{project.description}</Typography> : null}
@@ -187,24 +190,26 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
 
 /** Favourite and recent projects as chips above the project list. */
 export function ProjectShortcuts({ ids, label, labelOf, onOpen, secondaryIds, secondaryLabel }: { ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void; secondaryIds: string[]; secondaryLabel: string }) {
-  return <Stack aria-label="プロジェクトへのショートカット" component="section" spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: paneGutter, py: 1 }}><ShortcutGroup icon={<StarRoundedIcon color="primary" fontSize="inherit" />} ids={ids} label={label} labelOf={labelOf} onOpen={onOpen} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} labelOf={labelOf} onOpen={onOpen} /></Stack>
+  const t = useT()
+  return <Stack aria-label={t('project.shortcuts.label')} component="section" spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: paneGutter, py: 1 }}><ShortcutGroup icon={<StarRoundedIcon color="primary" fontSize="inherit" />} ids={ids} label={label} labelOf={labelOf} onOpen={onOpen} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} labelOf={labelOf} onOpen={onOpen} /></Stack>
 }
 
 function ShortcutGroup({ icon, ids, label, labelOf, onOpen }: { icon?: React.ReactNode; ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void }) {
+  const t = useT()
   if (ids.length === 0) return null
   return <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}><Typography color="textSecondary" sx={{ alignItems: 'center', display: 'inline-flex', flex: '0 0 auto', gap: 0.5, minHeight: 24, minWidth: 32 }} variant="caption">{icon}{label}</Typography><Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => {
     const project = labelOf(id)
     // A shortcut saved before names were kept shows its id until the project is listed again.
-    if (!project) return <Chip clickable key={`${label}:${id}`} label={`プロジェクト ${id}`} onClick={() => onOpen(id)} size="small" variant="outlined" />
-    return <Tooltip key={`${label}:${id}`} title={project.pathWithNamespace}><Chip aria-label={`${project.name}（${project.pathWithNamespace}）`} clickable label={project.name} onClick={() => onOpen(id)} size="small" variant="outlined" /></Tooltip>
+    if (!project) return <Chip clickable key={`${label}:${id}`} label={t('project.fallbackName', { id })} onClick={() => onOpen(id)} size="small" variant="outlined" />
+    return <Tooltip key={`${label}:${id}`} title={project.pathWithNamespace}><Chip aria-label={t('project.shortcuts.chip', { name: project.name, path: project.pathWithNamespace })} clickable label={project.name} onClick={() => onOpen(id)} size="small" variant="outlined" /></Tooltip>
   })}</Stack></Stack>
 }
 
 function projectConditionSummary(search: string, membershipOnly: boolean, includeArchived: boolean): string {
-  return [search ? `検索語「${search}」` : null, membershipOnly ? '参加中のみ' : '参加していないものを含む', includeArchived ? 'アーカイブ済みを含む' : 'アーカイブ済みを除く'].filter(Boolean).join(' · ')
+  return [search ? translate('project.conditions.search', { search }) : null, translate(membershipOnly ? 'project.conditions.membershipOnly' : 'project.conditions.includeNonMember'), translate(includeArchived ? 'project.conditions.includeArchived' : 'project.conditions.excludeArchived')].filter(Boolean).join(' · ')
 }
 
 function userProjectEmptyDescription(search: string, includeArchived: boolean): string {
-  const conditions = [search ? `検索語「${search}」` : null, includeArchived ? 'アーカイブ済みを含む' : 'アーカイブ済みを除く'].filter(Boolean).join(' · ')
-  return `適用中の条件: ${conditions}。プロフィールが非公開、または閲覧権限がないプロジェクトは表示されない場合があります。`
+  const conditions = [search ? translate('project.conditions.search', { search }) : null, translate(includeArchived ? 'project.conditions.includeArchived' : 'project.conditions.excludeArchived')].filter(Boolean).join(' · ')
+  return translate('project.conditions.appliedForUser', { conditions })
 }

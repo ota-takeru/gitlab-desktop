@@ -1,6 +1,7 @@
 import { invoke, isTauri as tauriIsTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
+import { translate } from '../i18n/i18n'
 import { composerTargetName, discardComposerBuffers, flushComposerBuffers, listUnsafeComposerTargets } from '../features/mergeRequests/useComposerBuffer'
 
 const CLOSE_EVENT = 'app-close-blocked'
@@ -134,12 +135,12 @@ export function requestClose(unsafeFromNative = false): void {
 
 async function processCloseRequest(unsafe: boolean): Promise<void> {
   const choice = unsafe ? await closeDialogs.choose({
-    alternativeLabel: '保存せずに終了',
-    cancelLabel: '戻る',
-    confirmLabel: '保存して終了',
+    alternativeLabel: translate('common.closeProtection.quitWithoutSaving'),
+    cancelLabel: translate('common.closeProtection.back'),
+    confirmLabel: translate('common.closeProtection.saveAndQuit'),
     items: unsentItems(),
-    message: '次の画面に未送信の入力、編集中の内容、または結果未確認の操作があります。「保存して終了」は入力を端末に保存し、次回復元します。「保存せずに終了」は未送信の入力を破棄します（結果未確認の操作の記録は残ります）。',
-    title: '未送信の内容があります',
+    message: translate('common.closeProtection.unsentMessage'),
+    title: translate('common.closeProtection.unsentTitle'),
   }) : 'confirm'
   if (choice === 'cancel') return
   if (choice === 'alternative') {
@@ -152,11 +153,11 @@ async function processCloseRequest(unsafe: boolean): Promise<void> {
   const flushed = await flushComposerBuffers().catch(() => false)
 
   if (!flushed && !await closeDialogs.confirm({
-    cancelLabel: '戻る',
-    confirmLabel: '内容を失って終了',
+    cancelLabel: translate('common.closeProtection.back'),
+    confirmLabel: translate('common.closeProtection.quitAndLose'),
     destructive: true,
-    message: '未送信の入力を端末に保存できませんでした。このまま終了すると入力は失われます。',
-    title: '入力を保存できませんでした',
+    message: translate('common.closeProtection.saveFailedMessage'),
+    title: translate('common.closeProtection.saveFailedTitle'),
   })) return
 
   await closeWindow()
@@ -166,7 +167,7 @@ async function closeWindow(): Promise<void> {
   try {
     await invoke<void>(CLOSE_COMMAND)
   } catch {
-    closeDialogs.notify('アプリを終了できませんでした。')
+    closeDialogs.notify(translate('common.closeProtection.closeFailed'))
   }
 }
 
@@ -181,7 +182,7 @@ function unsentItems(): CloseItem[] | undefined {
     if (!place.details.includes(detail)) place.details.push(detail)
     places.set(key, place)
   }
-  const mergeRequestName = (projectId: string, iid: string, label: { projectPath?: string; title?: string }) => [`${label.projectPath || `プロジェクト ${projectId}`} !${iid}`, label.title].filter(Boolean).join(' ')
+  const mergeRequestName = (projectId: string, iid: string, label: { projectPath?: string; title?: string }) => [`${label.projectPath || translate('common.closeProtection.project', { id: projectId })} !${iid}`, label.title].filter(Boolean).join(' ')
   for (const target of listUnsafeComposerTargets()) {
     for (const input of target.inputs) add(`mr:${target.projectId}:${target.iid}`, mergeRequestName(target.projectId, target.iid, target), input)
   }
@@ -189,10 +190,10 @@ function unsentItems(): CloseItem[] | undefined {
     const description = /^description-edit:[^:]*:([1-9]\d*):([1-9]\d*)$/u.exec(source)
     const write = /^review:[^:]*:([1-9]\d*):([1-9]\d*):/u.exec(source)
     const [, projectId, iid] = description ?? write ?? []
-    if (projectId && iid) add(`mr:${projectId}:${iid}`, mergeRequestName(projectId, iid, composerTargetName(projectId, iid)), description ? '説明の編集' : '送信中または結果未確認の操作')
-    else if (source === 'pat-form') add('settings', '設定', 'アクセストークンの入力')
+    if (projectId && iid) add(`mr:${projectId}:${iid}`, mergeRequestName(projectId, iid, composerTargetName(projectId, iid)), description ? translate('common.closeProtection.descriptionEdit') : translate('common.closeProtection.pendingOperation'))
+    else if (source === 'pat-form') add('settings', translate('common.closeProtection.settings'), translate('common.closeProtection.accessToken'))
   }
   if (!places.size) return undefined
-  const items = [...places.values()].map(({ details, name }) => ({ detail: details.join('、'), name }))
-  return items.length > MAX_LISTED_TARGETS ? [...items.slice(0, MAX_LISTED_TARGETS), { name: `ほか${items.length - MAX_LISTED_TARGETS}件` }] : items
+  const items = [...places.values()].map(({ details, name }) => ({ detail: details.join(translate('common.list.separator')), name }))
+  return items.length > MAX_LISTED_TARGETS ? [...items.slice(0, MAX_LISTED_TARGETS), { name: translate('common.closeProtection.more', { count: items.length - MAX_LISTED_TARGETS }) }] : items
 }

@@ -1,3 +1,4 @@
+import { translate } from '../../i18n/i18n'
 import type { PipelineJob } from '../../types/gitlab'
 
 /** How often a running pipeline, its jobs and a running job's log are read again while shown. */
@@ -60,7 +61,7 @@ export function formatDuration(seconds: number | null | undefined): string | nul
   const hours = Math.floor(total / 3600)
   const minutes = Math.floor((total % 3600) / 60)
   const rest = total % 60
-  if (hours) return `${hours}時間${minutes}分`
-  if (minutes) return `${minutes}分${rest}秒`
-  return `${rest}秒`
+  if (hours) return translate('mergeRequest.duration.hoursMinutes', { hours, minutes })
+  if (minutes) return translate('mergeRequest.duration.minutesSeconds', { minutes, seconds: rest })
+  return translate('mergeRequest.duration.seconds', { seconds: rest })
 }

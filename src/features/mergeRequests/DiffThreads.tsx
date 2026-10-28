@@ -14,6 +14,7 @@ import type { ParsedLine } from './diffParser'
 import { lineKey, positionLines } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
 import { NoteBody, type SuggestionActions } from './SuggestionBlock'
+import { useT } from '../../i18n/useT'
 
 /**
  * What the diff shows under its lines, as on GitLab: line comment threads,
@@ -44,6 +45,7 @@ export interface ThreadView {
 }
 
 export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadView }) {
+  const t = useT()
   const key = line && view ? lineKey(line) : null
   // A line shown as unchanged because only its whitespace changed keeps the comments on its removed version too.
   const keys = key && line?.whitespaceOnly && line.oldLine != null ? [key, `o:${line.oldLine}`] : key ? [key] : []
@@ -54,10 +56,10 @@ export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadVi
   return <Box className="diff-threads" sx={{ bgcolor: 'surface.list', borderBottom: 1, borderTop: 1, borderColor: 'divider', fontFamily: 'fontFamily', lineHeight: 'normal', px: 1.5, py: 1, whiteSpace: 'normal' }}>
     <Stack spacing={1} sx={{ maxWidth: 900 }}>
       {threads.map((discussion) => <DiffThread actions={view?.actions} discussion={discussion} key={discussion.id} onOpen={view?.onOpen} sessionId={view?.sessionId} suggestionActions={view?.suggestionActions} />)}
-      {drafts.map((draft) => <Box aria-label="未公開のコメント" component="article" key={draft.id} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'warning.main', borderRadius: 1, borderStyle: 'dashed', px: 1.5, py: 1 }}>
+      {drafts.map((draft) => <Box aria-label={t('review.thread.draft')} component="article" key={draft.id} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'warning.main', borderRadius: 1, borderStyle: 'dashed', px: 1.5, py: 1 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <StateIcon icon={<ScheduleSendOutlinedIcon fontSize="inherit" />} label="未公開レビュー" tone="warning" />
-          {draft.position?.lineRange ? <Typography color="textSecondary" variant="caption">{positionLines(draft.position)}行目</Typography> : null}
+          <StateIcon icon={<ScheduleSendOutlinedIcon fontSize="inherit" />} label={t('review.thread.draftState')} tone="warning" />
+          {draft.position?.lineRange ? <Typography color="textSecondary" variant="caption">{t('review.thread.lines', { lines: positionLines(draft.position) })}</Typography> : null}
         </Stack>
         <NoteBody note={{ body: draft.body }} size="body2" />
       </Box>)}
@@ -67,10 +69,11 @@ export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadVi
 }
 
 function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions }: { actions?: ThreadActions; discussion: Discussion; onOpen?: (discussionId: string) => void; sessionId?: string | null; suggestionActions?: SuggestionActions }) {
+  const t = useT()
   const notes = discussion.notes.filter((note) => !note.system)
   // A multi-line comment sits under its last line, as on GitLab, and names its lines.
   const position = notes.find((note) => note.position)?.position
-  const rangeLabel = position?.lineRange ? `${positionLines(position)}行目へのコメント` : null
+  const rangeLabel = position?.lineRange ? t('review.thread.rangeLabel', { lines: positionLines(position) }) : null
   const resolvable = notes.filter((note) => note.resolvable)
   const resolved = resolvable.length > 0 && resolvable.every((note) => note.resolved)
   // Only resolved threads fold; one being replied to stays open.
@@ -78,7 +81,7 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
   const replying = actions?.replyDiscussionId === discussion.id
   const expanded = !resolved || openedResolved || replying
   // `clip` rather than `hidden`, so the reply editor's toolbar can stick while it scrolls.
-  return <Box aria-label={`${notes[0]?.author.name ?? ''}のスレッド`} component="article" data-diff-thread={discussion.id} tabIndex={-1} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 1, overflow: 'clip', scrollMarginTop: 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px) + 8px)', '&:focus': { outline: 'none' }, '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` } }}>
+  return <Box aria-label={t('review.discussion.threadLabel', { author: notes[0]?.author.name ?? '' })} component="article" data-diff-thread={discussion.id} tabIndex={-1} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 1, overflow: 'clip', scrollMarginTop: 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px) + 8px)', '&:focus': { outline: 'none' }, '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` } }}>
     {expanded ? <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
       {notes.map((note) => <Box key={note.id} sx={{ columnGap: 1.5, display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', px: 1.5, py: 1 }}>
         <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
@@ -94,11 +97,11 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
     </Stack> : null}
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: expanded ? 1 : 0, borderColor: 'divider', px: 1, py: 0.25 }}>
       {actions && resolvable.length > 0 ? <ResolveToggle dense disabled={actions.disabled} onToggle={(resolve) => actions.onResolve(discussion, resolve)} resolved={resolved} /> : null}
-      {!expanded ? <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} title={notes[0] ? plainExcerpt(notes[0].body, 200) : undefined} variant="caption">{rangeLabel ? `${rangeLabel} · ` : ''}{notes[0]?.author.name}{notes.length > 1 ? ` ほか${notes.length - 1}件` : ''}のコメント</Typography>
+      {!expanded ? <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} title={notes[0] ? plainExcerpt(notes[0].body, 200) : undefined} variant="caption">{rangeLabel ? `${rangeLabel} · ` : ''}{notes.length > 1 ? t('review.thread.summaryMore', { author: notes[0]?.author.name ?? '', count: notes.length - 1 }) : t('review.thread.summary', { author: notes[0]?.author.name ?? '' })}</Typography>
         : <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{rangeLabel}</Typography>}
-      {resolved && !replying ? <Button onClick={() => setExpanded(!expanded)} size="small" sx={barButtonSx}>{expanded ? '折りたたむ' : '表示'}</Button> : null}
-      {actions && !replying ? <Button disabled={actions.disabled} onClick={() => actions.onReply(discussion)} size="small" sx={barButtonSx}>返信</Button> : null}
-      {onOpen ? <Button onClick={() => onOpen(discussion.id)} size="small" sx={barButtonSx}>{actions ? '議論タブで表示' : '議論で返信・解決'}</Button> : null}
+      {resolved && !replying ? <Button onClick={() => setExpanded(!expanded)} size="small" sx={barButtonSx}>{expanded ? t('review.discussion.collapse') : t('review.thread.show')}</Button> : null}
+      {actions && !replying ? <Button disabled={actions.disabled} onClick={() => actions.onReply(discussion)} size="small" sx={barButtonSx}>{t('review.discussion.reply')}</Button> : null}
+      {onOpen ? <Button onClick={() => onOpen(discussion.id)} size="small" sx={barButtonSx}>{actions ? t('review.thread.openInDiscussions') : t('review.thread.replyInDiscussions')}</Button> : null}
     </Stack>
     {replying ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 1 }}>{actions?.replyComposer}</Box> : null}
   </Box>

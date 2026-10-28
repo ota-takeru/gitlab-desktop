@@ -1,4 +1,5 @@
 import type { Position } from '../../types/gitlab'
+import { translate } from '../../i18n/i18n'
 
 export type CommentCodeState = 'unchanged' | 'changed' | 'unknown'
 export interface CommentCodeResult { state: CommentCodeState; explanation: string }
@@ -16,11 +17,11 @@ export function compareCommentCode(previous: string, current: string, position: 
   const end = position.newLine
   const start = position.lineRange?.start.newLine ?? end
   if (!start || !end || start < 1 || end < start || end > oldLines.length || end - start > 20) {
-    return { state: 'unknown', explanation: '元の行範囲を特定できません。' }
+    return { state: 'unknown', explanation: translate('review.codeStatus.reason.noRange') }
   }
   const original = oldLines.slice(start - 1, end)
   if (original.every((line) => !line.trim()) || original.some((line) => line.length > 10000)) {
-    return { state: 'unknown', explanation: '空白だけの行や長すぎる行は追跡できません。' }
+    return { state: 'unknown', explanation: translate('review.codeStatus.reason.untrackable') }
   }
   // An unchanged but repeated pattern is not evidence that the original line
   // survived; report unknown rather than a false "unchanged".
@@ -33,12 +34,12 @@ export function compareCommentCode(previous: string, current: string, position: 
     return matches
   }
   if (occurrences(oldLines, original).length !== 1) {
-    return { state: 'unknown', explanation: '元のコードが複数箇所にあり、同一性を判定できません。' }
+    return { state: 'unknown', explanation: translate('review.codeStatus.reason.ambiguousOriginal') }
   }
   const matches = occurrences(nowLines, original)
   if (matches.length === 1) {
-    return { state: 'unchanged', explanation: matches[0] === start - 1 ? 'コメント時点のコードと一致します。' : '行番号は変わりましたが、コメント時点のコードと一致します。' }
+    return { state: 'unchanged', explanation: matches[0] === start - 1 ? translate('review.codeStatus.reason.same') : translate('review.codeStatus.reason.moved') }
   }
-  if (matches.length > 1) return { state: 'unknown', explanation: '同じコードが現在の複数箇所にあり、移動先を特定できません。' }
-  return { state: 'changed', explanation: '対象のコードを現在の同じファイルに見つけられませんでした。編集・削除・ファイル移動の可能性があります。' }
+  if (matches.length > 1) return { state: 'unknown', explanation: translate('review.codeStatus.reason.ambiguousCurrent') }
+  return { state: 'changed', explanation: translate('review.codeStatus.reason.notFound') }
 }

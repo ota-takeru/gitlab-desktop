@@ -1,3 +1,4 @@
+import { translate } from '../../i18n/i18n'
 import type { Diff, Discussion, Draft, Position } from '../../types/gitlab'
 import type { ParsedLine } from './diffParser'
 
@@ -33,7 +34,7 @@ export function positionLines(position: Pick<Position, 'newLine' | 'oldLine' | '
   if (!range || start == null || (start === end && (range.start.newLine == null) === (position.newLine == null))) return String(end)
   const mixed = (range.start.newLine == null) !== (position.newLine == null)
   const label = (line: number, oldOnly: boolean) => mixed && oldOnly ? `−${line}` : String(line)
-  return `${label(start, range.start.newLine == null)}〜${label(end, position.newLine == null)}`
+  return translate('review.lineRange', { start: label(start, range.start.newLine == null), end: label(end, position.newLine == null) })
 }
 
 /** Where a line comment is, such as `src/a.ts:12〜15`. */
@@ -82,9 +83,9 @@ export function threadCountsByFile(discussions: Discussion[] | undefined, diffs:
 
 /** The row's name carries its review state, which the marks show only visually. */
 export function fileRowLabel(path: string, threads: FileThreadCount | undefined, reviewed: boolean): string {
-  return [path, threads?.total ? threadLabel(threads) : null, reviewed ? '確認済み' : null].filter(Boolean).join('、')
+  return [path, threads?.total ? threadLabel(threads) : null, reviewed ? translate('review.fileTree.reviewed') : null].filter(Boolean).join(translate('common.list.separator'))
 }
 
 export function threadLabel({ total, unresolved }: FileThreadCount): string {
-  return unresolved ? `スレッド${total}件（未解決${unresolved}件）` : `スレッド${total}件（すべて解決済み）`
+  return unresolved ? translate('review.fileTree.threadsUnresolved', { total, unresolved }) : translate('review.fileTree.threads', { total })
 }

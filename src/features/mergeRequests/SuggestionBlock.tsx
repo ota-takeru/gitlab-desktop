@@ -14,6 +14,7 @@ import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { shortSha } from '../../lib/format'
 import type { Note, Suggestion } from '../../types/gitlab'
 import { contentLines, hasSuggestionBlock, splitSuggestions } from './suggestions'
+import { useT } from '../../i18n/useT'
 
 /** Applying the suggestions shown in comments. */
 export interface SuggestionActions {
@@ -54,16 +55,17 @@ export function NoteBody({ actions, note, size = 'body1' }: { actions?: Suggesti
  * proposed lines, coloured like the diff.
  */
 export function SuggestionBlock({ actions, above, below, lines, suggestion, unidentified }: { actions?: SuggestionActions; above: number; below: number; lines: string[]; suggestion?: Suggestion; unidentified: boolean }) {
+  const t = useT()
   const removed = suggestion ? contentLines(suggestion.fromContent) : null
-  const scope = above || below ? `コメント行と上${above}行・下${below}行を置き換え` : 'コメント行を置き換え'
-  return <Box aria-label="変更提案" component="figure" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, m: 0, overflow: 'hidden' }}>
+  const scope = above || below ? t('review.suggestion.scopeRange', { above, below }) : t('review.suggestion.scope')
+  return <Box aria-label={t('review.suggestion.title')} component="figure" sx={{ border: 1, borderColor: 'divider', borderRadius: 1, m: 0, overflow: 'hidden' }}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', flexWrap: 'wrap', minHeight: 32, px: 1, py: 0.25, rowGap: 0.25 }}>
-      <Typography component="figcaption" sx={{ fontWeight: 600 }} variant="caption">変更提案</Typography>
+      <Typography component="figcaption" sx={{ fontWeight: 600 }} variant="caption">{t('review.suggestion.title')}</Typography>
       <Typography color="textSecondary" sx={{ flex: 1 }} variant="caption">{scope}</Typography>
-      {suggestion?.applied ? <Typography color="success" variant="caption">適用済み</Typography>
-        : suggestion && !suggestion.appliable ? <Typography color="textSecondary" variant="caption">現在は適用できません</Typography>
+      {suggestion?.applied ? <Typography color="success" variant="caption">{t('review.suggestion.applied')}</Typography>
+        : suggestion && !suggestion.appliable ? <Typography color="textSecondary" variant="caption">{t('review.suggestion.notAppliable')}</Typography>
           : suggestion && actions ? <ApplyButton actions={actions} count={1} suggestionIds={[suggestion.id]} />
-            : unidentified && actions?.onOpenInGitLab ? <Button onClick={actions.onOpenInGitLab} size="small">GitLabで適用</Button> : null}
+            : unidentified && actions?.onOpenInGitLab ? <Button onClick={actions.onOpenInGitLab} size="small">{t('review.suggestion.applyInGitLab')}</Button> : null}
     </Stack>
     <Box sx={(theme) => ({
       fontFamily: theme.typography.code?.fontFamily ?? 'monospace',
@@ -77,15 +79,16 @@ export function SuggestionBlock({ actions, above, below, lines, suggestion, unid
     })}>
       {removed?.map((line, index) => <div className="suggestion-line" data-kind="remove" key={`r${index}`}><span aria-hidden className="suggestion-prefix">−</span><span>{line}</span></div>)}
       {lines.map((line, index) => <div className="suggestion-line" data-kind="add" key={`a${index}`}><span aria-hidden className="suggestion-prefix">+</span><span>{line}</span></div>)}
-      {lines.length === 0 ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">対象の行を削除する提案です。</Typography> : null}
+      {lines.length === 0 ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">{t('review.suggestion.removesLines')}</Typography> : null}
     </Box>
-    {removed ? null : <Typography color="textSecondary" component="p" sx={{ borderTop: 1, borderColor: 'divider', m: 0, px: 1, py: 0.25 }} variant="caption">置き換え前の行は差分のコメント位置で確認してください。</Typography>}
+    {removed ? null : <Typography color="textSecondary" component="p" sx={{ borderTop: 1, borderColor: 'divider', m: 0, px: 1, py: 0.25 }} variant="caption">{t('review.suggestion.originalHint')}</Typography>}
   </Box>
 }
 
 function ApplyButton({ actions, count, suggestionIds }: { actions: SuggestionActions; count: number; suggestionIds: string[] }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
-  const label = count > 1 ? `${count}件の提案をまとめて適用` : '提案を適用'
+  const label = count > 1 ? t('review.suggestion.applyBatch', { count }) : t('review.suggestion.apply')
   return <>
     <Button disabled={actions.disabled || !actions.headSha} onClick={() => setOpen(true)} size="small" variant="outlined">{label}</Button>
     {open ? <ApplySuggestionDialog count={count} headSha={actions.headSha ?? ''} onApply={(message) => actions.onApply(suggestionIds, message)} onClose={() => setOpen(false)} /> : null}
@@ -94,6 +97,7 @@ function ApplyButton({ actions, count, suggestionIds }: { actions: SuggestionAct
 
 /** Confirms applying, which commits to the MR's source branch, with an optional commit message. */
 export function ApplySuggestionDialog({ count, headSha, onApply, onClose }: { count: number; headSha: string; onApply: (commitMessage?: string) => Promise<boolean>; onClose: () => void }) {
+  const t = useT()
   const [message, setMessage] = useState('')
   const [applying, setApplying] = useState(false)
   const titleId = useId()
@@ -107,16 +111,16 @@ export function ApplySuggestionDialog({ count, headSha, onApply, onClose }: { co
     }
   }
   return <Dialog aria-labelledby={titleId} fullWidth maxWidth="sm" onClose={() => { if (!applying) onClose() }} open>
-    <DialogTitle id={titleId}>{count > 1 ? `${count}件の提案を適用しますか？` : '提案を適用しますか？'}</DialogTitle>
+    <DialogTitle id={titleId}>{count > 1 ? t('review.suggestion.dialog.titleBatch', { count }) : t('review.suggestion.dialog.title')}</DialogTitle>
     <DialogContent>
       <Stack spacing={2}>
-        <DialogContentText variant="body2">MRのソースブランチに{count > 1 ? '1つのコミットとして' : ''}コミットを作成します。GitLabのMRのheadが表示中の {shortSha(headSha)} から変わっている場合は適用しません。</DialogContentText>
-        <TextField disabled={applying} label="コミットメッセージ（任意）" minRows={2} multiline onChange={(event) => setMessage(event.target.value)} placeholder="空欄ならGitLabの既定のメッセージを使います" size="small" value={message} />
+        <DialogContentText variant="body2">{t(count > 1 ? 'review.suggestion.dialog.descriptionBatch' : 'review.suggestion.dialog.description', { sha: shortSha(headSha) })}</DialogContentText>
+        <TextField disabled={applying} label={t('review.suggestion.dialog.message')} minRows={2} multiline onChange={(event) => setMessage(event.target.value)} placeholder={t('review.suggestion.dialog.messagePlaceholder')} size="small" value={message} />
       </Stack>
     </DialogContent>
     <DialogActions>
-      <Button autoFocus disabled={applying} onClick={onClose}>キャンセル</Button>
-      <Button disabled={applying} onClick={() => void apply()} variant="contained">{applying ? '適用中…' : count > 1 ? `${count}件を適用する` : '適用する'}</Button>
+      <Button autoFocus disabled={applying} onClick={onClose}>{t('review.suggestion.dialog.cancel')}</Button>
+      <Button disabled={applying} onClick={() => void apply()} variant="contained">{applying ? t('review.suggestion.dialog.applying') : count > 1 ? t('review.suggestion.dialog.applyBatch', { count }) : t('review.suggestion.dialog.apply')}</Button>
     </DialogActions>
   </Dialog>
 }

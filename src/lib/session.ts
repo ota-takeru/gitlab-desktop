@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import { translate } from '../i18n/i18n'
 import { GitLabCommandError, type GitLabSession } from '../types/gitlab'
 import { isTauri, normalizeGitLabError } from './gitlab'
 
@@ -10,7 +11,7 @@ import { isTauri, normalizeGitLabError } from './gitlab'
  * anything (INVALID_INPUT). The returned session has a new id.
  */
 export async function reauthenticateGitLab(token: string): Promise<GitLabSession> {
-  if (!isTauri()) throw new GitLabCommandError({ code: 'UNSUPPORTED', message: 'ブラウザプレビューではGitLab接続を利用できません。デスクトップ版で接続してください。' })
+  if (!isTauri()) throw new GitLabCommandError({ code: 'UNSUPPORTED', message: translate('common.gitlab.browserUnavailable') })
   try {
     return await invoke<GitLabSession>('reauthenticate_gitlab', { token })
   } catch (error) {

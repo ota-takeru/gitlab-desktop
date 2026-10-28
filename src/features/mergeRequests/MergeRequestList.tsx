@@ -46,6 +46,8 @@ import { delayedRevealSx, paneGutter, paneResultsSx } from '../../components/pan
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
+import { translate, type MessageKey } from '../../i18n/i18n'
+import { useT } from '../../i18n/useT'
 import type { GitLabCommandError, GitLabUser, MergeRequest, MergeRequestsQuery, MrApproval, MrApprovalsQuery } from '../../types/gitlab'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
@@ -88,6 +90,7 @@ export function MergeRequestList(props: MergeRequestListProps) {
 }
 
 function MergeRequestListContent({ actions, author, initialQuery = '', initialParams = {}, navigation, onOpenMergeRequest, onSearchStateChange, projectId, projectName, recentMrId = null, selected }: MergeRequestListProps) {
+  const t = useT()
   const { session } = useConnection()
   const fixedAuthorId = author?.id
   const personalWorkspace = usePersonalWorkspace(session)
@@ -150,7 +153,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
   // Saves the conditions the list shows, not text typed but not yet searched.
   const saveSearch = (): boolean => {
     if (!applied) {
-      setFilterError('保存する前に検索条件を適用してください。')
+      setFilterError(t('mrList.saved.applyFirst'))
       return false
     }
     const nextSearch: StoredSearch = {
@@ -267,12 +270,12 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
   }
 
   if (!session) {
-    return <PaneEmpty description="GitLabに接続すると、レビュー対象を検索できます。" title="GitLabに接続してください"><Button href="#client/settings" variant="contained">設定を開く</Button></PaneEmpty>
+    return <PaneEmpty description={t('mrList.noSession.description')} title={t('mrList.noSession.title')}><Button href="#client/settings" variant="contained">{t('mrList.noSession.openSettings')}</Button></PaneEmpty>
   }
 
   // Exactly one condition on the reader (with text, state and order) is a personal queue: it gets its title and grouping.
   const personalQueue = author ? null : personalQueueFor(applied ? serializeSearch(applied) : initialParams, session.user.id)
-  const title = projectName ?? (author ? `${author.name} のMR` : personalQueue === 'assigned' ? '担当しているMR' : personalQueue === 'created' ? '作成したMR' : personalQueue === 'waiting' ? 'レビュー依頼' : 'MR検索')
+  const title = projectName ?? (author ? t('mrList.title.author', { name: author.name }) : personalQueue === 'assigned' ? t('mrList.title.assigned') : personalQueue === 'created' ? t('mrList.title.created') : personalQueue === 'waiting' ? t('mrList.title.waiting') : t('mrList.title.search'))
   const page = applied?.page ?? 1
   const pageEntry = (number: number) => `${pagesKey}#${number}`
   const loaded: Array<PageResult | undefined> = [
@@ -300,19 +303,19 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
   const addableKinds = CONDITION_KINDS.filter((kind) => !(projectName && (kind === 'project' || kind === 'group')) && !(author && kind === 'author'))
   const shown = applied ?? draft
   // The chips switch between the reader's own MRs: one replaces another, and choosing the one shown removes it.
-  const queueSwitches = projectName || author ? [] : QUEUE_SWITCHES.map(({ label, queue }) => {
+  const queueSwitches = projectName || author ? [] : QUEUE_SWITCHES.map(({ label: labelKey, queue }) => {
     const own = ownCondition(queue, session.user.id)
     const active = shown[own.key] === own.value
     const others = QUEUE_SWITCHES.map((other) => ownCondition(other.queue, session.user.id)).filter((other) => other.key !== own.key && shown[other.key] === other.value)
     const patch: Partial<SearchDraft> = active
       ? { [own.key]: '' }
       : { ...Object.fromEntries(others.map((other) => [other.key, ''])), [own.key]: own.value, ...(shown.state === 'all' ? { state: 'opened' as const } : {}) }
-    return { active, label, patch }
+    return { active, label: t(labelKey), patch }
   })
   // The search word is the field's own text, so only the other conditions are tags in it.
   const fieldChips = chips.filter((chip) => chip.kind !== 'search')
-  const freshness = result.stale ? `保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? '更新中…' : null
-  const searchTarget = '検索対象はタイトル・説明・MR番号（!123）です。'
+  const freshness = result.stale ? t('mrList.status.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) }) : result.refreshing ? t('mrList.status.refreshing') : null
+  const searchTarget = t('mrList.search.target')
   const defaults = defaultConditions(projectId, author?.id ?? '')
   const conditionsChanged = !sameConditions(applied ?? draft, defaults) || !sameConditions(draft, defaults)
   const resetConditions = () => {
@@ -350,8 +353,8 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
       <PaneHeader
         actions={<>
           {actions}
-          <Tooltip title="保存済み検索"><IconButton aria-label={`保存済み検索を管理（${savedSearches.length}）`} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>
-          <Tooltip title="更新"><span><IconButton aria-label="更新" disabled={result.loading || result.refreshing} onClick={() => { result.refresh(); setRefreshes((count) => count + 1) }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
+          <Tooltip title={t('mrList.saved.title')}><IconButton aria-label={t('mrList.header.manageSaved', { count: savedSearches.length })} onClick={() => setSavedSearchesOpen(true)}><BookmarksOutlinedIcon /></IconButton></Tooltip>
+          <Tooltip title={t('mrList.header.refresh')}><span><IconButton aria-label={t('mrList.header.refresh')} disabled={result.loading || result.refreshing} onClick={() => { result.refresh(); setRefreshes((count) => count + 1) }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         </>}
         navigation={navigation}
         title={title}
@@ -363,7 +366,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
               setSearchOptions(null)
               setDraft((current) => ({ ...current, search: event.target.value }))
             }}
-            placeholder={personalQueue ? `${title}の中を検索` : 'タイトル・説明・MR番号（!123）を検索'}
+            placeholder={personalQueue ? t('mrList.search.placeholderIn', { title }) : t('mrList.search.placeholder')}
             ref={searchFieldRef}
             slotProps={{
               htmlInput: {
@@ -372,7 +375,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                 'aria-controls': searchOptions ? 'mr-search-options' : undefined,
                 'aria-expanded': Boolean(searchOptions),
                 'aria-haspopup': 'menu',
-                'aria-label': personalQueue ? `${title}をタイトル・説明・MR番号で検索` : 'MRをタイトル・説明・MR番号で検索',
+                'aria-label': personalQueue ? t('mrList.search.ariaIn', { title }) : t('mrList.search.aria'),
                 onBlur: closeSearchOptionsOnBlur,
                 onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
                   if (event.key === 'ArrowDown') {
@@ -387,15 +390,15 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                 startAdornment: <>
                   <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>
                   {/* Each applied condition shows its value as a tag in the field: a tag opens its editor, ✕ removes it. */}
-                  {fieldChips.length ? <Box aria-label="適用中の条件" role="group" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%', mr: 0.5, py: 0.5 }}>
+                  {fieldChips.length ? <Box aria-label={t('mrList.search.applied')} role="group" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%', mr: 0.5, py: 0.5 }}>
                     {fieldChips.map((chip) => {
                       const { clear, kind } = chip
                       const open = kind && kind !== 'search' ? (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind }) : undefined
-                      return <Chip color={clear ? 'primary' : 'default'} deleteIcon={clear ? <CancelRoundedIcon aria-label={`${chip.name}の絞り込みを解除`} /> : undefined} key={chip.name} label={chip.label} onClick={open} onDelete={clear ? () => applyConditions(clear) : undefined} size="small" sx={{ fontFamily: chip.code ? 'code.fontFamily' : undefined, maxWidth: '100%' }} variant="outlined" />
+                      return <Chip color={clear ? 'primary' : 'default'} deleteIcon={clear ? <CancelRoundedIcon aria-label={t('mrList.search.removeCondition', { name: chip.name })} /> : undefined} key={chip.name} label={chip.label} onClick={open} onDelete={clear ? () => applyConditions(clear) : undefined} size="small" sx={{ fontFamily: chip.code ? 'code.fontFamily' : undefined, maxWidth: '100%' }} variant="outlined" />
                     })}
                   </Box> : null}
                 </>,
-                endAdornment: <InputAdornment position="end"><Tooltip title="検索 (Enter)"><IconButton aria-label="検索" edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
+                endAdornment: <InputAdornment position="end"><Tooltip title={t('mrList.search.submitTooltip')}><IconButton aria-label={t('mrList.search.submit')} edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
                 sx: { flexWrap: 'wrap', '& .MuiInputBase-input': { flex: 1, minWidth: 160, width: 'auto' } },
               },
             }}
@@ -404,9 +407,9 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
           />
           <Popper anchorEl={searchOptions?.anchor} open={Boolean(searchOptions)} placement="bottom-start" sx={{ width: searchOptions?.width, zIndex: 'modal' }}>
             <Paper ref={searchOptionsRef} sx={{ border: 1, borderColor: 'divider', boxShadow: 8, mt: 0.5, py: 0.5 }}>
-              <Typography color="textSecondary" sx={{ display: 'block', px: 1.5 }} variant="overline">検索条件を追加</Typography>
+              <Typography color="textSecondary" sx={{ display: 'block', px: 1.5 }} variant="overline">{t('mrList.search.addCondition')}</Typography>
               <MenuList
-                aria-label="検索条件"
+                aria-label={t('mrList.search.conditionsMenu')}
                 autoFocusItem={searchOptions?.keyboard}
                 dense
                 id="mr-search-options"
@@ -417,24 +420,24 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                   searchInputRef.current?.focus()
                 }}
               >
-                {addableKinds.map((kind) => <MenuItem key={kind} onClick={() => chooseSearchOption(kind)}>{CONDITION_NAMES[kind]}</MenuItem>)}
+                {addableKinds.map((kind) => <MenuItem key={kind} onClick={() => chooseSearchOption(kind)}>{t(CONDITION_NAMES[kind])}</MenuItem>)}
               </MenuList>
             </Paper>
           </Popper>
           <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            {queueSwitches.length ? <Stack aria-label="自分のMR" direction="row" role="group" sx={{ gap: 0.5, mr: 0.5 }}>
+            {queueSwitches.length ? <Stack aria-label={t('mrList.queue.group')} direction="row" role="group" sx={{ gap: 0.5, mr: 0.5 }}>
               {queueSwitches.map(({ active, label, patch }) => <Chip aria-pressed={active} color={active ? 'primary' : 'default'} key={label} label={label} onClick={() => applyConditions(patch)} size="small" variant={active ? 'filled' : 'outlined'} />)}
             </Stack> : null}
-            {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>条件をクリア</Button> : null}
+            {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>{t('mrList.search.clear')}</Button> : null}
             {/* The order is not a condition, so it stays a pull-down beside the field. */}
             <Stack direction="row" sx={{ gap: 0.5, ml: 'auto' }}>
-              <Select aria-label="MRの並び順" displayEmpty onChange={(event) => applyConditions({ orderBy: event.target.value as OrderBy })} sx={pillSelectSx} value={draft.orderBy}>
-                <MenuItem value="updated_at">更新日時</MenuItem>
-                <MenuItem value="created_at">作成日時</MenuItem>
+              <Select aria-label={t('mrList.order.aria')} displayEmpty onChange={(event) => applyConditions({ orderBy: event.target.value as OrderBy })} sx={pillSelectSx} value={draft.orderBy}>
+                <MenuItem value="updated_at">{t('mrList.order.updated')}</MenuItem>
+                <MenuItem value="created_at">{t('mrList.order.created')}</MenuItem>
               </Select>
-              <Select aria-label="並び順の方向" onChange={(event) => applyConditions({ sort: event.target.value as SortDirection })} sx={pillSelectSx} value={draft.sort}>
-                <MenuItem value="desc">新しい順</MenuItem>
-                <MenuItem value="asc">古い順</MenuItem>
+              <Select aria-label={t('mrList.order.directionAria')} onChange={(event) => applyConditions({ sort: event.target.value as SortDirection })} sx={pillSelectSx} value={draft.sort}>
+                <MenuItem value="desc">{t('mrList.order.desc')}</MenuItem>
+                <MenuItem value="asc">{t('mrList.order.asc')}</MenuItem>
               </Select>
             </Stack>
           </Stack>
@@ -453,19 +456,19 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
       </PaneHeader>
 
       <Dialog fullWidth maxWidth="sm" onClose={() => setSavedSearchesOpen(false)} open={savedSearchesOpen}>
-        <DialogTitle>保存済み検索</DialogTitle>
+        <DialogTitle>{t('mrList.saved.title')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2}>
             <Box>
-              <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">適用中の条件を保存</Typography>
+              <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">{t('mrList.saved.saveCurrent')}</Typography>
               <Stack direction="row" spacing={1}>
-                <TextField fullWidth label="保存名（任意）" onChange={(event) => setSaveLabel(event.target.value)} value={saveLabel} />
-                <Button onClick={() => { if (saveSearch()) setSavedSearchesOpen(false) }} startIcon={<SaveRoundedIcon />} type="button" variant="contained">検索を保存</Button>
+                <TextField fullWidth label={t('mrList.saved.nameOptional')} onChange={(event) => setSaveLabel(event.target.value)} value={saveLabel} />
+                <Button onClick={() => { if (saveSearch()) setSavedSearchesOpen(false) }} startIcon={<SaveRoundedIcon />} type="button" variant="contained">{t('mrList.saved.save')}</Button>
               </Stack>
             </Box>
             <Box>
-              <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">保存済み（{savedSearches.length}）</Typography>
-              {savedSearches.length === 0 ? <Typography color="textSecondary" variant="body2">保存済み検索はありません。</Typography> : (
+              <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">{t('mrList.saved.listHeading', { count: savedSearches.length })}</Typography>
+              {savedSearches.length === 0 ? <Typography color="textSecondary" variant="body2">{t('mrList.saved.empty')}</Typography> : (
                 <Stack divider={<Divider flexItem />} sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
                   {savedSearches.map((saved) => (
                     <Stack key={saved.id} spacing={1} sx={{ p: 1 }}>
@@ -473,11 +476,11 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                         <Button onClick={() => { applySavedSearch(saved); setSavedSearchesOpen(false) }} sx={{ flex: 1, justifyContent: 'flex-start', minWidth: 0, overflowWrap: 'anywhere', textAlign: 'left', whiteSpace: 'normal' }}>
                           {saved.label}
                         </Button>
-                        <Tooltip title="削除"><IconButton aria-label={`${saved.label}を削除`} onClick={() => deleteSavedSearch(saved.id)}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
+                        <Tooltip title={t('mrList.saved.delete')}><IconButton aria-label={t('mrList.saved.deleteAria', { name: saved.label })} onClick={() => deleteSavedSearch(saved.id)}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
                       </Stack>
                       <Stack direction="row" spacing={1}>
-                        <TextField fullWidth label="保存名" onChange={(event) => setRenameLabels((current) => ({ ...current, [saved.id]: event.target.value }))} value={renameLabels[saved.id] ?? saved.label} />
-                        <Button disabled={!cleanOptional(renameLabels[saved.id]) || (renameLabels[saved.id] ?? saved.label).trim() === saved.label} onClick={() => renameSavedSearch(saved)} startIcon={<EditOutlinedIcon />} sx={{ flexShrink: 0 }}>名前を変更</Button>
+                        <TextField fullWidth label={t('mrList.saved.name')} onChange={(event) => setRenameLabels((current) => ({ ...current, [saved.id]: event.target.value }))} value={renameLabels[saved.id] ?? saved.label} />
+                        <Button disabled={!cleanOptional(renameLabels[saved.id]) || (renameLabels[saved.id] ?? saved.label).trim() === saved.label} onClick={() => renameSavedSearch(saved)} startIcon={<EditOutlinedIcon />} sx={{ flexShrink: 0 }}>{t('mrList.saved.rename')}</Button>
                       </Stack>
                     </Stack>
                   ))}
@@ -486,20 +489,20 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
             </Box>
           </Stack>
         </DialogContent>
-        <DialogActions><Button onClick={() => setSavedSearchesOpen(false)}>閉じる</Button></DialogActions>
+        <DialogActions><Button onClick={() => setSavedSearchesOpen(false)}>{t('mrList.saved.close')}</Button></DialogActions>
       </Dialog>
 
-      <PaneStatus announcement={result.data && !result.previous ? `MR ${rows.length}件${page > 1 ? `（${page}ページ目から）` : ''}` : null}>{result.data && !result.previous ? <>{rows.length}件取得{page > 1 ? ` · ${page}ページ目から` : ''}{freshness ? ` · ${freshness}` : ''}</> : result.loading || result.previous ? 'MRを読み込み中…' : result.error ? '取得に失敗しました' : null}</PaneStatus>
+      <PaneStatus announcement={result.data && !result.previous ? page > 1 ? t('mrList.status.announceFromPage', { count: rows.length, page }) : t('mrList.status.announce', { count: rows.length }) : null}>{result.data && !result.previous ? <>{page > 1 ? t('mrList.status.loadedFromPage', { count: rows.length, page }) : t('mrList.status.loaded', { count: rows.length })}{freshness ? ` · ${freshness}` : ''}</> : result.loading || result.previous ? t('mrList.status.loading') : result.error ? t('mrList.status.failed') : null}</PaneStatus>
       {/* The preview sits beside the results, so it hides none of them. */}
       <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <Box aria-busy={result.previous} ref={resultsRef} sx={paneResultsSx(result.previous)}>
-        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity="warning" sx={{ m: 1.5 }}>保存済みの結果を表示中です。更新に失敗しました: {result.error.message}</Alert> : null}
-        {pipelineOpenError ? <Alert onClose={() => setPipelineOpenError(null)} severity="error" sx={{ m: 1.5 }}>CIパイプラインを開けませんでした: {pipelineOpenError}</Alert> : null}
+        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('mrList.results.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
+        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('mrList.results.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('mrList.results.staleError', { error: result.error.message })}</Alert> : null}
+        {pipelineOpenError ? <Alert onClose={() => setPipelineOpenError(null)} severity="error" sx={{ m: 1.5 }}>{t('mrList.results.pipelineError', { error: pipelineOpenError })}</Alert> : null}
         {result.loading && !result.data ? <LoadingRows /> : null}
-        {!result.loading && !result.data && !result.error && !filterError ? <PaneEmpty description={`検索語や状態を変えてください。${searchTarget}`} title="MRがありません" /> : null}
-        {result.data && result.data.length === 0 ? <PaneEmpty description={<>適用中の条件: {chips.length ? chips.map((chip) => chip.label).join(' · ') : 'なし'}<br />{searchTarget}</>} title="条件に一致するMRがありません">{conditionsChanged ? <Button onClick={resetConditions} variant="outlined">条件をクリア</Button> : null}</PaneEmpty> : null}
-        {page > 1 && rows.length ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Button onClick={() => updatePage(1)} size="small">1ページ目から表示</Button></Box> : null}
+        {!result.loading && !result.data && !result.error && !filterError ? <PaneEmpty description={t('mrList.empty.description', { target: searchTarget })} title={t('mrList.empty.title')} /> : null}
+        {result.data && result.data.length === 0 ? <PaneEmpty description={<>{t('mrList.empty.appliedConditions', { conditions: chips.length ? chips.map((chip) => chip.label).join(' · ') : t('mrList.empty.noConditions') })}<br />{searchTarget}</>} title={t('mrList.empty.noMatchTitle')}>{conditionsChanged ? <Button onClick={resetConditions} variant="outlined">{t('mrList.search.clear')}</Button> : null}</PaneEmpty> : null}
+        {page > 1 && rows.length ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Button onClick={() => updatePage(1)} size="small">{t('mrList.results.fromFirstPage')}</Button></Box> : null}
         {rows.length ? <MergeRequestResults currentUserId={session.user.id} grouping={personalQueue === 'waiting' ? 'mine' : personalQueue ? 'any' : null} pages={pages} onFocusRow={(next) => setPreview((current) => current ? next : current)} onOpenMergeRequest={openMergeRequest} onOpenPipeline={openPipeline} onPreview={(next) => setPreview((current) => current?.mergeRequest.id === next.mergeRequest.id ? null : next)} orderBy={applied?.orderBy ?? 'updated_at'} personalWorkspace={personalWorkspace} previewing={preview?.mergeRequest ?? null} recentMrId={recentMrId} selected={selected ?? null} sessionId={session.id} showProject={!projectName} /> : null}
         {rows.length && (morePages > 0 || hasNext) ? <MoreRows
           capped={hasNext && loaded.length >= MAX_LOADED_PAGES}
@@ -552,6 +555,7 @@ function MergeRequestPageLoader({ entry, onChange, page, query, refreshes, sessi
  * while loading so the rows above do not move.
  */
 function MoreRows({ capped, count, error, loading, onLoad, onRetry, rootRef }: { capped: boolean; count: number; error: GitLabCommandError | null; loading: boolean; onLoad?: () => void; onRetry: () => void; rootRef: RefObject<HTMLDivElement | null> }) {
+  const t = useT()
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -562,11 +566,11 @@ function MoreRows({ capped, count, error, loading, onLoad, onRetry, rootRef }: {
   }, [onLoad, rootRef])
   return (
     <Box ref={sentinelRef} sx={{ alignItems: 'center', display: 'flex', justifyContent: 'center', minHeight: 48, px: paneGutter, py: 1 }}>
-      {error ? <Alert action={<Button color="inherit" onClick={onRetry}>再試行</Button>} severity="error" sx={{ flex: 1 }}>続きを取得できませんでした: {error.message}</Alert>
-        : loading ? <Typography color="textSecondary" role="status" variant="caption">続きを読み込み中…</Typography>
-          : capped ? <Typography color="textSecondary" variant="caption">{count}件まで表示しています。続きは条件を絞り込んで検索してください。</Typography>
-            : onLoad ? <Button onClick={onLoad} size="small">さらに読み込む</Button>
-              : <Typography color="textSecondary" variant="caption">すべて表示しました</Typography>}
+      {error ? <Alert action={<Button color="inherit" onClick={onRetry}>{t('mrList.results.retry')}</Button>} severity="error" sx={{ flex: 1 }}>{t('mrList.more.error', { error: error.message })}</Alert>
+        : loading ? <Typography color="textSecondary" role="status" variant="caption">{t('mrList.more.loading')}</Typography>
+          : capped ? <Typography color="textSecondary" variant="caption">{t('mrList.more.capped', { count })}</Typography>
+            : onLoad ? <Button onClick={onLoad} size="small">{t('mrList.more.load')}</Button>
+              : <Typography color="textSecondary" variant="caption">{t('mrList.more.all')}</Typography>}
     </Box>
   )
 }
@@ -578,8 +582,8 @@ const pillSelectSx = { bgcolor: 'transparent', typography: 'body2', '& .MuiSelec
 /** The approval line of the preview, saying what the row's approval mark says. */
 function approvalText(approval: RowApproval | null, state: string): string | null {
   if (!approval) return null
-  if (approval.count === 0) return state === 'opened' ? '未承認' : null
-  return approval.byMe ? `自分を含む${approval.count}人が承認済み` : `${approval.count}人が承認済み`
+  if (approval.count === 0) return state === 'opened' ? translate('mrList.approval.none') : null
+  return approval.byMe ? translate('mrList.approval.countWithMe', { count: approval.count }) : translate('mrList.approval.count', { count: approval.count })
 }
 
 /** A tag without `clear` is a condition the list keeps. */
@@ -600,22 +604,24 @@ interface ChipContext {
  */
 function conditionChips(applied: AppliedSearch, { conditionNames, currentUserId, fixedAuthor, fixedProjectId, groupPaths, rows }: ChipContext): ConditionChip[] {
   const chips: ConditionChip[] = []
-  const person = (kind: 'reviewer' | 'assignee' | 'author', id: string) => id === 'self' || id === currentUserId ? '自分' : conditionName(kind, id, conditionNames, rows) ?? `ID ${id}`
-  if (applied.search.trim()) chips.push({ clear: { search: '' }, kind: 'search', label: `検索語: ${applied.search.trim()}`, name: '検索語' })
-  if (applied.state !== 'all') chips.push({ clear: { state: 'all' }, kind: 'state', label: `状態: ${STATE_NAMES[applied.state]}`, name: '状態' })
-  if (applied.reviewer) chips.push({ clear: { reviewer: '' }, kind: 'reviewer', label: `レビュアー: ${person('reviewer', applied.reviewer)}`, name: 'レビュアー' })
-  if (applied.assignee) chips.push({ clear: { assignee: '' }, kind: 'assignee', label: `担当者: ${person('assignee', applied.assignee)}`, name: '担当者' })
-  if (fixedAuthor) chips.push({ label: `作者: ${fixedAuthor.name}`, name: '作者' })
-  else if (applied.authorId) chips.push({ clear: { authorId: '' }, kind: 'author', label: `作者: ${person('author', applied.authorId)}`, name: '作者' })
+  const person = (kind: 'reviewer' | 'assignee' | 'author', id: string) => id === 'self' || id === currentUserId ? translate('mrList.chip.self') : conditionName(kind, id, conditionNames, rows) ?? `ID ${id}`
+  const label = (name: string, value: string) => translate('mrList.chip.value', { name, value })
+  const named = (kind: ConditionKind) => translate(CONDITION_NAMES[kind])
+  if (applied.search.trim()) chips.push({ clear: { search: '' }, kind: 'search', label: label(translate('mrList.chip.search'), applied.search.trim()), name: translate('mrList.chip.search') })
+  if (applied.state !== 'all') chips.push({ clear: { state: 'all' }, kind: 'state', label: label(named('state'), translate(STATE_NAMES[applied.state])), name: named('state') })
+  if (applied.reviewer) chips.push({ clear: { reviewer: '' }, kind: 'reviewer', label: label(named('reviewer'), person('reviewer', applied.reviewer)), name: named('reviewer') })
+  if (applied.assignee) chips.push({ clear: { assignee: '' }, kind: 'assignee', label: label(named('assignee'), person('assignee', applied.assignee)), name: named('assignee') })
+  if (fixedAuthor) chips.push({ label: label(named('author'), fixedAuthor.name), name: named('author') })
+  else if (applied.authorId) chips.push({ clear: { authorId: '' }, kind: 'author', label: label(named('author'), person('author', applied.authorId)), name: named('author') })
   if (applied.projectId && applied.projectId !== fixedProjectId) {
     const path = conditionName('project', applied.projectId, conditionNames, rows)
-    chips.push({ clear: { projectId: '' }, kind: 'project', label: `プロジェクト: ${path || `ID ${applied.projectId}`}`, name: 'プロジェクト' })
+    chips.push({ clear: { projectId: '' }, kind: 'project', label: label(named('project'), path || `ID ${applied.projectId}`), name: named('project') })
   }
-  if (applied.groupId) chips.push({ clear: { groupId: '' }, kind: 'group', label: `グループ: ${groupPaths[applied.groupId] ?? (/^\d+$/u.test(applied.groupId) ? `ID ${applied.groupId}` : applied.groupId)}`, name: 'グループ' })
-  if (applied.labels) chips.push({ clear: { labels: '' }, kind: 'labels', label: `ラベル: ${parseLabels(applied.labels).join(', ')}`, name: 'ラベル' })
-  if (applied.sourceBranch) chips.push({ clear: { sourceBranch: '' }, code: true, kind: 'sourceBranch', label: `ブランチ: ${applied.sourceBranch}`, name: 'ブランチ' })
-  if (applied.targetBranch) chips.push({ clear: { targetBranch: '' }, code: true, kind: 'targetBranch', label: `ターゲット: ${applied.targetBranch}`, name: 'ターゲットブランチ' })
-  if (applied.updatedAfter || applied.updatedBefore) chips.push({ clear: { updatedAfter: '', updatedBefore: '' }, kind: 'updated', label: `更新日: ${toDateInputValue(applied.updatedAfter)}〜${toDateInputValue(applied.updatedBefore)}`, name: '更新日' })
+  if (applied.groupId) chips.push({ clear: { groupId: '' }, kind: 'group', label: label(named('group'), groupPaths[applied.groupId] ?? (/^\d+$/u.test(applied.groupId) ? `ID ${applied.groupId}` : applied.groupId)), name: named('group') })
+  if (applied.labels) chips.push({ clear: { labels: '' }, kind: 'labels', label: label(named('labels'), parseLabels(applied.labels).join(', ')), name: named('labels') })
+  if (applied.sourceBranch) chips.push({ clear: { sourceBranch: '' }, code: true, kind: 'sourceBranch', label: label(translate('mrList.chip.sourceBranch'), applied.sourceBranch), name: translate('mrList.chip.sourceBranch') })
+  if (applied.targetBranch) chips.push({ clear: { targetBranch: '' }, code: true, kind: 'targetBranch', label: label(translate('mrList.chip.targetBranch'), applied.targetBranch), name: named('targetBranch') })
+  if (applied.updatedAfter || applied.updatedBefore) chips.push({ clear: { updatedAfter: '', updatedBefore: '' }, kind: 'updated', label: label(named('updated'), translate('mrList.chip.updatedRange', { from: toDateInputValue(applied.updatedAfter), to: toDateInputValue(applied.updatedBefore) })), name: named('updated') })
   return chips
 }
 
@@ -630,10 +636,10 @@ function conditionName(kind: 'reviewer' | 'assignee' | 'author' | 'project', id:
 }
 
 /** The reader's own MRs, switched with chips under the search field; each is one condition on the reader. */
-const QUEUE_SWITCHES: Array<{ label: string; queue: PersonalQueue }> = [
-  { label: 'レビュー依頼', queue: 'waiting' },
-  { label: '担当', queue: 'assigned' },
-  { label: '作成', queue: 'created' },
+const QUEUE_SWITCHES: Array<{ label: MessageKey; queue: PersonalQueue }> = [
+  { label: 'mrList.queue.waiting', queue: 'waiting' },
+  { label: 'mrList.queue.assigned', queue: 'assigned' },
+  { label: 'mrList.queue.created', queue: 'created' },
 ]
 
 function ownCondition(queue: PersonalQueue, currentUserId: string): { key: 'reviewer' | 'assignee' | 'authorId'; value: string } {
@@ -665,6 +671,7 @@ interface RowApproval { byMe: boolean; count: number }
 interface RowPreview { approval: string | null; closeAt?: PointerSpot; mergeRequest: MergeRequest }
 
 function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, pages, personalWorkspace, previewing, recentMrId, selected, sessionId, showProject }: { currentUserId: string; grouping: 'mine' | 'any' | null; onFocusRow: (preview: RowPreview) => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: (preview: RowPreview) => void; orderBy: OrderBy; pages: MergeRequest[][]; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: MergeRequest | null; recentMrId: string | null; selected: MrRef | null; sessionId: string; showProject: boolean }) {
+  const t = useT()
   // Approvals come in one request per loaded page, as GitLab is asked for at most a page at once.
   const pageKeys = pages.map((items) => items.filter((mergeRequest) => mergeRequest.projectPath).map((mergeRequest) => `${mergeRequest.projectPath}!${mergeRequest.iid}`).join(' '))
   const [approvalPages, setApprovalPages] = useState<Record<string, ApprovalsResult>>({})
@@ -716,23 +723,23 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
   if (!grouping || !approvalPages[pageKeys[0]]?.data) {
     return <>
       {loaders}
-      {approvalsError ? <Typography color="textSecondary" component="div" sx={{ px: paneGutter, py: 1 }} variant="caption">承認状態を取得できませんでした: {approvalsError.message}</Typography> : null}
-      <Box aria-label="MR検索結果" component="ul" onKeyDown={moveListRowFocus} role="list" sx={rowListSx}>{mergeRequests.map(row)}</Box>
+      {approvalsError ? <Typography color="textSecondary" component="div" sx={{ px: paneGutter, py: 1 }} variant="caption">{t('mrList.results.approvalsError', { error: approvalsError.message })}</Typography> : null}
+      <Box aria-label={t('mrList.results.aria')} component="ul" onKeyDown={moveListRowFocus} role="list" sx={rowListSx}>{mergeRequests.map(row)}</Box>
     </>
   }
-  const [waitingLabel, doneLabel] = grouping === 'mine' ? ['自分の承認待ち', '自分が承認済み'] : ['承認待ち', '承認あり']
-  const sections: Array<[string, MergeRequest[]]> = [[waitingLabel, []], [doneLabel, []], ['承認状態を確認中のMR', []], ['承認状態を確認できないMR', []]]
+  const [waitingLabel, doneLabel] = grouping === 'mine' ? [t('mrList.sections.waitingMine'), t('mrList.sections.doneMine')] : [t('mrList.sections.waitingAny'), t('mrList.sections.doneAny')]
+  const sections: Array<[string, MergeRequest[]]> = [[waitingLabel, []], [doneLabel, []], [t('mrList.sections.pending'), []], [t('mrList.sections.unknown'), []]]
   for (const mergeRequest of mergeRequests) {
     const approval = approvalOf(mergeRequest)
     const done = approval && (grouping === 'mine' ? approval.byMe : approval.count > 0)
     sections[approval ? done ? 1 : 0 : approvalPending(mergeRequest) ? 2 : 3][1].push(mergeRequest)
   }
   return (
-    <Box aria-label="MR検索結果" onKeyDown={moveListRowFocus} role="group">
+    <Box aria-label={t('mrList.results.aria')} onKeyDown={moveListRowFocus} role="group">
       {loaders}
       {sections.filter(([label, items]) => items.length > 0 || label === waitingLabel || label === doneLabel).map(([label, items]) => (
         <Box aria-label={label} component="section" key={label}>
-          <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', borderBottom: 1, borderColor: 'divider', display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{label} · {items.length}件</Typography>
+          <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', borderBottom: 1, borderColor: 'divider', display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{t('mrList.sections.heading', { count: items.length, label })}</Typography>
           {items.length ? <Box aria-label={label} component="ul" role="list" sx={rowListSx}>{items.map(row)}</Box> : null}
         </Box>
       ))}
@@ -790,6 +797,7 @@ interface RowHandlers { focus: (mergeRequest: MergeRequest) => void; open: (merg
 
 /** Memoized: opening an MR or moving the preview renders only the rows whose marks change, not the whole list. */
 const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, approvalPending, handlers, mergeRequest, orderBy, pinned, previewing, selected, showProject, unread }: { approval: RowApproval | null; approvalPending: boolean; handlers: RowHandlers; mergeRequest: MergeRequest; orderBy: OrderBy; pinned: boolean; previewing: boolean; selected: boolean; showProject: boolean; unread: number | undefined }) {
+  const t = useT()
   const labels = mergeRequest.labels ?? []
   const hiddenLabels = labels.slice(ROW_LABELS)
   // The time matches the order of the list; GitLab's creation time is used once the MR carries it.
@@ -798,15 +806,15 @@ const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, ap
   // CI is shown only when GitLab included it; the row does not offer a lookup.
   const pipeline = mergeRequest.pipeline
   const hasUnread = unread !== undefined && unread > 0
-  const pinButton = <Tooltip title={pinned ? '固定を外す' : 'サイドバーに固定'}><IconButton aria-label={pinned ? `!${mergeRequest.iid}の固定を外す` : `!${mergeRequest.iid}をサイドバーに固定`} color={pinned ? 'primary' : 'default'} onClick={() => handlers.togglePinned(mergeRequest)}>{pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
+  const pinButton = <Tooltip title={pinned ? t('mrList.row.unpin') : t('mrList.row.pin')}><IconButton aria-label={pinned ? t('mrList.row.unpinAria', { iid: mergeRequest.iid }) : t('mrList.row.pinAria', { iid: mergeRequest.iid })} color={pinned ? 'primary' : 'default'} onClick={() => handlers.togglePinned(mergeRequest)}>{pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
 
   return (
     <ListRow
       actions={<>
         {previewing
-          ? <Tooltip title="概要を閉じる (Space / Esc)"><IconButton aria-label={`!${mergeRequest.iid}の概要を閉じる`} aria-pressed color="primary" onClick={() => handlers.preview(mergeRequest)}><VisibilityOffOutlinedIcon /></IconButton></Tooltip>
-          : <Tooltip title="概要をプレビュー (Space)"><IconButton aria-label={`!${mergeRequest.iid}の概要をプレビュー`} onClick={(event) => handlers.preview(mergeRequest, event.detail > 0 ? { x: event.clientX, y: event.clientY } : undefined)}><VisibilityOutlinedIcon /></IconButton></Tooltip>}
-        {pipeline?.webUrl ? <Tooltip title="CIパイプラインを開く"><IconButton aria-label={`!${mergeRequest.iid}のCIパイプラインを開く`} onClick={() => void handlers.openPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
+          ? <Tooltip title={t('mrList.row.closePreview')}><IconButton aria-label={t('mrList.row.closePreviewAria', { iid: mergeRequest.iid })} aria-pressed color="primary" onClick={() => handlers.preview(mergeRequest)}><VisibilityOffOutlinedIcon /></IconButton></Tooltip>
+          : <Tooltip title={t('mrList.row.preview')}><IconButton aria-label={t('mrList.row.previewAria', { iid: mergeRequest.iid })} onClick={(event) => handlers.preview(mergeRequest, event.detail > 0 ? { x: event.clientX, y: event.clientY } : undefined)}><VisibilityOutlinedIcon /></IconButton></Tooltip>}
+        {pipeline?.webUrl ? <Tooltip title={t('mrList.row.openPipeline')}><IconButton aria-label={t('mrList.row.openPipelineAria', { iid: mergeRequest.iid })} onClick={() => void handlers.openPipeline(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
         {pinned ? null : pinButton}
       </>}
       // The state leads the row as an icon, so a list reads by shape and colour before words.
@@ -824,20 +832,20 @@ const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, ap
     >
       {/* The time follows the MR's name instead of sitting at the far edge of a wide row. */}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
-        <Tooltip title={`${showProject ? `${mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`} ` : ''}!${mergeRequest.iid}`}><Typography color="textSecondary" noWrap sx={{ minWidth: 0 }} variant="caption">{showProject ? `${mergeRequest.projectPath || `プロジェクト ${mergeRequest.projectId}`} ` : ''}!{mergeRequest.iid}</Typography></Tooltip>
+        <Tooltip title={`${showProject ? `${mergeRequest.projectPath || t('mrList.row.project', { id: mergeRequest.projectId })} ` : ''}!${mergeRequest.iid}`}><Typography color="textSecondary" noWrap sx={{ minWidth: 0 }} variant="caption">{showProject ? `${mergeRequest.projectPath || t('mrList.row.project', { id: mergeRequest.projectId })} ` : ''}!{mergeRequest.iid}</Typography></Tooltip>
         <Typography aria-hidden color="textSecondary" variant="caption">·</Typography>
-        <RelativeTime prefix={byCreation ? '作成' : '更新'} value={byCreation && createdAt ? createdAt : mergeRequest.updatedAt} />
+        <RelativeTime prefix={byCreation ? t('mrList.row.created') : t('mrList.row.updated')} value={byCreation && createdAt ? createdAt : mergeRequest.updatedAt} />
       </Stack>
       <Typography sx={{ display: '-webkit-box', mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{listTitle(mergeRequest)}</Typography>
       <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, pr: ROW_ACTIONS_SPACE, rowGap: 0.25 }}>
         {/* States first, as icons with counts; their names are in the tooltips. */}
-        {mergeRequest.draft ? <StateIcon icon={<EditNoteRoundedIcon fontSize="inherit" />} label="Draft" /> : null}
+        {mergeRequest.draft ? <StateIcon icon={<EditNoteRoundedIcon fontSize="inherit" />} label={t('mrList.row.draft')} /> : null}
         {pipeline ? <PipelineStatus compact status={pipeline.status} /> : null}
         <ApprovalStatus approval={approval} pending={approvalPending} state={mergeRequest.state} />
-        {hasUnread ? <Tooltip title={`未読 ${unread}件（既知のコメントの未読数です。未取得のコメントは含みません）`}><Chip aria-label={`未読 ${unread}`} color="primary" icon={<MarkChatUnreadRoundedIcon />} label={unread} size="small" /></Tooltip> : null}
+        {hasUnread ? <Tooltip title={t('mrList.row.unread', { count: unread })}><Chip aria-label={t('mrList.row.unreadAria', { count: unread })} color="primary" icon={<MarkChatUnreadRoundedIcon />} label={unread} size="small" /></Tooltip> : null}
         <Typography sx={{ fontWeight: 500 }} variant="caption">{mergeRequest.author.name}</Typography>
         {labels.slice(0, ROW_LABELS).map((label) => <Chip key={label} label={label} size="small" sx={{ maxWidth: '100%' }} variant="outlined" />)}
-        {hiddenLabels.length ? <Tooltip title={hiddenLabels.join(', ')}><Chip aria-label={`+${hiddenLabels.length} ほかのラベル: ${hiddenLabels.join(', ')}`} label={`+${hiddenLabels.length}`} size="small" variant="outlined" /></Tooltip> : null}
+        {hiddenLabels.length ? <Tooltip title={hiddenLabels.join(', ')}><Chip aria-label={t('mrList.row.moreLabels', { count: hiddenLabels.length, labels: hiddenLabels.join(', ') })} label={`+${hiddenLabels.length}`} size="small" variant="outlined" /></Tooltip> : null}
       </Stack>
     </ListRow>
   )
@@ -845,17 +853,19 @@ const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, ap
 
 /** Approval beside the state: who approved, or that an open MR has none yet. A placeholder while loading; nothing when unknown. */
 function ApprovalStatus({ approval, pending, state }: { approval: RowApproval | null; pending: boolean; state: string }) {
-  if (!approval && pending) return <Box aria-label="承認状態を確認中" role="img" sx={{ bgcolor: 'action.hover', borderRadius: 1, flexShrink: 0, height: 10, width: 24 }} />
+  const t = useT()
+  if (!approval && pending) return <Box aria-label={t('mrList.approval.pending')} role="img" sx={{ bgcolor: 'action.hover', borderRadius: 1, flexShrink: 0, height: 10, width: 24 }} />
   if (!approval) return null
   if (approval.count === 0) {
     if (state !== 'opened') return null
-    return <StateIcon count={0} icon={<ThumbUpOutlinedIcon fontSize="inherit" />} label="未承認" />
+    return <StateIcon count={0} icon={<ThumbUpOutlinedIcon fontSize="inherit" />} label={t('mrList.approval.none')} />
   }
-  const label = approval.byMe ? '自分が承認済み' : `${approval.count}人が承認済み`
+  const label = approval.byMe ? t('mrList.approval.byMe') : t('mrList.approval.count', { count: approval.count })
   // A filled thumb is the user's own approval; the count is everyone's.
   return <StateIcon count={approval.count} icon={approval.byMe ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={label} tone="success" />
 }
 
 function LoadingRows() {
-  return <Box aria-label="MRを読み込み中" role="status" sx={{ ...delayedRevealSx, p: 1.5 }}><Stack spacing={1.5}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '60%' }} /></Stack>)}</Stack></Box>
+  const t = useT()
+  return <Box aria-label={t('mrList.results.loading')} role="status" sx={{ ...delayedRevealSx, p: 1.5 }}><Stack spacing={1.5}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '60%' }} /></Stack>)}</Stack></Box>
 }

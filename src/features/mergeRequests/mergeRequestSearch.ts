@@ -1,3 +1,4 @@
+import { translate } from '../../i18n/i18n'
 import type { MergeRequestState, MergeRequestsQuery } from '../../types/gitlab'
 import type { SavedMergeRequestSearch } from '../shared/preferences'
 import { STATE_NAMES } from './conditionNames'
@@ -29,11 +30,11 @@ export interface AppliedSearch extends SearchDraft {
 }
 
 export function buildQuery(filters: AppliedSearch, currentUserId?: string): MergeRequestsQuery {
-  if (filters.assignee === 'self' && !isPositiveDecimalId(currentUserId ?? '')) throw new Error('接続ユーザーIDが不明なため、自分の担当MRを検索できません。')
+  if (filters.assignee === 'self' && !isPositiveDecimalId(currentUserId ?? '')) throw new Error(translate('mrList.errors.assigneeSelfUnknown'))
   const projectId = cleanOptional(filters.projectId)
   const groupId = cleanOptional(filters.groupId)
-  if (projectId && groupId) throw new Error('グループとプロジェクトは同時に指定できません。')
-  if (groupId && !isValidGroupId(groupId)) throw new Error('グループIDまたはグループパスを確認してください。')
+  if (projectId && groupId) throw new Error(translate('mrList.errors.projectAndGroup'))
+  if (groupId && !isValidGroupId(groupId)) throw new Error(translate('mrList.errors.groupId'))
   const query: MergeRequestsQuery = {
     kind: 'mrs',
     orderBy: filters.orderBy,
@@ -106,18 +107,18 @@ export function makeInitialState(params: Record<string, string>, initialQuery: s
 }
 
 export function validateDraft(draft: SearchDraft, currentUserId?: string): string | null {
-  if (!isState(draft.state)) return 'MRの状態が不正です。'
-  if (draft.projectId.trim() && draft.groupId.trim()) return 'グループとプロジェクトは同時に指定できません。'
-  if (draft.projectId.trim() && !isPositiveDecimalId(draft.projectId)) return 'プロジェクトIDは1以上の数字で入力してください。'
-  if (draft.groupId.trim() && !isValidGroupId(draft.groupId.trim())) return 'グループIDまたはグループパスを確認してください。'
-  if (draft.authorId.trim() && !isPositiveDecimalId(draft.authorId)) return '作者IDは1以上の数字で入力してください。'
-  if (draft.reviewer.trim() && draft.reviewer !== 'self' && !isPositiveDecimalId(draft.reviewer)) return 'レビュー担当者IDは1以上の数字で入力してください。'
-  if (draft.reviewer === 'self' && currentUserId && !isPositiveDecimalId(currentUserId)) return '接続ユーザーIDを確認できないため、レビュー待ちを検索できません。'
-  if (draft.assignee.trim() && draft.assignee !== 'self' && !isPositiveDecimalId(draft.assignee)) return '担当者IDは1以上の数字で入力してください。'
-  if (draft.assignee === 'self' && !isPositiveDecimalId(currentUserId ?? '')) return '接続ユーザーIDを確認できないため、自分の担当MRを検索できません。'
-  if (draft.updatedAfter && !isIsoDateValue(draft.updatedAfter)) return '更新日（開始）は日付を正しく入力してください（例: 2026-10-01）。'
-  if (draft.updatedBefore && !isIsoDateValue(draft.updatedBefore)) return '更新日（終了）は日付を正しく入力してください（例: 2026-10-01）。'
-  if (draft.updatedAfter && draft.updatedBefore && Date.parse(toGitLabDate(draft.updatedAfter, false)) > Date.parse(toGitLabDate(draft.updatedBefore, true))) return '更新日の開始は終了以前にしてください。'
+  if (!isState(draft.state)) return translate('mrList.errors.state')
+  if (draft.projectId.trim() && draft.groupId.trim()) return translate('mrList.errors.projectAndGroup')
+  if (draft.projectId.trim() && !isPositiveDecimalId(draft.projectId)) return translate('mrList.errors.projectId')
+  if (draft.groupId.trim() && !isValidGroupId(draft.groupId.trim())) return translate('mrList.errors.groupId')
+  if (draft.authorId.trim() && !isPositiveDecimalId(draft.authorId)) return translate('mrList.errors.authorId')
+  if (draft.reviewer.trim() && draft.reviewer !== 'self' && !isPositiveDecimalId(draft.reviewer)) return translate('mrList.errors.reviewerId')
+  if (draft.reviewer === 'self' && currentUserId && !isPositiveDecimalId(currentUserId)) return translate('mrList.errors.reviewerSelf')
+  if (draft.assignee.trim() && draft.assignee !== 'self' && !isPositiveDecimalId(draft.assignee)) return translate('mrList.errors.assigneeId')
+  if (draft.assignee === 'self' && !isPositiveDecimalId(currentUserId ?? '')) return translate('mrList.errors.assigneeSelf')
+  if (draft.updatedAfter && !isIsoDateValue(draft.updatedAfter)) return translate('mrList.errors.updatedAfter')
+  if (draft.updatedBefore && !isIsoDateValue(draft.updatedBefore)) return translate('mrList.errors.updatedBefore')
+  if (draft.updatedAfter && draft.updatedBefore && Date.parse(toGitLabDate(draft.updatedAfter, false)) > Date.parse(toGitLabDate(draft.updatedBefore, true))) return translate('mrList.errors.updatedRange')
   return null
 }
 
@@ -203,8 +204,8 @@ export function sameSavedSearch(left: SavedMergeRequestSearch, right: SavedMerge
 
 /** A saved search's name when none is given, such as 「Merged · 検索語」. */
 export function defaultSearchLabel(search: SearchDraft): string {
-  const detail = search.search.trim() || (cleanOptional(search.groupId) ? `グループ ${search.groupId.trim()}` : null)
-  return [STATE_NAMES[search.state], detail].filter(Boolean).join(' · ')
+  const detail = search.search.trim() || (cleanOptional(search.groupId) ? translate('mrList.saved.defaultGroup', { group: search.groupId.trim() }) : null)
+  return [translate(STATE_NAMES[search.state]), detail].filter(Boolean).join(' · ')
 }
 
 export function validOrderBy(value: string | undefined): value is OrderBy {

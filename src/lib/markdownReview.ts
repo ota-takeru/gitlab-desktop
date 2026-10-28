@@ -1,4 +1,5 @@
 import type { FullFileDiffAnnotations, RemovedFileLines } from '../features/mergeRequests/fullFileAnnotations'
+import { translate } from '../i18n/i18n'
 
 /** Minimal HAST structure used by the rehype plugin. No raw HTML or
  * user-controlled markup is introduced; deleted source becomes text nodes. */
@@ -18,10 +19,10 @@ function removedElement(item: RemovedFileLines): ReviewNode {
   const numbers = item.oldStart === item.oldEnd ? String(item.oldStart) : `${item.oldStart}–${item.oldEnd}`
   return {
     type: 'element', tagName: 'div',
-    properties: { 'data-review-deleted': 'true', 'data-file-anchor': String(item.anchorLine), 'aria-label': `変更前の削除 ${numbers}行` },
+    properties: { 'data-review-deleted': 'true', 'data-file-anchor': String(item.anchorLine), 'aria-label': translate('common.markdownReview.removedLabel', { lines: numbers }) },
     children: [
       // A UI badge rather than a sentence, so it is not mistaken for the document's own text.
-      { type: 'element', tagName: 'span', properties: { 'aria-hidden': 'true', 'data-review-marker': 'remove', title: `旧版の${numbers}行を削除` }, children: [text(`− L${numbers}`)] },
+      { type: 'element', tagName: 'span', properties: { 'aria-hidden': 'true', 'data-review-marker': 'remove', title: translate('common.markdownReview.removedTitle', { lines: numbers }) }, children: [text(`− L${numbers}`)] },
       { type: 'element', tagName: 'pre', properties: {}, children: [text(item.text)] },
     ],
   }

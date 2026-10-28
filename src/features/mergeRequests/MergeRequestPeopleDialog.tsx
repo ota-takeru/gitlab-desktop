@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useEffect, useId, useMemo, useState } from 'react'
 
+import { useT } from '../../i18n/useT'
 import type { GitLabUser, UsersQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
@@ -23,6 +24,7 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
   onSave: (users: GitLabUser[]) => Promise<boolean>
   open: boolean
 }) {
+  const t = useT()
   const titleId = useId()
   const { session } = useConnection()
   const [selected, setSelected] = useState<GitLabUser[]>(current)
@@ -57,7 +59,7 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
 
   return (
     <Dialog aria-labelledby={titleId} fullWidth maxWidth="sm" onClose={saving ? undefined : onClose} open={open}>
-      <DialogTitle id={titleId}>{label}を変更</DialogTitle>
+      <DialogTitle id={titleId}>{t('mergeRequest.people.title', { label })}</DialogTitle>
       <DialogContent>
         <Stack spacing={1} sx={{ pt: 0.5 }}>
           <Autocomplete<GitLabUser, true, false, false>
@@ -68,27 +70,27 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
             getOptionLabel={(user) => `${user.name} @${user.username}`}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             loading={result.loading || result.refreshing}
-            loadingText="検索中…"
+            loadingText={t('mergeRequest.common.searching')}
             multiple
-            noOptionsText={result.error ? 'ユーザー候補を取得できませんでした' : searchText.trim().length < 2 ? '2文字以上入力してください' : '候補がありません'}
+            noOptionsText={result.error ? t('mergeRequest.people.loadFailed') : searchText.trim().length < 2 ? t('mergeRequest.people.minLength') : t('mergeRequest.common.noOptions')}
             onChange={(_, users) => setSelected(users)}
             onInputChange={(_, value, reason) => { if (reason === 'input' || reason === 'clear') setSearchText(value) }}
             options={options}
-            renderInput={(params) => <TextField {...params} autoFocus label={label} placeholder="名前またはユーザー名で検索" size="small" />}
+            renderInput={(params) => <TextField {...params} autoFocus label={label} placeholder={t('mergeRequest.people.placeholder')} size="small" />}
             renderOption={(optionProps, user) => {
               const { key, ...rest } = optionProps
               return <li key={key} {...rest}><Stack spacing={0.25} sx={{ minWidth: 0 }}><Typography variant="body2">{user.name}</Typography><Typography color="textSecondary" variant="caption">@{user.username}</Typography></Stack></li>
             }}
             value={selected}
           />
-          {self && !selected.some((user) => user.id === self.id) ? <Button disabled={busy} onClick={() => setSelected((users) => [...users, self])} size="small" sx={{ alignSelf: 'flex-start' }}>自分を追加</Button> : null}
-          <Typography color="textSecondary" variant="caption">GitLabのプランやプロジェクトの権限によっては、選んだ全員を設定できないことがあります。</Typography>
-          {failed ? <Alert severity="error">{label}を変更できませんでした。MR画面のメッセージを確認してください。</Alert> : null}
+          {self && !selected.some((user) => user.id === self.id) ? <Button disabled={busy} onClick={() => setSelected((users) => [...users, self])} size="small" sx={{ alignSelf: 'flex-start' }}>{t('mergeRequest.people.addSelf')}</Button> : null}
+          <Typography color="textSecondary" variant="caption">{t('mergeRequest.people.limitNote')}</Typography>
+          {failed ? <Alert severity="error">{t('mergeRequest.people.saveFailed', { label })}</Alert> : null}
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button disabled={busy || unchanged} onClick={() => void save()} variant="contained">{saving ? '変更中…' : '変更する'}</Button>
+        <Button disabled={saving} onClick={onClose}>{t('mergeRequest.common.cancel')}</Button>
+        <Button disabled={busy || unchanged} onClick={() => void save()} variant="contained">{saving ? t('mergeRequest.people.saving') : t('mergeRequest.people.save')}</Button>
       </DialogActions>
     </Dialog>
   )

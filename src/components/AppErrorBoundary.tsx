@@ -6,6 +6,8 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { Component, Fragment, type ReactNode } from 'react'
 
+import { useT } from '../i18n/useT'
+
 interface AppErrorBoundaryProps {
   children: ReactNode
   /** Fills one pane instead of the window, so the rest of the shell keeps working. */
@@ -84,9 +86,10 @@ export function AppErrorFallback({
   retryCount,
   compact = false,
 }: AppErrorFallbackProps) {
+  const t = useT()
   return (
     <Box
-      aria-label="画面エラー"
+      aria-label={t('common.errorBoundary.label')}
       role="alert"
       sx={{
         alignItems: 'center',
@@ -107,14 +110,14 @@ export function AppErrorFallback({
             GitLab Desktop
           </Typography>
           <Typography component="h1" variant="h1">
-            画面を表示できません
+            {t('common.errorBoundary.title')}
           </Typography>
           <Typography color="textSecondary" variant="body1">
-            画面の表示中に問題が発生しました。再表示を試してください。
+            {t('common.errorBoundary.message')}
           </Typography>
           {retryCount > 0 ? (
             <Alert severity="warning">
-              再表示しても画面を表示できませんでした。アプリを再起動してください。
+              {t('common.errorBoundary.retryFailed')}
             </Alert>
           ) : null}
           <Stack
@@ -123,14 +126,14 @@ export function AppErrorFallback({
             sx={{ alignItems: { sm: 'center', xs: 'stretch' } }}
           >
             <Button onClick={onRetry} variant="contained">
-              再表示
+              {t('common.errorBoundary.retry')}
             </Button>
             <Button onClick={onGoToConnectionSettings} variant="outlined">
-              設定へ移動
+              {t('common.errorBoundary.goToSettings')}
             </Button>
             {compact ? null : (
               <Button onClick={() => window.location.reload()} variant="text">
-                再読み込み
+                {t('common.errorBoundary.reload')}
               </Button>
             )}
           </Stack>

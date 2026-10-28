@@ -13,6 +13,7 @@ import type { BlameBlock, BlameQuery, CommitMergeRequestsQuery } from '../../typ
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { blameAttributions, blameWindowStart, BLAME_WINDOW, type BlameAttribution } from './blameLines'
 import type { ParsedLine } from './diffParser'
+import { useT } from '../../i18n/useT'
 
 type Side = 'old' | 'new'
 interface BlameSide {
@@ -48,6 +49,7 @@ export function BlameProvider({ beforeSha, children, enabled = true, initialNewL
   sessionId: string
   sha: string
 }) {
+  const t = useT()
   const [requested, setRequested] = useState<{ old: number | null; new: number | null }>({ old: null, new: null })
   const [selection, setSelection] = useState<{ anchor: HTMLElement; block: BlameBlock; line: number; side: Side } | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
@@ -87,17 +89,17 @@ export function BlameProvider({ beforeSha, children, enabled = true, initialNewL
   return <BlameContext.Provider value={value}>
     {children}
     <Popover anchorEl={selection?.anchor} anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }} onClose={() => setSelection(null)} open={enabled && Boolean(selection)} slotProps={{ paper: { sx: { maxWidth: 420, p: 1.5, width: 'min(420px, calc(100vw - 24px))' } } }}>
-      {selection ? <Box aria-label="Blameのコミット詳細" role="dialog">
+      {selection ? <Box aria-label={t('review.blame.details')} role="dialog">
         <Stack spacing={1}>
-          <Typography sx={{ fontWeight: 700 }} variant="subtitle2">{shortSha(selection.block.commitId)} · {selection.block.authorName || '作成者不明'}</Typography>
-          <Typography color="textSecondary" variant="caption">{selection.side === 'old' ? '変更前' : '変更後'}の{selection.line}行 · {selection.block.committedAt ? formatAbsoluteTime(selection.block.committedAt) : '日時不明'}</Typography>
-          <Typography sx={{ overflowWrap: 'anywhere' }} variant="body2">{selection.block.title || 'コミットメッセージなし'}</Typography>
+          <Typography sx={{ fontWeight: 700 }} variant="subtitle2">{shortSha(selection.block.commitId)} · {selection.block.authorName || t('review.blame.unknownAuthor')}</Typography>
+          <Typography color="textSecondary" variant="caption">{t(selection.side === 'old' ? 'review.blame.oldLine' : 'review.blame.newLine', { line: String(selection.line), time: selection.block.committedAt ? formatAbsoluteTime(selection.block.committedAt) : t('review.blame.unknownTime') })}</Typography>
+          <Typography sx={{ overflowWrap: 'anywhere' }} variant="body2">{selection.block.title || t('review.blame.noMessage')}</Typography>
           <Divider />
-          <Typography color="textSecondary" variant="caption">関連MR</Typography>
-          {related.loading && !related.data ? <Typography variant="caption">読み込み中…</Typography> : null}
-          {related.error ? <Alert severity="warning">関連MRを取得できませんでした: {related.error.message}</Alert> : null}
-          {related.data?.length === 0 ? <Typography color="textSecondary" variant="caption">関連MRは見つかりませんでした。</Typography> : null}
-          {(related.data ?? []).map((mr) => <Button key={`${mr.projectId}:${mr.iid}`} onClick={() => void openGitLabUrl(sessionId, mr.webUrl).catch((error: unknown) => setOpenError(error instanceof Error ? error.message : 'MRを開けませんでした'))} size="small" sx={{ alignSelf: 'flex-start', justifyContent: 'flex-start', textAlign: 'left' }}>!{mr.iid} {mr.title}</Button>)}
+          <Typography color="textSecondary" variant="caption">{t('review.blame.relatedMrs')}</Typography>
+          {related.loading && !related.data ? <Typography variant="caption">{t('review.blame.loading')}</Typography> : null}
+          {related.error ? <Alert severity="warning">{t('review.blame.relatedError', { message: related.error.message })}</Alert> : null}
+          {related.data?.length === 0 ? <Typography color="textSecondary" variant="caption">{t('review.blame.noRelated')}</Typography> : null}
+          {(related.data ?? []).map((mr) => <Button key={`${mr.projectId}:${mr.iid}`} onClick={() => void openGitLabUrl(sessionId, mr.webUrl).catch((error: unknown) => setOpenError(error instanceof Error ? error.message : t('review.blame.openError')))} size="small" sx={{ alignSelf: 'flex-start', justifyContent: 'flex-start', textAlign: 'left' }}>!{mr.iid} {mr.title}</Button>)}
           {openError ? <Alert severity="warning">{openError}</Alert> : null}
         </Stack>
       </Box> : null}
@@ -107,21 +109,22 @@ export function BlameProvider({ beforeSha, children, enabled = true, initialNewL
 
 /** A narrow gutter within the actual diff row, not a second code viewer. */
 export function BlameCell({ line, side }: { line?: number; side: Side }) {
+  const t = useT()
   const context = useContext(BlameContext)
   if (!context || line === undefined) return <span className="blame-cell" />
   const state = context[side]
-  if (!state.available) return <span aria-label="このリビジョンの変更前の履歴はありません" className="blame-cell">—</span>
+  if (!state.available) return <span aria-label={t('review.blame.noHistory')} className="blame-cell">—</span>
   const inWindow = state.start !== null && line >= state.start && line < state.start + BLAME_WINDOW
   const attribution = inWindow ? state.map.get(line) : undefined
   const buttonLabel = attribution
-    ? `${line}行のBlame: ${shortSha(attribution.block.commitId)} ${attribution.block.authorName}`
-    : `${line}行のBlameを取得`
+    ? t('review.blame.lineLabel', { line: String(line), sha: shortSha(attribution.block.commitId), author: attribution.block.authorName })
+    : t('review.blame.load', { line: String(line) })
   const display = attribution
     ? attribution.first ? shortSha(attribution.block.commitId) : '│'
     : inWindow && state.loading ? '…' : inWindow && state.failed ? '!' : inWindow && state.loaded ? '—' : '…'
   const title = attribution
     ? `${shortSha(attribution.block.commitId)} · ${attribution.block.authorName} · ${attribution.block.title}`
-    : state.failed && inWindow ? '取得に失敗しました' : 'この行の履歴を取得'
+    : state.failed && inWindow ? t('review.blame.failed') : t('review.blame.loadTitle')
   return <span className="blame-cell" data-side={side}>
     <button aria-label={buttonLabel} className="blame-action" onClick={(event) => {
       event.stopPropagation()

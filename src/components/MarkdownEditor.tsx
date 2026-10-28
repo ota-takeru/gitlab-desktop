@@ -9,6 +9,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 
 import { applyRichFormat, canEditAsRichText, createRichMarkdownExtensions, getEditorMarkdown } from '../lib/richMarkdown'
+import { useT } from '../i18n/useT'
 import { useMarkdownFormatting } from '../features/shared/useMarkdownFormatting'
 import { MarkdownToolbar } from './MarkdownToolbar'
 import { markdownBodySx } from './markdownBodySx'
@@ -64,6 +65,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
   const [richBlocked, setRichBlocked] = useState(() => preferredMode === 'rich' && !canEditAsRichText(value))
   const mode: MarkdownEditorMode = preferredMode === 'rich' && !richBlocked ? 'rich' : 'source'
   const richRef = useRef<Editor | null>(null)
+  const t = useT()
   const sourceRef = useRef<SourceInputHandle | null>(null)
 
   const changeMode = (next: MarkdownEditorMode) => {
@@ -89,7 +91,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
         />
         {toolbarEnd}
         <ToggleButtonGroup
-          aria-label="入力方式"
+          aria-label={t('common.markdownEditor.mode')}
           disabled={disabled}
           exclusive
           onChange={(_, next: MarkdownEditorMode | null) => { if (next) changeMode(next) }}
@@ -97,8 +99,8 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
           sx={{ ml: 'auto' }}
           value={mode}
         >
-          <ToggleButton sx={{ px: 1, py: 0.25 }} title="書式をその場で表示して編集" value="rich">リッチ</ToggleButton>
-          <ToggleButton sx={{ px: 1, py: 0.25 }} title="Markdownの記法をそのまま編集" value="source">Markdown</ToggleButton>
+          <ToggleButton sx={{ px: 1, py: 0.25 }} title={t('common.markdownEditor.richTitle')} value="rich">{t('common.markdownEditor.rich')}</ToggleButton>
+          <ToggleButton sx={{ px: 1, py: 0.25 }} title={t('common.markdownEditor.sourceTitle')} value="source">Markdown</ToggleButton>
         </ToggleButtonGroup>
       </Stack>
       {mode === 'rich'
@@ -106,7 +108,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
         : <SourceInput {...inputProps} handleRef={ref} inputHandleRef={sourceRef} />}
       {richBlocked && preferredMode === 'rich' ? (
         <Typography color="textSecondary" component="p" sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }} variant="caption">
-          HTMLなどリッチ表示で保持できない記法を含むため、{label}をMarkdownのまま編集しています。
+          {t('common.markdownEditor.richBlocked', { label })}
         </Typography>
       ) : null}
     </Box>

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import { translate } from '../i18n/i18n'
 import { createRequestId, isTauri, normalizeGitLabError } from './gitlab'
 import { GitLabCommandError } from '../types/gitlab'
 
@@ -15,10 +16,10 @@ export interface UploadGitLabAttachmentInput {
 /** Uploads one selected file and returns GitLab's Markdown reference. */
 export async function uploadGitLabAttachment({ file, iid, projectId, sessionId }: UploadGitLabAttachmentInput): Promise<string> {
   if (!isTauri()) {
-    throw new GitLabCommandError({ code: 'UNSUPPORTED', message: '添付ファイルのアップロードはデスクトップ版で利用できます。' })
+    throw new GitLabCommandError({ code: 'UNSUPPORTED', message: translate('common.attachments.desktopOnly') })
   }
   if (file.size > MAX_GITLAB_ATTACHMENT_BYTES) {
-    throw new GitLabCommandError({ code: 'TOO_LARGE', message: '添付ファイルは10 MiB以下にしてください。' })
+    throw new GitLabCommandError({ code: 'TOO_LARGE', message: translate('common.attachments.tooLarge') })
   }
 
   try {

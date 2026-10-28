@@ -1,6 +1,7 @@
 import { isTauri as tauriIsTauri } from '@tauri-apps/api/core'
 import { useCallback, useEffect, useId, useSyncExternalStore } from 'react'
 
+import { translate } from '../../i18n/i18n'
 import { acknowledgePendingOperation, getPendingOperation, type PendingOperation } from '../../lib/pendingOperations'
 import { mutateGitLab, normalizeGitLabError } from '../../lib/gitlab'
 import { reportGitLabConnectivity } from '../connectivity'
@@ -158,7 +159,7 @@ function pruneEntry(entry: MutationEntry): void {
 }
 
 function unknownOutcomeError(): GitLabCommandError {
-  return new GitLabCommandError({ code: 'UNKNOWN_OUTCOME', message: '前回の投稿結果を確認できません。GitLabで結果を確認してから再送してください。' })
+  return new GitLabCommandError({ code: 'UNKNOWN_OUTCOME', message: translate('common.gitlab.unknownOutcome') })
 }
 
 function isActive(entry: MutationEntry): boolean {
@@ -182,7 +183,7 @@ function ensureHydrated(entry: MutationEntry): Promise<boolean> {
   const sessionId = entry.sessionId
   if (!resource || !sessionId) {
     entry.hydration = 'failed'
-    const error = normalizeGitLabError({ code: 'AUTH_REQUIRED', message: 'GitLabに接続してください。' })
+    const error = normalizeGitLabError({ code: 'AUTH_REQUIRED', message: translate('common.gitlab.connectRequired') })
     if (entry.snapshot.status === 'idle') publish(entry, { action: null, error, status: 'unknown' })
     else notify(entry)
     return Promise.resolve(false)
@@ -315,7 +316,7 @@ async function sendWrite(current: MutationEntry, sessionId: string | null, actio
     }
   }
   if (!sessionId) {
-    const error = normalizeGitLabError({ code: 'AUTH_REQUIRED', message: 'GitLabに接続してください。' })
+    const error = normalizeGitLabError({ code: 'AUTH_REQUIRED', message: translate('common.gitlab.connectRequired') })
     publish(current, { action, error, status: 'error' })
     return { error, ok: false, status: 'error' }
   }
@@ -332,7 +333,7 @@ async function sendWrite(current: MutationEntry, sessionId: string | null, actio
     }
     reportGitLabConnectivity(null)
     if (!isActive(current)) {
-      const error = new GitLabCommandError({ code: 'CANCELLED', message: '画面が閉じられたため投稿結果を適用できません。' })
+      const error = new GitLabCommandError({ code: 'CANCELLED', message: translate('common.gitlab.closedBeforeResult') })
       return { error, ok: false, status: 'error' }
     }
     publish(current, { action: null, error: null, status: 'success' })

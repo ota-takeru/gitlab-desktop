@@ -9,6 +9,7 @@ import {
   restoreGitLabSession,
   type ConnectGitLabInput,
 } from '../../lib/gitlab'
+import { translate } from '../../i18n/i18n'
 import { reauthenticateGitLab } from '../../lib/session'
 import type { GitLabCommandError, GitLabSession } from '../../types/gitlab'
 import { clearPreferences } from '../shared/preferences'
@@ -96,7 +97,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       setReauthRequired({ instanceUrl: session.instanceUrl, username: session.user.username })
       setSession(null)
       setStatus('disconnected')
-      setError(normalizeGitLabError({ code: 'AUTH_REQUIRED', message: 'GitLabの認証が必要です。再接続してください。' }))
+      setError(normalizeGitLabError({ code: 'AUTH_REQUIRED', message: translate('connection.errors.authRequired') }))
     }
     globalThis.addEventListener('gitlab-auth-required', handleAuthRequired)
     return () => globalThis.removeEventListener('gitlab-auth-required', handleAuthRequired)
@@ -105,7 +106,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   const connectWith = useCallback(async (attempt: () => Promise<GitLabSession>) => {
     const previousSession = session
     if (!isTauri()) {
-      const unsupported = new Error('ブラウザプレビューではGitLab接続を利用できません。')
+      const unsupported = new Error(translate('connection.errors.browserPreview'))
       setError(normalizeGitLabError(unsupported))
       setStatus('unsupported')
       return null
@@ -117,7 +118,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     try {
       const nextSession = await attempt()
       if (operation !== operationRef.current) return null
-      if (!isSessionShape(nextSession)) throw new Error('GitLab接続の応答が不正です。')
+      if (!isSessionShape(nextSession)) throw new Error(translate('connection.errors.invalidSession'))
       adoptSession(nextSession)
       return nextSession
     } catch (caught) {

@@ -6,14 +6,15 @@ import { Placeholder } from '@tiptap/extensions'
 import { Markdown } from '@tiptap/markdown'
 import StarterKit from '@tiptap/starter-kit'
 
+import { translate } from '../i18n/i18n'
 import { isEquivalentMarkdown } from './markdownEquivalence'
 import type { MarkdownFormat } from './markdownFormat'
 
 /** Images are shown as labels, like the comment view; GitLab uploads are not loaded. */
 const LabelledImage = Image.extend({
   renderHTML({ node }) {
-    const alt = typeof node.attrs.alt === 'string' && node.attrs.alt ? node.attrs.alt : '説明なし'
-    return ['span', { 'data-markdown-image': '', title: String(node.attrs.src ?? '') }, `[画像: ${alt}]`]
+    const alt = typeof node.attrs.alt === 'string' && node.attrs.alt ? node.attrs.alt : translate('common.richMarkdown.noAlt')
+    return ['span', { 'data-markdown-image': '', title: String(node.attrs.src ?? '') }, translate('common.richMarkdown.image', { alt })]
   },
 })
 
@@ -77,7 +78,7 @@ export function applyRichFormat(editor: Editor, format: MarkdownFormat) {
         chain.extendMarkRange('link').unsetLink().run()
         return
       }
-      const href = globalThis.prompt('リンク先のURL', 'https://')?.trim()
+      const href = globalThis.prompt(translate('common.richMarkdown.linkPrompt'), 'https://')?.trim()
       if (!href || href === 'https://') return
       if (editor.state.selection.empty) chain.insertContent({ marks: [{ attrs: { href }, type: 'link' }], text: href, type: 'text' }).run()
       else chain.setLink({ href }).run()

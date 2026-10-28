@@ -9,24 +9,26 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { ReactElement } from 'react'
 
+import type { MessageKey } from '../i18n/i18n'
+import { useT } from '../i18n/useT'
 import { StateIcon } from './StateIcon'
 
 type Tone = 'success' | 'error' | 'info' | 'warning' | 'neutral'
 
-const statuses: Record<string, { label: string; tone: Tone; icon: ReactElement }> = {
-  success: { label: '成功', tone: 'success', icon: <CheckCircleOutlineRoundedIcon fontSize="inherit" /> },
-  failed: { label: '失敗', tone: 'error', icon: <HighlightOffRoundedIcon fontSize="inherit" /> },
-  running: { label: '実行中', tone: 'info', icon: <SyncRoundedIcon fontSize="inherit" /> },
-  pending: { label: '待機中', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  created: { label: '待機中', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  preparing: { label: '準備中', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  waiting_for_resource: { label: 'リソース待ち', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  scheduled: { label: '予約済み', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  waiting_for_callback: { label: '応答待ち', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
-  canceling: { label: 'キャンセル中', tone: 'warning', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
-  manual: { label: '手動待ち', tone: 'warning', icon: <PauseCircleOutlineRoundedIcon fontSize="inherit" /> },
-  canceled: { label: 'キャンセル', tone: 'warning', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
-  skipped: { label: 'スキップ', tone: 'neutral', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
+const statuses: Record<string, { label: MessageKey; tone: Tone; icon: ReactElement }> = {
+  success: { label: 'common.pipeline.success', tone: 'success', icon: <CheckCircleOutlineRoundedIcon fontSize="inherit" /> },
+  failed: { label: 'common.pipeline.failed', tone: 'error', icon: <HighlightOffRoundedIcon fontSize="inherit" /> },
+  running: { label: 'common.pipeline.running', tone: 'info', icon: <SyncRoundedIcon fontSize="inherit" /> },
+  pending: { label: 'common.pipeline.pending', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  created: { label: 'common.pipeline.pending', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  preparing: { label: 'common.pipeline.preparing', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  waiting_for_resource: { label: 'common.pipeline.waitingForResource', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  scheduled: { label: 'common.pipeline.scheduled', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  waiting_for_callback: { label: 'common.pipeline.waitingForCallback', tone: 'info', icon: <ScheduleRoundedIcon fontSize="inherit" /> },
+  canceling: { label: 'common.pipeline.canceling', tone: 'warning', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
+  manual: { label: 'common.pipeline.manual', tone: 'warning', icon: <PauseCircleOutlineRoundedIcon fontSize="inherit" /> },
+  canceled: { label: 'common.pipeline.canceled', tone: 'warning', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
+  skipped: { label: 'common.pipeline.skipped', tone: 'neutral', icon: <DoNotDisturbAltRoundedIcon fontSize="inherit" /> },
 }
 
 /**
@@ -36,8 +38,10 @@ const statuses: Record<string, { label: string; tone: Tone; icon: ReactElement }
  * and the name stays in the tooltip and the accessible name.
  */
 export function PipelineStatus({ compact = false, prefix = 'CI', status }: { compact?: boolean; prefix?: string; status: string | null }) {
+  const t = useT()
   const known = status ? statuses[status] : undefined
-  const label = `${prefix ? `${prefix} ` : ''}${known?.label ?? (status || '状態不明')}`
+  const state = known ? t(known.label) : status || t('common.pipeline.unknown')
+  const label = prefix ? t('common.pipeline.withPrefix', { prefix, state }) : state
   const icon = known?.icon ?? <HelpOutlineRoundedIcon fontSize="inherit" />
   const tone = known?.tone ?? 'neutral'
   if (compact) return <StateIcon icon={icon} label={label} spinning={status === 'running'} tone={tone} />

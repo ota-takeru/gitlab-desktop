@@ -8,50 +8,53 @@ import Typography from '@mui/material/Typography'
 import { Fragment, memo } from 'react'
 
 import { Kbd } from '../components/Pane'
+import type { MessageKey } from '../i18n/i18n'
+import { useT } from '../i18n/useT'
 
-const shortcutGroups: Array<{ title: string; items: Array<{ keys: string[][]; label: string }> }> = [
+const shortcutGroups: Array<{ title: MessageKey; items: Array<{ keys: string[][]; label: MessageKey }> }> = [
   {
     items: [
-      { keys: [['J'], ['K']], label: '次/前のMR' },
-      { keys: [['↑'], ['↓']], label: '行移動' },
-      { keys: [['Enter']], label: '開く' },
-      { keys: [['Space']], label: 'MRの概要をプレビュー' },
-      { keys: [['/']], label: '一覧内検索' },
-      { keys: [['Ctrl', 'K']], label: 'すべてのMRを検索' },
-      { keys: [['Ctrl', 'O']], label: 'URLから開く' },
-      { keys: [['Esc']], label: '一覧へ戻る' },
-      { keys: [['Alt', '←'], ['Alt', '→']], label: '戻る/進む（MR一覧のタブ上ではタブを並べ替え）' },
-      { keys: [['Alt', '↑'], ['Alt', '↓']], label: 'サイドバーのMRタブを並べ替え（タブ上で）' },
+      { keys: [['J'], ['K']], label: 'shortcuts.list.nextPrevious' },
+      { keys: [['↑'], ['↓']], label: 'shortcuts.list.moveRow' },
+      { keys: [['Enter']], label: 'shortcuts.list.open' },
+      { keys: [['Space']], label: 'shortcuts.list.preview' },
+      { keys: [['/']], label: 'shortcuts.list.filter' },
+      { keys: [['Ctrl', 'K']], label: 'shortcuts.list.searchAll' },
+      { keys: [['Ctrl', 'O']], label: 'shortcuts.list.openUrl' },
+      { keys: [['Esc']], label: 'shortcuts.list.back' },
+      { keys: [['Alt', '←'], ['Alt', '→']], label: 'shortcuts.list.history' },
+      { keys: [['Alt', '↑'], ['Alt', '↓']], label: 'shortcuts.list.reorderTabs' },
     ],
-    title: '一覧と移動',
+    title: 'shortcuts.list.title',
   },
   {
     items: [
-      { keys: [['N'], ['P']], label: '次/前の未解決スレッド' },
-      { keys: [['D']], label: '議論タブで説明を横に表示' },
-      { keys: [[']'], ['[']], label: '次/前のファイル' },
-      { keys: [['Shift', '↑'], ['Shift', '↓']], label: '行の「+」で複数行を選択（Enterでコメント）' },
-      { keys: [['Ctrl', 'Enter']], label: 'レビューに追加' },
-      { keys: [['Ctrl', 'Shift', 'Enter']], label: '今すぐ投稿' },
+      { keys: [['N'], ['P']], label: 'shortcuts.review.nextThread' },
+      { keys: [['D']], label: 'shortcuts.review.description' },
+      { keys: [[']'], ['[']], label: 'shortcuts.review.nextFile' },
+      { keys: [['Shift', '↑'], ['Shift', '↓']], label: 'shortcuts.review.selectLines' },
+      { keys: [['Ctrl', 'Enter']], label: 'shortcuts.review.addToReview' },
+      { keys: [['Ctrl', 'Shift', 'Enter']], label: 'shortcuts.review.postNow' },
     ],
-    title: 'MRのレビュー',
+    title: 'shortcuts.review.title',
   },
   {
-    items: [{ keys: [['?']], label: 'この一覧を表示' }],
-    title: 'ヘルプ',
+    items: [{ keys: [['?']], label: 'shortcuts.help.show' }],
+    title: 'shortcuts.help.title',
   },
 ]
 
 /** Every keyboard shortcut of the client in one place; `?` opens it outside text input. */
 /** Memoized: the closed dialog would otherwise build its whole list again on every navigation. */
 export const KeyboardShortcutsDialog = memo(function KeyboardShortcutsDialog({ onClose, open }: { onClose: () => void; open: boolean }) {
+  const t = useT()
   return (
     <Dialog aria-labelledby="keyboard-shortcuts-title" fullWidth maxWidth="xs" onClose={onClose} open={open}>
-      <DialogTitle id="keyboard-shortcuts-title">キーボードショートカット</DialogTitle>
+      <DialogTitle id="keyboard-shortcuts-title">{t('shortcuts.title')}</DialogTitle>
       <DialogContent dividers>
         {shortcutGroups.map((group) => (
           <Box component="section" key={group.title} sx={{ '& + &': { mt: 2 } }}>
-            <Typography color="textSecondary" component="h3" sx={{ mb: 1 }} variant="overline">{group.title}</Typography>
+            <Typography color="textSecondary" component="h3" sx={{ mb: 1 }} variant="overline">{t(group.title)}</Typography>
             <Box component="dl" sx={{ columnGap: 2, display: 'grid', gridTemplateColumns: 'max-content 1fr', m: 0, rowGap: 1 }}>
               {group.items.map((item) => (
                 <Fragment key={item.label}>
@@ -68,7 +71,7 @@ export const KeyboardShortcutsDialog = memo(function KeyboardShortcutsDialog({ o
                       </Fragment>
                     ))}
                   </Box>
-                  <Typography component="dd" sx={{ alignSelf: 'center', m: 0 }} variant="body2">{item.label}</Typography>
+                  <Typography component="dd" sx={{ alignSelf: 'center', m: 0 }} variant="body2">{t(item.label)}</Typography>
                 </Fragment>
               ))}
             </Box>
@@ -76,7 +79,7 @@ export const KeyboardShortcutsDialog = memo(function KeyboardShortcutsDialog({ o
         ))}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>閉じる</Button>
+        <Button onClick={onClose}>{t('shortcuts.close')}</Button>
       </DialogActions>
     </Dialog>
   )

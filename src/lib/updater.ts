@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import { translate } from '../i18n/i18n'
 import { isTauri } from './runtime'
 
 export interface AppUpdate {
@@ -34,7 +35,7 @@ export async function checkAppUpdate(): Promise<AppUpdate> {
  */
 export async function downloadAppUpdate(): Promise<void> {
   if (!isTauri()) {
-    throw new Error('ブラウザプレビューではアプリを更新できません。')
+    throw new Error(translate('common.update.browserUnavailable'))
   }
   await invoke<void>('download_app_update')
 }
@@ -45,7 +46,7 @@ export async function downloadAppUpdate(): Promise<void> {
  */
 export function installAppUpdate(): Promise<void> {
   if (!isTauri()) {
-    return Promise.reject(new Error('ブラウザプレビューではアプリを更新できません。'))
+    return Promise.reject(new Error(translate('common.update.browserUnavailable')))
   }
   return invoke<void>('install_app_update')
 }

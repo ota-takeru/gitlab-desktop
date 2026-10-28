@@ -14,31 +14,34 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import type { ReactNode } from 'react'
 
+import type { MessageKey } from '../i18n/i18n'
+import { useT } from '../i18n/useT'
 import type { MarkdownFormat } from '../lib/markdownFormat'
 
-const tools: { format: MarkdownFormat; icon: ReactNode; label: string; shortcut?: string }[] = [
-  { format: 'heading', icon: <TitleRoundedIcon />, label: '見出し' },
-  { format: 'bold', icon: <FormatBoldRoundedIcon />, label: '太字', shortcut: 'Ctrl+B' },
-  { format: 'italic', icon: <FormatItalicRoundedIcon />, label: '斜体', shortcut: 'Ctrl+I' },
-  { format: 'strikethrough', icon: <StrikethroughSRoundedIcon />, label: '取り消し線', shortcut: 'Ctrl+Shift+X' },
-  { format: 'quote', icon: <FormatQuoteRoundedIcon />, label: '引用' },
-  { format: 'code', icon: <CodeRoundedIcon />, label: 'コード' },
-  { format: 'link', icon: <LinkRoundedIcon />, label: 'リンク' },
-  { format: 'bulletList', icon: <FormatListBulletedRoundedIcon />, label: '箇条書き' },
-  { format: 'numberedList', icon: <FormatListNumberedRoundedIcon />, label: '番号付きリスト' },
-  { format: 'taskList', icon: <ChecklistRoundedIcon />, label: 'タスクリスト' },
-  { format: 'table', icon: <GridOnRoundedIcon />, label: '表' },
+const tools: { format: MarkdownFormat; icon: ReactNode; label: MessageKey; shortcut?: string }[] = [
+  { format: 'heading', icon: <TitleRoundedIcon />, label: 'common.markdownToolbar.heading' },
+  { format: 'bold', icon: <FormatBoldRoundedIcon />, label: 'common.markdownToolbar.bold', shortcut: 'Ctrl+B' },
+  { format: 'italic', icon: <FormatItalicRoundedIcon />, label: 'common.markdownToolbar.italic', shortcut: 'Ctrl+I' },
+  { format: 'strikethrough', icon: <StrikethroughSRoundedIcon />, label: 'common.markdownToolbar.strikethrough', shortcut: 'Ctrl+Shift+X' },
+  { format: 'quote', icon: <FormatQuoteRoundedIcon />, label: 'common.markdownToolbar.quote' },
+  { format: 'code', icon: <CodeRoundedIcon />, label: 'common.markdownToolbar.code' },
+  { format: 'link', icon: <LinkRoundedIcon />, label: 'common.markdownToolbar.link' },
+  { format: 'bulletList', icon: <FormatListBulletedRoundedIcon />, label: 'common.markdownToolbar.bulletList' },
+  { format: 'numberedList', icon: <FormatListNumberedRoundedIcon />, label: 'common.markdownToolbar.numberedList' },
+  { format: 'taskList', icon: <ChecklistRoundedIcon />, label: 'common.markdownToolbar.taskList' },
+  { format: 'table', icon: <GridOnRoundedIcon />, label: 'common.markdownToolbar.table' },
 ]
 
 /** GitLab-style formatting buttons for a Markdown textarea. */
 export function MarkdownToolbar({ disabled = false, onFormat }: { disabled?: boolean; onFormat: (format: MarkdownFormat) => void }) {
+  const t = useT()
   return (
-    <Stack aria-label="Markdownの書式" direction="row" role="toolbar" sx={{ flexWrap: 'wrap', gap: 0.25 }}>
+    <Stack aria-label={t('common.markdownToolbar.label')} direction="row" role="toolbar" sx={{ flexWrap: 'wrap', gap: 0.25 }}>
       {tools.map((tool) => (
-        <Tooltip key={tool.format} title={tool.shortcut ? `${tool.label}（${tool.shortcut}）` : tool.label}>
+        <Tooltip key={tool.format} title={tool.shortcut ? t('common.markdownToolbar.withShortcut', { label: t(tool.label), shortcut: tool.shortcut }) : t(tool.label)}>
           <span>
             <IconButton
-              aria-label={`${tool.label}を挿入`}
+              aria-label={t('common.markdownToolbar.insert', { label: t(tool.label) })}
               disabled={disabled}
               onClick={() => onFormat(tool.format)}
               // Keep the textarea's selection while clicking.

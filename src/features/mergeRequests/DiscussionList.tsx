@@ -32,6 +32,7 @@ import { positionLabel as formatPositionLabel } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
 import { NoteBody, type SuggestionActions } from './SuggestionBlock'
 import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
+import { useT } from '../../i18n/useT'
 
 const NOTES_PER_PAGE = 50
 /** Thread width from which a line comment's code sits beside its comments. */
@@ -93,6 +94,7 @@ export interface OlderDiscussions {
 const LOAD_OLDER_THRESHOLD = 600
 
 export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+  const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
   const setEditing = onEditingNoteChange ?? setLocalEditingId
@@ -220,7 +222,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     <Stack ref={listRef} spacing={1.5} sx={{ overflowAnchor: 'none' }}>
       <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5 }}>
         <ToggleButtonGroup
-          aria-label="議論の絞り込み"
+          aria-label={t('review.discussion.filter')}
           disabled={paginationDisabled}
           exclusive
           onChange={(_, value: 'all' | 'unresolved' | null) => {
@@ -230,21 +232,21 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           size="small"
           value={filter}
         >
-          <ToggleButton value="all">すべて</ToggleButton>
-          <ToggleButton value="unresolved">未解決</ToggleButton>
+          <ToggleButton value="all">{t('review.discussion.filter.all')}</ToggleButton>
+          <ToggleButton value="unresolved">{t('review.discussion.filter.unresolved')}</ToggleButton>
         </ToggleButtonGroup>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          {latestNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(latestNote)} size="small">最新へ</Button> : null}
-          {earliestUnreadNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(earliestUnreadNote)} size="small">未読へ <Chip color="primary" label={unreadNotes.length} size="small" sx={{ ml: 0.5 }} /></Button> : null}
-          {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">読み込み済みを既読</Button> : null}
+          {latestNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(latestNote)} size="small">{t('review.discussion.latest')}</Button> : null}
+          {earliestUnreadNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(earliestUnreadNote)} size="small">{t('review.discussion.unread')} <Chip color="primary" label={unreadNotes.length} size="small" sx={{ ml: 0.5 }} /></Button> : null}
+          {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">{t('review.discussion.markRead')}</Button> : null}
         </Stack>
       </Stack>
       {older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'center', minHeight: 32 }}>
-          {older.loading ? <Typography color="textSecondary" role="status" variant="caption">以前の議論を読み込み中…</Typography>
-            : older.error ? <><Typography color="error" variant="caption">以前の議論を読み込めませんでした: {older.error}</Typography><Button onClick={older.onRetry}>再試行</Button></>
-              : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>以前の議論を読み込む</Button>
-                : <Typography color="textSecondary" variant="caption">読み込み上限に達しました。これより前の議論はGitLabで確認してください。</Typography>}
+          {older.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('review.discussion.older.loading')}</Typography>
+            : older.error ? <><Typography color="error" variant="caption">{t('review.discussion.older.error', { message: older.error })}</Typography><Button onClick={older.onRetry}>{t('review.discussion.older.retry')}</Button></>
+              : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>{t('review.discussion.older.load')}</Button>
+                : <Typography color="textSecondary" variant="caption">{t('review.discussion.older.limit')}</Typography>}
         </Stack>
       ) : null}
       {visibleDiscussions.map(({ discussion, notes }) => {
@@ -265,7 +267,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const position = notes.find((note) => note.position)?.position ?? null
         const positionLabel = position ? formatPositionLabel(position) : null
         const firstNote = notes[0]
-        const threadLabel = positionLabel ?? `${firstNote?.author.name ?? ''}のスレッド`
+        const threadLabel = positionLabel ?? t('review.discussion.threadLabel', { author: firstNote?.author.name ?? '' })
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
         return (
           <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
@@ -277,13 +279,13 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                   {position && positionLabel ? <Tooltip describeChild title={positionLabel}>{onOpenPosition ? (
                     <Box component="span" sx={{ display: 'flex', flex: '0 1 auto', minWidth: 0 }}>
                       <Button
-                        aria-label={`差分へ移動: ${positionLabel}`}
+                        aria-label={t('review.discussion.goToDiff', { place: positionLabel })}
                         disabled={disabled || Boolean(editing || replyDiscussionId)}
                         onClick={() => onOpenPosition(position)}
                         sx={{ display: 'block', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', fontWeight: 500, minHeight: 24, minWidth: 0, overflow: 'hidden', px: 0.5, py: 0, textAlign: 'left', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                       >{positionLabel}</Button>
                     </Box>
-                  ) : <Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', fontFamily: 'code.fontFamily', minWidth: 0 }} variant="caption">{positionLabel}</Typography>}</Tooltip> : <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">MR全体へのスレッド</Typography>}
+                  ) : <Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', fontFamily: 'code.fontFamily', minWidth: 0 }} variant="caption">{positionLabel}</Typography>}</Tooltip> : <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{t('review.discussion.overview')}</Typography>}
                   {position && position.headSha !== headSha && headSha && sessionId && projectId ? <CommentChangeStatus headSha={headSha} iid={iid} position={position} projectId={projectId} sessionId={sessionId} /> : null}
                   {isCollapsed && firstNote ? <Tooltip describeChild title={plainExcerpt(firstNote.body, 300)}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 0', minWidth: 0 }} variant="caption">— {firstNote.author.name}: {plainExcerpt(firstNote.body, 80)}</Typography></Tooltip> : null}
                 </Stack>
@@ -293,7 +295,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                     aria-expanded={!isCollapsed}
                     disabled={containsEditingNote || replying}
                     onClick={() => updatePreservingScroll(() => setCollapsedThreads((current) => ({ ...current, [discussion.id]: !isCollapsed })))}
-                  >{isCollapsed ? `表示 · ${notes.length}件` : '折りたたむ'}</Button>
+                  >{isCollapsed ? t('review.discussion.expand', { count: notes.length }) : t('review.discussion.collapse')}</Button>
                 </Stack>
               </Stack>
             ) : null}
@@ -325,21 +327,21 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
             {/* A folded thread shows only its header; replying starts from the open thread. */}
             {!isCollapsed ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: 1, borderColor: 'divider', flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.25 }}>
               {replying ? <Box sx={{ flex: '1 1 100%', minWidth: 0 }}>{replyComposer}</Box> : (
-                <Button disabled={disabled} onClick={() => onReply(discussion)} size="small" startIcon={<ReplyRoundedIcon />}>返信</Button>
+                <Button disabled={disabled} onClick={() => onReply(discussion)} size="small" startIcon={<ReplyRoundedIcon />}>{t('review.discussion.reply')}</Button>
               )}
               {notePageCount > 1 ? (
                 <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
-                  <Button aria-label={`${threadLabel}の前のコメント`} disabled={disabled || paginationDisabled || notePage <= 1} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage - 1 })))} size="small">前へ</Button>
-                  <Typography color="textSecondary" variant="caption">コメント {noteRangeStart(notePage, NOTES_PER_PAGE)}–{noteRangeEnd(notePage, NOTES_PER_PAGE, notes.length)} / {notes.length}</Typography>
-                  <Button aria-label={`${threadLabel}の次のコメント`} disabled={disabled || paginationDisabled || notePage >= notePageCount} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage + 1 })))} size="small">次へ</Button>
+                  <Button aria-label={t('review.discussion.previousComments', { thread: threadLabel })} disabled={disabled || paginationDisabled || notePage <= 1} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage - 1 })))} size="small">{t('review.diff.page.previous')}</Button>
+                  <Typography color="textSecondary" variant="caption">{t('review.discussion.commentRange', { start: noteRangeStart(notePage, NOTES_PER_PAGE), end: noteRangeEnd(notePage, NOTES_PER_PAGE, notes.length), total: notes.length })}</Typography>
+                  <Button aria-label={t('review.discussion.nextComments', { thread: threadLabel })} disabled={disabled || paginationDisabled || notePage >= notePageCount} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage + 1 })))} size="small">{t('review.diff.page.next')}</Button>
                 </Stack>
               ) : null}
             </Stack> : null}
           </Box>
         )
       })}
-      {commentDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">表示できるコメントはありません。</Typography></Paper> : null}
-      {commentDiscussions.length > 0 && filteredDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">条件に合う議論はありません。</Typography></Paper> : null}
+      {commentDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">{t('review.discussion.empty')}</Typography></Paper> : null}
+      {commentDiscussions.length > 0 && filteredDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">{t('review.discussion.noMatch')}</Typography></Paper> : null}
     </Stack>
   )
 }
@@ -367,6 +369,7 @@ interface NoteItemProps {
 
 /** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
 const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, note, onDelete, onEdit, onToggleReaction, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+  const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
   return (
@@ -396,22 +399,22 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
           <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2"><GitLabUserLink user={note.author} /></Typography>
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
-            {own ? <Typography color="textSecondary" variant="caption">（自分）</Typography> : null}
+            {own ? <Typography color="textSecondary" variant="caption">{t('review.note.own')}</Typography> : null}
             <RelativeTime value={note.createdAt} />
-            {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">編集済み</Typography> : null}
-            {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">未読</Typography> : null}
+            {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">{t('review.note.edited')}</Typography> : null}
+            {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('review.note.unread')}</Typography> : null}
           </Stack>
           {own && !note.system ? (
             <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, mr: -1, opacity: editing ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
-              <Tooltip title="コメントを編集"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を編集`} disabled={disabled} onClick={() => setEditing(note.id)}><EditOutlinedIcon /></IconButton></Tooltip>
-              <Tooltip title="コメントを削除"><IconButton aria-label={`${note.author.name}のコメント「${plainExcerpt(note.body, 30)}」を削除`} disabled={disabled} onClick={() => void confirm({ cancelLabel: '残す', confirmLabel: '削除する', destructive: true, message: plainExcerpt(note.body, 120), title: 'このコメントを削除しますか？' }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
+              <Tooltip title={t('review.note.editTooltip')}><IconButton aria-label={t('review.note.edit', { author: note.author.name, excerpt: plainExcerpt(note.body, 30) })} disabled={disabled} onClick={() => setEditing(note.id)}><EditOutlinedIcon /></IconButton></Tooltip>
+              <Tooltip title={t('review.note.deleteTooltip')}><IconButton aria-label={t('review.note.delete', { author: note.author.name, excerpt: plainExcerpt(note.body, 30) })} disabled={disabled} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: plainExcerpt(note.body, 120), title: t('review.note.delete.title') }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
             </Stack>
           ) : null}
         </Stack>
         {editing ? (
           <NoteEditor bufferKey={editBufferKey} disabled={disabled} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
         ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
-        {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={`${note.author.name}のコメント`} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
+        {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={t('review.note.reactions', { author: note.author.name })} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
       </Box>
     </Box>
   )
@@ -422,6 +425,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
  * (Esc) or leaving the tab keeps it; cancelling a changed text asks first.
  */
 function NoteEditor({ bufferKey, disabled, note, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; note: Note; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+  const t = useT()
   const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
   const confirm = useConfirm()
   const [saving, setSaving] = useState(false)
@@ -439,7 +443,7 @@ function NoteEditor({ bufferKey, disabled, note, onClose, onSave, sessionId }: {
     onClose()
   }
   const cancel = async () => {
-    if (changed && !await confirm({ cancelLabel: '編集を続ける', confirmLabel: '破棄する', destructive: true, title: '編集中のコメントを破棄しますか？' })) return
+    if (changed && !await confirm({ cancelLabel: t('review.editor.discard.cancel'), confirmLabel: t('review.editor.discard.confirm'), destructive: true, title: t('review.note.discard.title') })) return
     change('')
     onClose()
   }
@@ -463,7 +467,7 @@ function NoteEditor({ bufferKey, disabled, note, onClose, onSave, sessionId }: {
       <MarkdownEditor
         autoFocus
         disabled={disabled || saving}
-        label="コメントを編集"
+        label={t('review.note.editTooltip')}
         onChange={change}
         onKeyDown={(event) => {
           if (event.key === 'Escape') { event.preventDefault(); close(); return true }
@@ -473,9 +477,9 @@ function NoteEditor({ bufferKey, disabled, note, onClose, onSave, sessionId }: {
         value={body}
       />
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
-        <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">Ctrl+Enter: 保存 · Esc: 閉じる（入力は保持）</Typography>
-        <Button disabled={saving} onClick={() => void cancel()}>取消</Button>
-        <Button disabled={!body.trim() || disabled || saving} onClick={() => void save()} variant="contained">{saving ? '保存中…' : '保存'}</Button>
+        <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
+        <Button disabled={saving} onClick={() => void cancel()}>{t('review.editor.cancel')}</Button>
+        <Button disabled={!body.trim() || disabled || saving} onClick={() => void save()} variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
       </Stack>
     </Stack>
   )

@@ -20,6 +20,7 @@ import { useConfirm } from '../../components/feedbackContext'
 import { Pager } from '../../components/Pager'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { RelativeTime } from '../../components/RelativeTime'
+import { useT } from '../../i18n/useT'
 import { formatFetchedAt, shortSha } from '../../lib/format'
 import type { JobAction, MrPipelinesQuery, Pipeline, PipelineAction, PipelineJob, PipelineJobsQuery, PipelineQuery } from '../../types/gitlab'
 import { useQueryRefreshAllowed } from '../shared/QueryRefreshPolicy'
@@ -45,6 +46,7 @@ export interface PipelinesTabProps {
  * seconds; finished pipelines are not polled.
  */
 export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId, sessionId }: PipelinesTabProps) {
+  const t = useT()
   const confirm = useConfirm()
   const autoRefresh = useQueryRefreshAllowed()
   const [page, setPage] = useState(1)
@@ -95,21 +97,21 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
     // The overview's reading width, so on a wide window a job's duration and actions stay near its name.
     <Stack spacing={1.5} sx={{ maxWidth: 1200 }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
-        <Typography color="textSecondary" component="h2" variant="overline">パイプライン</Typography>
+        <Typography color="textSecondary" component="h2" variant="overline">{t('mergeRequest.pipelines.heading')}</Typography>
         <Typography color="textSecondary" role="status" variant="caption">
-          {list.refreshing ? '更新中…' : list.stale ? `保存済み · ${formatFetchedAt(list.snapshot?.fetchedAt)}` : ''}
+          {list.refreshing ? t('mergeRequest.common.refreshing') : list.stale ? t('mergeRequest.common.savedAt', { time: formatFetchedAt(list.snapshot?.fetchedAt) }) : ''}
         </Typography>
         <Box sx={{ flex: 1 }} />
-        <Tooltip title="パイプラインとジョブを再取得"><span><IconButton aria-label="パイプラインを再取得" disabled={list.loading} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
+        <Tooltip title={t('mergeRequest.pipelines.refreshTooltip')}><span><IconButton aria-label={t('mergeRequest.pipelines.refresh')} disabled={list.loading} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
       </Stack>
-      {list.error && !pipelines.length ? <Alert severity="error">パイプラインを取得できませんでした: {list.error.message}</Alert> : null}
-      {list.error && pipelines.length ? <Alert severity="warning">保存済みのパイプラインを表示中です。更新に失敗しました: {list.error.message}</Alert> : null}
-      {list.loading ? <Typography color="textSecondary" role="status" variant="body2">パイプラインを読み込み中…</Typography> : null}
-      {list.data && !pipelines.length && !list.error ? <Typography color="textSecondary" variant="body2">{page > 1 ? 'このページにパイプラインはありません。' : 'このMRのパイプラインはありません。'}</Typography> : null}
+      {list.error && !pipelines.length ? <Alert severity="error">{t('mergeRequest.pipelines.loadFailed', { error: list.error.message })}</Alert> : null}
+      {list.error && pipelines.length ? <Alert severity="warning">{t('mergeRequest.pipelines.refreshFailed', { error: list.error.message })}</Alert> : null}
+      {list.loading ? <Typography color="textSecondary" role="status" variant="body2">{t('mergeRequest.pipelines.loading')}</Typography> : null}
+      {list.data && !pipelines.length && !list.error ? <Typography color="textSecondary" variant="body2">{page > 1 ? t('mergeRequest.pipelines.emptyPage') : t('mergeRequest.pipelines.empty')}</Typography> : null}
       {pipelines.length || page > 1 ? (
         <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { lg: '240px minmax(0, 1fr)', xs: '1fr' } }}>
           <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-            <List aria-label="パイプライン一覧" dense disablePadding>
+            <List aria-label={t('mergeRequest.pipelines.list')} dense disablePadding>
               {pipelines.map((item) => {
                 const current = item.id === selected?.id
                 return (
@@ -119,7 +121,7 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
                       <Typography color="textSecondary" variant="caption">#{item.id}</Typography>
                     </Stack>
                     <Typography noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%' }} variant="caption">{item.ref} · {shortSha(item.sha)}</Typography>
-                    {item.createdAt ? <RelativeTime prefix="作成" value={item.createdAt} /> : null}
+                    {item.createdAt ? <RelativeTime prefix={t('mergeRequest.common.created')} value={item.createdAt} /> : null}
                   </ListItemButton>
                 )
               })}
@@ -127,41 +129,41 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
             <Pager hasNext={Boolean(list.snapshot?.nextPage)} hasPrevious={page > 1} onNext={() => { setPage(page + 1); setSelectedId(null) }} onPrevious={() => { setPage(Math.max(1, page - 1)); setSelectedId(null) }} page={page} />
           </Stack>
           {pipeline ? (
-            <Stack component="section" aria-label={`パイプライン #${pipeline.id}`} spacing={1.5} sx={{ minWidth: 0 }}>
+            <Stack component="section" aria-label={t('mergeRequest.pipelines.title', { id: pipeline.id })} spacing={1.5} sx={{ minWidth: 0 }}>
               <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
-                <Typography component="h3" variant="subtitle1">パイプライン #{pipeline.id}</Typography>
+                <Typography component="h3" variant="subtitle1">{t('mergeRequest.pipelines.title', { id: pipeline.id })}</Typography>
                 <PipelineStatus status={pipeline.status} />
                 <Box sx={{ flex: 1 }} />
-                {canRetryPipeline(pipeline.status) ? <Button disabled={writesDisabled} onClick={() => void run('retry-pipeline', pipelineAction('retryPipeline', pipeline), { confirmLabel: '再実行する', message: '失敗・キャンセルされたジョブをもう一度実行します。', title: `パイプライン #${pipeline.id} の失敗したジョブを再実行しますか？` })} size="small" startIcon={<ReplayRoundedIcon />} variant="outlined">{busy === 'retry-pipeline' ? '再実行中…' : '失敗したジョブを再実行'}</Button> : null}
-                {canCancel(pipeline.status) ? <Button color="error" disabled={writesDisabled} onClick={() => void run('cancel-pipeline', pipelineAction('cancelPipeline', pipeline), { cancelLabel: '続行させる', confirmLabel: 'キャンセルする', destructive: true, message: '実行中と待機中のジョブがすべて止まります。', title: `パイプライン #${pipeline.id} をキャンセルしますか？` })} size="small" startIcon={<DoNotDisturbAltRoundedIcon />} variant="outlined">{busy === 'cancel-pipeline' ? 'キャンセル中…' : 'キャンセル'}</Button> : null}
-                {pipeline.webUrl ? <Tooltip title="GitLabでパイプラインを開く"><IconButton aria-label="GitLabでパイプラインを開く" onClick={() => onOpenUrl(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
+                {canRetryPipeline(pipeline.status) ? <Button disabled={writesDisabled} onClick={() => void run('retry-pipeline', pipelineAction('retryPipeline', pipeline), { confirmLabel: t('mergeRequest.pipelines.retryConfirm'), message: t('mergeRequest.pipelines.retryMessage'), title: t('mergeRequest.pipelines.retryTitle', { id: pipeline.id }) })} size="small" startIcon={<ReplayRoundedIcon />} variant="outlined">{busy === 'retry-pipeline' ? t('mergeRequest.pipelines.retrying') : t('mergeRequest.pipelines.retry')}</Button> : null}
+                {canCancel(pipeline.status) ? <Button color="error" disabled={writesDisabled} onClick={() => void run('cancel-pipeline', pipelineAction('cancelPipeline', pipeline), { cancelLabel: t('mergeRequest.pipelines.cancelKeepRunning'), confirmLabel: t('mergeRequest.pipelines.cancelConfirm'), destructive: true, message: t('mergeRequest.pipelines.cancelMessage'), title: t('mergeRequest.pipelines.cancelTitle', { id: pipeline.id }) })} size="small" startIcon={<DoNotDisturbAltRoundedIcon />} variant="outlined">{busy === 'cancel-pipeline' ? t('mergeRequest.pipelines.canceling') : t('mergeRequest.pipelines.cancel')}</Button> : null}
+                {pipeline.webUrl ? <Tooltip title={t('mergeRequest.pipelines.openInGitLab')}><IconButton aria-label={t('mergeRequest.pipelines.openInGitLab')} onClick={() => onOpenUrl(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
               </Stack>
               <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
                 <Tooltip title={pipeline.ref}><Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%', minWidth: 0 }} variant="caption">{pipeline.ref}</Typography></Tooltip>
                 <Tooltip title={pipeline.sha}><Typography color="textSecondary" sx={{ fontFamily: 'code.fontFamily' }} variant="caption">{shortSha(pipeline.sha)}</Typography></Tooltip>
-                {pipeline.createdAt ? <RelativeTime prefix="作成" value={pipeline.createdAt} /> : null}
-                {formatDuration(pipeline.duration) ? <Typography color="textSecondary" variant="caption">所要時間 {formatDuration(pipeline.duration)}</Typography> : null}
+                {pipeline.createdAt ? <RelativeTime prefix={t('mergeRequest.common.created')} value={pipeline.createdAt} /> : null}
+                {formatDuration(pipeline.duration) ? <Typography color="textSecondary" variant="caption">{t('mergeRequest.pipelines.duration', { duration: formatDuration(pipeline.duration) ?? '' })}</Typography> : null}
               </Stack>
-              {active ? <Typography color="textSecondary" variant="caption">{autoRefresh ? '実行中のため、表示している間は15秒ごとに更新します。' : '自動更新はオフです。更新ボタンで最新の状態を取得してください。'}</Typography> : null}
-              {detail.error ? <Alert severity="warning">パイプラインの詳細を取得できませんでした: {detail.error.message}</Alert> : null}
-              {jobsResult.error && !jobs.length ? <Alert severity="error">ジョブを取得できませんでした: {jobsResult.error.message}</Alert> : null}
-              {jobsResult.error && jobs.length ? <Alert severity="warning">保存済みのジョブを表示中です。更新に失敗しました: {jobsResult.error.message}</Alert> : null}
-              {jobsResult.loading ? <Typography color="textSecondary" role="status" variant="body2">ジョブを読み込み中…</Typography> : null}
-              {jobsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">ジョブが多いため一部だけを表示しています。すべてはGitLabで確認してください。</Alert> : null}
-              {jobsResult.data && !jobs.length && !jobsResult.error ? <Typography color="textSecondary" variant="body2">このパイプラインにジョブはありません。</Typography> : null}
+              {active ? <Typography color="textSecondary" variant="caption">{autoRefresh ? t('mergeRequest.pipelines.autoRefreshOn') : t('mergeRequest.pipelines.autoRefreshOff')}</Typography> : null}
+              {detail.error ? <Alert severity="warning">{t('mergeRequest.pipelines.detailFailed', { error: detail.error.message })}</Alert> : null}
+              {jobsResult.error && !jobs.length ? <Alert severity="error">{t('mergeRequest.pipelines.jobsFailed', { error: jobsResult.error.message })}</Alert> : null}
+              {jobsResult.error && jobs.length ? <Alert severity="warning">{t('mergeRequest.pipelines.jobsRefreshFailed', { error: jobsResult.error.message })}</Alert> : null}
+              {jobsResult.loading ? <Typography color="textSecondary" role="status" variant="body2">{t('mergeRequest.pipelines.jobsLoading')}</Typography> : null}
+              {jobsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.pipelines.jobsTruncated')}</Alert> : null}
+              {jobsResult.data && !jobs.length && !jobsResult.error ? <Typography color="textSecondary" variant="body2">{t('mergeRequest.pipelines.jobsEmpty')}</Typography> : null}
               {stages.map((group) => (
-                <Box component="section" aria-label={`ステージ ${group.stage || '不明'}`} key={group.stage}>
-                  <Typography color="textSecondary" component="h4" variant="overline">{group.stage || 'ステージ不明'}</Typography>
+                <Box component="section" aria-label={group.stage ? t('mergeRequest.pipelines.stage', { stage: group.stage }) : t('mergeRequest.pipelines.stageUnknownLabel')} key={group.stage}>
+                  <Typography color="textSecondary" component="h4" variant="overline">{group.stage || t('mergeRequest.pipelines.stageUnknown')}</Typography>
                   <List disablePadding dense>
                     {group.jobs.map((job) => (
                       <JobRow
                         disabled={writesDisabled}
                         job={job}
                         key={job.id}
-                        onCancel={() => void run(`cancel-${job.id}`, jobAction('cancelJob', job), { cancelLabel: '続行させる', confirmLabel: 'キャンセルする', destructive: true, title: `ジョブ「${job.name}」をキャンセルしますか？` })}
+                        onCancel={() => void run(`cancel-${job.id}`, jobAction('cancelJob', job), { cancelLabel: t('mergeRequest.pipelines.cancelKeepRunning'), confirmLabel: t('mergeRequest.pipelines.cancelConfirm'), destructive: true, title: t('mergeRequest.jobs.cancelTitle', { name: job.name }) })}
                         onOpenUrl={onOpenUrl}
-                        onPlay={() => void run(`play-${job.id}`, jobAction('playJob', job), { confirmLabel: '実行する', message: '手動ジョブを開始します。デプロイなどの操作を伴う場合があります。', title: `ジョブ「${job.name}」を実行しますか？` })}
-                        onRetry={() => void run(`retry-${job.id}`, jobAction('retryJob', job), { confirmLabel: '再実行する', message: '新しいジョブとしてもう一度実行します。デプロイなどの操作を伴う場合があります。', title: `ジョブ「${job.name}」を再実行しますか？` })}
+                        onPlay={() => void run(`play-${job.id}`, jobAction('playJob', job), { confirmLabel: t('mergeRequest.jobs.playConfirm'), message: t('mergeRequest.jobs.playMessage'), title: t('mergeRequest.jobs.playTitle', { name: job.name }) })}
+                        onRetry={() => void run(`retry-${job.id}`, jobAction('retryJob', job), { confirmLabel: t('mergeRequest.pipelines.retryConfirm'), message: t('mergeRequest.jobs.retryMessage'), title: t('mergeRequest.jobs.retryTitle', { name: job.name }) })}
                         onSelect={() => setSelectedJob({ jobId: job.id, pipelineId: pipeline.id })}
                         selected={shownJob?.id === job.id}
                       />
@@ -170,7 +172,7 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
                 </Box>
               ))}
               {shownJob ? <JobLog job={shownJob} key={shownJob.id} onOpenUrl={onOpenUrl} projectId={pipelineProjectId} sessionId={sessionId} />
-                : jobs.some((job) => job.kind === 'job') ? <Typography color="textSecondary" variant="caption">ジョブを選ぶとログを表示します。</Typography> : null}
+                : jobs.some((job) => job.kind === 'job') ? <Typography color="textSecondary" variant="caption">{t('mergeRequest.jobs.selectHint')}</Typography> : null}
             </Stack>
           ) : null}
         </Box>
@@ -180,14 +182,15 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
 }
 
 function JobRow({ disabled, job, onCancel, onOpenUrl, onPlay, onRetry, onSelect, selected }: { disabled: boolean; job: PipelineJob; onCancel: () => void; onOpenUrl: (url: string) => void; onPlay: () => void; onRetry: () => void; onSelect: () => void; selected: boolean }) {
+  const t = useT()
   const duration = formatDuration(job.duration)
   const bridge = job.kind === 'bridge'
   const summary = (
     <>
       <PipelineStatus prefix="" status={job.status} />
       <Typography noWrap sx={{ flex: 1, fontFamily: 'code.fontFamily', minWidth: 0 }} variant="body2">{job.name}</Typography>
-      {job.allowFailure && job.status === 'failed' ? <Chip label="失敗を許容" size="small" variant="outlined" /> : null}
-      {bridge ? <Chip label="下流パイプライン" size="small" variant="outlined" /> : null}
+      {job.allowFailure && job.status === 'failed' ? <Chip label={t('mergeRequest.jobs.allowFailure')} size="small" variant="outlined" /> : null}
+      {bridge ? <Chip label={t('mergeRequest.jobs.downstream')} size="small" variant="outlined" /> : null}
       {duration ? <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{duration}</Typography> : null}
     </>
   )
@@ -195,15 +198,15 @@ function JobRow({ disabled, job, onCancel, onOpenUrl, onPlay, onRetry, onSelect,
     <Box component="li" sx={{ alignItems: 'center', display: 'flex', gap: 0.5, listStyle: 'none' }}>
       {bridge
         ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: 1, minHeight: 32, minWidth: 0, px: 1 }}>{summary}</Stack>
-        : <ListItemButton aria-label={`${job.name}のログを表示`} aria-pressed={selected} onClick={onSelect} selected={selected} sx={{ borderRadius: 1, flex: 1, gap: 1, minHeight: 32, minWidth: 0, px: 1, py: 0.25 }}>{summary}</ListItemButton>}
+        : <ListItemButton aria-label={t('mergeRequest.jobs.showLog', { name: job.name })} aria-pressed={selected} onClick={onSelect} selected={selected} sx={{ borderRadius: 1, flex: 1, gap: 1, minHeight: 32, minWidth: 0, px: 1, py: 0.25 }}>{summary}</ListItemButton>}
       <Stack direction="row" sx={{ alignItems: 'center', flexShrink: 0 }}>
         {bridge && job.downstreamPipeline ? <>
-          <PipelineStatus prefix="下流" status={job.downstreamPipeline.status} />
-          {job.downstreamPipeline.webUrl ? <Tooltip title="GitLabで下流パイプラインを開く"><IconButton aria-label={`${job.name}の下流パイプラインをGitLabで開く`} onClick={() => onOpenUrl(job.downstreamPipeline!.webUrl)} size="small"><LaunchRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
+          <PipelineStatus prefix={t('mergeRequest.jobs.downstreamPrefix')} status={job.downstreamPipeline.status} />
+          {job.downstreamPipeline.webUrl ? <Tooltip title={t('mergeRequest.jobs.openDownstream')}><IconButton aria-label={t('mergeRequest.jobs.openDownstreamOf', { name: job.name })} onClick={() => onOpenUrl(job.downstreamPipeline!.webUrl)} size="small"><LaunchRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
         </> : null}
-        {canPlayJob(job) ? <Tooltip title="手動ジョブを実行"><span><IconButton aria-label={`${job.name}を実行`} disabled={disabled} onClick={onPlay} size="small"><PlayArrowRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
-        {canRetryJob(job) ? <Tooltip title="ジョブを再実行"><span><IconButton aria-label={`${job.name}を再実行`} disabled={disabled} onClick={onRetry} size="small"><ReplayRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
-        {canCancel(job.status) ? <Tooltip title="ジョブをキャンセル"><span><IconButton aria-label={`${job.name}をキャンセル`} disabled={disabled} onClick={onCancel} size="small"><DoNotDisturbAltRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
+        {canPlayJob(job) ? <Tooltip title={t('mergeRequest.jobs.play')}><span><IconButton aria-label={t('mergeRequest.jobs.playJob', { name: job.name })} disabled={disabled} onClick={onPlay} size="small"><PlayArrowRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
+        {canRetryJob(job) ? <Tooltip title={t('mergeRequest.jobs.retry')}><span><IconButton aria-label={t('mergeRequest.jobs.retryJob', { name: job.name })} disabled={disabled} onClick={onRetry} size="small"><ReplayRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
+        {canCancel(job.status) ? <Tooltip title={t('mergeRequest.jobs.cancel')}><span><IconButton aria-label={t('mergeRequest.jobs.cancelJob', { name: job.name })} disabled={disabled} onClick={onCancel} size="small"><DoNotDisturbAltRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
       </Stack>
     </Box>
   )

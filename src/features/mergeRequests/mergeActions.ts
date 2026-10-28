@@ -1,31 +1,32 @@
+import { currentLocale, translate, type MessageKey } from '../../i18n/i18n'
 import type { MergeRequest } from '../../types/gitlab'
 
 /** GitLab's `detailed_merge_status` values, in the words the merge controls show. */
-const mergeStatusLabels: Record<string, string> = {
-  approvals_syncing: '承認状態を同期中です',
-  checking: 'マージできるか確認中です',
-  ci_must_pass: 'パイプラインの成功が必要です',
-  ci_still_running: 'パイプラインが実行中です',
-  commits_status: 'ソースブランチにコミットが必要です',
-  conflict: 'コンフリクトがあります',
-  discussions_not_resolved: '未解決のスレッドがあります',
-  draft_status: 'Draftのためマージできません',
-  jira_association_missing: 'タイトルか説明でJiraの課題を参照する必要があります',
-  locked_lfs_files: '他のユーザーがロックしたLFSファイルがあります',
-  locked_paths: '他のユーザーがロックしたパスがあります',
-  merge_request_blocked: '別のMRにブロックされています',
-  merge_time: '指定された時刻まではマージできません',
-  mergeable: 'マージできます',
-  need_rebase: 'リベースが必要です',
-  not_approved: '承認が足りません',
-  not_open: 'MRがオープンではありません',
-  preparing: '差分を準備中です',
-  requested_changes: 'レビュアーが変更を要求しています',
-  security_policy_pipeline_check: 'セキュリティポリシーによりパイプラインの成功が必要です',
-  security_policy_violations: 'セキュリティポリシーを満たしていません',
-  status_checks_must_pass: 'ステータスチェックの成功が必要です',
-  title_regex: 'タイトルがプロジェクトの規則に合っていません',
-  unchecked: 'マージできるかまだ確認されていません',
+const mergeStatusLabels: Record<string, MessageKey> = {
+  approvals_syncing: 'mergeRequest.mergeStatus.approvalsSyncing',
+  checking: 'mergeRequest.mergeStatus.checking',
+  ci_must_pass: 'mergeRequest.mergeStatus.ciMustPass',
+  ci_still_running: 'mergeRequest.mergeStatus.ciStillRunning',
+  commits_status: 'mergeRequest.mergeStatus.commitsStatus',
+  conflict: 'mergeRequest.mergeStatus.conflict',
+  discussions_not_resolved: 'mergeRequest.mergeStatus.discussionsNotResolved',
+  draft_status: 'mergeRequest.mergeStatus.draftStatus',
+  jira_association_missing: 'mergeRequest.mergeStatus.jiraAssociationMissing',
+  locked_lfs_files: 'mergeRequest.mergeStatus.lockedLfsFiles',
+  locked_paths: 'mergeRequest.mergeStatus.lockedPaths',
+  merge_request_blocked: 'mergeRequest.mergeStatus.mergeRequestBlocked',
+  merge_time: 'mergeRequest.mergeStatus.mergeTime',
+  mergeable: 'mergeRequest.mergeStatus.mergeable',
+  need_rebase: 'mergeRequest.mergeStatus.needRebase',
+  not_approved: 'mergeRequest.mergeStatus.notApproved',
+  not_open: 'mergeRequest.mergeStatus.notOpen',
+  preparing: 'mergeRequest.mergeStatus.preparing',
+  requested_changes: 'mergeRequest.mergeStatus.requestedChanges',
+  security_policy_pipeline_check: 'mergeRequest.mergeStatus.securityPolicyPipelineCheck',
+  security_policy_violations: 'mergeRequest.mergeStatus.securityPolicyViolations',
+  status_checks_must_pass: 'mergeRequest.mergeStatus.statusChecksMustPass',
+  title_regex: 'mergeRequest.mergeStatus.titleRegex',
+  unchecked: 'mergeRequest.mergeStatus.unchecked',
 }
 
 /** Statuses GitLab is still working out; reloading later gives the answer. */
@@ -51,14 +52,15 @@ export interface MergeReadiness {
  */
 export function mergeReadiness(mergeRequest: MergeRequest): MergeReadiness {
   const blocked = (summary: string, tone: MergeReadiness['tone'] = 'warning'): MergeReadiness => ({ canAutoMerge: false, canMerge: false, summary, tone })
-  if (mergeRequest.state !== 'opened') return blocked('MRがオープンではありません', 'info')
-  if (mergeRequest.autoMerge) return blocked('パイプライン成功時に自動でマージされます', 'info')
-  if (mergeRequest.rebaseInProgress) return blocked('リベース中です', 'info')
-  if (mergeRequest.canMerge === false) return blocked('このMRをマージする権限がありません', 'info')
+  if (mergeRequest.state !== 'opened') return blocked(translate('mergeRequest.mergeStatus.notOpen'), 'info')
+  if (mergeRequest.autoMerge) return blocked(translate('mergeRequest.readiness.autoMergeSet'), 'info')
+  if (mergeRequest.rebaseInProgress) return blocked(translate('mergeRequest.readiness.rebasing'), 'info')
+  if (mergeRequest.canMerge === false) return blocked(translate('mergeRequest.readiness.noPermission'), 'info')
   const status = mergeRequest.detailedMergeStatus
-  if (!status) return blocked('この接続先ではマージできるか判別できません。GitLabで確認してください')
-  const summary = mergeStatusLabels[status] ?? `GitLabの判定（${status}）を解釈できません。GitLabで確認してください`
-  if (mergeRequest.canMerge !== true) return blocked(mergeRequest.canMerge == null ? 'マージ権限を確認できません' : summary)
+  if (!status) return blocked(translate('mergeRequest.readiness.statusUnavailable'))
+  const label = mergeStatusLabels[status]
+  const summary = label ? translate(label) : translate('mergeRequest.readiness.statusUnknown', { status })
+  if (mergeRequest.canMerge !== true) return blocked(mergeRequest.canMerge == null ? translate('mergeRequest.readiness.permissionUnknown') : summary)
   const pipelineActive = activePipelineStatuses.has(mergeRequest.pipeline?.status ?? '')
   const canAutoMerge = pipelineActive && pipelineStatuses.has(status)
   if (status === 'mergeable') return { canAutoMerge, canMerge: true, summary, tone: 'success' }
@@ -79,4 +81,9 @@ export function titleWithDraft(title: string, draft: boolean): string {
   let ready = title
   while (draftPrefix.test(ready)) ready = ready.replace(draftPrefix, '')
   return draft ? `Draft: ${ready}` : ready
+}
+
+/** People's names as one list in the current language, such as 「A、B」. */
+export function formatNames(names: string[]): string {
+  return new Intl.ListFormat(currentLocale(), { type: 'conjunction' }).format(names)
 }

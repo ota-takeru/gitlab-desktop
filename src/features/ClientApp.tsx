@@ -37,7 +37,7 @@ import { delayedRevealSx } from '../components/paneSx'
 import { SettingsSection } from '../components/SettingsSection'
 import { StatusBar } from '../components/StatusBar'
 import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
-import { setLocalePreference } from '../i18n/i18n'
+import { setLocalePreference, translate, type MessageKey } from '../i18n/i18n'
 import { localeNames, supportedLocales, systemLocale, type LocalePreference } from '../i18n/locales'
 import { useLocale, useLocalePreference, useT } from '../i18n/useT'
 import { clearLocalDrafts } from '../lib/localDrafts'
@@ -119,11 +119,11 @@ type ClientRoute = 'projects' | 'overview' | 'mrs' | 'branches' | 'code' | 'sett
  */
 type MergeRequestHubTab = 'waiting' | 'assigned' | 'created' | 'search'
 
-const hubTabs: Array<{ label: string; value: MergeRequestHubTab }> = [
-  { label: '検索', value: 'search' },
-  { label: 'レビュー依頼', value: 'waiting' },
-  { label: '担当', value: 'assigned' },
-  { label: '作成', value: 'created' },
+const hubTabs: Array<{ backLabel: MessageKey; value: MergeRequestHubTab }> = [
+  { backLabel: 'app.back.search', value: 'search' },
+  { backLabel: 'app.back.waiting', value: 'waiting' },
+  { backLabel: 'app.back.assigned', value: 'assigned' },
+  { backLabel: 'app.back.created', value: 'created' },
 ]
 const HUB_TAB_ORDER_KEY = 'gitlab-desktop:mr-hub-tab-order'
 
@@ -212,6 +212,7 @@ function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, se
 
 function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstallAllowed, sessionKey, status }: ColorPreferenceProps & { autoInstallAllowed: boolean; sessionKey: string; status: string }) {
   const { reauthRequired, session } = useConnection()
+  const t = useT()
   const workspace = usePersonalWorkspace(session)
   const locationHash = useSyncExternalStore(subscribeToClientLocation, getClientLocationHash, getClientLocationHash)
   // An expired token keeps the screen where it was, so reconnecting returns to it.
@@ -405,7 +406,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }
 
   const openProjectId = useCallback((nextProjectId: string, name?: string) => {
-    navigate('overview', { projectId: nextProjectId, projectName: name || `プロジェクト ${nextProjectId}` })
+    navigate('overview', { projectId: nextProjectId, projectName: name || translate('project.fallbackName', { id: nextProjectId }) })
   }, [navigate])
 
   // Each tab of an MR is a history entry, so Back returns to the previous tab.
@@ -493,20 +494,21 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     navigate(last.route, last.params)
   }
   // Opening by URL is a one-off action of the MR list, beside its title.
-  const hubActions = hubTab ? <Tooltip title="GitLabのURLから開く (Ctrl+O)"><IconButton aria-label="GitLabのURLから開く" onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
+  const hubActions = hubTab ? <Tooltip title={t('app.openUrl.tooltip')}><IconButton aria-label={t('app.openUrl.label')} onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
   // A project's screen shows its name over tabs for its MRs, its branches and its code.
   const projectTab = route === 'overview' || route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
   const projectNavigation = projectTab ? <PaneNavigation
     heading={<Tooltip title={params.projectName ?? ''}><Typography component="div" noWrap sx={{ flexShrink: 1, minWidth: 0 }} variant="h1">{params.projectName}</Typography></Tooltip>}
-    tabs={<Tabs aria-label="プロジェクトの表示" onChange={(_, value: 'overview' | 'mrs' | 'branches' | 'code') => navigate(value, { projectId: params.projectId, projectName: params.projectName, ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) })} scrollButtons={false} value={projectTab} variant="scrollable">
+    tabs={<Tabs aria-label={t('project.tabs.label')} onChange={(_, value: 'overview' | 'mrs' | 'branches' | 'code') => navigate(value, { projectId: params.projectId, projectName: params.projectName, ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) })} scrollButtons={false} value={projectTab} variant="scrollable">
       {/* Choosing MR again, e.g. after a branch's MRs, returns to all the project's MRs. */}
-      <Tab label="概要" value="overview" />
-      <Tab label="MR" onClick={() => { if (projectTab === 'mrs' && Object.keys(listParams).some((key) => key !== 'projectId' && key !== 'projectName')) navigate('mrs', { projectId: params.projectId, projectName: params.projectName }) }} value="mrs" />
-      <Tab label="ブランチ" value="branches" />
-      <Tab label="コード" value="code" />
+      <Tab label={t('project.tabs.overview')} value="overview" />
+      <Tab label={t('project.tabs.mergeRequests')} onClick={() => { if (projectTab === 'mrs' && Object.keys(listParams).some((key) => key !== 'projectId' && key !== 'projectName')) navigate('mrs', { projectId: params.projectId, projectName: params.projectName }) }} value="mrs" />
+      <Tab label={t('project.tabs.branches')} value="branches" />
+      <Tab label={t('project.tabs.code')} value="code" />
     </Tabs>}
   /> : undefined
-  const backLabel = route === 'user' ? `@${params.username}に戻る` : (route === 'overview' || route === 'branches' || route === 'code') && params.projectName ? `${params.projectName}に戻る` : hubTab ? `${hubTabs.find((tab) => tab.value === hubTab)?.label}に戻る` : route === 'mrs' && params.projectName ? `${params.projectName}に戻る` : route === 'projects' ? 'プロジェクトに戻る' : '一覧に戻る'
+  const hubBackLabel = hubTabs.find((tab) => tab.value === hubTab)?.backLabel
+  const backLabel = route === 'user' ? t('app.back.user', { username: params.username }) : (route === 'overview' || route === 'branches' || route === 'code') && params.projectName ? t('app.back.named', { name: params.projectName }) : hubBackLabel ? t(hubBackLabel) : route === 'mrs' && params.projectName ? t('app.back.named', { name: params.projectName }) : route === 'projects' ? t('app.back.projects') : t('app.back.list')
 
   // Places only; one-off actions such as opening a URL sit beside the search box.
   // An open MR is marked by its tab below, not by these places.
@@ -521,9 +523,9 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
         {({ collapsed: navCollapsed, foldForNotifications, stopPeek }) => <>
           <Stack direction="row" sx={{ alignItems: 'center', justifyContent: navCollapsed ? 'center' : 'space-between', minHeight: 36, mb: 1, pl: navCollapsed ? 0 : 1 }}>
             {navCollapsed ? null : <Typography component="div" noWrap variant="h3">GitLab Desktop</Typography>}
-            <Tooltip placement="right" title={sidebarIsCollapsed ? 'ナビゲーションを展開' : 'ナビゲーションを折りたたむ'}>
+            <Tooltip placement="right" title={sidebarIsCollapsed ? t('app.nav.expand') : t('app.nav.collapse')}>
               <IconButton
-                aria-label={sidebarIsCollapsed ? 'ナビゲーションを展開' : 'ナビゲーションを折りたたむ'}
+                aria-label={sidebarIsCollapsed ? t('app.nav.expand') : t('app.nav.collapse')}
                 onClick={() => { stopPeek(); toggleSidebar() }}
               >
                 {sidebarIsCollapsed ? <MenuRoundedIcon /> : <MenuOpenRoundedIcon />}
@@ -531,10 +533,10 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             </Tooltip>
           </Stack>
           {/* Only the tabs scroll, so the places above and the settings below stay in view. */}
-          <Box component="nav" aria-label="GitLab client navigation" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
+          <Box component="nav" aria-label={t('app.nav.label')} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
             <List disablePadding>
-              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<RateReviewOutlinedIcon />} label="MR一覧" place="mergeRequests" onClick={openLastHub} selected={!selected && hubTab !== null} title="MR一覧" />
-              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<SourceOutlinedIcon />} label="プロジェクト" place="projects" onClick={() => navigate('projects')} selected={projectsSelected} title="プロジェクト" />
+              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<RateReviewOutlinedIcon />} label={t('app.nav.mergeRequests')} place="mergeRequests" onClick={openLastHub} selected={!selected && hubTab !== null} title={t('app.nav.mergeRequests')} />
+              <ClientNavItem collapsed={navCollapsed} disabled={!session} icon={<SourceOutlinedIcon />} label={t('app.nav.projects')} place="projects" onClick={() => navigate('projects')} selected={projectsSelected} title={t('app.nav.projects')} />
             </List>
             <MergeRequestTabs collapsed={navCollapsed} onOpen={openMergeRequestRef} selected={selected} />
           </Box>
@@ -542,18 +544,18 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref) => openMergeRequestRef(ref, 'discussion')} onOpenChange={foldForNotifications} /></List>
           <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
-          <Tooltip placement="right" title={navCollapsed ? `設定 · ${session ? `${session.user.name} @${session.user.username}` : '未接続'}` : ''}>
-            <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? `@${session.user.username} · 設定` : '設定'} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ borderTop: 1, borderColor: 'divider', color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
+          <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>
+            <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ borderTop: 1, borderColor: 'divider', color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
               <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>{session ? <GitLabUserAvatar sessionId={session.id} size={24} user={session.user} /> : <SettingsOutlinedIcon sx={{ fontSize: 20, m: 0.25 }} />}</Box>
-              {navCollapsed ? null : <Typography color="inherit" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{session ? `@${session.user.username}` : '未接続'}</Typography>}
+              {navCollapsed ? null : <Typography color="inherit" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{session ? `@${session.user.username}` : t('app.nav.disconnected')}</Typography>}
               {navCollapsed || !session ? null : <SettingsOutlinedIcon sx={{ fontSize: 18 }} />}
             </ListItemButton>
           </Tooltip>
         </>}
         </PeekingNavigation>
         <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0 }}>
-          {awaitingReauth ? <Alert action={<Button color="inherit" onClick={() => setReconnectOpen(true)} size="small" variant="outlined">再接続</Button>} severity="warning" sx={{ borderRadius: 0, flexShrink: 0 }}>
-            再認証が必要です。GitLabのトークンが使えなくなりました。未送信コメントは保持しています。
+          {awaitingReauth ? <Alert action={<Button color="inherit" onClick={() => setReconnectOpen(true)} size="small" variant="outlined">{t('app.reauth.reconnect')}</Button>} severity="warning" sx={{ borderRadius: 0, flexShrink: 0 }}>
+            {t('app.reauth.alert')}
           </Alert> : null}
           <Dialog aria-labelledby="gitlab-connection-title" fullWidth maxWidth="sm" onClose={() => setReconnectOpen(false)} open={reconnectOpen && !session}>
             <DialogContent><ConnectionView /></DialogContent>
@@ -562,29 +564,29 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestRef} onOpenPage={openGitLabPage} />
           <Box key={sessionKey} sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {/* The same pane as the restored screen, so nothing moves when it arrives. */}
-            {waitingForSessionRestore ? <Box aria-label="一覧" component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
+            {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
               <Box component="main" sx={{ flex: 1, overflow: 'auto' }}>
                 <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><SettingsView autoInstallAllowed={autoInstallAllowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onShowShortcuts={() => setShortcutsOpen(true)} /></Box>
               </Box>
             ) : null}
-            {!waitingForSessionRestore && route !== 'settings' && awaitingReauth ? <Box aria-label="一覧" component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}>
-              <PaneEmpty description="再接続すると、この画面に戻ります。" title="再認証が必要です" />
+            {!waitingForSessionRestore && route !== 'settings' && awaitingReauth ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}>
+              <PaneEmpty description={t('app.reauth.description')} title={t('app.reauth.title')} />
             </Box> : null}
             {!waitingForSessionRestore && !awaitingReauth ? <>
               {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive.
                   Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once. */}
-              <Box aria-label="一覧" component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy. */}
                 <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={6} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
-                {route === 'overview' && session ? <ProjectOverview instanceUrl={session.instanceUrl} key={params.projectId} navigation={projectNavigation} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} projectUrl={params.projectUrl} sessionId={session.id} /> : null}
+                {route === 'overview' && session ? <ProjectOverview instanceUrl={session.instanceUrl} key={params.projectId} navigation={projectNavigation} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} projectUrl={params.projectUrl} sessionId={session.id} /> : null}
                 {route === 'user' ? <UserView initialParams={listParams} onOpenMergeRequest={openMergeRequest} onOpenProject={openProject} onOpenProjectId={openProjectId} onSearchStateChange={updateMergeRequestLocation} onTabChange={changeUserTab} recentMrId={recentMrId} selected={selected} username={params.username} /> : null}
                 {route === 'mrs' ? <MergeRequestList actions={hubActions} key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
-                {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? `プロジェクト ${params.projectId}`, sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
-                {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? `プロジェクト ${params.projectId}`} /> : null}
+                {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
+                {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
                 </AppErrorBoundary>
                 </QueryRefreshPolicy>
                 </KeepAlive>
@@ -677,6 +679,7 @@ function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizi
 
 /** The sidebar's right edge: drag, or focus it and use ←/→, to change the width; double-click restores it. */
 function SidebarResizeHandle({ onResize, onResizingChange, width }: { onResize: (width: number) => void; onResizingChange: (resizing: boolean) => void; width: number }) {
+  const t = useT()
   const save = (next: number) => {
     try { globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next)) } catch { /* The width still applies until the window is reopened. */ }
   }
@@ -686,7 +689,7 @@ function SidebarResizeHandle({ onResize, onResizingChange, width }: { onResize: 
     save(clamped)
   }
   return <Box
-    aria-label="サイドバーの幅"
+    aria-label={t('app.sidebar.width')}
     aria-orientation="vertical"
     aria-valuemax={SIDEBAR_WIDTH.max}
     aria-valuemin={SIDEBAR_WIDTH.min}
@@ -724,32 +727,34 @@ function SidebarResizeHandle({ onResize, onResizingChange, width }: { onResize: 
     role="separator"
     sx={{ bottom: 0, cursor: 'col-resize', position: 'absolute', right: -3, top: 0, width: 6, zIndex: 1, '&:hover, &:focus-visible': { bgcolor: 'primary.main', opacity: 0.4 } }}
     tabIndex={0}
-    title="ドラッグで幅を変更（ダブルクリックで元に戻す）"
+    title={t('app.sidebar.resizeHint')}
   />
 }
 
 /** The footer's account line: green only while GitLab answers, amber when requests fail or the token expired. */
 function ConnectionStatusBar({ awaitingReauth, trailing }: { awaitingReauth: boolean; trailing: React.ReactNode }) {
   const { session } = useConnection()
+  const t = useT()
   const connectivity = useGitLabConnectivity()
   const offline = globalThis.navigator?.onLine === false
   const warning = awaitingReauth || Boolean(session && connectivity.failing)
   const text = awaitingReauth
-    ? '再認証が必要です · 再接続するまで表示を止めています'
+    ? t('app.status.reauth')
     : !session
-      ? '未接続 · データは表示していません'
+      ? t('app.status.disconnected')
       : connectivity.failing
         ? offline
-          ? `オフライン · 保存済みデータを表示中 · ${session.instanceUrl}`
-          : `GitLabに接続できません${connectivity.showingCache ? ' · 保存済みデータを表示中' : ''} · ${session.instanceUrl}`
-        : `接続済み · ${session.instanceUrl} · @${session.user.username}`
+          ? t('app.status.offline', { instanceUrl: session.instanceUrl })
+          : t(connectivity.showingCache ? 'app.status.unreachableCached' : 'app.status.unreachable', { instanceUrl: session.instanceUrl })
+        : t('app.status.connected', { instanceUrl: session.instanceUrl, username: session.user.username })
   return <StatusBar tone={warning ? 'warning' : session ? 'connected' : 'disconnected'} trailing={trailing}>
-    {text}{!isTauri() ? ' · ブラウザプレビュー' : ''}
+    {!isTauri() ? t('app.status.browserPreview', { status: text }) : text}
   </StatusBar>
 }
 
 /** The version of the running desktop app; nothing in the browser preview, which has no native side. */
 function AppVersionLabel() {
+  const t = useT()
   const [version, setVersion] = useState<string | null>(null)
   useEffect(() => {
     if (!isTauri()) return
@@ -758,7 +763,7 @@ function AppVersionLabel() {
     return () => { active = false }
   }, [])
   if (!version) return null
-  return <Typography aria-label={`アプリのバージョン ${version}`} color="textSecondary" noWrap sx={{ flexShrink: 0 }} variant="caption">v{version}</Typography>
+  return <Typography aria-label={t('app.version', { version })} color="textSecondary" noWrap sx={{ flexShrink: 0 }} variant="caption">v{version}</Typography>
 }
 
 function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceChange, onShowShortcuts }: ColorPreferenceProps & { autoInstallAllowed: boolean; onShowShortcuts: () => void }) {
@@ -808,36 +813,37 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
   const [status, setStatus] = useState<string | null>(null)
   const [discarding, setDiscarding] = useState(false)
   const confirm = useConfirm()
+  const t = useT()
   const clear = async () => {
     if (!sessionId) return
-    try { await clearGitLabCache(sessionId); setStatus('アカウントのキャッシュを削除しました。') } catch (error) { setStatus(error instanceof Error ? error.message : 'キャッシュを削除できませんでした。') }
+    try { await clearGitLabCache(sessionId); setStatus(t('settings.data.cacheCleared')) } catch (error) { setStatus(error instanceof Error ? error.message : t('settings.data.cacheClearFailed')) }
   }
   const discardInputs = async () => {
-    if (!await confirm({ confirmLabel: '破棄する', destructive: true, message: 'この端末に保存した未送信コメントがすべて削除されます。元に戻せません。', title: '未送信コメントをすべて破棄しますか？' })) return
+    if (!await confirm({ confirmLabel: t('settings.data.discard.confirm'), destructive: true, message: t('settings.data.discard.message'), title: t('settings.data.discard.title') })) return
     setDiscarding(true)
     try {
       if (sessionId) {
         const flushed = await flushComposerBuffers()
         if (!flushed) {
-          setStatus('未送信コメントを保存できないため、入力を保持しています。')
+          setStatus(t('settings.data.discard.saveFailed'))
           return
         }
         await clearLocalDrafts(sessionId)
       }
       clearComposerBufferStore()
-      setStatus('未送信コメントを破棄しました。')
+      setStatus(t('settings.data.discard.done'))
     } catch {
-      setStatus('未送信コメントを破棄できませんでした。入力を保持しています。')
+      setStatus(t('settings.data.discard.failed'))
     } finally {
       setDiscarding(false)
     }
   }
   return <Stack spacing={1.5}>
-    <Dialog aria-labelledby="discard-inputs-title" open={discarding}><DialogTitle id="discard-inputs-title">未送信コメントを破棄中</DialogTitle><DialogContent><Typography variant="body2">保存待ちと削除が完了するまでお待ちください。</Typography></DialogContent></Dialog>
-    <Typography color="textSecondary" variant="body2">未送信コメントはGitLabのレビュー下書きとは別に管理します。キャッシュを削除しても未送信コメントと送信結果の確認記録は残ります。</Typography>
+    <Dialog aria-labelledby="discard-inputs-title" open={discarding}><DialogTitle id="discard-inputs-title">{t('settings.data.discard.progressTitle')}</DialogTitle><DialogContent><Typography variant="body2">{t('settings.data.discard.progress')}</Typography></DialogContent></Dialog>
+    <Typography color="textSecondary" variant="body2">{t('settings.data.note')}</Typography>
     <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-      <Button disabled={!sessionId} onClick={() => void clear()} variant="outlined">キャッシュを削除</Button>
-      <Button color="error" disabled={discarding} onClick={() => void discardInputs()} variant="outlined">未送信コメントをすべて破棄</Button>
+      <Button disabled={!sessionId} onClick={() => void clear()} variant="outlined">{t('settings.data.clearCache')}</Button>
+      <Button color="error" disabled={discarding} onClick={() => void discardInputs()} variant="outlined">{t('settings.data.discard.button')}</Button>
     </Stack>
     {status ? <Typography color="textSecondary" role="status" variant="caption">{status}</Typography> : null}
   </Stack>
@@ -846,6 +852,7 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
 /** Memoized with stable props: showing a kept MR again only reconnects it instead of rendering the whole review again. */
 const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMergeRequest, onBack, onOpenProject, onTabChange, selected, tab }: { backLabel: string; initialMergeRequest: MergeRequest | null; onBack: () => void; onOpenProject: (projectId: string, projectPath?: string) => void; onTabChange: (tab: ReviewTab) => void; selected: MrRef; tab: ReviewTab | undefined }) {
   const { session } = useConnection()
+  const t = useT()
   // Without a tab in the location, an MR opens on its overview the first time this
   // device shows it and on the discussion after that. Decided once per screen,
   // before showing it records the MR as viewed.
@@ -862,7 +869,7 @@ const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMe
     const failure = describeMergeRequestFailure(lookup.error)
     return <PaneEmpty description={failure.description} title={failure.title}>
       <Stack direction="row" spacing={1}>
-        {failure.retry ? <Button onClick={lookup.refresh} variant="outlined">再試行</Button> : null}
+        {failure.retry ? <Button onClick={lookup.refresh} variant="outlined">{t('app.mergeRequest.retry')}</Button> : null}
         <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />}>{backLabel}</Button>
       </Stack>
     </PaneEmpty>
@@ -876,22 +883,23 @@ const MemoizedMergeRequestDetail = memo(MergeRequestDetail)
 /** Why an MR could not be shown, in the reader's terms; GitLab's own message is kept for anything else. */
 function describeMergeRequestFailure(error: GitLabCommandError | null): { title: string; description: string; retry: boolean } {
   switch (error?.code) {
-    case 'AUTH_REQUIRED': return { description: 'GitLabに再接続すると、このMRを開けます。', retry: false, title: '再認証が必要です' }
-    case 'FORBIDDEN': return { description: 'このMRを見る権限がありません。プロジェクトのメンバーか確認してください。', retry: true, title: '権限がありません' }
-    case 'NOT_FOUND': return { description: 'MRが削除されたか、URLが正しくない可能性があります。', retry: true, title: 'MRが見つかりません' }
+    case 'AUTH_REQUIRED': return { description: translate('app.mergeRequest.authRequired.description'), retry: false, title: translate('app.mergeRequest.authRequired.title') }
+    case 'FORBIDDEN': return { description: translate('app.mergeRequest.forbidden.description'), retry: true, title: translate('app.mergeRequest.forbidden.title') }
+    case 'NOT_FOUND': return { description: translate('app.mergeRequest.notFound.description'), retry: true, title: translate('app.mergeRequest.notFound.title') }
     case 'NETWORK':
-    case 'TIMEOUT': return { description: '接続を確認してから再試行してください。', retry: true, title: 'GitLabに接続できません' }
-    case undefined: return { description: '検索から開き直してください。', retry: true, title: 'このMRを表示できませんでした' }
-    default: return { description: error?.message ?? '', retry: true, title: 'このMRを読み込めませんでした' }
+    case 'TIMEOUT': return { description: translate('app.mergeRequest.network.description'), retry: true, title: translate('app.mergeRequest.network.title') }
+    case undefined: return { description: translate('app.mergeRequest.missing.description'), retry: true, title: translate('app.mergeRequest.missing.title') }
+    default: return { description: error?.message ?? '', retry: true, title: translate('app.mergeRequest.failed.title') }
   }
 }
 
 /** Placeholder with the shape of the MR detail header, so the detail does not jump in. */
 function MergeRequestSkeleton() {
+  const t = useT()
   const bar = (width: number | string, height = 12) => <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height, width }} />
   return <Box aria-live="polite" role="status" sx={{ ...delayedRevealSx, borderBottom: 1, borderColor: 'divider', px: { md: 3, xs: 2 }, pb: 1.5, pt: 1.5 }}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
-      <Typography color="textSecondary" variant="caption">MRを読み込み中…</Typography>
+      <Typography color="textSecondary" variant="caption">{t('app.mergeRequest.loading')}</Typography>
     </Stack>
     <Stack spacing={1.5} sx={{ mt: 1 }}>
       {bar('60%', 22)}
@@ -901,7 +909,10 @@ function MergeRequestSkeleton() {
   </Box>
 }
 
-function RestoreSessionPanel() { return <Box aria-live="polite" role="status"><PaneEmpty title="GitLab接続を確認中…" /></Box> }
+function RestoreSessionPanel() {
+  const t = useT()
+  return <Box aria-live="polite" role="status"><PaneEmpty title={t('app.restoring')} /></Box>
+}
 
 function subscribeToClientLocation(onChange: () => void) {
   window.addEventListener('hashchange', onChange)

@@ -1,5 +1,6 @@
 import { invoke, isTauri as tauriIsTauri } from '@tauri-apps/api/core'
 
+import { translate } from '../i18n/i18n'
 import {
   GitLabCommandError,
   isGitLabErrorShape,
@@ -32,10 +33,10 @@ export interface MutateGitLabInput {
   requestId?: string
 }
 
-const browserError: GitLabErrorShape = {
+const browserError = (): GitLabErrorShape => ({
   code: 'UNSUPPORTED',
-  message: 'ブラウザプレビューではGitLab接続を利用できません。デスクトップ版で接続してください。',
-}
+  message: translate('common.gitlab.browserUnavailable'),
+})
 
 export function isTauri(): boolean {
   return tauriIsTauri()
@@ -258,11 +259,11 @@ export function normalizeGitLabError(error: unknown): GitLabCommandError {
     return new GitLabCommandError({ code: 'UNKNOWN', message: error })
   }
 
-  return new GitLabCommandError({ code: 'UNKNOWN', message: 'GitLabコマンドに失敗しました。' })
+  return new GitLabCommandError({ code: 'UNKNOWN', message: translate('common.gitlab.commandFailed') })
 }
 
 function ensureDesktop(): void {
-  if (!isTauri()) throw new GitLabCommandError(browserError)
+  if (!isTauri()) throw new GitLabCommandError(browserError())
 }
 
 function normalizeErrorCode(code: string): GitLabErrorCode {

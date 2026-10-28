@@ -30,6 +30,8 @@ import { NotificationBellIcon, NotificationCount } from '../../components/Notifi
 import { PaneEmpty } from '../../components/Pane'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon, type StateIconTone } from '../../components/StateIcon'
+import { translate, type MessageKey } from '../../i18n/i18n'
+import { useT } from '../../i18n/useT'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
 import type { GitLabCommandError, GitLabTodo, TodosQuery } from '../../types/gitlab'
@@ -39,7 +41,7 @@ import { runGitLabMutation, useGitLabMutation } from '../shared/useGitLabMutatio
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { forgetDoneTodos, isNotificationTodo } from './todoCache'
 
-const actionLabels: Record<string, string> = { assigned: '担当依頼', mentioned: 'メンション', directly_addressed: '直接メンション', approval_required: '承認依頼', marked: 'To-Do', build_failed: 'CI失敗', unmergeable: 'マージ不可', merge_train_removed: 'マージトレイン解除', review_requested: 'レビュー依頼' }
+const actionLabels: Record<string, MessageKey> = { assigned: 'mrList.notifications.action.assigned', mentioned: 'mrList.notifications.action.mentioned', directly_addressed: 'mrList.notifications.action.directlyAddressed', approval_required: 'mrList.notifications.action.approvalRequired', marked: 'mrList.notifications.action.marked', build_failed: 'mrList.notifications.action.buildFailed', unmergeable: 'mrList.notifications.action.unmergeable', merge_train_removed: 'mrList.notifications.action.mergeTrainRemoved', review_requested: 'mrList.notifications.action.reviewRequested' }
 // What blocks the MR stands out from requests and mentions.
 const actionTones: Record<string, StateIconTone> = { build_failed: 'error', unmergeable: 'error', merge_train_removed: 'warning' }
 // Each request has its own shape, so a stack of notifications can be scanned without reading; the name is the tooltip.
@@ -54,6 +56,7 @@ const quotesComment = new Set(['mentioned', 'directly_addressed'])
  * (a peeked navigation folds as the stack opens), level with the button's foot.
  */
 export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpenChange }: { collapsed: boolean; navigationWidth: number; onOpen: (ref: MrRef) => void; onOpenChange?: (open: boolean) => void }) {
+  const t = useT()
   const { session } = useConnection()
   const [button, setButton] = useState<HTMLElement | null>(null)
   // Measured whenever the stack is placed, also after the window is resized, so it follows the button.
@@ -78,15 +81,15 @@ export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpen
   const result = useGitLabQuery(session?.id ?? null, query)
   const count = result.data?.filter(isNotificationTodo).length ?? 0
   const more = result.snapshot?.nextPage != null
-  const title = count || more ? `通知 ${count}${more ? '件以上' : '件'}` : '通知'
+  const title = count || more ? t(more ? 'mrList.notifications.navTitleMore' : 'mrList.notifications.navTitle', { count }) : t('mrList.notifications.title')
   return <>
-    <ClientNavItem collapsed={collapsed} disabled={!session} expanded={Boolean(button)} place="notifications" icon={<NotificationBellIcon count={count} more={more} withCount={collapsed} />} label="通知" onClick={(event) => openAt(event.currentTarget)} selected={Boolean(button)} title={title} trailing={<NotificationCount count={count} more={more} />} />
+    <ClientNavItem collapsed={collapsed} disabled={!session} expanded={Boolean(button)} place="notifications" icon={<NotificationBellIcon count={count} more={more} withCount={collapsed} />} label={t('mrList.notifications.title')} onClick={(event) => openAt(event.currentTarget)} selected={Boolean(button)} title={title} trailing={<NotificationCount count={count} more={more} />} />
     <Popover
       anchorEl={anchor}
       anchorOrigin={{ horizontal: 'left', vertical: 'top' }}
       onClose={close}
       open={Boolean(anchor && session)}
-      slotProps={{ paper: { 'aria-label': '通知', role: 'dialog', sx: { display: 'flex', flexDirection: 'column', maxHeight: 'min(560px, calc(100vh - 32px))', ml: 1, width: 380 } } }}
+      slotProps={{ paper: { 'aria-label': t('mrList.notifications.title'), role: 'dialog', sx: { display: 'flex', flexDirection: 'column', maxHeight: 'min(560px, calc(100vh - 32px))', ml: 1, width: 380 } } }}
       transformOrigin={{ horizontal: 'left', vertical: 'bottom' }}
     >
       {session ? <NotificationStack onOpen={(ref) => { close(); onOpen(ref) }} sessionId={session.id} /> : null}
@@ -128,6 +131,7 @@ function todosQuery(page: number, read: boolean): TodosQuery {
 }
 
 function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void; sessionId: string }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const notify = useNotify()
   const [marking, setMarking] = useState<{ done: number; total: number | null } | null>(null)
@@ -188,7 +192,7 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
       }
     } catch (caught) {
       setMarking(null)
-      notify({ message: `通知を取得できませんでした: ${normalizeGitLabError(caught).message}`, severity: 'error' })
+      notify({ message: t('mrList.notifications.loadFailed', { error: normalizeGitLabError(caught).message }), severity: 'error' })
       return
     }
     const read: string[] = []
@@ -208,31 +212,31 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
     forgetDoneTodos(queryClient, sessionId, read)
     setMarking(null)
     notify(failed
-      ? { message: `${read.length}件を既読にしました。${failed}件は既読にできなかったか、結果を確認できませんでした。`, severity: 'warning' }
-      : { message: `通知を${read.length}件既読にしました`, severity: 'success' })
+      ? { message: t('mrList.notifications.markedSome', { failed, read: read.length }), severity: 'warning' }
+      : { message: t('mrList.notifications.markedAll', { count: read.length }), severity: 'success' })
   }
   return <>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
-      <Typography component="h2" variant="h2">通知</Typography>
-      <ToggleButtonGroup aria-label="表示する通知" disabled={marking !== null} exclusive onChange={(_, next: 'unread' | 'read' | null) => { if (next) showRead(next === 'read') }} size="small" value={read ? 'read' : 'unread'}>
-        <ToggleButton sx={{ px: 1, py: 0.25 }} value="unread">未読</ToggleButton>
-        <ToggleButton sx={{ px: 1, py: 0.25 }} value="read">既読</ToggleButton>
+      <Typography component="h2" variant="h2">{t('mrList.notifications.title')}</Typography>
+      <ToggleButtonGroup aria-label={t('mrList.notifications.show')} disabled={marking !== null} exclusive onChange={(_, next: 'unread' | 'read' | null) => { if (next) showRead(next === 'read') }} size="small" value={read ? 'read' : 'unread'}>
+        <ToggleButton sx={{ px: 1, py: 0.25 }} value="unread">{t('mrList.notifications.unread')}</ToggleButton>
+        <ToggleButton sx={{ px: 1, py: 0.25 }} value="read">{t('mrList.notifications.read')}</ToggleButton>
       </ToggleButtonGroup>
       <Typography aria-live="polite" color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">
-        {shown ? <>{notifications.length}{nextPage !== null ? '件以上' : '件'}{result.stale ? ` · 保存済み · ${formatFetchedAt(result.snapshot?.fetchedAt)}` : result.refreshing ? ' · 更新中…' : ''}</> : result.loading ? '読み込み中…' : null}
+        {shown ? <>{t(nextPage !== null ? 'mrList.notifications.countMore' : 'mrList.notifications.count', { count: notifications.length })}{result.stale ? ` · ${t('mrList.notifications.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) })}` : result.refreshing ? ` · ${t('mrList.notifications.refreshing')}` : ''}</> : result.loading ? t('mrList.notifications.loading') : null}
       </Typography>
-      {read ? null : <Button disabled={!shown || !notifications.length || marking !== null} onClick={() => void markAllRead()} size="small">{marking ? marking.total === null ? '通知を確認中…' : `既読にしています… ${marking.done}/${marking.total}` : 'すべて既読'}</Button>}
-      <Tooltip title="更新"><span><IconButton aria-label="通知を更新" disabled={result.loading || result.refreshing} onClick={() => { setMorePages(0); result.refresh() }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
+      {read ? null : <Button disabled={!shown || !notifications.length || marking !== null} onClick={() => void markAllRead()} size="small">{marking ? marking.total === null ? t('mrList.notifications.checking') : t('mrList.notifications.marking', { done: marking.done, total: marking.total }) : t('mrList.notifications.markAll')}</Button>}
+      <Tooltip title={t('mrList.notifications.refresh')}><span><IconButton aria-label={t('mrList.notifications.refreshAria')} disabled={result.loading || result.refreshing} onClick={() => { setMorePages(0); result.refresh() }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
     </Stack>
     <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-      {result.error ? <Alert action={<Button color="inherit" onClick={result.refresh}>再試行</Button>} severity={result.data ? 'warning' : 'error'} sx={{ m: 1 }}>{result.data ? `保存済みの通知を表示中です。更新に失敗しました: ${result.error.message}` : result.error.message}</Alert> : null}
+      {result.error ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('mrList.notifications.retry')}</Button>} severity={result.data ? 'warning' : 'error'} sx={{ m: 1 }}>{result.data ? t('mrList.notifications.staleError', { error: result.error.message }) : result.error.message}</Alert> : null}
       {shown && notifications.length === 0 && nextPage === null ? read
-        ? <PaneEmpty description="既読にした通知をここで見返せます。" icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title="既読の通知はありません" />
-        : <PaneEmpty description="メンションやCI失敗などがあるとここに表示します。" icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title="通知はありません" /> : null}
-      {groups.length ? <Stack aria-label="通知" component="ul" onKeyDown={moveListRowFocus} spacing={1} sx={{ m: 0, p: 1 }}>
+        ? <PaneEmpty description={t('mrList.notifications.emptyReadDescription')} icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title={t('mrList.notifications.emptyReadTitle')} />
+        : <PaneEmpty description={t('mrList.notifications.emptyDescription')} icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title={t('mrList.notifications.emptyTitle')} /> : null}
+      {groups.length ? <Stack aria-label={t('mrList.notifications.title')} component="ul" onKeyDown={moveListRowFocus} spacing={1} sx={{ m: 0, p: 1 }}>
         {groups.map((group) => <NotificationCard disabled={marking !== null} group={group} key={group.key} onOpen={() => open(group)} />)}
       </Stack> : null}
-      {shown && (nextPage !== null || morePages > 0) ? <MoreNotifications capped={nextPage !== null && morePages + 1 >= MAX_PAGES} cappedNote={read ? '' : '既読にすると続きが表示されます。'} error={last?.error ?? null} loading={loadingMore} onLoad={loadMore} onRetry={() => last?.refresh()} rootRef={scrollRef} /> : null}
+      {shown && (nextPage !== null || morePages > 0) ? <MoreNotifications capped={nextPage !== null && morePages + 1 >= MAX_PAGES} cappedNote={read ? '' : t('mrList.notifications.more.readForMore')} error={last?.error ?? null} loading={loadingMore} onLoad={loadMore} onRetry={() => last?.refresh()} rootRef={scrollRef} /> : null}
     </Box>
     {Array.from({ length: morePages }, (_, index) => <NotificationPageLoader key={`${read}:${index + 2}`} onChange={reportPage} page={index + 2} read={read} sessionId={sessionId} />)}
   </>
@@ -253,6 +257,7 @@ function NotificationPageLoader({ onChange, page, read, sessionId }: { onChange:
  * from the button for keyboard use. Its height stays the same while loading so the cards do not move.
  */
 function MoreNotifications({ capped, cappedNote, error, loading, onLoad, onRetry, rootRef }: { capped: boolean; cappedNote: string; error: GitLabCommandError | null; loading: boolean; onLoad?: () => void; onRetry: () => void; rootRef: RefObject<HTMLDivElement | null> }) {
+  const t = useT()
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -263,11 +268,11 @@ function MoreNotifications({ capped, cappedNote, error, loading, onLoad, onRetry
   }, [onLoad, rootRef])
   return (
     <Box ref={sentinelRef} sx={{ alignItems: 'center', display: 'flex', justifyContent: 'center', minHeight: 48, px: 1, pb: 1 }}>
-      {error ? <Alert action={<Button color="inherit" onClick={onRetry}>再試行</Button>} severity="error" sx={{ flex: 1 }}>続きを取得できませんでした: {error.message}</Alert>
-        : loading ? <Typography color="textSecondary" role="status" variant="caption">続きを読み込み中…</Typography>
-          : capped ? <Typography color="textSecondary" variant="caption">{MAX_PAGES * 100}件分まで表示しています。{cappedNote}</Typography>
-            : onLoad ? <Button onClick={onLoad} size="small">さらに読み込む</Button>
-              : <Typography color="textSecondary" variant="caption">すべて表示しました</Typography>}
+      {error ? <Alert action={<Button color="inherit" onClick={onRetry}>{t('mrList.notifications.retry')}</Button>} severity="error" sx={{ flex: 1 }}>{t('mrList.notifications.more.error', { error: error.message })}</Alert>
+        : loading ? <Typography color="textSecondary" role="status" variant="caption">{t('mrList.notifications.more.loading')}</Typography>
+          : capped ? <Typography color="textSecondary" variant="caption">{t('mrList.notifications.more.capped', { count: MAX_PAGES * 100, note: cappedNote })}</Typography>
+            : onLoad ? <Button onClick={onLoad} size="small">{t('mrList.notifications.more.load')}</Button>
+              : <Typography color="textSecondary" variant="caption">{t('mrList.notifications.more.all')}</Typography>}
     </Box>
   )
 }
@@ -278,8 +283,9 @@ function MoreNotifications({ capped, cappedNote, error, loading, onLoad, onRetry
  * the MR and reads them all.
  */
 function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; group: NotificationGroup; onOpen: () => void }) {
+  const t = useT()
   const [todo, ...others] = group.todos
-  const label = actionLabels[todo.actionName] ?? 'To-Do'
+  const label = t(actionLabels[todo.actionName] ?? 'mrList.notifications.action.other')
   // The cards behind show as edges below this one, at most two, like a stack of paper.
   const behind = Math.min(others.length, 2)
   return <Box component="li" sx={{ listStyle: 'none', pb: behind * 0.5, position: 'relative' }}>
@@ -297,7 +303,7 @@ function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; grou
         <Typography sx={{ display: '-webkit-box', fontWeight: 600, mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{todo.title}</Typography>
         {quotesComment.has(todo.actionName) && todo.body ? <Typography color="textSecondary" sx={{ display: '-webkit-box', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="caption">{todo.author.name}: {todo.body}</Typography>
           : <Typography color="textSecondary" noWrap variant="caption">{todo.author.name}</Typography>}
-        {others.length ? <Typography color="primary" sx={{ fontWeight: 600, mt: 0.25 }} variant="caption">ほか{others.length}件</Typography> : null}
+        {others.length ? <Typography color="primary" sx={{ fontWeight: 600, mt: 0.25 }} variant="caption">{t('mrList.notifications.others', { count: others.length })}</Typography> : null}
       </ButtonBase>
     </Box>
   </Box>
@@ -312,17 +318,18 @@ function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; grou
 async function markNotificationRead(notify: ((options: NotifyOptions) => void) | null, sessionId: string, todo: GitLabTodo, announceSuccess: boolean): Promise<boolean> {
   const result = await runGitLabMutation(sessionId, JSON.stringify({ iid: todo.iid, projectId: todo.projectId }), { iid: todo.iid, kind: 'markTodoDone', projectId: todo.projectId, todoId: todo.id })
   if (result.ok) {
-    if (announceSuccess) notify?.({ message: '通知を既読にしました', severity: 'success' })
+    if (announceSuccess) notify?.({ message: translate('mrList.notifications.marked'), severity: 'success' })
   } else if (result.status === 'unknown') {
-    notify?.({ message: '既読にできたか確認できません。MRを開いて結果を確認してください。', severity: 'warning' })
+    notify?.({ message: translate('mrList.notifications.markUnknown'), severity: 'warning' })
   } else if (result.error) {
-    notify?.({ message: `通知を既読にできませんでした: ${result.error.message}`, severity: 'error' })
+    notify?.({ message: translate('mrList.notifications.markFailed', { error: result.error.message }), severity: 'error' })
   }
   return result.ok
 }
 
 /** The MR view's button for its pending notification. */
 export function MarkNotificationReadButton({ sessionId, todo }: { sessionId: string; todo: GitLabTodo }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const notify = useNotify()
   const mutation = useGitLabMutation(sessionId, JSON.stringify({ iid: todo.iid, projectId: todo.projectId }))
@@ -333,5 +340,5 @@ export function MarkNotificationReadButton({ sessionId, todo }: { sessionId: str
       if (await markNotificationRead(notify, sessionId, todo, true)) forgetDoneTodos(queryClient, sessionId, [todo.id])
     } finally { setSending(false) }
   }
-  return <Button disabled={mutation.isLocked || sending} onClick={() => void markRead()} startIcon={<DoneRoundedIcon />} variant="outlined">{sending ? '既読にしています…' : '通知を既読にする'}</Button>
+  return <Button disabled={mutation.isLocked || sending} onClick={() => void markRead()} startIcon={<DoneRoundedIcon />} variant="outlined">{sending ? t('mrList.notifications.markingOne') : t('mrList.notifications.markOne')}</Button>
 }
