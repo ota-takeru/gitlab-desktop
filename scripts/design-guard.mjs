@@ -16,6 +16,13 @@ const radiusPattern = /\bborderRadius\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])\d+(?:\.
 const spacingPattern = /(?:\b(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|rowGap|columnGap)\s*:\s*-?|\bspacing=\{)(\d+\.\d+)\b/gu
 // Development-only screens, loaded only in development builds; MockMarkdown is also used by the client.
 const typographyExempt = (path) => /\.test\.tsx?$/u.test(path) || path.startsWith(join('src', 'pages')) || (path.startsWith(join('src', 'components', 'mock')) && !path.endsWith('MockMarkdown.tsx'))
+// Interface text lives in src/i18n/messages; Japanese left in code is text that skipped translation.
+// Development screens and fixtures stay Japanese. Comments are removed first; strings are matched
+// alongside them so a // inside a string does not start a comment.
+const textExempt = (path) => typographyExempt(path) || path.startsWith(join('src', 'mock')) || path.startsWith(join('src', 'components', 'mock')) || path.startsWith(join('src', 'i18n'))
+const commentOrStringPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/gu
+const japanesePattern = /[　-ヿ㐀-鿿！-｠]+/gu
+const withoutComments = (source) => source.replace(commentOrStringPattern, (token) => token.startsWith('//') || token.startsWith('/*') ? token.replace(/[^\n]/gu, ' ') : token)
 const violations = []
 const lineOf = (source, index) => source.slice(0, index).split('\n').length
 
@@ -50,6 +57,12 @@ function visit(directory) {
         }
       }
     }
+    if (/\.tsx?$/u.test(entry) && !textExempt(relativePath)) {
+      const code = withoutComments(source)
+      for (const match of code.matchAll(japanesePattern)) {
+        violations.push(`${relativePath}:${lineOf(code, match.index)}: untranslated text ${match[0]}; add it to src/i18n/messages and use t() or translate()`)
+      }
+    }
     for (const match of source.matchAll(networkPattern)) {
       violations.push(`${relativePath}: direct network access ${match[0]}`)
     }
@@ -70,5 +83,5 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`)
   process.exitCode = 1
 } else {
-  console.log('Design guard passed: colors and type sizes stay in src/theme.ts and no direct network calls are present.')
+  console.log('Design guard passed: colors and type sizes stay in src/theme.ts, interface text is in the message files, and no direct network calls are present.')
 }
