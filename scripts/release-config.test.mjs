@@ -116,7 +116,6 @@ test('the updater manifest points both Windows keys at the uploaded installer', 
   const platform = { signature: 'c2lnbmF0dXJl', url: 'https://github.com/ota-takeru/gitlab-desktop/releases/download/v0.7.0/GitLab.Desktop_0.7.0_x64-setup.exe' }
   deepEqual(manifest, {
     version: '0.7.0',
-    notes: '署名済み Windows NSIS インストーラーと自動更新メタデータです。',
     pub_date: '2026-10-13T08:55:37.051Z',
     platforms: { 'windows-x86_64': platform, 'windows-x86_64-nsis': platform },
   })

@@ -1,65 +1,65 @@
-# Rust + MUI の採用調査
+# Feasibility study for Rust + MUI
 
-調査日: 2026-09-30。対象: 個人用、Windows優先のGitLabデスクトップクライアント。
+Study date: 2026-09-30. Target: a personal, Windows-first GitLab desktop client.
 
-要件具体化後の設計は[全体設計](architecture.md)を参照。Self-ManagedのMR閲覧とプロジェクト・過去MR検索を初期版の中心に据えている。この文書は初回の採用調査として残す。
+For the design after the requirements were made concrete, see the [overall design](architecture.md). The first version centers on viewing Self-Managed MRs and searching projects and past MRs. This document remains as the first feasibility study.
 
-## 判断
+## Decision
 
-この構成で着手してよい。Tauri 2がRustとReact/MUIの接続を担う。MUIはReactのライブラリなので、UIはTypeScript/React、OS連携とAPI処理はRustという分担になる。
+It is fine to start with this stack. Tauri 2 connects Rust and React/MUI. MUI is a React library, so the work divides into TypeScript/React for the UI and Rust for OS integration and API handling.
 
-ただし、Tauri化だけでGitLab Webより速くなるという判断はできない。WindowsではWebView2によるHTML/CSS描画が残る。GitLabサーバーの応答時間も残る。改善の主因は、利用する作業だけを小さく実装し、取得・描画する量を制限できること。Web UI全体の再実装を目指すと保守負担が大きい。
+However, moving to Tauri alone does not make the app faster than the GitLab web UI. On Windows, HTML/CSS rendering by WebView2 remains, and so does the GitLab server's response time. The main source of improvement is implementing only the work that is used, small, and limiting how much is fetched and rendered. Aiming to reimplement the whole web UI would be a heavy maintenance burden.
 
-| 論点 | 判断と進め方 |
+| Topic | Decision and approach |
 | --- | --- |
-| デスクトップ基盤 | Tauri 2を採用。OSのWebViewを使い、Rustコマンドを型付きラッパーから呼ぶ |
-| UI | React + TypeScript + MUI。テーマと共通部品を唯一の基準にする |
-| API | まずREST v4。MR、Issue、Pipelineのうち優先する一つから実装 |
-| データ取得 | Rustで非同期HTTP。UIへ必要なDTOだけ返す。初期段階では巨大な状態管理ライブラリを増やさない |
-| キャッシュ | 次段階でSQLite等を検討。まず一画面の実測を取り、容量・期限・アカウント分離を設計 |
-| 認証 | 個人用途の初期検証は最小権限PATが候補。継続利用・配布ではOAuth PKCEも比較 |
-| 配布 | 今回はローカル実行ファイルまで。署名、インストーラー、自動更新は別段階 |
-| 別案 | Web描画自体を排除したいならegui/iced等のRust UIを別途評価。その場合MUIの利用はできない |
+| Desktop base | Use Tauri 2. It uses the OS WebView and calls Rust commands through a typed wrapper |
+| UI | React + TypeScript + MUI. The theme and shared components are the only standard |
+| API | REST v4 first. Implement the one highest-priority item among MRs, issues and pipelines |
+| Data fetching | Asynchronous HTTP in Rust. Return only the DTOs the UI needs. Do not add a large state management library at the early stage |
+| Cache | Consider SQLite or similar in the next stage. First measure one screen, then design capacity, expiry and account separation |
+| Authentication | For initial personal verification, a least-privilege PAT is a candidate. For continued use and distribution, also compare OAuth PKCE |
+| Distribution | For now, only up to a local executable. Signing, installer and auto-update are a separate stage |
+| Alternative | If eliminating web rendering itself is the goal, evaluate Rust UIs such as egui/iced separately. MUI cannot be used then |
 
-## 性能改善の設計案（未実装・未計測）
+## Performance design ideas (not implemented, not measured)
 
-1. 初回は一画面・一ページのみ取得。ページサイズは20〜50件を出発点にし、APIの次ページ情報を使う。全件取得はしない。
-2. キャッシュを即時表示し、更新日時と再取得中の状態を見せる。手動更新と低頻度のバックグラウンド更新を分ける。
-3. キャッシュキーにinstance/account/project/filterを含める。進行中リクエストの重複をまとめ、画面変更後の古い結果を適用しない。
-4. API同時実行数とタイムアウトに上限を設ける。429はRetry-Afterに従う。非表示ウィンドウでのポーリングを抑える。
-5. 長い一覧はページング、必要なら仮想化。diff、Markdown、CIログは開いたときに読み、サイズを制限する。
-6. CPU負荷のあるdiff解析や検索をUIスレッドで行わない。Rustの非同期処理にも同期の重い作業を載せない。
+1. At first, fetch only one screen and one page. Start with a page size of 20 to 50 items and use the API's next-page information. Do not fetch everything.
+2. Show the cache immediately and display the update time and the refetching state. Separate manual refresh from low-frequency background refresh.
+3. Include instance/account/project/filter in the cache key. Merge duplicate in-flight requests and do not apply stale results after the screen changes.
+4. Set limits on API concurrency and timeouts. Follow Retry-After on 429. Suppress polling in a hidden window.
+5. Page long lists, and virtualize them if needed. Read diffs, Markdown and CI logs when opened, and limit their size.
+6. Do not run CPU-heavy diff parsing or search on the UI thread. Do not put heavy synchronous work on Rust's async runtime either.
 
-受入目標の候補: キャッシュ済み一覧の切替p95を100ms以内、コールド起動から操作可能まで2秒以内。これは保証や現時点の実測ではない。GitLab接続後、同じPC・同じプロジェクト・同じデータ量で、Webとreleaseビルドの起動、一覧表示、詳細表示、検索を比較する。各条件を複数回測り、ネットワーク待ちと描画時間を分離する。メモリはアプリ本体だけでなくWebView2子プロセスも合算する。
+Candidate acceptance targets: p95 of 100 ms or less for switching a cached list, and 2 seconds or less from cold start to being operable. These are neither guarantees nor current measurements. After connecting to GitLab, compare the web UI and the release build on the same PC, project and data volume for startup, list display, detail display and search. Measure each condition several times and separate network wait from rendering time. Count memory across the WebView2 child processes, not just the app itself.
 
-## UIのぶれを抑える運用
+## Keeping the UI consistent
 
-MUIだけでは独自の余白、色、密度の増殖を防げない。テーマのトークン・MUI既定値・共通レイアウト・状態表示・UIカタログを基準にする。AGENTS.mdに変更ルールを置き、静的チェックで生の色と直接HTTPを検出する。静的チェックは全ての見た目を保証しないため、追加画面は明暗テーマ、キーボード操作、最小ウィンドウで目視確認する。データ画面が確定した段階で代表状態のスクリーンショット回帰テストを追加する。
+MUI alone does not prevent custom spacing, colors and density from multiplying. Use theme tokens, MUI defaults, shared layout, state displays and the UI catalog as the standard. AGENTS.md holds the change rules, and static checks detect raw colors and direct HTTP. Static checks do not guarantee every visual, so check new screens by eye in light and dark themes, with the keyboard and at the minimum window size. Add screenshot regression tests for representative states once the data screens are settled.
 
-## GitLab接続前に決めること
+## Decide before connecting to GitLab
 
-- GitLab.com / Self-Managed、Self-Managedならバージョン、URLのサブパス、VPN・プロキシ・社内CAの有無。
-- 最も遅い作業と頻度: MR一覧、レビューdiff、Issue検索、Pipeline/ログ等。
-- 閲覧専用でよいか。コメント、承認、マージ、再実行などの書き込みは別の権限・操作設計にする。
-- トークン発行可否、SSOと組織ポリシー。秘密値をチャットへ貼る方式にはしない。
+- GitLab.com or Self-Managed; for Self-Managed, the version, URL subpath, and whether there is a VPN, proxy or internal CA.
+- The slowest tasks and their frequency: MR list, review diff, issue search, pipelines/logs and so on.
+- Whether read-only is enough. Writes such as comments, approvals, merges and reruns need separate permission and operation design.
+- Whether tokens can be issued, and SSO and organization policy. Do not use a method that pastes secrets into chat.
 
-認証実装ではOSの資格情報ストアを利用し、フロントエンドへトークンを返さない。HTTPS検証を保つ。リダイレクトやページングURLに従う際は、資格情報を別ホストへ送らない。Markdownやdiff等の外部データは信頼せず、HTML挿入を避ける。ローカルキャッシュも私的データとして扱う。
+In the authentication implementation, use the OS credential store and do not return the token to the frontend. Keep HTTPS verification. When following redirects or paging URLs, do not send credentials to another host. Do not trust external data such as Markdown and diffs, and avoid inserting HTML. Treat the local cache as private data too.
 
-## 段階的な開発順
+## Development order by stage
 
-1. 今回: 再現可能なビルド、テーマ、画面枠、UIカタログ、Rust IPC疎通。
-2. 接続先を決め、最小権限の認証と一種類の一覧取得・ページング・エラー表示を実装。
-3. 実測に基づくキャッシュと詳細表示。Webとの比較で改善効果を判定。
-4. 必要な書き込み操作、通知、検索等を追加。配布が必要になった時点で署名・更新を設計。
+1. Now: reproducible build, theme, screen frames, UI catalog, Rust IPC connectivity.
+2. Decide the target server, then implement least-privilege authentication and one kind of list fetch, paging and error display.
+3. Cache and detail display based on measurements. Judge the improvement by comparison with the web UI.
+4. Add needed write operations, notifications, search and so on. Design signing and updates when distribution becomes necessary.
 
-## 一次資料
+## Primary sources
 
-- [TauriのWindows前提条件](https://v2.tauri.app/start/prerequisites/) — C++とWebView2。
-- [TauriのWebView](https://v2.tauri.app/reference/webview-versions/) — プラットフォームごとの描画基盤。
-- [Tauriの権限](https://v2.tauri.app/security/capabilities/) / [CSP](https://v2.tauri.app/security/csp/) — IPCとWebViewの境界。
-- [MUIの導入](https://mui.com/material-ui/getting-started/installation/) / [テーマ](https://mui.com/material-ui/customization/theming/) — React依存と一元化した外観設定。
-- [GitLab REST API](https://docs.gitlab.com/api/rest/) — ページングはエンドポイントとバージョンに依存。対応する場合はkeysetを利用。
-- [GitLab API認証](https://docs.gitlab.com/api/rest/authentication/) — トークンとレート制限。
-- [GitLab OAuth](https://docs.gitlab.com/api/oauth2/) — PKCEとアプリ登録。
+- [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/) — C++ and WebView2.
+- [Tauri WebView](https://v2.tauri.app/reference/webview-versions/) — the rendering base for each platform.
+- [Tauri capabilities](https://v2.tauri.app/security/capabilities/) / [CSP](https://v2.tauri.app/security/csp/) — the boundary between IPC and the WebView.
+- [MUI installation](https://mui.com/material-ui/getting-started/installation/) / [theming](https://mui.com/material-ui/customization/theming/) — the React dependency and centralized appearance settings.
+- [GitLab REST API](https://docs.gitlab.com/api/rest/) — paging depends on the endpoint and version. Use keyset where supported.
+- [GitLab API authentication](https://docs.gitlab.com/api/rest/authentication/) — tokens and rate limits.
+- [GitLab OAuth](https://docs.gitlab.com/api/oauth2/) — PKCE and app registration.
 
-接続先の実サーバーにはまだアクセスしていない。性能改善幅、組織固有の認証、GitLabバージョン互換性は未検証。
+The real target server has not been accessed yet. The size of the performance improvement, organization-specific authentication and GitLab version compatibility are unverified.

@@ -1,117 +1,122 @@
 # GitLab Desktop
 
-Windows向けの個人用GitLab APIクライアントです。Tauri 2 / Rust / React / TypeScript / MUIを使用し、GitLab.comとSelf-ManagedへRustから直接接続します。通常の接続・通信はglabやGitLabサイトの埋め込みに依存しません。
+English | [日本語](README.ja.md)
 
-ソースと配布物: [GitHub](https://github.com/ota-takeru/gitlab-desktop) / [Releases](https://github.com/ota-takeru/gitlab-desktop/releases)。
+A personal GitLab API client for Windows. It is built with Tauri 2, Rust, React, TypeScript and MUI, and connects from Rust directly to GitLab.com and Self-Managed GitLab. Normal connections and requests do not depend on glab or on embedding the GitLab website.
 
-## 使い方と実装範囲
+Source and downloads: [GitHub](https://github.com/ota-takeru/gitlab-desktop) / [Releases](https://github.com/ota-takeru/gitlab-desktop/releases).
 
-現在の検証対象はGitLab.comです。[製品品質の検証状況](docs/product-readiness.md)に、確認済みの内容と認証・実機操作に関する未確認項目をまとめています。
+## Usage and scope
 
-ReleasesのWindows NSISインストーラーから起動し、サイドバー下端の「設定」で `https://gitlab.com` または社内GitLabのHTTPS URLとPersonal Access Tokenを入力します。サブパス付きURLに対応しています。従来型PATの読み取りには `read_api`、レビュー投稿には `api` scopeが必要です。トークンはWindows資格情報ストアへ保存し、読出しで画面へ返しません。
+The interface language can be English, Japanese, Simplified or Traditional Chinese, Korean, German, French, Spanish, Brazilian Portuguese or Russian, chosen under "Settings" → "Language" (the OS language by default). Languages other than English and Japanese are machine translated and have not been reviewed by native speakers yet ([Localization](docs/i18n.md)).
 
-glabで対象GitLabへログイン済みなら、接続画面の「glabの認証情報で接続」を明示的に選んでPAT入力を省略できます。この操作ではRustが接続URLのauthorityと一致する`glab`保存済み認証だけを一度読み取り、PATまたはOAuthアクセストークンを接続確認と`/user`確認の後にWindows資格情報ストアへコピーします。OAuthの期限は未来のRFC3339値だけを受け付け、refresh tokenは取り込みません。glabのログイン・refreshやグローバル設定変更は行わず、取り込み後のGitLab API通信はすべてRustから直接行います。手動PAT接続も引き続き利用できます。
+Validation currently targets GitLab.com. [Product readiness](docs/product-readiness.md) lists what has been verified and what is still unverified for authentication and hands-on use.
 
-- プロジェクト検索、参加中／閲覧可能・アーカイブ条件、お気に入り・最近使った項目。プロジェクト画面ではMR・ブランチ・コードをタブで切り替え、ブランチは更新の新しい順に状態（デフォルト・保護・マージ済み）と最新コミットを表示し、選ぶとそのブランチのMRを一覧します。コードはブランチを選んでフォルダを辿り、ファイルを行番号とシンタックスハイライト付きで表示します（1MiBまでのUTF-8またはShift_JISのテキスト）。
-- 自分の担当MR・レビュー待ち・自分が作成したMRへ直接移動。タイトル・説明検索（プロジェクト内では`!123`でMR番号を指定、`123`は番号の一致を先頭にタイトル・説明の一致も表示）、状態・担当者・作者・期間の条件とページング。ラベルはカンマ区切りで指定し、送信元・送信先ブランチは完全一致で絞り込みます。グループIDまたはパスで子グループを含めて検索でき、プロジェクト条件とは切り替えて使います。
-- ユーザー・プロジェクト・グループの候補検索、更新日／作成日による並べ替え。保存検索は最大20件で、名前変更・削除に対応。
-- MR一覧にプロジェクトパス、担当者、レビュアー、ラベル、Draft、取得したCI状態を表示。CI情報が省略される場合は行の「CIを確認」から取得。
-- 開いたMRはArcのようにサイドバーへタブとして並び、固定したMRはその上にまとめて表示。タブから固定・固定解除・閉じる操作ができ、表示中のタブを閉じると隣のタブを開きます。タブのタイトルと状態は最後にMRを表示した時点のものをこの端末に保存し、タブごとにGitLabへ問い合わせません。MR一覧は検索・レビュー依頼・担当・作成をタブで切り替え（ドラッグで並べ替え可、先頭のタブが起動時の表示）、人・ラベル・ブランチなどの条件と保存済み検索は検索タブで扱います。適用中の条件は検索語も含めてタグで並び、「＋条件を追加」で足し、タグの✕で外します。通知はサイドバーの通知ボタンから重ねて開きます。一覧の行はSpaceで概要をプレビューでき、行から固定できます。接続中のGitLabのMR URLを貼り付けて直接開く操作。固定は100件、開いているタブは20件、履歴は30件までアカウントごとに保持。
-- MR概要、議論、差分、コミット別差分、指定SHAのファイル本文。変更タブの「比較元バージョン」でpushごとのバージョンを選ぶと、そのバージョンから最新までの差分を表示します（GitLabのバージョン比較と同じく両バージョンのheadを直接比較するため、間にリベースがあればターゲットブランチ由来の変更も含まれます。閲覧専用で、行コメントと確認済みの記録は行いません）。「ローカルの変更」は、プロジェクトに紐付けた手元のcloneについて、MRの最新コミットと作業ツリーの差（未pushのコミットと未コミットの変更）をPATH上のgitで読み取って表示します（フォルダのgitリモートがそのプロジェクトを指す場合だけ紐付け可能で、パスの入力かフォルダ選択で指定します。fetchや変更はせず、MRの最新コミットがローカルにない場合はfetchを促します。未追跡ファイルは最大300件まで新規ファイルとして含めます。「ファイル全体」とハンク間の展開は作業ツリーの現在の内容（1MiBまでのUTF-8またはShift_JISのテキスト）を表示します。閲覧専用で保存しません）。差分ツールバーの「空白を無視」は、GitLabの差分APIに空白無視の指定がないため、変更ブロック内で空白を除くと一致する削除行と追加行を未変更の行として表示し、空白の変更だけのファイルはその旨を示します（選択は端末に保存。無視中は行の位置がずれる可能性があるため新しい行コメントを書けません）。表示中の差分ページの本文とファイル名を検索し、前後の一致へ移動できます。差分とファイル全体は拡張子とファイル名（Jenkinsfile、Dockerfile など）から判定した言語でシンタックスハイライトします（表示中のページ単位。1ページ20万文字を超える場合と未対応の言語は色付けなし）。
-- MR全体のファイルに「確認済み」を記録。端末内で接続先・アカウント・MRごとに保存し、再起動後も復元します。MRのhead SHAや差分が変わると未確認に戻ります。最大100MR、各500ファイルで、ログアウト時に削除します。
-- コメント、MR全体差分の行・ファイルコメント、返信、自分のコメント編集・削除、解決・再開。
-- 新規コメントと返信へ画像・ファイルを添付。ファイル選択または画像の貼り付けでGitLabへアップロードし、成功したリンクを本文に挿入します。Excelなどからテキストと画像が同時に貼り付けられた場合はテキストとして貼り付け、アップロードしません。アップロード中に入力欄を閉じた場合も、リンクは元の未送信コメントへ追加します。1ファイル10MiBまでで、送信はファイルサイズに応じて最大約3分待ちます。コメント投稿前にアップロードされるため、本文を破棄してもGitLab上の添付は残ります。結果不明時は確認記録を残して再送を停止します。
-- 議論は通常コメントだけを表示。未解決の絞り込み、解決済みの折り畳み、最新／未読コメントへの移動、行コメントから該当差分への移動に対応。変更タブでは、最新の版に付いた行コメントをGitLabと同じく該当行の下に表示し、その場で返信・解決・未解決に戻す操作ができます（議論タブのスレッドへも移動できます）（古い版へのコメントと未取得の古い議論は件数・注記だけを出します）。行の「+」を押すとその行の下に入力欄が開き、未公開レビューに追加した行コメントも該当行の下に表示します。「+」からShift+クリック、行番号の上のドラッグ、または「+」にフォーカスしてShift+↑／↓（Enterで確定、Escで解除）で同じ変更ブロック内の複数行を選ぶと、範囲へのコメントになり、即時コメントとレビューへの追加の両方で使えます（GitLabの`line_range`と行コード（ファイルパスのSHA-1と新旧の行位置）はRust側で組み立て・検証します）。範囲コメントはGitLabと同じく終端行の下に「12〜15行目へのコメント」のように表示します。未公開レビューは議論タブで一件ずつ、選択分、またはすべてを公開できます。
-- 行コメントの入力欄の「提案を挿入」で、選んだ行の現在の内容から変更提案（` ```suggestion:-N+0 `、1行なら` ```suggestion `）を本文に挿入します。議論と差分のスレッドでは提案を置き換え前の行（GitLabが返す内容）との差分として表示し、自分以外の提案で適用可能なものは「提案を適用」（コメントに複数あれば「まとめて適用」）から確認ダイアログと任意のコミットメッセージで適用します。表示時のMRのheadがGitLab上で変わっていれば適用しません。提案IDを取得できないコメントでは「GitLabで適用」からMRを開きます。
-- コメント入力欄で書式をその場で表示するリッチ入力（Markdown記法を直接編集する表示へ切り替え可能。HTMLなどリッチ表示で保持できない本文はMarkdown表示で開く）、GitLabと同様の書式ツールバー（太字・斜体・取り消し線・見出し・引用・コード・リンク・リスト・タスクリスト・表、`Ctrl+B`／`Ctrl+I`／`Ctrl+Shift+X`）と`@`メンション候補。既読は「読み込み済みを既読」で記録し（一度既読にしたコメントは編集・解決で未読に戻らない）、一覧の未読数は最後に読み込んだコメントを対象に表示。
-- 通知。GitLabの未完了MR To-Doのうち、メンション・CI失敗・マージ不可・承認依頼などの出来事をカードの積み重ねで表示し、件数はサイドバーのベルの中に示す（担当・レビュー依頼はMR一覧のタブで扱うため含めない）。同じMRの通知は1枚のカードに重ねて「ほか n件」と示す。カードを開くと対象MRを開いてそのMRの通知を既読（GitLabのTo-Doを完了）にし、「すべて既読」で全ページの通知（最大1000件、同時4件まで）をまとめて既読にできる。MR詳細では、読み込み済みの通知にそのMRのものがあれば「通知を既読にする」を表示する（追加の取得はしない）。既読はGitLabで対象MRの未完了To-Doであることを確認してから送る。
-- MR本体と各コメントの絵文字リアクション。人数のチップ（自分の分は選択状態、付けた人はツールチップ）と、検索（GitLabの名前と日本語）・分類・グリッドで選ぶ絵文字ピッカーからの追加（肌の色・カスタム絵文字・国旗は対象外）、チップからの付け外し。コメント側は表示中の議論の最古コメントまでをGraphQLでまとめて取得し（100件ごとに1回、最大500件。超えた分は表示しないことを注記）、MR本体はRESTで取得する。外すときは自分のリアクションのIDをGitLabから読み直して削除する。主要な名前以外は`:name:`で表示。
-- サーバー下書きの保存・編集・削除・選択公開、承認・承認取消、担当者・レビュアー・説明の変更。説明と担当者・レビュアーは、編集を始めた時点の内容がGitLab側で変わっていたら書き込みません。未対応APIや権限不足はエラーとして表示。
-- MRの「パイプライン」タブ。MRのパイプライン一覧（状態・ref・SHA・作成日時）と、選んだパイプラインの所要時間・ステージ別のジョブ・下流パイプラインを表示します。ジョブを選ぶとログの末尾（最大512KiB、500行ごとに前後移動）を表示し、色と太字はテーマの色に置き換えます。ログは端末に保存しません。実行中のパイプラインとジョブログは、表示している間だけ15秒ごとに更新し、終了したら止めます。ジョブの再実行・キャンセル・手動ジョブの実行と、パイプラインの失敗ジョブ再実行・キャンセルに対応し、キャンセルと手動実行は確認を表示します。送信前にGitLab上の現在の状態で操作できるかを確かめ、結果不明時は起点のMRへの再送を止めます。
-- MR詳細ヘッダーの「その他の操作」から、マージ、自動マージ（パイプライン成功時にマージ）の設定と取り消し、リベース、変更を要求、タイトル・Draft・ラベル・マイルストーンの変更、クローズ・再オープン。マージはGitLabの`detailed_merge_status`が可能と示すときだけ選べ、できない理由（未解決スレッド、コンフリクト、パイプライン、承認不足、Draftなど）を日本語で表示します。判別できない状態をマージ可能とは表示しません。マージは確認ダイアログを開いた時点のhead SHAを付けて送り、スカッシュ、ソースブランチ削除、マージコミットのメッセージを選べます。リベース後は完了するまで5秒ごとに最大12回だけMRを読み直します。ラベルは追加・削除した分だけを送り、他の人の同時変更を残します。タイトル・マイルストーン・状態は表示時の値がGitLab側で変わっていたら書き込みません。概要タブのレビュアーの横から再レビューを依頼できます。変更の要求はGitLab 18.9以降、再レビュー依頼はGraphQLで行い、接続先が対応していない場合はエラーとして表示します。
-- 接続先・ユーザー別SQLiteキャッシュ。保存済みを先に表示して更新し、古さ・失敗を明示。保持上限は30日／キャッシュ予算128MiB、DB全体256MiB。ログアウトで保存データと資格情報を削除。
-- 未送信コメントを端末に保存し、再起動・認証切れ・画面復旧後に復元。GitLabのサーバー下書きとは別に扱い、アカウントごとに100件、本文64KiBまで保持します。通常の終了と更新前には保存待ちを完了し、保存失敗を明示します。
-- 結果未確認の投稿記録を永続化し、再起動後も同じMRへの再送を停止。投稿中は切断・接続切替を拒否します。ログアウトは未送信入力と確認記録も削除するため確認を表示します。
-- 差分600行、ファイル本文1000行、議論20件、議論内コメント50件ごとに表示を区切り、前後移動で取得済みデータをすべて閲覧できます。
-- 署名付きNSIS配布と更新確認。起動時と表示中の6時間ごとに確認し、更新があれば署名を検証したパッケージをバックグラウンドでダウンロードし、フッターと設定に表示します。インストールと再起動は「再起動して更新」を押したときだけ行い、未保存入力や送信処理がある間は押せません。
+Install the app with the Windows NSIS installer from Releases. Under "Settings" at the bottom of the sidebar, enter `https://gitlab.com` or the HTTPS URL of your company's GitLab, and a Personal Access Token. URLs with a sub-path work. A classic PAT needs the `read_api` scope to read and the `api` scope to post reviews. The token is stored in the Windows credential store and is never returned to the screen.
 
-投稿は自動再送しません。結果不明時はGitLab上で確認するまで再送を止めます。承認・承認取消、下書きの公開、マージ・自動マージの取り消し・リベース・クローズ・Draft/Readyの切り替え、変更の要求・レビュー再依頼、提案の適用、ジョブ・パイプラインの再実行・キャンセル・手動実行、コメントと下書きの削除は、送信前に確認を表示します。公開と承認は別操作で、選択していないWeb側下書きを一括公開しません。コミット別閲覧・バージョン比較とMR全体のコメント位置は区別します。
+If you are already signed in to the GitLab instance with glab, you can choose "Connect with glab credentials" on the connection screen to skip entering a PAT. Rust then reads, once, only the glab credential whose authority matches the connection URL, and copies the PAT or OAuth access token to the Windows credential store after checking the connection and `/user`. An OAuth expiry is accepted only as a future RFC 3339 value, and refresh tokens are not imported. The app does not sign in or refresh with glab or change its global settings, and all GitLab API requests after the import go directly from Rust. Connecting with a PAT by hand still works.
 
-表示中のMR・議論と通知は1分ごとに更新します。入力・編集中、送信中、アプリが非表示の間は一時停止します。「設定」の「更新と通知」で自動更新とデスクトップ通知を選べます。Windowsの通知許可は通知を有効にするときに確認します。
+- Project search, membership/visibility and archive filters, favorites and recent items. A project's screen switches between MRs, branches and code with tabs. Branches are listed newest-updated first with their state (default, protected, merged) and latest commit, and choosing one lists that branch's MRs. Code lets you pick a branch, browse folders and view files with line numbers and syntax highlighting (UTF-8 or Shift_JIS text up to 1 MiB).
+- Go straight to MRs assigned to you, waiting for your review, or created by you. Title and description search (inside a project `!123` picks an MR number, and `123` shows the number match first, then title and description matches), filters for state, assignee, author and period, and paging. Labels are given comma separated, and source and target branches match exactly. A group ID or path searches the group including subgroups, as an alternative to the project filter.
+- Suggestions for users, projects and groups, and sorting by updated or created date. Up to 20 saved searches, which can be renamed and deleted.
+- The MR list shows the project path, assignees, reviewers, labels, draft state and the CI status when fetched. When CI details are omitted, "Check CI" on the row fetches them.
+- Opened MRs line up as tabs in the sidebar, as in Arc, with pinned MRs grouped above them. A tab can be pinned, unpinned or closed, and closing the tab on screen opens the next one. A tab's title and state are those from when the MR was last shown, saved on this device, so tabs do not each query GitLab. The MR list switches between Search, Review requests, Assigned and Created with tabs (drag to reorder; the first tab is shown at start), and conditions such as people, labels and branches and saved searches live in the Search tab. Applied conditions, including the search text, are shown as tags: "Add a condition" adds one and a tag's ✕ removes it. Notifications open over the page from the sidebar's notification button. Space previews a list row's overview, and a row can be pinned from the list. You can paste the URL of an MR on the connected GitLab to open it directly. Each account keeps up to 100 pinned MRs, 20 open tabs and 30 history entries.
+- MR overview, discussion, changes, per-commit changes and file contents at a given SHA. Choosing a push version in "Compare from version" on the changes tab shows the changes from that version to the latest (as in GitLab's version compare, the heads of both versions are compared directly, so changes from the target branch are included if a rebase happened in between; it is read-only and records no line comments or viewed files). "Local changes" shows, for a local clone linked to the project, the difference between the MR's latest commit and the working tree (unpushed commits and uncommitted changes), read with git on the PATH (a folder can be linked only when its git remote points at the project, by typing its path or choosing it; nothing is fetched or changed, and you are asked to fetch when the MR's latest commit is not available locally; up to 300 untracked files are included as new files; "Whole file" and expanding between hunks show the working tree's current content (UTF-8 or Shift_JIS text up to 1 MiB); it is read-only and nothing is saved). Because GitLab's diff API has no option to ignore whitespace, "Hide whitespace" on the diff toolbar shows removed and added lines inside a change block that match without whitespace as unchanged lines, and marks files whose only changes are whitespace (the choice is saved on this device; new line comments cannot be written while it is on, since line positions may shift). You can search the text and file names of the shown diff page and move between matches. Diffs and whole files are highlighted in the language detected from the extension and file name (Jenkinsfile, Dockerfile and so on), per shown page; pages over 200,000 characters and unsupported languages are not colored.
+- Mark files of the whole MR as "Viewed". The marks are saved on this device per instance, account and MR, and are restored after a restart. They return to unviewed when the MR's head SHA or the diff changes. Up to 100 MRs with 500 files each are kept, and they are deleted on sign-out.
+- Comments, line and file comments on the whole MR's changes, replies, editing and deleting your own comments, resolving and reopening.
+- Attach images and files to new comments and replies. Choosing a file or pasting an image uploads it to GitLab and inserts the link into the text when it succeeds. When text and an image are pasted together (for example from Excel), the text is pasted and nothing is uploaded. If the editor is closed during an upload, the link is still added to the original unsent comment. Files are limited to 10 MiB, and sending waits up to about 3 minutes depending on the size. Attachments are uploaded before the comment is posted, so they stay on GitLab even if the text is discarded. When the outcome is unknown, a receipt is kept and sending again is stopped.
+- The discussion shows only regular comments. It can filter unresolved threads, folds resolved ones, moves to the latest or unread comment and jumps from a line comment to its place in the diff. On the changes tab, line comments on the latest version are shown under their line as in GitLab, where you can reply, resolve or reopen them (and move to the thread in the discussion tab); comments on older versions and older discussions not yet loaded are shown only as counts and notes. Pressing a line's "+" opens an editor under the line, and line comments added to the unpublished review are shown under their line too. Shift+click from "+", dragging over the line numbers, or Shift+↑/↓ with "+" focused (Enter to confirm, Esc to cancel) selects several lines within one change block for a range comment, usable both as an immediate comment and in the review (GitLab's `line_range` and line codes, the file path's SHA-1 with the old and new line positions, are built and checked in Rust). Range comments are shown under their last line with a label such as "Comment on lines 12–15", as in GitLab. The unpublished review can be published one comment at a time, the selected ones or all at once from the discussion tab.
+- "Insert suggestion" in a line comment editor inserts a change suggestion (` ```suggestion:-N+0 `, or ` ```suggestion ` for one line) built from the selected lines' current content. Discussion and diff threads show a suggestion as a diff against the lines it replaces (as returned by GitLab), and an applicable suggestion by someone else can be applied with "Apply suggestion" (or "Apply N suggestions together" when a comment has several), after a confirmation dialog and with an optional commit message. It is not applied if the MR's head on GitLab changed since it was shown. For comments whose suggestion ID cannot be read, "Apply on GitLab" opens the MR.
+- A rich comment editor that shows formatting in place (it can switch to editing Markdown directly, and text the rich view cannot keep, such as HTML, opens in the Markdown view), a formatting toolbar like GitLab's (bold, italic, strikethrough, heading, quote, code, link, lists, task list, table; `Ctrl+B`, `Ctrl+I`, `Ctrl+Shift+X`) and `@` mention suggestions. Reading is recorded with "Mark loaded as read" (a comment once read does not become unread when it is edited or resolved), and the list's unread counts cover the comments last loaded.
+- Notifications. Of GitLab's pending MR To-Dos, events such as mentions, failed CI, unmergeable MRs and approval requests are shown as a stack of cards, with the count inside the bell in the sidebar (assignments and review requests are handled by the MR list tabs and are not included). Notifications for the same MR stack on one card marked "N more". Opening a card opens the MR and marks that MR's notifications as read (completes the GitLab To-Dos), and "Mark all as read" marks the notifications of all pages as read (up to 1,000, at most 4 at a time). MR details show "Mark notification as read" when the loaded notifications include one for that MR (nothing more is fetched). Marking as read is sent only after checking on GitLab that the To-Do is still pending for that MR.
+- Emoji reactions on the MR and on each comment. Chips with counts (yours shown as selected, who reacted in the tooltip), adding from an emoji picker with search (GitLab names and Japanese keywords), categories and a grid (skin tones, custom emoji and flags are not offered), and toggling from the chips. Comment reactions are fetched together with GraphQL back to the oldest comment of the shown discussion (one request per 100 comments, up to 500; a note says when more are not shown), and the MR's reactions with REST. Removing a reaction reads your reaction's ID from GitLab again before deleting it. Names other than the common ones are shown as `:name:`.
+- Saving, editing, deleting and selectively publishing server-side drafts, approving and revoking approval, and changing assignees, reviewers and the description. The description, assignees and reviewers are not written if they changed on GitLab since editing started. Unsupported APIs and missing permissions are shown as errors.
+- The MR's "Pipelines" tab lists the MR's pipelines (state, ref, SHA, created time) and shows the selected pipeline's duration, jobs by stage and downstream pipelines. Choosing a job shows the end of its log (up to 512 KiB, moving back and forward 500 lines at a time), with colors and bold mapped to the theme's colors. Logs are not saved on the device. A running pipeline and job log refresh every 15 seconds only while shown, and stop when they finish. Jobs can be retried, canceled and run manually, and a pipeline's failed jobs retried or the pipeline canceled; canceling and manual runs ask for confirmation. Before sending, the action is checked against the current state on GitLab, and when the outcome is unknown, sending again to the MR it started from is stopped.
+- "More actions" in the MR details header offers merge, setting and canceling auto-merge (merge when the pipeline succeeds), rebase, request changes, changing the title, draft state, labels and milestone, and close and reopen. Merge can be chosen only when GitLab's `detailed_merge_status` says it is possible, and otherwise the reason is shown in the app's language (unresolved threads, conflicts, pipeline, missing approvals, draft and so on). A state that cannot be identified is never shown as mergeable. A merge is sent with the head SHA from when the confirmation dialog opened, and can squash, delete the source branch and set the merge commit message. After a rebase, the MR is read again every 5 seconds, at most 12 times, until it completes. Labels are sent as only those added or removed, so others' concurrent changes are kept. The title, milestone and state are not written if they changed on GitLab since they were shown. A re-review can be requested next to a reviewer on the overview tab. Request changes needs GitLab 18.9 or later and re-review requests use GraphQL; when the instance does not support them, an error is shown.
+- A SQLite cache per instance and user. Saved data is shown first and then refreshed, and its age and refresh failures are shown. Retention is 30 days, with a 128 MiB cache budget and 256 MiB for the whole database. Signing out deletes stored data and credentials.
+- Unsent comments are saved on the device and restored after a restart, an expired sign-in or a screen recovery. They are kept apart from GitLab's server-side drafts, up to 100 per account and 64 KiB of text each. Normal quitting and updates wait for pending saves to finish, and a failed save is shown.
+- Receipts of posts whose outcome is unknown are persisted, and sending again to the same MR stays stopped after a restart. Disconnecting and switching connections are refused while posting. Signing out also deletes unsent input and receipts, so it asks for confirmation.
+- Views are split every 600 diff lines, 1,000 file lines, 20 discussions and 50 comments within a discussion, and moving back and forward shows all fetched data.
+- Signed NSIS distribution with update checks. Updates are checked at start and every 6 hours while the app is shown; when one is found, the signature-verified package is downloaded in the background and shown in the footer and settings. It is installed and the app restarted only when you press "Restart to update", which cannot be pressed while there is unsaved input or a send in progress.
 
-コメント通知は開いているMRと、担当・レビュー待ちの更新順先頭10件の最新30コメントが対象です。通知のデスクトップ通知は新しい順の先頭100件の新規項目を確認します。初回取得を通知せず、操作履歴も除外します。通知にはタイトルやコメント本文を含めません。議論の読み込みと差分位置の探索は最大10ページに制限し、取得した範囲を画面で示します。
+Posts are never resent automatically. When an outcome is unknown, sending again stays stopped until it is checked on GitLab. Approving and revoking approval, publishing drafts, merging, canceling auto-merge, rebasing, closing, switching draft/ready, requesting changes and re-reviews, applying suggestions, retrying, canceling and running jobs and pipelines, and deleting comments and drafts ask for confirmation before sending. Publishing and approving are separate actions, and drafts made on the web that are not selected are not published together. Per-commit viewing and version compare are kept apart from comment positions on the whole MR.
 
-`Ctrl+O`でMR URL入力、`Ctrl+K`でMR一覧の検索タブへ移動します。マウスの戻る／進むボタンで、このウィンドウで開いた画面を前後に移動できます（MR内の議論・変更・概要・パイプラインタブの切り替えも履歴に含めます）。MR一覧では`j`／`k`または上下矢印で行を選び、Enterで開けます。MRを開いている間は`j`／`k`で開いた元の一覧の前後のMRへ移り、Escで一覧に戻ります。MRはこの端末で初めて開くときは概要タブ、2回目以降は議論タブで開きます（通知・URLでタブを指定した場合はそのタブ）。議論タブでは「説明」ボタンか`d`で説明・ラベル・マイルストーンを右側に重ねて表示し、議論のスクロール位置を保ったままEscで閉じます。コメント入力は`Ctrl+Enter`でレビューへ追加、`Ctrl+Shift+Enter`で即時コメントです。
+The shown MR, its discussion and notifications refresh every minute. Refreshing pauses while typing or editing, while sending and while the app is hidden. "Settings" → "Auto refresh and notifications" turns auto refresh and desktop notifications on or off. Windows notification permission is asked for when notifications are turned on.
 
-証明書検証は常に有効です。社内CAはWindowsの信頼ストア、通信は環境のプロキシ設定を使用します。アプリ自身のOAuthログイン・自動refresh、PAC、NTLM、mTLSは現時点の対応対象に含めません。明示的なglab取り込みでのOAuthアクセストークン利用とは区別してください。Issue、ローカル全文検索、複数接続の同時表示は後続の設計です。Self-Managed実機との互換性と認証付き実投稿は接続後に確認する必要があります。詳細は[全体設計](docs/architecture.md)を参照してください。
+Comment notifications cover the open MRs and the latest 30 comments of the first 10 assigned and review-waiting MRs by update order. Desktop notifications for To-Dos check the newest 100 items for new ones. The first fetch does not notify, and your own actions are excluded. Notifications contain no titles or comment text. Loading discussions and searching for diff positions are limited to 10 pages, and the screen shows the fetched range.
 
-## 開発環境
+`Ctrl+O` opens an MR by URL, and `Ctrl+K` moves to the MR list's Search tab. The mouse back and forward buttons move between screens opened in this window (switching an MR's Discussion, Changes, Overview and Pipelines tabs is part of the history). In the MR list, `j`/`k` or the up and down arrows select a row, and Enter opens it. While an MR is open, `j`/`k` move to the previous or next MR of the list it was opened from, and Esc returns to the list. The first time this device opens an MR it opens on the Overview tab, and on the Discussion tab after that (or on the tab given by a notification or URL). On the Discussion tab, the "Description" button or `d` shows the description, labels and milestone over the right side, keeping the discussion's scroll position, and Esc closes it. In the comment editor, `Ctrl+Enter` adds the comment to the review and `Ctrl+Shift+Enter` posts it immediately.
 
-確認した環境: Windows x64、Node.js 24.16.0、npm 11.13.0、Rust 1.98.0、Visual Studio 2022のC++ツール、Windows SDK、WebView2 Runtime。
+Certificate verification is always on. A company CA comes from the Windows trust store, and requests use the environment's proxy settings. The app's own OAuth sign-in and automatic refresh, PAC, NTLM and mTLS are not supported for now; keep this apart from using an OAuth access token imported explicitly from glab. Issues, local full-text search and showing several connections at once are later designs. Compatibility with real Self-Managed instances and authenticated real posting still need to be checked once connected. See the [architecture](docs/architecture.md) for details.
 
-Rustはルートの`rust-toolchain.toml`でプロジェクト単位に固定しています。既定のRustが古くても、このフォルダーでは指定バージョンを使用します。Nodeのバージョンは`.node-version`を参照してください。初回は依存のダウンロードとRustのコンパイルに時間がかかります。
+## Development environment
+
+Checked with: Windows x64, Node.js 24.16.0, npm 11.13.0, Rust 1.98.0, the Visual Studio 2022 C++ tools, the Windows SDK and the WebView2 Runtime.
+
+Rust is pinned per project by `rust-toolchain.toml` at the root, so this folder uses that version even if your default Rust is older. See `.node-version` for the Node version. The first run takes a while to download dependencies and compile Rust.
 
 ```powershell
 npm ci
 npm run desktop:dev
 ```
 
-デスクトップウィンドウが開きます。終了時はウィンドウを閉じ、開発ターミナルで必要に応じてCtrl+Cを押します。
+A desktop window opens. To stop, close the window and press Ctrl+C in the development terminal if needed.
 
-ブラウザーでUIだけを確認する場合:
+To check only the UI in a browser:
 
 ```powershell
 npm run dev
 ```
 
-[ローカルプレビュー](http://localhost:1420)。このモードではRustの情報を取得できません。
+[Local preview](http://localhost:1420). This mode cannot get information from Rust.
 
-UI方針を検討する操作モックは[UIモック](http://localhost:1420/#mock)から開きます。レビュー一覧・差分・議論、プロジェクト探索、過去MR検索、明暗テーマを確認できます。常時「UIモック / サンプルデータ / 未接続」と表示し、コメントや承認はメモリ内のシミュレーションです。リロードすると操作内容は消えます。実際のAPI接続・キャッシュ保存とは別のプレビューです。
+The interactive mock for exploring UI directions opens from the [UI mock](http://localhost:1420/#mock). It shows the review list, diffs and discussion, project discovery, past MR search and the light and dark themes. It always shows "UI mock / sample data / not connected", and comments and approvals are simulated in memory; reloading discards them. It is a preview separate from the real API connection and cache.
 
-実際のクライアント画面を固定データで確認する場合は `http://localhost:1420/?fixture=ready` を開きます（開発サーバーのみ。本番ビルドには含まれません）。Rustの代わりに `src/mock/fixtureIpc.ts` がIPCに応答し、GitLabへは何も送りません。`fixture` を `loading` / `error` / `empty` / `stale` に変えると取得中・失敗・空・古いキャッシュの表示になり、MR詳細は `#client/mrs?reviewer=self&state=opened&mr=101-42` のようにハッシュで直接開けます。投稿や承認はページ内のメモリだけに反映され、リロードで消えます。右下に「固定データ · GitLab未接続」と表示します。
+To check the real client screens with fixed data, open `http://localhost:1420/?fixture=ready` (development server only; not in production builds). `src/mock/fixtureIpc.ts` answers IPC in place of Rust and nothing is sent to GitLab. Changing `fixture` to `loading`, `error`, `empty` or `stale` shows the loading, failed, empty and stale-cache states, and MR details open directly from the hash, as in `#client/mrs?reviewer=self&state=opened&mr=101-42`. Posts and approvals change only the page's memory and are gone on reload. "Fixture data · not connected to GitLab" is shown at the bottom right.
 
-開発用の画面はハッシュの後ろ（固定データではクエリ）に `theme=light|dark` を付けると、保存済みのテーマを変えずにその配色で開きます。UIカタログは `#foundation/catalog?section=review&theme=dark` のように `section` を付けると、その節までスクロールします（`section` は `UiCatalogPage.tsx` の `catalog-*` id の後半）。
+Development screens open in a given color scheme without changing the saved theme when `theme=light|dark` is added after the hash (in the query for fixture data). The UI catalog scrolls to a section when `section` is given, as in `#foundation/catalog?section=review&theme=dark` (`section` is the part after `catalog-` of the ids in `UiCatalogPage.tsx`).
 
-以下の操作説明は `#mock` のサンプル画面に関するものです。実接続画面の対応範囲は冒頭の機能一覧を参照してください。
+The following describes the sample screens of `#mock`. For what the real client supports, see the feature list at the top.
 
-プロジェクト一覧から専用画面を開き、プロジェクト内の現在/過去のMRを検索できます。MRの「変更」ではタイムラインからMR全体または各コミットを選び、「差分 / ファイル全体」で選択した版の変更内容と全文を切り替えます。MRを開くと左端の「議論」を表示し、コメントと返信を中心に確認できます。「概要」は説明文や付帯情報を必要なときに見る参照画面です。
+Open a project's screen from the project list to search its current and past MRs. In an MR's "Changes", pick the whole MR or a commit from the timeline, and switch between the selected version's changes and full text with "Diff / Whole file". An MR opens on "Discussion", at the left, to focus on comments and replies. "Overview" is a reference screen for the description and other details when needed.
 
-コメントは通常コメント、解決可能なスレッド、返信、行・ファイルへのコメントを操作できます。Markdownプレビュー、自分の投稿の編集・削除、議論の解決・再開に対応しています。「レビューを開始 / 追加」で未公開コメントをため、確認画面で編集・破棄・一括公開・任意の承認を試せます。Ctrl+Enterはレビューへ追加、Ctrl+Shift+Enterは即時コメントです。モックと実接続の違い・Suggestionなどの対応方針は[コメント・レビュー対応方針](docs/comment-review-parity.md)を参照してください。
+Comments cover regular comments, resolvable threads, replies and line and file comments. Markdown preview, editing and deleting your own posts, and resolving and reopening discussions work. "Start / Add to review" collects unpublished comments, and the review screen lets you try editing, discarding, publishing all and optionally approving. Ctrl+Enter adds to the review and Ctrl+Shift+Enter posts immediately. For differences between the mock and the real client and plans such as suggestions, see [Comment and review parity](docs/comment-review-parity.md).
 
-## チェックとビルド
+## Checks and builds
 
 ```powershell
 npm run check
 npm run desktop:build -- --no-bundle
 ```
 
-`check`はlint、動作・リリーススクリプトのテスト、デザイン制約、TypeScript、フロントエンドビルド、Rustのfmt / clippy / testを実行します。GitLab.com公開APIの実通信テストは `cargo test --manifest-path src-tauri/Cargo.toml --locked gitlab_com_public_projects -- --ignored` で明示して実行します。
+`check` runs lint, behavior and release-script tests, the design constraints, TypeScript, the frontend build and Rust fmt, clippy and tests. The live test against the public GitLab.com API runs only when asked for: `cargo test --manifest-path src-tauri/Cargo.toml --locked gitlab_com_public_projects -- --ignored`.
 
-release実行ファイル: `src-tauri/target/release/gitlab-desktop.exe`。配布は公開鍵を埋め込んだNSISインストーラーを使用します。更新署名鍵はGitHub Repository secretに保存し、ソースには含めません。Tauriの更新署名はWindowsのAuthenticode署名と別です。実行先にもWebView2が必要です。
+Release executable: `src-tauri/target/release/gitlab-desktop.exe`. Distribution uses the NSIS installer with the public key embedded. The update signing key is stored as a GitHub repository secret and is not in the source. Tauri's update signature is separate from Windows Authenticode signing. WebView2 is also required where the app runs.
 
-mainへpushすると、検査後にActionsがタグ・インストーラー・署名・`latest.json`を自動公開します。バージョンを変えずにpushした場合はActionsがパッチ版を上げてmainへコミットし、`npm run version:bump -- minor` などで先に上げた場合はそのバージョンを公開します。ドキュメントだけの変更は公開しません。[配布と自動更新](docs/distribution.md)を参照してください。
+A push to main has Actions publish the tag, installer, signature and `latest.json` after the checks. If the push leaves the version unchanged, Actions bumps the patch version and commits it to main; if you bumped it first, for example with `npm run version:bump -- minor`, that version is published. Documentation-only changes are not published. See [Distribution and updates](docs/distribution.md).
 
-個別コマンド:
+Individual commands:
 
-| コマンド | 用途 |
+| Command | Purpose |
 | --- | --- |
 | `npm run lint` | ESLint |
-| `npm run design:guard` | テーマ外の生の色、フロントエンドの直接HTTP呼び出しを検出 |
-| `npm test` | フロントエンドの動作テスト |
-| `npm run build` | TypeScriptとViteビルド |
-| `npm run ui:snap` | UIカタログの各節と、固定データで表示した実際のMR一覧・議論・差分を明暗 × 960×640 / 1280×840 で、取得中・失敗・空・古いキャッシュの状態を明暗 × 1280×840 で撮影し、基準画像と比較。ローカルではこの端末の基準（`output/ui-snap/baselines`、初回に記録）と比べ、CIでは `tests/visual/screenshots` と比べる。差分は `output/ui-snap/report` で確認 |
-| `npm run ui:snap:update` | 意図した見た目の変更後に、この端末の基準画像を撮り直す。CIの基準画像（`tests/visual/screenshots`）は、GitHub Actions の UI Preview を `update_snapshots` 付きで手動実行し、成果物を取り込んで更新する |
-| `npm run native:check` | Rustの書式・静的検査・テスト |
-| `npm run tauri -- info` | Tauri開発環境の診断 |
+| `npm run design:guard` | Finds raw colors outside the theme, direct HTTP calls from the frontend and Japanese left in shipped code |
+| `npm test` | Frontend behavior tests |
+| `npm run build` | TypeScript and Vite build |
+| `npm run ui:snap` | Captures each section of the UI catalog and the real MR list, discussion and diff shown with fixed data in light and dark × 960×640 / 1280×840, and the loading, failed, empty and stale-cache states in light and dark × 1280×840, and compares them with baseline images. Locally it compares with this device's baselines (`output/ui-snap/baselines`, recorded on the first run), and in CI with `tests/visual/screenshots`. Review differences in `output/ui-snap/report` |
+| `npm run ui:snap:update` | Recaptures this device's baselines after an intended visual change. CI baselines (`tests/visual/screenshots`) are updated by running GitHub Actions' UI Preview manually with `update_snapshots` and committing its artifact |
+| `npm run native:check` | Rust formatting, static checks and tests |
+| `npm run tauri -- info` | Diagnoses the Tauri development environment |
 
-## コードと設計
+## Code and design
 
-- `src/`: UI、MUIテーマ、共通部品、型付きIPCラッパー。
-- `src-tauri/`: Rustコマンド、ウィンドウ設定、CSPと最小権限。
-- `AGENTS.md`: AIによる実装でも守るUIと責務のルール。
-- [全体設計](docs/architecture.md): Self-Managed、プロジェクト/過去MR検索、MRレビューを中心としたアーキテクチャと開発順序。
-- [UI設計](docs/ui-design.md): 画面構造、情報密度、共通部品、UIの一貫性を守る変更ルール。
-- [採用調査と次の開発段階](docs/feasibility.md): 性能の見込み、制約、GitLab接続の設計方針。
-- [検証結果](docs/validation.md): 初期ビルド、テスト、Windows実機での疎通確認。
+- `src/`: UI, MUI theme, shared components and typed IPC wrappers.
+- `src-tauri/`: Rust commands, window settings, CSP and least privilege.
+- `AGENTS.md`: UI and responsibility rules that AI-assisted implementation also follows.
+- [Architecture](docs/architecture.md): the architecture and development order, centered on Self-Managed GitLab, project and past-MR search, and MR review.
+- [UI design](docs/ui-design.md): screen structure, information density, shared components and the change rules that keep the UI consistent.
+- [Feasibility and next stages](docs/feasibility.md): expected performance, constraints and the design of the GitLab connection.
+- [Validation](docs/validation.md): the initial build, tests and connectivity checks on real Windows machines.
+- [Localization](docs/i18n.md): message files, supported languages and how to write messages.
 
-MUIの描画はWebView2上です。実際の速度向上は、必要なAPIだけの取得・ページング・キャッシュ・一覧やdiffの描画制御で検証します。現在の土台だけではGitLab Webに対する速度改善は測れません。
+MUI renders in WebView2. Actual speed gains are verified through fetching only the needed APIs, paging, caching and controlling how lists and diffs render. The current foundation alone does not measure a speed improvement over GitLab on the web.

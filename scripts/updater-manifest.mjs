@@ -5,7 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { RELEASE_REPOSITORY } from './release-config.mjs'
 import { readProjectVersions } from './release-guard.mjs'
 
-export const RELEASE_NOTES = '署名済み Windows NSIS インストーラーと自動更新メタデータです。'
+/** The GitHub Release text. `latest.json` carries no notes, so the app shows its own update message in the reader's language. */
+export const RELEASE_NOTES = 'Signed Windows NSIS installer and auto-update metadata.'
 
 /** GitHub stores uploaded assets with spaces replaced by dots, so the updater URL must use that name. */
 export function releaseAssetName(fileName) {
@@ -21,7 +22,6 @@ export function createUpdaterManifest({ version, assetName, signature, pubDate }
   }
   return {
     version,
-    notes: RELEASE_NOTES,
     pub_date: pubDate,
     platforms: {
       'windows-x86_64': platform,

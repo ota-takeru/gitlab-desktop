@@ -215,7 +215,7 @@ jobs:
         shell: pwsh
         run: |
           $assets = (Get-ChildItem release-assets -File).FullName
-          $notes = (Get-Content release-assets/latest.json -Raw | ConvertFrom-Json).notes
+          $notes = node --input-type=module -e "import { RELEASE_NOTES } from './scripts/updater-manifest.mjs'; process.stdout.write(RELEASE_NOTES)"
           # A rerun for an existing tag replaces the assets of its release.
           gh release view $env:RELEASE_TAG *> $null
           if ($LASTEXITCODE -eq 0) {

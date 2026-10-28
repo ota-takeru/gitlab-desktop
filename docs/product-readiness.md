@@ -1,57 +1,57 @@
-# v0.2.0 製品品質の検証状況
+# v0.2.0 product quality verification status
 
-2026-10-04、Windows x64。検証対象はGitLab.comです。Self-ManagedのURL・サブパス対応は保持していますが、社内実機は今回の検証対象にありません。
+2026-10-04, Windows x64. The verification target is GitLab.com. Support for Self-Managed URLs and subpaths is kept, but an internal real device was not part of this verification.
 
-## 実装した保護
+## Protections implemented
 
-コメントの投稿・返信・サーバー下書き保存に成功したときは、対応する未送信コメントと投稿記録を同じトランザクションで削除します。投稿前に端末保存を確認し、成功直後の異常終了でも投稿済み本文を未送信として戻しません。保存内容が投稿中に変更されていた場合は、その新しい内容を保持します。
+When posting a comment, posting a reply or saving a server draft succeeds, the matching unsent comment and the post record are deleted in the same transaction. The app confirms the device save before posting, so an abnormal exit right after success does not bring the posted text back as unsent. If the saved content changed while posting, the new content is kept.
 
-- 未送信コメントをRust側SQLiteへ保存。接続先・アカウントとコメント対象で分離し、再起動後は対象の入力欄で復元します。取得キャッシュを消しても未送信入力は消えません。100件／アカウント、本文64KiB、キー4096バイトの上限があり、自動送信・自動削除はしません。
-- 投稿直前に操作記録を確定保存し、通信失敗・中断・サーバーエラー・不正な成功応答では「結果不明」を保持します。再起動後も同じMRへの書き込みを止め、サーバーの再取得と利用者の確認後に、表示した記録IDに対してだけ解除します。
-- 投稿中のログアウト・接続変更を拒否します。明示ログアウトは資格情報、キャッシュ、未送信コメント、結果未確認の投稿記録を削除するため、削除内容を確認します。
-- 通常の終了時と更新前に保存待ちを完了します。保存できなかった入力は保持し、無確認で終了・更新しません。未送信の内容がある終了は、対象の画面（MR名と、新しいコメント・返信・行コメント・説明の編集などの内容）を示して「保存して終了」「保存せずに終了」「戻る」から選ばせます。保存せずに終了しても結果未確認の操作の記録は消しません。画面の例外は再表示できる復旧画面へ切り替え、例外本文や秘密値を表示しません。
-- 差分のhunk件数・行位置を検証し、不正な差分の行コメントを無効にします。hunk内の`+++`／`---`は実際の追加・削除行として扱います。差分600行、全文1000行、議論20件、議論内ノート50件を描画上限にして前後移動で全取得データへ到達できます。
-- DBの移行はトランザクションで行い、新しいschemaや破損DBは自動置換せずエラー画面で知らせます。資格情報はWindows資格情報ストア、コメントと取得データはアプリ保存領域のSQLiteです。SQLite本文の暗号化は行っていません。
+- Unsent comments are saved in SQLite on the Rust side. They are separated by server/account and comment target, and are restored in the target's input field after a restart. Clearing the fetch cache does not delete unsent input. The limits are 100 items per account, 64 KiB per body and 4096 bytes per key, and nothing is sent or deleted automatically.
+- The operation record is saved durably right before posting, and a communication failure, interruption, server error or invalid success response keeps an "unknown result". After a restart, writes to the same MR stay blocked, and the record is cleared only for the displayed record ID after the server is refetched and the user confirms.
+- Logout and connection changes during a post are refused. An explicit logout deletes credentials, the cache, unsent comments and post records with unconfirmed results, so the app asks to confirm what will be deleted.
+- Pending saves are completed on a normal exit and before an update. Input that could not be saved is kept, and the app never quits or updates without confirmation. A quit with unsent content shows the affected screens (the MR name and the content, such as editing a new comment, reply, line comment or description) and asks you to choose from "Save and quit", "Quit without saving" and "Back". Quitting without saving does not delete records of operations with unconfirmed results. A screen exception switches to a recovery screen that can be shown again, and it does not show the exception text or secrets.
+- The number of diff hunks and line positions are validated, and line comments on an invalid diff are disabled. `+++` and `---` inside a hunk are treated as real added and removed lines. The render limits are 600 diff lines, 1000 lines for a whole file, 20 discussions and 50 notes per discussion, and all fetched data stays reachable by moving back and forth.
+- DB migration runs in a transaction, and a newer schema or a corrupt DB is reported on an error screen and never replaced automatically. Credentials are in the Windows credential store, and comments and fetched data are in SQLite in the app's storage area. SQLite contents are not encrypted.
 
-## 確認したこと
+## What was checked
 
-| チェック | 結果 |
+| Check | Result |
 | --- | --- |
-| React / IPC 動作テスト | 28ファイル、162件成功 |
-| リリース設定テスト | 3件成功、バージョン・固定配布元を確認 |
-| Rust | 54件成功、実機・配布物依存の6件は通常実行から除外 |
-| lint / design guard / TypeScript / build / Rust fmt・clippy | 成功。Fast Refreshの既存warning 6件、JSサイズwarningあり |
-| GitLab.com公開プロジェクト | 明示した実通信テスト成功 |
-| glab保存済み認証の検査 | 期限切れOAuthを秘密値を出さず拒否する実環境テスト成功 |
-| Windows資格情報ストア | 専用の架空値を一時保存・読出し・削除する実機テスト成功 |
-| 公開CI・配布 | [Windows CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184795)と[署名付き配布](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184764)成功。匿名downloadしたNSISの署名一致・改ざん拒否、latest manifestのversion / URL / signature一致を確認 |
+| React / IPC behavior tests | 28 files, 162 passed |
+| Release config tests | 3 passed, version and fixed distribution source checked |
+| Rust | 54 passed, 6 that depend on a real device or distribution artifact excluded from normal runs |
+| lint / design guard / TypeScript / build / Rust fmt and clippy | Passed. 6 existing Fast Refresh warnings and a JS size warning |
+| GitLab.com public project | The explicit real-network test passed |
+| Inspection of glab saved credentials | The real-environment test that rejects an expired OAuth without printing secrets passed |
+| Windows credential store | The real-device test that temporarily saves, reads and deletes a dedicated fictional value passed |
+| Public CI and distribution | [Windows CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184795) and [signed distribution](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184764) succeeded. For an anonymously downloaded NSIS, signature match and tamper rejection were confirmed, and so were the version / URL / signature match of the latest manifest |
 
-ローカルHTTP fixtureとコンポーネントテストで、アカウント分離、再起動復元、遅い保存と削除の順序、認証失効、ログアウト後の遅延応答、結果不明の永続化、UUID一致による解除、二重解除、保存失敗時の保持、終了前flush、終了リスナー登録失敗、差分と議論の描画上限を検証しています。これは実サーバーへの投稿試験と区別します。
+Local HTTP fixtures and component tests verify account separation, restore after restart, the order of slow saves and deletes, expired authentication, delayed responses after logout, persistence of unknown results, clearing by UUID match, double clearing, retention on save failure, flush before quit, failure to register the quit listener, and the render limits for diffs and discussions. This is distinct from a posting test against a real server.
 
-GitLab.comの公開プロジェクト検索はRustの本番API adapterを使った実通信テストで成功しました。公開MRフローの匿名試験は401 `AUTH_REQUIRED`で停止し、成功として数えていません。ローカルのglab OAuth認証は期限切れです。トークンをチャットやフロントエンドへ出さず、有効な認証を取り込める状態になった後に、本人確認・MR取得の実通信検証が必要です。
+The GitLab.com public project search succeeded as a real-network test using Rust's production API adapter. The anonymous test of the public MR flow stopped with 401 `AUTH_REQUIRED` and is not counted as a success. The local glab OAuth credentials have expired. Without putting the token in chat or the frontend, real-network verification of identity and MR fetching is needed once valid credentials can be imported.
 
-## 残る実機確認
+## Remaining real-device checks
 
-- 有効なGitLab.com認証での本人確認、プロジェクト／過去MR検索、MR詳細・議論・差分の取得。
-- 利用者が指定したテストMRでの投稿・返信・編集・削除・解決・下書き公開・承認。テストによる実投稿はまだ行っていません。
-- Windowsのインストール、ネイティブ終了イベント、インストール済み旧版から更新・再起動する操作。配布ファイルの署名検証と更新manifest検証とは別です。
-- 明暗テーマと960×640／1280×840の実画面、キーボード操作。Computer Useを使わない条件を守り、画面操作による検証は実施していません。
-- 実データでネットワーク待ち、キャッシュ取得、描画時間を分けた性能計測。DOM件数上限を確認したことだけでは体感速度やp95目標の達成を主張しません。
-- 実際のGitLabでの、リポジトリ内Markdownの相対パス画像（SVGを含む）と相対リンク、名前を変えたファイルへの旧版コメントの照合。
-- インストール後の`gitlab-desktop://open?url=…`の登録と、起動中のウィンドウへの受け渡し。
+- With valid GitLab.com authentication: identity check, project / past MR search, and fetching MR details, discussions and diffs.
+- Posting, replying, editing, deleting, resolving, publishing drafts and approving on a test MR the user specifies. No real posting test has been done yet.
+- Windows installation, the native quit event, and updating and restarting from an installed older version. These are separate from the signature verification of the distribution file and the update manifest verification.
+- Light and dark themes, real screens at 960×640 / 1280×840, and keyboard operation. Under the condition of not using Computer Use, verification by screen operation was not done.
+- Performance measurement on real data that separates network wait, cache fetch and render time. Having confirmed the DOM count limits alone does not support a claim about perceived speed or reaching the p95 target.
+- On real GitLab, matching relative-path images (including SVG) and relative links in Markdown inside the repository, and matching outdated comments on renamed files.
+- After installation, registration of `gitlab-desktop://open?url=…` and handing off to a running window.
 
-実装・自動テスト・公開配布の確認を進めた状態です。上記の実機確認まで完了したという「製品品質の最終合格」はまだ記録していません。
+Implementation, automated tests and the public distribution check are in progress. The "final product quality pass", meaning completion of the real-device checks above, has not been recorded yet.
 
-## 追加機能のローカル検証（2026-10-09）
+## Local verification of added features (2026-10-09)
 
-差分ページ内の本文・ファイル名検索、端末に保存するファイルの確認済み記録、画像・ファイル添付、ラベル・ブランチ・グループの検索条件を追加しました。使い方と保存上限は[README](../README.md#使い方と実装範囲)に記載しています。
+Added: search of body text and file names within a diff page, a viewed-file record for files stored on the device, image and file attachments, and search conditions for labels, branches and groups. Usage and storage limits are in the [README](../README.md#usage-and-scope).
 
-Rustは74件成功、実機・配布物依存の7件を除外しました。ローカルHTTP fixtureで添付のmultipart送信を確認しています。送信前の確認記録、結果不明時の再送停止、未送信本文の保持も検証しました。
+Rust passed 74, with 7 that depend on a real device or distribution artifact excluded. A local HTTP fixture confirmed multipart sending of attachments. The confirmation record before sending, stopping resends on an unknown result, and keeping unsent text were also verified.
 
-React / IPCの全体実行は309件中308件成功でした。既存の認証切れ後のアカウント変更テストが1件失敗し、該当ファイルの単独再実行では21件すべて成功しました。追加機能の統合テストでは、入力保存に失敗した場合に添付を送信しないことも確認しています。
+The full React / IPC run passed 308 of 309. One existing test of changing accounts after authentication expired failed, and a rerun of that file alone passed all 21. The integration test of the added features also confirmed that an attachment is not sent when saving the input fails.
 
-lint、design guard、TypeScript、production build、Rust fmt・clippy、リリース設定テストは成功しました。Fast Refreshのwarning 6件とバンドルサイズのwarningが残ります。UIカタログの明暗テーマで検索・確認済み操作を確認し、960×640と1280×840で表示を検査しました。
+lint, design guard, TypeScript, production build, Rust fmt and clippy, and the release config tests passed. The 6 Fast Refresh warnings and the bundle size warning remain. Search and the viewed-file action were checked in the UI catalog's light and dark themes, and the display was inspected at 960×640 and 1280×840.
 
-認証付きの実GitLabへの添付送信とSelf-Managed実機での検索は未確認です。この記録はローカル検証であり、公開配布の完了記録ではありません。
+Sending attachments to an authenticated real GitLab and searching on a real Self-Managed device are unverified. This record is a local verification and not a record of completed public distribution.
 
-2026-10-13のリリース前レビューを受けて、次を修正しました。添付送信は20秒の全体タイムアウトを使わず、サイズに応じて最大約3分待ちます。テキストと画像を同時に含む貼り付けはアップロードしません。アップロード中に入力欄を閉じても、リンクを元の未送信コメントへ追加します。Gravatarの取得はGitLab APIと別の同時実行枠を使います。添付の成功ではキャッシュを消去しません。差分ビューはファイルを切り替えると先頭から表示し、差分内検索は検索中だけページ全体を解析します。修正後、React / IPC 312件、Rust 75件（7件除外）、lint・design guard・TypeScript・production build・fmt・clippy・リリース設定テストが成功しました。他のプロセスでCPU負荷が高いあいだに全体を実行すると、時間のかかるUIテストがタイムアウトすることがありました。単独で再実行すると、すべて成功しました。
+After the 2026-10-13 pre-release review, these were fixed. Attachment sending no longer uses the 20-second overall timeout and waits up to about 3 minutes depending on size. A paste that contains both text and an image is not uploaded. If the input field is closed during an upload, the link is still added to the original unsent comment. Gravatar fetching uses a separate concurrency slot from the GitLab API. A successful attachment does not clear the cache. The diff view starts from the top when you switch files, and search within a diff parses the whole page only while searching. After the fixes, React / IPC 312, Rust 75 (7 excluded), and lint, design guard, TypeScript, production build, fmt, clippy and release config tests passed. When the whole suite ran while other processes kept the CPU busy, slow UI tests sometimes timed out. They all passed when rerun alone.

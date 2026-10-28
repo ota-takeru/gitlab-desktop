@@ -1,194 +1,194 @@
-# 検証結果
+# Validation results
 
-## v0.15.5〜v0.15.7 と次版の検証（2026-10-27）
+## Validation of v0.15.5 to v0.15.7 and the next version (2026-10-27)
 
-- 自動テスト: フロントエンド88ファイル・699件、リリース設定12件、Rust 145件が成功（実機・配布物に依存する7件は除外）。lint（警告0件）、design guard、TypeScript、production build（500kBを超えるチャンクなし）、Rust fmt・clippyが成功。
-- カバレッジ（出荷するコードのみ、`src/mock`・`src/pages`を除く）: 命令84.9%・分岐80.3%・関数84.1%・行88.8%。CIはこれを少し下回る閾値で実行する。
-- アクセシビリティ: axe（WCAG 2.1 A/AA）で、固定データのMR一覧・概要・議論・変更、プロジェクト、コード、設定を明暗両テーマで検査し、違反0件。修正前はリスト構造、表示文字を含まない読み上げ名、差分の行番号のコントラスト、検索欄のARIA属性で違反があった。
-- 画面比較: CI（windows-latest）で作った基準画像とCIで比べ、UIカタログと実画面の20件が一致（[PR #14](https://github.com/ota-takeru/gitlab-desktop/pull/14)、基準画像の作成は[実行40463456826](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40463456826)）。ローカルは端末ごとの基準と比べる。
-- 公開: [v0.15.5](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40441915628)、[v0.15.6](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40458949427)、[v0.15.7](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40464380803)の署名付きリリースが成功。
-- 固定データのプレビューで目視確認したもの: リポジトリ画像の表示経路、旧版コメントの自動照合と警告色、概要タブを先頭にしたMR、ナビゲーションの場所の色（明暗）、承認時の完了通知の色とアニメーション。
-- 未確認: 実際のGitLabでのリポジトリ画像・相対リンク・名前を変えたファイルの照合、インストール後の`gitlab-desktop://`の登録と起動中ウィンドウへの受け渡し、v0.15.7への自動更新。認証情報と実機が必要なため。
+- Automated tests: 88 frontend files with 699 tests, 12 release configuration tests and 145 Rust tests passed (7 tests that depend on a real device or the distributed build were excluded). Lint (0 warnings), design guard, TypeScript, the production build (no chunk over 500 kB), and Rust fmt and clippy passed.
+- Coverage (shipped code only, excluding `src/mock` and `src/pages`): 84.9% instructions, 80.3% branches, 84.1% functions, 88.8% lines. CI runs with thresholds slightly below these.
+- Accessibility: axe (WCAG 2.1 A/AA) checked the merge request list, overview, discussion and changes with fixed data, plus projects, code and settings, in both light and dark themes, with 0 violations. Before the fixes there were violations in list structure, accessible names with no visible text, the contrast of diff line numbers, and the ARIA attributes of the search field.
+- Screen comparison: screens were compared in CI against baseline images made in CI (windows-latest), and 20 screens of the UI catalog and the real app matched ([PR #14](https://github.com/ota-takeru/gitlab-desktop/pull/14); the baseline images were made in [run 40463456826](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40463456826)). Local runs compare against per-machine baselines.
+- Release: the signed releases of [v0.15.5](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40441915628), [v0.15.6](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40458949427) and [v0.15.7](https://github.com/ota-takeru/gitlab-desktop/actions/runs/40464380803) succeeded.
+- Checked visually in the fixed-data preview: the display path of repository images, automatic matching of comments on an older version and the warning color, a merge request with the Overview tab first, the colors of the navigation location (light and dark), and the color and animation of the completion notice on approval.
+- Not verified: repository images, relative links and matching of renamed files on a real GitLab; the `gitlab-desktop://` registration after installation and handing the URL to a running window; the automatic update to v0.15.7. These need credentials and a real device.
 
-## 入力保護と製品品質の強化（v0.2.0 / 2026-10-04）
+## Hardening of input protection and product quality (v0.2.0 / 2026-10-04)
 
-- `npm run check`成功。フロントエンド162件、リリース設定3件、Rust54件、合計219件の通常テスト。lint / design guard / TypeScript / production build / Rust fmt / clippyが成功。既存Fast Refresh warning 6件、JSサイズwarningは残っている。
-- `npm audit --omit=dev`で、本番JavaScript依存に報告済みの脆弱性0件。Rustや全依存の安全性を保証する検査ではない。
-- schema 1から2への移行、未来schemaでのファイル非改変、アカウント別未送信コメントと結果不明記録、再起動復元、投稿前保存、成功時の本文・記録のatomic削除、中断と接続切替の競合、古い応答・UUID・二重確認をfixtureで検証。
-- 差分1万行、全文2001行、議論101件、議論内ノート200件のテストで、一度のDOM描画件数と最終ページ到達を確認。ネットワーク性能や実機のp95ではない。
-- GitLab.com公開プロジェクト検索の実通信が成功。公開MR匿名取得は401 `AUTH_REQUIRED`で失敗したため、取得成功や認証付きレビュー完了として数えていない。
-- Windows資格情報ストアへ専用の架空値を一時保存・取得・削除する明示テスト成功。glab認証検査は期限切れOAuthを秘密値を出さず拒否した。有効なGitLab.com認証の実通信は未確認。
-- ローカル署名付きNSIS build成功。インストーラー4,531,229バイト、SHA256 `55ABE5128D76ECA9C9E52748AD79B42D6BF7C778E0828AE5E74D65DF217641CA`。Rustで公開鍵との署名一致、内容1バイト改変で拒否を確認。公開CI配布物とは別のローカルbuildの記録。
-- [Windows CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184795)と[署名付きRelease](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184764)が成功。タグ`v0.2.0`はソース`398862fbd013e789da19766b42865ce6a170af5d`を指す。配布処理は9分26秒で完了。
-- 公開[インストーラー](https://github.com/ota-takeru/gitlab-desktop/releases/download/v0.2.0/GitLab.Desktop_0.2.0_x64-setup.exe)を匿名ダウンロード。4,538,262バイト、SHA256 `16A8E1C002DBED15505BED69A7CBD550EA382FE0483495F391237AD16FDE36BB`。対応する444バイトの署名をRustで検証し、1バイト改変の拒否も成功した。
-- 公開latest endpointの`latest.json`（1429バイト）がversion `0.2.0`を返し、`windows-x86_64`と`windows-x86_64-nsis`の両方で上記インストーラーURLと署名が一致した。公開後のローカルbundleにはCI配布ファイルを置いて再検証したため、そこにあるファイルのhashは公開版と同じ。
-- Computer Useは使用していない。新しい実画面、ネイティブ終了イベント、インストール・旧版からの更新と再起動は未確認。確認対象と残る項目は[製品品質の検証状況](product-readiness.md)にまとめた。
+- `npm run check` passed: 162 frontend tests, 3 release configuration tests and 54 Rust tests, 219 regular tests in total. Lint, design guard, TypeScript, production build, Rust fmt and clippy passed. The 6 existing Fast Refresh warnings and the JS size warning remain.
+- `npm audit --omit=dev` reported 0 known vulnerabilities in the production JavaScript dependencies. It does not guarantee the safety of Rust or of all dependencies.
+- Fixtures covered the migration from schema 1 to 2, leaving files unchanged under a future schema, per-account unsent comments and unknown-result records, restoring after a restart, saving before posting, atomic deletion of the body and record on success, races between cancellation and connection switching, and stale responses, UUIDs and double confirmation.
+- Tests with a 10,000-line diff, a 2,001-line full text, 101 discussions and 200 notes per discussion checked the number of DOM items rendered at once and that the last page is reached. This is not network performance or a p95 on a real device.
+- A real request to the GitLab.com public project search succeeded. Fetching a public MR anonymously failed with 401 `AUTH_REQUIRED`, so it is not counted as a successful fetch or as a completed authenticated review.
+- An explicit test that temporarily stored, read and deleted a dedicated fictitious value in the Windows credential store passed. The glab authentication check rejected an expired OAuth token without printing the secret. A real request with valid GitLab.com authentication is not verified.
+- A local signed NSIS build succeeded. The installer is 4,531,229 bytes, SHA256 `55ABE5128D76ECA9C9E52748AD79B42D6BF7C778E0828AE5E74D65DF217641CA`. Rust confirmed that the signature matches the public key and that changing one byte of the content is rejected. This records a local build, separate from the public CI artifact.
+- [Windows CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184795) and the [signed release](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37203184764) succeeded. The tag `v0.2.0` points to source `398862fbd013e789da19766b42865ce6a170af5d`. The distribution step finished in 9 minutes 26 seconds.
+- The public [installer](https://github.com/ota-takeru/gitlab-desktop/releases/download/v0.2.0/GitLab.Desktop_0.2.0_x64-setup.exe) was downloaded anonymously: 4,538,262 bytes, SHA256 `16A8E1C002DBED15505BED69A7CBD550EA382FE0483495F391237AD16FDE36BB`. Rust verified the matching 444-byte signature, and the rejection of a one-byte change also succeeded.
+- `latest.json` (1,429 bytes) from the public latest endpoint returned version `0.2.0`, and for both `windows-x86_64` and `windows-x86_64-nsis` the installer URL and signature matched the above. The local bundle after publishing was verified again with the CI distribution file placed in it, so the hash of the file there is the same as the public one.
+- Computer Use was not used. New real screens, native exit events, and installing and updating from an older version with a restart are not verified. The items checked and the remaining items are summarized in [Product quality validation status](product-readiness.md).
 
-## glab保存済み認証の取り込み（v0.1.2 / 2026-10-04）
+## Importing glab saved credentials (v0.1.2 / 2026-10-04)
 
-Windows x64 / glab 1.107.0。接続画面の明示操作からPATまたはOAuthアクセストークンをRustで取り込む経路を追加した。
+Windows x64 / glab 1.107.0. A path was added that imports a PAT or an OAuth access token in Rust from an explicit action on the connection screen.
 
-- `npm run check`成功。最終修正後の`npm run native:check`も成功。フロントエンド101件、リリーススクリプト3件、Rust34件の通常テスト、lint、design guard、TypeScript/Vite、fmt / Clippyを含む。
-- IPCがURLだけを送ること、取り込み成功・失敗、手動PATへの復帰、ブラウザープレビューでの無効化をUIテストで確認。
-- 対象hostだけの選択、root・別hostへのフォールバック拒否、HTTPS・port・大文字小文字を含むサブパスの一致、OAuth期限・不正設定の拒否をRustテストで確認。refresh tokenをアクセストークンとして使用しない。
-- 設定ファイルは1MiB・深さ32・10,000イベントに制限し、YAMLの重複キー・alias・anchor・tagを拒否。keyring用の一時設定には対象hostのメタデータだけを保存し、終了時に削除する。
-- 固定コマンド、環境変数の分離、子プロセス出力の上限とタイムアウト、秘密値を含まないエラー、Bearerヘッダーの秘匿属性、既存PAT接続メタデータとの互換性を確認。
-- 実glab 1.107.0のkeyring経路を隔離fixtureで確認。unique `.invalid` hostにfake tokenをWindows資格情報ストアへ登録し、対象hostだけの一時設定と固定CLIから一致する値を取得できた。fixture資格情報は削除し、不存在も確認。一時helperと設定を削除し、実認証・実設定は変更していない。
-- 旧形式の`api_host: host/subpath`は別`subfolder`が空の場合だけ照合できることを確認。相対`GLAB_CONFIG_DIR`は拒否し、相対XDGパスは候補から除く。
-- このPCの保存済みOAuthは期限切れ。修正前の読取は成功したが、本人確認APIは401を返した。修正後の明示実行テストでは期限切れを送信前に拒否し、glab側の認証更新を案内することを確認した。本物のトークンは表示・保存していない。
-- ローカルの署名付きNSIS生成と署名検証・改ざん拒否テストに成功。[GitHub CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37199393484)と[自動リリース](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37199393466)も成功し、v0.1.2タグと[公開リリース](https://github.com/ota-takeru/gitlab-desktop/releases/tag/v0.1.2)を自動生成した。
-- 公開先へ認証なしでアクセスし、NSIS（4,449,910 bytes）、署名、最新`latest.json`を取得。両Windows x64 platformのURL・署名・version一致、公開NSISの署名検証・改ざん拒否を確認。SHA-256: `3204491d67f1621fa4ea46eb27c9d215f03035b280452b1b5a6c9f18faae905c`。
+- `npm run check` passed. `npm run native:check` also passed after the final fix. These include 101 frontend tests, 3 release script tests and 34 Rust tests, lint, design guard, TypeScript/Vite, and fmt / Clippy.
+- UI tests confirmed that IPC sends only the URL, import success and failure, returning to manual PAT entry, and that the button is disabled in the browser preview.
+- Rust tests confirmed selecting only the target host, refusing fallback to the root or another host, matching HTTPS, port and subpaths including case, and rejecting expired or invalid OAuth settings. The refresh token is not used as an access token.
+- The configuration file is limited to 1 MiB, depth 32 and 10,000 events, and YAML duplicate keys, aliases, anchors and tags are rejected. The temporary keyring configuration stores only metadata of the target host and is deleted on exit.
+- Confirmed: the fixed command, isolation of environment variables, the limit and timeout on child process output, errors that contain no secrets, the sensitive attribute on the Bearer header, and compatibility with existing PAT connection metadata.
+- The keyring path of the real glab 1.107.0 was checked with an isolated fixture. A fake token was registered in the Windows credential store for a unique `.invalid` host, and the matching value was obtained through a temporary configuration for the target host only and the fixed CLI. The fixture credential was deleted and its absence confirmed. The temporary helper and configuration were deleted, and the real authentication and real configuration were not changed.
+- The old-format `api_host: host/subpath` can be matched only when the separate `subfolder` is empty. A relative `GLAB_CONFIG_DIR` is rejected, and relative XDG paths are dropped from the candidates.
+- The saved OAuth token on this PC has expired. Before the fix, reading succeeded but the identity API returned 401. In the explicit test after the fix, the expired token was rejected before sending, and the app told the user to refresh authentication in glab. The real token was not displayed or saved.
+- Local signed NSIS generation, signature verification and the tamper rejection test succeeded. [GitHub CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37199393484) and the [automatic release](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37199393466) also succeeded and automatically created the v0.1.2 tag and the [public release](https://github.com/ota-takeru/gitlab-desktop/releases/tag/v0.1.2).
+- The public site was accessed without authentication, and the NSIS (4,449,910 bytes), the signature and the latest `latest.json` were obtained. The URL, signature and version matched for both Windows x64 platforms, and signature verification and tamper rejection of the public NSIS were confirmed. SHA-256: `3204491d67f1621fa4ea46eb27c9d215f03035b280452b1b5a6c9f18faae905c`.
 
-初期JSは858.11 kB（gzip 264.45 kB）。既存のViteサイズ警告とFast Refreshのlint警告6件は残る。Computer Useは使用しておらず、今回追加したボタンの目視・実ウィンドウ操作は未検証。有効な実トークンによるGitLab.com本人確認・Self-Managed実機・OAuth自動refreshは検証済みとして扱わない。
+The initial JS is 858.11 kB (gzip 264.45 kB). The existing Vite size warning and the 6 Fast Refresh lint warnings remain. Computer Use was not used, and the button added this time was not checked visually or in a real window. Identity checks on GitLab.com with a valid real token, a real Self-Managed instance, and automatic OAuth refresh are not treated as verified.
 
-## 実接続と配布の検証（2026-10-04）
+## Validation of real connection and distribution (2026-10-04)
 
-Windows x64。以下の初期基盤・モックの記録とは別に、RustのGitLab APIクライアント、資格情報・永続キャッシュ、署名付き更新を実装した。
+Windows x64. Separate from the records of the initial foundation and mock below, the Rust GitLab API client, credentials, the persistent cache and signed updates were implemented.
 
-- `npm run check`成功。フロントエンド98件、リリーススクリプト3件、Rust21件の通常テスト、lint、design guard、TypeScript/Vite、Rust fmt / Clippyを含む。
-- 接続復元、PAT消去、認証失効・古いセッション応答の分離、検索条件の適用・復元、自分の返信の編集・削除、キャッシュ先行表示、403の再取得ループ防止、画面を閉じた後の遅い応答拒否をUIテストで確認。
-- 未送信本文を隠しても自動更新を止めること、pending書込みと結果不明状態の画面移動後の保持、二重投稿の抑制、アカウント別本文の分離・削除、署名付き更新の確認・待機・延期・手動再確認を確認。更新適用中の操作保護、認証失効時の保護継続、失敗時の通常操作への復帰も確認。
-- Rustの通常テスト21件が成功。fmt / Clippy（全target、警告をエラー扱い）も成功。
-- 明示実行の外部テスト3件が成功: GitLab.comの公開プロジェクトAPI、Windows資格情報ストアの保存・読出し・削除、生成したNSISの署名検証と1byte改ざんの拒否。
-- HTTP fixtureでタイトル・説明検索のクエリ、プロジェクト内のMR番号検索とグループ・全体では検索APIで番号を探して一覧の条件を適用すること、プロジェクト内MR、サブパス・ファイルパス、ページング、401/429、GETの再試行上限、書込の単発送信、MR差分取得前後のhead変更拒否を確認。
-- キャッシュのアカウント分離、保持期限・容量による退避、ログアウト後の遅い応答によるキャッシュ復活防止、処理待ちの上限・キャンセル、未来のDB schemaの拒否を確認。
-- 署名付きWindows NSISをローカルで生成した。更新用署名鍵はソース外で管理し、GitHub Repository secretを設定済み。Authenticode署名ではない。
-- [GitHub CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37191999302)と[自動リリース](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37191999309)が成功。mainのバージョン変更からv0.1.1タグと[公開リリース](https://github.com/ota-takeru/gitlab-desktop/releases/tag/v0.1.1)を自動生成した。
-- 公開先から認証なしでNSIS（4,330,370 bytes）、署名、latest.jsonを取得。Windows x64用URL・署名の一致とSHA-256を確認し、公開インストーラーの署名検証・改ざん拒否テストも成功。
+- `npm run check` passed. It includes 98 frontend tests, 3 release script tests and 21 Rust tests, lint, design guard, TypeScript/Vite, and Rust fmt / Clippy.
+- UI tests confirmed restoring a connection, clearing the PAT, separating authentication expiry from stale session responses, applying and restoring search conditions, editing and deleting your own replies, showing the cache first, preventing a 403 refetch loop, and rejecting late responses after a screen is closed.
+- Confirmed: automatic updates keep running when the unsent body is hidden; pending writes and unknown-result states are kept after navigating away; double posting is suppressed; per-account bodies are separated and deleted; and signed updates can be confirmed, wait, be postponed and be rechecked manually. Protection of actions while an update is applied, continued protection when authentication expires, and returning to normal operation after a failure were also confirmed.
+- The 21 regular Rust tests passed. fmt / Clippy (all targets, warnings as errors) also passed.
+- 3 explicitly run external tests passed: the GitLab.com public project API, saving, reading and deleting in the Windows credential store, and signature verification of the generated NSIS with rejection of a 1-byte change.
+- HTTP fixtures confirmed the queries for title and description search; MR number search within a project; for groups and global scope, finding the number through the search API and applying the list conditions; MRs within a project, subpaths and file paths, paging, 401/429, the retry limit for GET, single-send writes, and rejection of a head change before and after fetching an MR diff.
+- Confirmed: account separation of the cache, eviction by retention period and capacity, preventing cache revival by late responses after logout, the limit on and cancellation of queued work, and rejection of a future DB schema.
+- A signed Windows NSIS was generated locally. The update signing key is managed outside the source, and the GitHub repository secret is set. It is not an Authenticode signature.
+- [GitHub CI](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37191999302) and the [automatic release](https://github.com/ota-takeru/gitlab-desktop/actions/runs/37191999309) succeeded. The version change on main automatically created the v0.1.1 tag and the [public release](https://github.com/ota-takeru/gitlab-desktop/releases/tag/v0.1.1).
+- The NSIS (4,330,370 bytes), the signature and latest.json were obtained from the public site without authentication. The URL and signature for Windows x64 matched, the SHA-256 was checked, and the signature verification and tamper rejection test of the public installer also passed.
 
-初期JSは857.45 kB（gzip 264.32 kB）。Viteのchunkサイズ警告と開発時Fast Refreshに関するlint警告は残るが、ビルド・型検査にエラーはない。この数値は起動時間や実データを含む描画性能の計測ではない。
+The initial JS is 857.45 kB (gzip 264.32 kB). The Vite chunk size warning and the lint warnings about Fast Refresh in development remain, but the build and type check have no errors. This figure is not a measurement of startup time or of rendering performance with real data.
 
-今回の作業ではComputer Useを使用しないという指定に従い、実接続画面の目視・キーボード操作による検証は行っていない。GitLab.comの認証付き取得・実投稿、Self-Managed実機、社内CA・プロキシ、実データ大量取得時の性能、自動更新による実インストール・再起動は未検証。API fixtureと公開APIの成功から、これらの成功を推定しない。
+This work followed the instruction not to use Computer Use, so the real connection screen was not checked visually or by keyboard operation. Authenticated fetching and real posting on GitLab.com, a real Self-Managed instance, an internal CA and proxy, performance when fetching large amounts of real data, and a real install and restart through automatic update are not verified. The success of the API fixtures and the public API does not imply success of these.
 
-## 初期基盤
+## Initial foundation
 
-2026-09-30 / Windows x64。この記録はGitLabに未接続の0.1.0基盤に対するものです。
+2026-09-30 / Windows x64. This record covers the 0.1.0 foundation, which is not connected to GitLab.
 
-| 項目 | 結果 |
+| Item | Result |
 | --- | --- |
-| Tauri環境診断 | WebView2、MSVC、Rust、Nodeを検出。必要条件を充足 |
-| 開発起動 | `npm run desktop:dev`でViteとRustアプリが起動。Rust生成物をViteの監視から除外し、WindowsのEBUSYを解消 |
-| 一括チェック | `npm run check`成功。開発サーバーと並行してもHTTP 200を維持 |
-| ESLint | 成功 |
-| フロントエンドテスト | 7件成功。プレビュー、遷移、IPC成功/失敗/待機等 |
-| デザイン制約チェック | 成功 |
-| TypeScript / Vite | 成功 |
-| Rust fmt / Clippy | 成功。Clippyは警告をエラーとして検査 |
-| Rust test | IPCのJSON契約テスト1件成功 |
-| npm依存監査 | 報告された脆弱性0件（当日のnpm audit結果。全依存の安全性保証ではない） |
-| Tauri releaseビルド | `npm run desktop:build -- --no-bundle`成功 |
-| Windows実行ファイル | 8,678,400 bytes。WebView2等の実行環境は含まない |
-| 本番画面でのIPC | runtime_infoがappVersion=0.1.0、os=windows、arch=x86_64を返す |
-| 権限制限 | 許可していない`plugin:app\|name`がACLにより拒否される |
-| 本番の遅延読み込み | UI catalogの分割JSを読み込み、表示できる |
-| 本番コンソール | 最終起動・画面遷移・IPC確認でエラー/警告0件 |
+| Tauri environment diagnosis | WebView2, MSVC, Rust and Node were detected. The requirements are met |
+| Development start | `npm run desktop:dev` started Vite and the Rust app. Rust build output was excluded from Vite's watch, which resolved EBUSY on Windows |
+| Full check | `npm run check` passed. HTTP 200 was kept while it ran alongside the development server |
+| ESLint | Passed |
+| Frontend tests | 7 passed. Preview, navigation, IPC success/failure/waiting, and others |
+| Design constraint check | Passed |
+| TypeScript / Vite | Passed |
+| Rust fmt / Clippy | Passed. Clippy was run with warnings as errors |
+| Rust test | 1 IPC JSON contract test passed |
+| npm dependency audit | 0 reported vulnerabilities (the npm audit result of that day; not a guarantee of the safety of all dependencies) |
+| Tauri release build | `npm run desktop:build -- --no-bundle` passed |
+| Windows executable | 8,678,400 bytes. It does not include the runtime such as WebView2 |
+| IPC on the production screen | runtime_info returned appVersion=0.1.0, os=windows, arch=x86_64 |
+| Permission restriction | `plugin:app\|name`, which is not allowed, is rejected by the ACL |
+| Lazy loading in production | The split JS of the UI catalog is loaded and can be shown |
+| Production console | 0 errors/warnings in the final start, screen navigation and IPC check |
 
-Playwrightでブラウザープレビューと生成した実行ファイルのWebView2を操作。概要・MR・Issue・Pipeline・UI catalogの遷移、明暗テーマ、TabでのフォーカスとEnterでのテーマ変更を確認しました。1280×840と960×640のブラウザー表示を目視確認。ネイティブWebViewの1008×662表示では横方向のオーバーフローなし。
+Playwright drove the browser preview and the WebView2 of the generated executable. It confirmed navigation across Overview, merge requests, Issues, Pipelines and the UI catalog, light and dark themes, focus with Tab, and changing the theme with Enter. The browser display at 1280×840 and 960×640 was checked visually. In the native WebView at 1008×662 there was no horizontal overflow.
 
-初期JSは456.73 kB（gzip 145.71 kB）、遅延読み込みするカタログは65.80 kB（gzip 20.23 kB）。Viteのサイズ警告はありません。これはビルド成果物のサイズであり、起動時間やメモリ消費、GitLab Webより速いことの証明ではありません。
+The initial JS is 456.73 kB (gzip 145.71 kB), and the lazily loaded catalog is 65.80 kB (gzip 20.23 kB). There is no Vite size warning. These are build artifact sizes, not proof of startup time, memory use, or being faster than the GitLab web UI.
 
-検証画像はGit管理対象外の`output/playwright/`に保存しています。`final-native.png`が最終release版のRust疎通確認画面です。検証のため一時的に有効にしたWebView2デバッグ接続はプロセス終了時に停止し、アプリ設定には追加していません。
+The validation images are saved in `output/playwright/`, which is not under Git management. `final-native.png` is the final release-build screen that confirms the Rust connection. The WebView2 debug connection enabled temporarily for validation stops when the process exits and was not added to the app settings.
 
-未検証: GitLab実接続、PAT/OAuth、社内CA/プロキシ、取得データを含む性能、署名・インストーラー、Windows以外のOS。次の判断材料は[採用調査](feasibility.md)を参照してください。
+Not verified: a real GitLab connection, PAT/OAuth, an internal CA/proxy, performance with fetched data, signing and installers, and operating systems other than Windows. See the [feasibility study](feasibility.md) for the next decision material.
 
-## 操作できるUIモックの検証
+## Validation of the interactive UI mock
 
-2026-09-30追記。`#mock`の架空データを使ったブラウザープレビューを検証した。実API・認証・永続キャッシュの検証ではない。
+Added 2026-09-30. A browser preview using the fictitious data of `#mock` was validated. This is not validation of the real API, authentication or persistent cache.
 
-- `npm run check`成功。フロントエンド14件、Rust1件のテスト、ESLint、design guard、TypeScript/Vite、fmt/Clippyが成功。最後の入力欄レイアウト調整後もlint/buildを確認。
-- 1280×840と960×640で明暗テーマを表示し、横方向のページオーバーフローがないことを確認。長いコード行は差分領域内で横スクロールする。
-- Playwrightでタイトル/説明の検索、過去MRのMerged絞り込み、プロジェクト検索とお気に入り操作、一覧/詳細/カタログの移動を操作した。
-- MR別の下書き保持、新規コメントへの返信、解決/再開、承認/取消、狭幅で一覧へ戻る動作を確認。Ctrl+Enterでの投稿シミュレーションとTabのフォーカス輪郭も確認した。
-- 最終プレビューのブラウザーコンソールはエラー/警告0件。データ・下書き・投稿はメモリ内に限り、リロードでリセットする。
-- `output/playwright/mock-review-dark.png`、`mock-review-light.png`、`mock-small-light.png`、`mock-catalog-dark.png`等に目視確認用画像を保存（Git管理対象外）。
+- `npm run check` passed. 14 frontend tests, 1 Rust test, ESLint, design guard, TypeScript/Vite, and fmt/Clippy passed. Lint and build were checked again after the last adjustment of the input field layout.
+- Light and dark themes were shown at 1280×840 and 960×640, and there was no horizontal page overflow. Long code lines scroll horizontally inside the diff area.
+- With Playwright, title/description search, the Merged filter for past MRs, project search and favorites, and moving among the list, detail and catalog were exercised.
+- Confirmed: keeping a draft per MR, replying to a new comment, resolve/reopen, approve/revoke, and returning to the list at a narrow width. The simulated post with Ctrl+Enter and the focus outline on Tab were also checked.
+- The browser console of the final preview had 0 errors/warnings. Data, drafts and posts exist only in memory and reset on reload.
+- Images for visual checking are saved in `output/playwright/mock-review-dark.png`, `mock-review-light.png`, `mock-small-light.png`, `mock-catalog-dark.png` and others (not under Git management).
 
-このモックの機能はUI方針を確認するためのもの。実データの大量描画、仮想化の性能、GitLabとの投稿整合性や権限制御を保証するものではない。
+The features of this mock are for confirming the UI direction. They do not guarantee rendering of large amounts of real data, virtualization performance, posting consistency with GitLab, or permission control.
 
-## プロジェクト画面・コミット差分・概要の拡張
+## Extending the project screen, commit diffs and overview
 
-2026-09-30追記。上記モックに対する追加検証。
+Added 2026-09-30. Additional validation of the mock above.
 
-- `npm run check`成功。フロントエンド20件、Rust1件のテスト、ESLint、design guard、TypeScript/Vite、fmt/Clippyが成功。
-- プロジェクト内のタイトル/説明検索、Open/Merged切替、Open 0件のData Catalogから過去MRを開く操作を確認。MRから戻った際に検索語とMerged条件が保持されることをブラウザーで確認。
-- MR全体とコミット単位を切り替え、同じファイルの異なるパッチ、親SHA、ファイル選択のリセットを確認。コミット差分にMR全体の行コメントを重ねないこと、別MRでは全体表示へ戻ることを確認。
-- 概要で既存コメントと返信本文を表示。返信ボタンから入力欄へフォーカスが移り、投稿シミュレーション後も概要タブに留まることを確認。付帯情報はキーボードのEnterで開閉できる。
-- 明暗テーマ、1280×840と960×640の表示を目視確認。960×640でも概要の最初のコメント本文を初期表示で読め、ページ全体に横スクロールは発生しない。
-- UIカタログは本体と同じMockProjectPageとMockReviewPaneを利用。カタログ内のプロジェクト検索・コミット切替も操作確認。
-- 画像は`output/playwright/v2-project-dark.png`、`v2-project-light-960.png`、`v2-overview-dark.png`、`v2-overview-light-960.png`、`v2-commit-dark.png`、`v2-commit-light-960.png`、`v2-catalog-dark.png`（Git管理対象外）。
+- `npm run check` passed. 20 frontend tests, 1 Rust test, ESLint, design guard, TypeScript/Vite, and fmt/Clippy passed.
+- Confirmed: title/description search within a project, switching Open/Merged, and opening a past MR from a Data Catalog with 0 Open. In the browser, the search term and the Merged filter were kept when returning from an MR.
+- Switching between the entire MR and a single commit was confirmed, including different patches of the same file, the parent SHA, and resetting the file selection. Line comments of the entire MR are not overlaid on a commit diff, and another MR returns to the entire view.
+- The overview shows existing comments and reply bodies. The reply button moves focus to the input field, and the view stays on the Overview tab after a simulated post. The extra information can be opened and closed with the Enter key.
+- Light and dark themes and the displays at 1280×840 and 960×640 were checked visually. Even at 960×640 the body of the first comment in the overview is readable on the initial display, and there is no horizontal scroll on the whole page.
+- The UI catalog uses the same MockProjectPage and MockReviewPane as the app. Project search and commit switching in the catalog were also exercised.
+- Images are `output/playwright/v2-project-dark.png`, `v2-project-light-960.png`, `v2-overview-dark.png`, `v2-overview-light-960.png`, `v2-commit-dark.png`, `v2-commit-light-960.png` and `v2-catalog-dark.png` (not under Git management).
 
-引き続き架空データによるUIモック。実GitLab接続、永続キャッシュ、レビュー件数増加時の性能は未検証。この追加分はブラウザーで検証し、Windows release実行ファイルの再生成は行っていない。
+This is still a UI mock with fictitious data. A real GitLab connection, the persistent cache, and performance as the number of reviews grows are not verified. This addition was validated in the browser, and the Windows release executable was not regenerated.
 
-## 日常利用向けの画面枠の整理
+## Tidying the screen frame for daily use
 
-2026-09-30追記。ロゴ・副題・重複ヘッダーを除去し、一行ナビゲーションと折りたたみ、下部ステータスバーに変更。
+Added 2026-09-30. The logo, subtitle and duplicate header were removed, and the screen was changed to a one-line navigation with collapsing and a bottom status bar.
 
-- `npm run lint`、`npm test -- --run src/pages/MockApp.test.tsx`（11件）、`npm run build`が成功。design guardとTypeScriptも成功。
-- ブラウザーで折りたたみ前後の検索条件・選択MRの保持、アイコンからプロジェクト/検索/レビューへの移動、テーマ変更、常時見えるモック表示を確認。
-- Tab/Shift+Tabによるフォーカス輪郭とEnterによる展開を確認。1280×840と960×640、明暗両テーマを目視確認し、狭幅でも下部操作が切れず、ページの横方向オーバーフローがないことを確認。
-- 1280×840でのMR詳細領域は変更前790×798px（上端42px）、変更後814×816px（上端0px）。ナビゲーションを折りたたむと918×816px。ナビゲーション3行の高さは各36px。これはレイアウトの実測値であり、処理性能の計測ではない。
-- 最終リロード後のコンソールはエラー/警告0件。検証画像は`output/playwright/shell-overview-dark.png`、`shell-overview-collapsed-dark.png`、`shell-expanded-light.png`、`shell-small-light.png`、`shell-small-dark.png`、`shell-keyboard-focus.png`。
+- `npm run lint`, `npm test -- --run src/pages/MockApp.test.tsx` (11 tests) and `npm run build` passed. Design guard and TypeScript also passed.
+- In the browser, the following were confirmed: keeping the search conditions and the selected MR before and after collapsing, moving to Projects/Search/Review from the icons, changing the theme, and the always-visible mock label.
+- The focus outline with Tab/Shift+Tab and expanding with Enter were confirmed. Both themes at 1280×840 and 960×640 were checked visually; the bottom controls are not cut off even at a narrow width, and the page has no horizontal overflow.
+- The MR detail area at 1280×840 was 790×798px (top at 42px) before the change and 814×816px (top at 0px) after it. With the navigation collapsed it is 918×816px. The three navigation rows are 36px high each. These are measured layout values, not measurements of processing performance.
+- The console after the final reload had 0 errors/warnings. The validation images are `output/playwright/shell-overview-dark.png`, `shell-overview-collapsed-dark.png`, `shell-expanded-light.png`, `shell-small-light.png`, `shell-small-dark.png` and `shell-keyboard-focus.png`.
 
-## コミットタイムライン
+## Commit timeline
 
-2026-09-30追記。変更タブ上部の選択UIを、先頭にMR全体を置く横向きタイムラインへ変更。
+Added 2026-09-30. The selection UI at the top of the Changes tab was changed to a horizontal timeline that places the entire MR first.
 
-- 関連するMockReviewPaneの3テスト、lint、TypeScript、design guard、Vite buildが成功。最終の接続線位置・表示例日時調整後にもlint/buildを再確認。
-- ブラウザーでMR全体→1番目のコミット→末尾コミット→MR全体を操作し、同じファイルのパッチ内容・行コメントマーカー・ファイル選択が比較対象に応じて切り替わることを確認。
-- 左右キー・Home・Endの選択と、12コミットのカタログ例で送りボタンによる横スクロールを確認。横スクロールは帯の中に留まり、ページ全体の幅は増えない。
-- 1280×840と960×640で明暗テーマを目視確認。タイムライン本体は66px高で、差分の横幅を維持。長い件名は省略表示し、ツールチップとアクセシブル名に全文を含める。
-- 最終リロード後のコンソールはエラー/警告0件。画像は`output/playwright/timeline-commit-dark.png`、`timeline-light.png`、`timeline-small-light.png`、`timeline-small-dark.png`、`timeline-many-dark.png`。
+- The 3 related MockReviewPane tests, lint, TypeScript, design guard and Vite build passed. Lint and build were checked again after the final adjustment of the connection line position and the sample date and time.
+- In the browser, the sequence entire MR, first commit, last commit, entire MR was exercised, and the patch content of the same file, the line comment markers and the file selection were confirmed to switch according to the comparison target.
+- Selection with the left/right keys, Home and End, and horizontal scrolling with the step buttons in a catalog example of 12 commits were confirmed. The horizontal scroll stays inside the strip, and the width of the whole page does not increase.
+- Light and dark themes at 1280×840 and 960×640 were checked visually. The timeline itself is 66px high and keeps the horizontal width of the diff. Long subjects are truncated, and the full text is included in the tooltip and the accessible name.
+- The console after the final reload had 0 errors/warnings. Images are `output/playwright/timeline-commit-dark.png`, `timeline-light.png`, `timeline-small-light.png`, `timeline-small-dark.png` and `timeline-many-dark.png`.
 
-## ファイル全体の表示
+## Showing the whole file
 
-2026-09-30追記。変更ファイルの見出しに「差分 / ファイル全体」を追加。
+Added 2026-09-30. "Diff / Whole file" was added to the heading of each changed file.
 
-- `npm run lint`、`npm test`（27件）、`npm run build`が成功。design guardとTypeScriptも成功。
-- 全8パスの架空ソースを用意し、MR全体・各コミットの全スナップショットで差分の新行番号と本文が一致することをテスト。MR全体と最新コミットの全文一致、旧コミットとの差異も確認。
-- ブラウザーで全文の末尾までスクロールし、未変更部分を含む全文、コミット・ファイル切替時の表示モード保持、別MRでの初期化を確認。全文には削除行や行コメントマーカーを混ぜず、差分へ戻すとマーカーが表示される。
-- 未取得内容と空ファイルの区別をコンポーネントテストで確認。UIカタログでも同じ全文表示を操作できる。
-- 1280×840と960×640、明暗テーマの表示を目視確認。ページ全体の横方向オーバーフローなし。Tabで選択グループへ移動し、左右キーとEnterで表示を切り替え、2pxのフォーカス輪郭を確認。
-- 最終リロード後のブラウザーコンソールはエラー/警告0件。画像は`output/playwright/full-file-dark.png`、`full-file-light.png`、`full-file-small-light.png`、`full-file-small-dark.png`、`full-file-end-dark.png`。
+- `npm run lint`, `npm test` (27 tests) and `npm run build` passed. Design guard and TypeScript also passed.
+- Fictitious sources for all 8 paths were prepared, and tests confirmed that the new line numbers and bodies of the diff match the full snapshots of the entire MR and of each commit. The full-text match between the entire MR and the latest commit, and the difference from an older commit, were also confirmed.
+- In the browser, the following were confirmed: scrolling to the end of the full text, the full text including unchanged parts, keeping the display mode when switching commits and files, and resetting in another MR. The full text does not mix in deleted lines or line comment markers, and the markers appear when returning to the diff.
+- A component test confirmed the distinction between content not yet fetched and an empty file. The UI catalog can exercise the same full-text view.
+- The displays at 1280×840 and 960×640 in both themes were checked visually. There is no horizontal overflow on the whole page. Tab moves to the selection group, the left/right keys and Enter switch the view, and a 2px focus outline was confirmed.
+- The browser console after the final reload had 0 errors/warnings. Images are `output/playwright/full-file-dark.png`, `full-file-light.png`, `full-file-small-light.png`, `full-file-small-dark.png` and `full-file-end-dark.png`.
 
-架空データによるUIモックの確認。実GitLabからのファイル取得・大容量ファイルの描画性能は未実装/未検証。Rustの変更やWindows release実行ファイルの再生成は行っていない。
+This was checked with a UI mock using fictitious data. Fetching files from a real GitLab and rendering performance for large files are not implemented or not verified. The Rust code was not changed, and the Windows release executable was not regenerated.
 
-## 議論を起点にするMR詳細
+## MR detail that starts from the discussion
 
-2026-09-30追記。タブを「議論 → 変更 → 概要」に変更し、初期表示を議論に統一。
+Added 2026-09-30. The tabs were changed to "Discussion → Changes → Overview", and the initial view was unified to Discussion.
 
-- `npm test`（29件）、`npm run lint`、`npm run build`が成功。design guard、TypeScriptも成功。
-- ブラウザーで初期表示、プロジェクト・過去MR検索からの遷移、カタログ内のタブ切り替えを確認。
-- 概要は説明全文と短い付帯情報を表示し、議論一覧や入力欄を重複させない。概要との往復で新規コメント・返信下書きが保持され、返信フォーカス・投稿シミュレーションが動作することを確認。
-- 変更タブのコミット切り替えとファイル全文表示も操作確認。1280×840と960×640、明暗テーマを目視確認し、狭幅で最初のコメント本文と返信が表示され、ページの横方向オーバーフローがないことを確認。
-- 矢印キーとEnterによる議論・変更・概要の移動を確認。最終ブラウザーコンソールはエラー/警告0件。
-- 画像: `output/playwright/discussion-first-dark.png`、`discussion-first-light.png`、`discussion-first-small-dark.png`、`discussion-first-small-light.png`、`overview-reference-dark.png`。
+- `npm test` (29 tests), `npm run lint` and `npm run build` passed. Design guard and TypeScript also passed.
+- In the browser, the initial view, navigation from project and past MR search, and tab switching in the catalog were confirmed.
+- The overview shows the full description and short extra information, and does not duplicate the discussion list or the input fields. Going back and forth with the overview keeps the new comment and reply drafts, and the reply focus and the simulated post were confirmed to work.
+- Commit switching and the full-file view on the Changes tab were also exercised. Both themes at 1280×840 and 960×640 were checked visually. At a narrow width the first comment body and the reply are shown, and the page has no horizontal overflow.
+- Moving among Discussion, Changes and Overview with the arrow keys and Enter was confirmed. The final browser console had 0 errors/warnings.
+- Images: `output/playwright/discussion-first-dark.png`, `discussion-first-light.png`, `discussion-first-small-dark.png`, `discussion-first-small-light.png` and `overview-reference-dark.png`.
 
-引き続きサンプルデータによるUIモック。実API・Rust・Windows release実行ファイルには変更なし。
+This is still a UI mock with sample data. The real API, Rust and the Windows release executable are unchanged.
 
-## GitLab形式のコメント・レビュー操作
+## GitLab-style comment and review actions
 
-2026-09-30追記。通常コメント/スレッド、返信、旧/新行・ファイルへのコメント、Markdown表示、自分の投稿の編集・削除、未公開レビューの確認・公開・破棄をモックへ追加。
+Added 2026-09-30. Regular comments/threads, replies, comments on old/new lines and files, Markdown rendering, editing and deleting your own posts, and checking, publishing and discarding a pending review were added to the mock.
 
-- 統合検証: `npm test`（10ファイル、57件）、`npm run lint`、`npm run build`が成功。TypeScript・design guardを含む。
-- ブラウザーで通常コメントの追加・編集、返信によるスレッド化、親本文削除後の返信保持を確認。
-- 未公開レビューでは件数・解決状態が変わらず、送信時に返信・解決・概要が反映されることを確認。旧側の行、コミット全文の行、ファイル全体のコメント対象も保持される。
-- 未公開本文の編集、未保存編集中の送信禁止、任意の承認、破棄のキャンセル/確定、破棄後の概要・承認チェックのリセットを操作確認。MR間の保留レビューと行位置別の入力分離は統合テストで確認。
-- Ctrl+Enterでレビューに追加、Ctrl+Shift+Enterで即時コメントを確認。Tab/Shift+Tabで行コメントボタンの可視化と2pxのフォーカス輪郭を確認。
-- 1280×840 / 960×640の明暗テーマを目視確認。入力欄、Markdownプレビュー、狭幅での送信確認ダイアログを確認し、ページ全体の横方向オーバーフローなし。カタログ内の入力から保留レビュー確認も操作可能。
-- 最終リロード後のコンソールは警告/エラーなし。途中のHMR・修正前スタイルに由来する旧ログとは分離して確認。
-- 画像: `output/playwright/comments-dark-1280.png`、`comments-light-1280.png`、`comments-dark-960.png`、`comments-light-960.png`、`comments-light-dialog-960.png`。
+- Integrated validation: `npm test` (10 files, 57 tests), `npm run lint` and `npm run build` passed. TypeScript and design guard are included.
+- In the browser, adding and editing a regular comment, making a thread with a reply, and keeping replies after the parent body is deleted were confirmed.
+- In a pending review, counts and resolved states do not change, and on submit the replies, resolutions and overview are reflected. Lines on the old side, lines in a full commit text, and whole-file comment targets are also kept.
+- Editing a pending body, blocking submit while an edit is unsaved, optional approval, canceling and confirming a discard, and the reset of the overview and approval check after a discard were exercised. Pending reviews across MRs and the separation of inputs by line position were confirmed by integration tests.
+- Adding to the review with Ctrl+Enter and an immediate comment with Ctrl+Shift+Enter were confirmed. Showing the line comment button and a 2px focus outline with Tab/Shift+Tab were confirmed.
+- Light and dark themes at 1280×840 / 960×640 were checked visually. The input field, the Markdown preview, and the submit confirmation dialog at a narrow width were checked, and the whole page has no horizontal overflow. Input in the catalog can also lead to the pending review confirmation.
+- The console after the final reload had no warnings or errors. It was checked separately from old logs caused by intermediate HMR and pre-fix styles.
+- Images: `output/playwright/comments-dark-1280.png`, `comments-light-1280.png`, `comments-dark-960.png`, `comments-light-960.png` and `comments-light-dialog-960.png`.
 
-対象はメモリ内のサンプル操作。実GitLabへの投稿、サーバー下書き、添付・Suggestion・権限判定は未実装。詳細は[対応方針](comment-review-parity.md)。RustとWindows release実行ファイルは今回変更していない。
+The scope is sample operations in memory. Posting to a real GitLab, server drafts, attachments, suggestions and permission checks are not implemented. See the [parity plan](comment-review-parity.md) for details. Rust and the Windows release executable were not changed this time.
 
-## データ増加時の画面遷移
+## Screen transitions as data grows
 
-保存データが増えるほど遷移が重くなる原因を、上限まで埋めたデータで計測して直した。GitLab実接続とWebView2では未計測で、数値は開発環境のもの。
+The cause of transitions getting slower as stored data grows was measured with data filled to the limit, and fixed. It is not measured on a real GitLab connection or on WebView2, and the numbers are from the development environment.
 
-| 対象 | 条件 | 変更前 | 変更後 | 計測環境 |
+| Target | Condition | Before | After | Environment |
 | --- | --- | --- | --- | --- |
-| 既読記録の読み取り | 上限の16,000件（535 KB）、MR一覧50行の未読数 | 282 ms | 1 ms | ブラウザープレビュー（開発ビルド） |
-| ローカルキャッシュの読み取り1回 | 600件×200 KB（約120 MB） | 9〜14 ms | 0.4〜0.8 ms | `cargo test --release` |
-| ローカルキャッシュの書き込み1回 | 同上 | 19 ms | 4 ms | 同上 |
-| コメント本文600件の再描画 | 内容の変更なし | 653 ms | 9 ms | Vitest（jsdom） |
-| コメント本文600件の再表示 | 同じMRを開き直す | 1,112 ms | 225 ms | 同上 |
+| Reading the read records | The limit of 16,000 entries (535 KB), unread counts for 50 MR list rows | 282 ms | 1 ms | Browser preview (development build) |
+| One read of the local cache | 600 entries × 200 KB (about 120 MB) | 9 to 14 ms | 0.4 to 0.8 ms | `cargo test --release` |
+| One write of the local cache | Same | 19 ms | 4 ms | Same |
+| Re-rendering 600 comment bodies | No change in content | 653 ms | 9 ms | Vitest (jsdom) |
+| Re-showing 600 comment bodies | Reopening the same MR | 1,112 ms | 225 ms | Same |
 
-既読記録は描画のたびに全件を解析していたため、保存内容が変わったときだけ解析する。MR画面の既読記録の更新も、描画のたびではなく議論が変わったときだけ動く。キャッシュは読み取りのたびに全件の合計サイズを数えていたため、期限切れの除外は読み取り条件で行い、容量の整理は書き込み時に索引だけで行う。コメント本文はMarkdownの変換結果を最大2,000件まで再利用する。議論60件・コメント180件の一覧全体の再描画はjsdomで約360〜420 msかかり、残っている。
+The read records were parsed in full on every render, so they are now parsed only when the stored content changes. Updating the read records on the MR screen also runs only when the discussions change, not on every render. The cache counted the total size of all entries on every read, so expired entries are now excluded by a read condition, and capacity cleanup is done on write using only the index. Rendered Markdown is reused for up to 2,000 comment bodies. Re-rendering the whole list of 60 discussions and 180 comments still takes about 360 to 420 ms in jsdom, and this remains.

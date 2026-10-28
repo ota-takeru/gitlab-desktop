@@ -1,49 +1,49 @@
-# GitLab Desktop 全体設計
+# GitLab Desktop architecture
 
-設計日: 2026-09-30。2026-10-04に初期クライアントの接続・検索・キャッシュ・レビュー・配布を実装。以下は設計上の目標を含み、すべての性能目標や環境互換性を達成した記録ではありません。現在の実装範囲はREADMEと検証記録を参照してください。Self-Managed実機との互換性確認は未実施。
+Designed on 2026-09-30. On 2026-10-04 the first client was implemented for connection, search, cache, review and distribution. This document includes design goals. It does not record that every performance goal or environment compatibility was reached. For the current scope, see the README and the verification records. Compatibility with a real Self-Managed instance has not been checked.
 
-ユーザー要件: GitLab.comとSelf-Managed GitLabで、MRの一覧・差分・レビューを使いやすくし、プロジェクトや過去MRも検索したい。現在は社内インスタンスがないため、実通信の検証対象をGitLab.comにしています。Web版の待ち時間を減らし、AIによる実装を重ねてもUIを一貫させたい。
+User requirements: make merge request (MR) lists, diffs and review easy to use on GitLab.com and Self-Managed GitLab, and search projects and past MRs. There is no company instance now, so real communication is verified against GitLab.com. Reduce the waiting time of the web version, and keep the UI consistent as AI-written code accumulates.
 
-確定した条件: MR検索はタイトル・説明が対象。MR番号でも探せる。社内ネットワークから接続する。通常の接続・通信ではglabを使用せず、RustからGitLab APIへ直接接続する。ただしユーザーが接続画面の「glabの認証情報で接続」を明示的に選んだ場合に限り、Rustが対象URLに一致する保存済み認証を一度だけ取り込む。取得済みデータは永続キャッシュする。通常のレビュー操作までを初期完成目標に含め、MRや議論が多いときの読み込み待ち・操作のラグを優先して改善する。
+Fixed conditions: MR search covers the title and description. MRs can also be found by number. The app connects from the company network. Normal connection and communication do not use glab; Rust connects to the GitLab API directly. Only when the user explicitly chooses "Connect with glab credentials" on the connection screen does Rust import the saved credential that matches the target URL, once. Fetched data is cached persistently. The initial goal includes normal review operations, and the first improvements target loading waits and operation lag when there are many MRs or discussions.
 
-起動基盤に加え、PAT接続、明示操作によるglab保存済みPAT/OAuthアクセストークンの取り込み、プロジェクト／MR検索、差分・議論取得、通常レビューAPI、Windows資格情報ストア、SQLiteキャッシュ、署名付き更新経路を実装しています。追加CA選択、アプリ自身のOAuthログイン・自動refresh、常駐同期、負荷下のp95性能検証等は後続です。GitLab.com公開APIとHTTP fixtureで検証し、認証付き実投稿や社内環境の検証結果と区別します。
+Besides the startup base, the app implements PAT connection, import of a glab-saved PAT or OAuth access token by explicit action, project and MR search, diff and discussion fetching, the normal review API, the Windows credential store, the SQLite cache, and a signed update path. Selection of an additional CA, the app's own OAuth login and automatic refresh, resident sync, and p95 performance verification under load come later. Verification uses the public GitLab.com API and HTTP fixtures, and is kept separate from authenticated live posting and verification in the company environment.
 
-## 1. 目指す体験と範囲
+## 1. Target experience and scope
 
-主動線を「プロジェクトを見つける → 現在・過去のMRを見つける → 内容・差分・議論を読む → 必要ならレビューする」に固定する。トップ画面は環境診断から「レビュー待ち・最近開いたMR・固定プロジェクト」へ置き換える。環境診断は設定画面へ移す。
+The main flow is fixed as "find a project → find a current or past MR → read the content, diff and discussions → review if needed". The top screen changes from environment diagnostics to "review requests, recently opened MRs and pinned projects". Environment diagnostics move to the settings screen.
 
-最初の実用版v0.1は、プロジェクト検索、過去を含むMR検索、自分のレビュー対象、MR詳細・差分・議論の閲覧と通常のレビュー操作までを完成させる。読み取り専用版は途中の検証地点であり、完成地点ではない。検索と投稿の両方をv0.1の完了条件にする。
+The first practical version, v0.1, completes project search, MR search including past MRs, MRs for me to review, viewing MR details, diffs and discussions, and normal review operations. A read-only version is an intermediate checkpoint, not the finish. Both search and posting are completion conditions for v0.1.
 
-| 初期版に含める | 続く段階 | 当面の対象外 |
+| In the first version | Later stages | Out of scope for now |
 | --- | --- | --- |
-| Self-Managed接続、プロジェクト検索、全状態のMR検索 | Issue、Pipeline、制限付きログ表示 | GitLab管理画面、CI設定編集、メンバー管理 |
-| MR概要、差分、議論の閲覧と永続キャッシュ | 紐付けたローカルcloneとMRの最新との差分（読み取り専用） | リポジトリclone/push、fetch、ブランチ操作、IDE |
-| コメント、行コメント、返信、自分のコメントの編集・削除、解決/再開 | 必要と実測に応じたローカル全文検索 | GitLab全体のローカル複製、全コード索引 |
-| 下書きと公開、承認/承認取消、変更の要求、レビュー再依頼、マージ・自動マージ・リベース、クローズ/再オープン、タイトル・Draft・ラベル・マイルストーンの変更、最近開いた項目、固定、保存した検索条件 | 複数接続の同時利用 | オフラインでの書き込み自動送信 |
+| Self-Managed connection, project search, MR search across all states | Issues, pipelines, limited log display | GitLab admin screens, CI configuration editing, member management |
+| Viewing MR overview, diffs and discussions with a persistent cache | Diff between a linked local clone and the latest MR (read-only) | Repository clone/push, fetch, branch operations, IDE |
+| Comments, line comments, replies, editing and deleting own comments, resolve/reopen | Local full-text search, as needed and measured | A local copy of all of GitLab, an index of all code |
+| Drafts and publishing, approve/revoke approval, request changes, re-request review, merge, auto-merge, rebase, close/reopen, changing title, Draft, labels and milestone, recently opened items, pinning, saved search conditions | Using multiple connections at the same time | Automatic sending of offline writes |
 
-レビュー操作はGitLab側の権限と機能対応の範囲で提供する。組織の再認証などAPIから完結できない操作は理由を示してGitLabで開く。対応していない操作を成功扱いにしない。
+Review operations are offered within GitLab's permissions and feature support. An operation that cannot be completed through the API, such as an organization's re-authentication, is opened in GitLab with the reason shown. An unsupported operation is never treated as successful.
 
-初期UIは単一ウィンドウ・一つのアクティブ接続。データのキーは初めから接続先とユーザーを含める。複数接続の切替を後から追加しても、会社と自宅のデータが混ざらない構造にする。
+The first UI has one window and one active connection. Data keys include the instance and the user from the start. Even if switching between multiple connections is added later, the structure keeps work and home data from mixing.
 
-## 2. 採用するアーキテクチャ
+## 2. Architecture
 
-単一のTauriアプリの内部を機能別モジュールに分ける。別常駐サーバーやマイクロサービスは作らない。Rustは当面一つのcrateに収め、外部システムとの境界だけをテストで差し替えられるようにする。
+The inside of a single Tauri app is divided into modules by feature. There is no separate resident server and no microservice. Rust stays in one crate for now, and only the boundaries to external systems can be replaced in tests.
 
-通常の接続経路ではglabのインストール、実行、設定ファイル、認証情報に依存しない。例外として、ユーザーが「glabの認証情報で接続」を明示したときだけ、Rustが対象URLへhost-boundされた保存済み認証を読み取る。HTTP・認証・エラー処理はRustのGitLab adapterに集約し、取り込み後にglabへHTTPやrefreshを委譲しない。
+The normal connection path does not depend on installing or running glab, on its configuration files, or on its credentials. As the one exception, only when the user explicitly chooses "Connect with glab credentials" does Rust read the saved credential bound to the target URL's host. HTTP, authentication and error handling are concentrated in the Rust GitLab adapter, and after the import nothing delegates HTTP or refresh to glab.
 
 ```mermaid
 flowchart TB
   subgraph UI[React / TypeScript / MUI]
-    View[画面・共通部品・ルーティング]
-    Query[Query adapter：表示状態と更新のきっかけ]
-    Bridge[型付きIPCラッパー]
+    View[Screens, shared components, routing]
+    Query[Query adapter: display state and update triggers]
+    Bridge[Typed IPC wrapper]
     View --> Query --> Bridge
   end
   subgraph Native[Rust / Tauri]
-    Commands[Commands：入力・セッション検証]
-    App[Services：接続・検索・MR閲覧とレビュー投稿]
-    Gateway[GitLab adapter：HTTP・互換性・通信制御]
-    Cache[Cache repository：読込・保存・失効]
+    Commands[Commands: input and session validation]
+    App[Services: connection, search, MR viewing and review posting]
+    Gateway[GitLab adapter: HTTP, compatibility, communication control]
+    Cache[Cache repository: read, save, expire]
     Credentials[Credential store]
     Commands --> App
     App --> Gateway
@@ -53,124 +53,124 @@ flowchart TB
   Bridge -->|invoke / Result| Commands
   Gateway -->|HTTPS / REST v4| GitLab[Self-Managed GitLab]
   Cache --> DB[(SQLite)]
-  Credentials --> Vault[Windows資格情報ストア]
+  Credentials --> Vault[Windows credential store]
 ```
 
-| 担当 | 責務 | 持たせない責務 |
+| Owner | Responsibility | Not its responsibility |
 | --- | --- | --- |
-| View / MUI | 表示、入力、選択、フォーカス、レイアウト | APIレスポンス解釈、SQL、認証情報管理 |
-| Query adapter | 読込/再読込/失敗状態、メモリ上の表示用データ、画面滞在中の更新 | HTTPリトライ、永続キャッシュ、トークン |
-| IPC Commands | 入力検証、セッション・リクエストIDの照合、DTO変換 | GitLab URLの組立て、複雑な業務ロジック |
-| Application services | 検索条件の正規化、接続・閲覧・投稿の手順、キャッシュ更新 | MUI、Tauri Windowへの依存 |
-| GitLab adapter | HTTP、レスポンス変換、ページング、機能差、リトライ、サイズ制限 | UI状態、DB直接操作 |
-| Repositories / OS adapters | SQLite、資格情報ストア、外部ブラウザー起動 | 画面単位の条件分岐 |
+| View / MUI | Display, input, selection, focus, layout | Interpreting API responses, SQL, credential management |
+| Query adapter | Loading/reloading/failure state, in-memory display data, updates while a screen is shown | HTTP retries, persistent cache, tokens |
+| IPC Commands | Input validation, matching session and request IDs, DTO conversion | Building GitLab URLs, complex business logic |
+| Application services | Normalizing search conditions, the steps of connecting, viewing and posting, updating the cache | Depending on MUI or the Tauri Window |
+| GitLab adapter | HTTP, response conversion, paging, feature differences, retries, size limits | UI state, direct DB access |
+| Repositories / OS adapters | SQLite, the credential store, launching the external browser | Branching per screen |
 
-APIレスポンス型、アプリ内の型、IPC型を区別する。全フィールドをコピーした巨大なGitLab型をUIへ渡さない。小さな取得処理のために多段の抽象クラスや汎用Repositoryを増やさない。
+API response types, in-app types and IPC types are kept separate. A huge GitLab type with every field copied is not passed to the UI. Multi-level abstract classes and generic repositories are not added for small fetch operations.
 
-## 3. 技術選定と導入時点
+## 3. Technology choices and when to adopt them
 
-| 技術 | 判断 | 理由・制約 |
+| Technology | Decision | Reason and constraints |
 | --- | --- | --- |
-| Tauri 2 / Rust / React / TypeScript / MUI | 継続 | 既存基盤を使う。WebView描画は残る |
-| ローカルルート | v0.1はブラウザーのhashルート | 検索条件と一覧から詳細への復帰を保持する。ルートの拡張時にRouterライブラリ導入を検討する。SSRは使わない |
-| TanStack Query | v0.1で導入 | IPC呼出しをqueryFnにし、手作業の非同期状態管理を減らす |
-| reqwest + Tokio | v0.1で導入 | RustにHTTPを集約。TLS/プロキシは対象環境で結合確認 |
-| rusqlite + bundled SQLite | キャッシュ実装時 | 個人用のローカル保存。専用DBワーカーで同期処理を隔離する |
-| Windows資格情報ストア | 認証実装時 | Rustの薄いadapter経由。keyring等のWindows対応・保守状況を実装時に確認して固定 |
-| ts-rs | IPC型が増える段階 | RustのDTOからTypeScript型を生成。コマンド名とラッパーも契約テストで検査 |
-| SQLite FTS5 | 後続の候補 | 日本語検索品質と保存範囲を確認してから。v0.1の検索はサーバーを利用 |
-| Redux / Zustand、GraphQL、Monaco、SQLx、常駐同期 | 初期版には追加しない | 必要性が確認できていない。差分表示だけのためにIDE全体を積まない |
+| Tauri 2 / Rust / React / TypeScript / MUI | Keep | Uses the existing base. WebView rendering remains |
+| Local routes | v0.1 uses browser hash routes | Keeps the search conditions and the return from a list to a detail. Consider a router library when routes grow. No SSR |
+| TanStack Query | Adopt in v0.1 | IPC calls become the queryFn, which reduces hand-written async state management |
+| reqwest + Tokio | Adopt in v0.1 | Concentrates HTTP in Rust. TLS and proxy are checked together in the target environment |
+| rusqlite + bundled SQLite | When the cache is implemented | Personal local storage. A dedicated DB worker isolates synchronous work |
+| Windows credential store | When authentication is implemented | Through a thin Rust adapter. Check and pin the Windows support and maintenance of keyring and similar crates at implementation time |
+| ts-rs | When IPC types grow | Generates TypeScript types from Rust DTOs. Command names and wrappers are also checked by contract tests |
+| SQLite FTS5 | Later candidate | After checking Japanese search quality and the scope of stored data. v0.1 search uses the server |
+| Redux / Zustand, GraphQL, Monaco, SQLx, resident sync | Not added to the first version | The need is not confirmed. A whole IDE is not bundled just to show diffs |
 
-TanStack Queryには既定の再取得・リトライがあるため、本アプリ向けに明示設定する。[公式の既定値](https://tanstack.com/query/latest/docs/framework/react/guides/important-defaults)。型生成は[ts-rs](https://docs.rs/ts-rs/latest/ts_rs/)、DB層は[rusqlite](https://docs.rs/rusqlite/latest/rusqlite/)を基準に検討した。新しい依存は今回まだ追加していない。
+TanStack Query has default refetching and retries, so they are set explicitly for this app. [Official defaults](https://tanstack.com/query/latest/docs/framework/react/guides/important-defaults). The design considered [ts-rs](https://docs.rs/ts-rs/latest/ts_rs/) for type generation and [rusqlite](https://docs.rs/rusqlite/latest/rusqlite/) for the DB layer. No new dependency has been added yet.
 
-## 4. 画面構成とナビゲーション
+## 4. Screens and navigation
 
-| 画面 | 主な内容 | 最優先の操作 |
+| Screen | Main content | Top-priority action |
 | --- | --- | --- |
-| 接続設定 | ベースURL、資格情報登録、接続結果、ローカル保存設定 | 接続を検証する |
-| レビュー | 自分がreviewerのopen MR、作成/担当の切替、最近開いた項目 | MRを開く |
-| プロジェクト | 固定・最近使ったプロジェクト、サーバー検索、namespace | プロジェクトを選ぶ |
-| MR検索 | タイトル/説明、状態、作者、期間、プロジェクト/グループ | 条件を絞って開く |
-| MR詳細 | 概要・変更・議論・下書き・承認状態 | 差分を確認してレビューする |
-| 設定 | 接続先、資格情報更新、テーマ、キャッシュ、診断 | 設定を変更する |
+| Connection settings | Base URL, credential registration, connection result, local storage settings | Verify the connection |
+| Review | Open MRs where I am a reviewer, switch between created and assigned, recently opened items | Open an MR |
+| Projects | Pinned and recent projects, server search, namespace | Choose a project |
+| MR search | Title/description, state, author, period, project/group | Narrow the conditions and open |
+| MR detail | Overview, changes, discussions, drafts, approval state | Check the diff and review |
+| Settings | Instance, credential update, theme, cache, diagnostics | Change settings |
 
-固定サイドバーは「レビュー / プロジェクト / MR検索 / 設定」。上部に接続先と現在のプロジェクト、検索入口、同期状態を置く。IssueとPipelineの独立画面は後から追加する。初期版のナビゲーションに使えない機能を常設しない。
+The fixed sidebar is "Review / Projects / MR search / Settings". The top bar holds the instance and current project, the search entry and the sync state. Separate screens for issues and pipelines are added later. A feature that cannot be used is not shown permanently in the first version's navigation.
 
-MR詳細は一覧の選択状態を保って開く。基本はファイル一覧＋差分の二領域。議論はタブまたは開閉パネルとし、常時三列にして狭くしない。960 CSS px程度ではサイドバーを折り畳み、ファイル選択をDrawerにする。広い画面だけ一覧と詳細を並べる。ウィンドウの物理サイズとCSSサイズを混同せず、Windowsの表示倍率100/125/150%で確認する。
+The MR detail opens with the selection state of the list kept. The basic layout is two areas, file list and diff. Discussions go in a tab or a collapsible panel, and are not made a permanent third column that narrows the others. At about 960 CSS px the sidebar collapses and file selection moves to a Drawer. Only wide screens show the list and detail side by side. The physical window size and the CSS size are not confused, and the layout is checked at Windows display scales of 100/125/150%.
 
-URL例は`#/c/:connectionId/review`、`#/c/:connectionId/projects`、`#/c/:connectionId/search/mrs?...`、`#/c/:connectionId/p/:projectId/mr/:iid?tab=changes`。ユーザーIDはアクティブセッションから解決する。URLに資格情報は入れない。共有にはGitLabの元URLを使う。
+Example URLs are `#/c/:connectionId/review`, `#/c/:connectionId/projects`, `#/c/:connectionId/search/mrs?...` and `#/c/:connectionId/p/:projectId/mr/:iid?tab=changes`. The user ID is resolved from the active session. URLs do not contain credentials. The original GitLab URL is used for sharing.
 
-検索条件・選択・ページ位置は戻る操作で復元する。フィルター変更は検索結果の先頭に戻す。入力途中の値はローカル状態、適用した条件はルート、サーバー由来の内容はQuery、テーマ等は設定に置く。
+Search conditions, selection and page position are restored by going back. Changing a filter returns to the top of the results. A value being typed is local state, an applied condition is in the route, server content is in Query, and settings such as the theme are in settings.
 
-## 5. プロジェクト・過去MR検索
+## 5. Project and past MR search
 
-v0.1では、通常のProjects/Merge requests APIの検索パラメーターを使う。Self-Managedの有償機能や管理者が用意する高度な検索インデックスを前提にしない。
+v0.1 uses the search parameters of the normal Projects and Merge requests APIs. It does not assume the paid features of Self-Managed or an advanced search index prepared by an administrator.
 
-| 操作 | API方針 | UIで明示する範囲 |
+| Operation | API approach | Scope the UI states |
 | --- | --- | --- |
-| プロジェクト検索 | `GET /projects?search=...`。参加中は`membership=true`、閲覧可能はこの制限を外す | 参加中/閲覧可能、アーカイブを含むか |
-| プロジェクト内の過去MR | `GET /projects/:id/merge_requests`に検索語と状態等を付与。`!123`は`iids[]=123`だけで絞り込み、`123`はその番号のMRを先頭に置いてタイトル・説明の一致を続ける | 選択プロジェクト、初期状態は全状態 |
-| プロジェクトのブランチ | `GET /projects/:id/repository/branches?sort=updated_desc`。名前の検索語を付与。並べ替えに未対応のGitLabでは名前順 | 選択プロジェクト |
-| プロジェクトのコード | フォルダは`GET /projects/:id/repository/tree`に`path`と`ref`（省略時はデフォルトブランチ）を付けて100件ごと。ファイルは一覧が返すblob IDで`GET /projects/:id/repository/blobs/:sha/raw`を読み、MRのファイル本文と同じく1MiBまでのUTF-8またはShift_JISだけを表示する。blob IDで読むので同じキーの内容は変わらない。`tree`の404は空のリポジトリや削除されたブランチ・フォルダでも返るため、アカウントのキャッシュは消さない（画面は404の保存済み内容を表示しない） | 選択プロジェクトとブランチ、読み取りのみ |
-| 接続先を横断する過去MR | `GET /merge_requests?scope=all&state=all&search=...`。MR番号はプロジェクト外では`GET /search?scope=merge_requests&search=%23123`（グループ内は`/groups/:id/search`）で探し、`!123`はその一致だけ、`123`はその一致を先頭に置いてタイトル・説明の一致を続ける | 現在の接続先で閲覧可能なMR |
-| グループ内の検索 | 対応するグループMR一覧を利用、対応確認後に公開 | 選択グループ、子グループの扱い |
-| レビュー待ち | reviewer条件＋openedを指定、サーバー対応を確認 | 自分へのレビュー依頼 |
-| MRの直接指定 | 選択プロジェクトの`!123`またはGitLabのMR URLを解釈 | 接続先・プロジェクトを確定して詳細取得 |
+| Project search | `GET /projects?search=...`. Joined projects use `membership=true`; viewable projects drop this restriction | Joined or viewable, whether archived projects are included |
+| Past MRs in a project | `GET /projects/:id/merge_requests` with the search term and state. `!123` narrows by `iids[]=123` only; `123` puts the MR with that number first, followed by title and description matches | The selected project, all states by default |
+| Branches of a project | `GET /projects/:id/repository/branches?sort=updated_desc` with a name search term. GitLab versions without sorting use name order | The selected project |
+| Code of a project | A folder uses `GET /projects/:id/repository/tree` with `path` and `ref` (the default branch when omitted), 100 entries at a time. A file reads `GET /projects/:id/repository/blobs/:sha/raw` with the blob ID returned by the list, and, as with the file body of an MR, shows only UTF-8 or Shift_JIS up to 1 MiB. The content for a blob ID never changes, because it is read by blob ID. A 404 from `tree` is also returned for an empty repository or a deleted branch or folder, so the account cache is not deleted (the screen does not show stored content for a 404) | The selected project and branch, read-only |
+| Past MRs across the instance | `GET /merge_requests?scope=all&state=all&search=...`. Outside a project, an MR number is found with `GET /search?scope=merge_requests&search=%23123` (`/groups/:id/search` inside a group); `!123` shows only that match, and `123` puts that match first, followed by title and description matches | MRs viewable on the current instance |
+| Search within a group | Uses the corresponding group MR list, published after support is confirmed | The selected group, handling of subgroups |
+| Review requests | Specify the reviewer condition and opened; confirm server support | Review requests to me |
+| Direct MR specification | Interprets `!123` in the selected project, or a GitLab MR URL | Fix the instance and project, then fetch the detail |
 
-Projectsの`membership`は参加しているプロジェクトへの制限。MR検索の通常の対象はタイトルと説明であり、コメントや差分コードの全文検索ではない。`iids[]`はプロジェクトのMR一覧だけが受け付け、グループと接続先全体の一覧は無視する。そこでプロジェクト外のMR番号は、GitLabの検索が`#123`をMR番号として扱うことを使って探す。検索APIは状態以外の条件を受け付けないため、1回100件を読み、担当者・レビュアー・作者・ラベル・ブランチ・更新日はRustで適用する。この100件に入らない番号一致は表示されない。[Search API](https://docs.gitlab.com/api/search/)。`scope`を省略して意図せず自作MRに限定しない。[Projects API](https://docs.gitlab.com/api/projects/)、[Merge requests API](https://docs.gitlab.com/api/merge_requests/)。
+`membership` in Projects restricts the results to joined projects. The normal target of MR search is the title and description, not a full-text search of comments or diff code. `iids[]` is accepted only by a project's MR list, and the group and instance-wide lists ignore it. So an MR number outside a project is found by using the fact that GitLab search treats `#123` as an MR number. The search API accepts no conditions other than the state, so it reads 100 results at a time, and Rust applies assignee, reviewer, author, label, branch and updated-date conditions. A number match that is not in these 100 is not shown. [Search API](https://docs.gitlab.com/api/search/). `scope` is not omitted, so the search is not unintentionally limited to MRs I created. [Projects API](https://docs.gitlab.com/api/projects/), [Merge requests API](https://docs.gitlab.com/api/merge_requests/).
 
-初期フィルターは状態・作者・更新期間・プロジェクト。レビュー担当・ラベル・ブランチは順次追加する。フィルターはチップと入力欄で表現し、初期版で独自クエリ言語は作らない。MR検索は「全状態」を既定にし、レビュー画面だけ「open」を既定にする。
+The initial filters are state, author, updated period and project. Reviewer, label and branch are added in turn. Filters are shown as chips and an input field, and the first version does not create its own query language. MR search defaults to "all states", and only the Review screen defaults to "open".
 
-Ctrl+Kは固定/最近使った項目への移動と検索画面への入口。サーバー検索はEnterで実行する。候補の自動検索を追加する場合は300ms程度のdebounceとIME変換中の抑制、古い応答の破棄を必須にする。短い日本語検索を一律に拒否しない。
+Ctrl+K is the entry for moving to pinned or recent items and to the search screen. Server search runs on Enter. If automatic search of suggestions is added, a debounce of about 300 ms, suppression during IME composition and discarding of stale responses are required. Short Japanese searches are not rejected across the board.
 
-1ページ30件を出発点とし、取得した次ページ情報を使用する。UIには「30件取得・続きあり」のように表示し、未取得分を含む全件数を推測しない。複数ページはIDで重複除去し、更新による順序変動は一覧を再取得して解消する。全プロジェクトを列挙して各MRを検索するN+1方式は採用しない。
+The starting point is 30 items per page, using the next-page information that was fetched. The UI shows text such as "30 loaded, more available", and does not guess a total that includes pages not fetched. Multiple pages are deduplicated by ID, and a change of order caused by updates is resolved by reloading the list. The N+1 approach of listing all projects and searching each one for MRs is not adopted.
 
-過去MRはキャッシュに存在しなくてもサーバー検索で探せる。オフライン時は「保存済みの範囲」に切り替わったことを明示し、自動的にローカル結果だけを全検索の結果として見せない。v0.1では以前の検索結果や最近開いたMRの再表示までとし、任意語によるローカル全文検索は後続とする。
+Past MRs can be found by server search even when they are not in the cache. Offline, the UI states that it switched to "the stored range", and does not present local results alone as the result of a full search. v0.1 stops at redisplaying earlier search results and recently opened MRs, and local full-text search with arbitrary words comes later.
 
-## 6. 読み込み・更新・キャッシュの責務
+## 6. Responsibilities for loading, updating and caching
 
-GitLabが正本、SQLiteが永続化した取得済みデータ、TanStack Queryが表示用の一時データを持つ。初期版の更新タイマーはQuery adapterだけに置く。Rustは通信の重複抑制・リトライ・保存を担当し、独立した定期ポーリングをしない。
+GitLab is the source of truth, SQLite holds the fetched data made persistent, and TanStack Query holds the temporary data for display. In the first version, update timers exist only in the Query adapter. Rust handles de-duplication of requests, retries and saving, and does not run its own periodic polling.
 
-代表フロー:
+Representative flow:
 
-1. 画面のquery keyを確定する。接続先・ユーザー・リソース・条件・ページ・表示する版を含む。
-2. 初回だけRustのCacheOnly読出しでSQLiteのスナップショットを取得する。これは通信しない。
-3. Query adapterがセッション世代を確認してメモリに反映し、取得時刻を`dataUpdatedAt`相当として設定する。
-4. 未取得または期限切れならNetworkOnly更新コマンドを実行する。保存済み内容があれば表示を維持し「更新中」にする。
-5. Rustがセッションを検証し、GitLab取得→DTO変換→SQLite保存→結果返却を行う。
-6. 有効な世代・query key・request IDの結果だけUIへ反映する。更新失敗時は古い内容と失敗理由を併記する。
+1. Fix the query key of the screen. It includes the instance, user, resource, conditions, page and the version being shown.
+2. Only the first time, get the SQLite snapshot with a Rust CacheOnly read. This does not communicate.
+3. The Query adapter checks the session generation, reflects the data in memory, and sets the fetch time as the equivalent of `dataUpdatedAt`.
+4. If the data is not fetched or has expired, run a NetworkOnly update command. If there is stored content, keep showing it and show "Updating…".
+5. Rust validates the session, then fetches from GitLab, converts to DTOs, saves to SQLite and returns the result.
+6. Only results with a valid generation, query key and request ID are reflected in the UI. When an update fails, the old content is shown together with the reason for the failure.
 
-キャッシュ読出し後に通信を開始する順序を共通adapterで保証する。遅れて届いたキャッシュが新しいネットワーク結果を上書きしない。Queryの`retry=false`、既定のブラウザーフォーカス再取得は無効とし、Tauriの表示/復帰通知をadapterで扱う。IPCのPromiseを捨てるだけではRustの通信をキャンセルできないため、request IDに対応するキャンセルコマンドを用意する。共有中の同一リクエストは最後の利用者が離れたときだけキャンセルする。
+The common adapter guarantees the order of starting communication after the cache read. A cache result that arrives late does not overwrite a newer network result. Query `retry=false` is set, and the default refetch on browser focus is disabled; the adapter handles Tauri's show/restore notification. Discarding an IPC Promise alone cannot cancel Rust communication, so a cancel command that matches the request ID is provided. A shared identical request is canceled only when the last user leaves.
 
-| データ | 鮮度の初期値（要実測） | 自動更新 |
+| Data | Initial freshness (to be measured) | Automatic update |
 | --- | --- | --- |
-| プロジェクト一覧 | 5分 | 表示時・手動更新 |
-| プロジェクト/MR検索結果 | 60秒 | 条件適用・再訪・手動更新。検索画面で連続ポーリングしない |
-| open MR一覧/概要 | 30秒 | 表示中のみ60秒間隔、古ければ復帰時 |
-| merged/closed MR概要 | 5分 | 表示時・手動更新。議論等は後から変わり得る |
-| 議論 | 30秒 | 表示中のみ最新ページ60秒・読み込み済みの古いページ5分間隔、タブ表示時・手動更新 |
-| 指定commitの差分 | 版が同じなら再利用 | head変更時に別キーへ切替 |
-| Pipeline | 実行中15秒を出発点 | MRのパイプラインタブ表示中のみ。実行中のパイプライン・ジョブ・ジョブログだけを更新し、終了後は止める |
+| Project list | 5 minutes | On display and manual update |
+| Project/MR search results | 60 seconds | On applying conditions, revisiting and manual update. No continuous polling on the search screen |
+| Open MR list/overview | 30 seconds | Every 60 seconds only while shown, on restore if stale |
+| Merged/closed MR overview | 5 minutes | On display and manual update. Discussions and others can change later |
+| Discussions | 30 seconds | Only while shown: latest page every 60 seconds, loaded older pages every 5 minutes; on tab display and manual update |
+| Diff of a given commit | Reused if the version is the same | Switches to another key when the head changes |
+| Pipeline | Start from 15 seconds while running | Only while the MR's pipeline tab is shown. Updates only running pipelines, jobs and job logs, and stops after they finish |
 
-アプリ非表示中は初期版の定期更新を停止する。取得に失敗した対象も定期更新を止めず5分間隔に落とし（権限喪失・削除は除く）、未送信本文や書き込み中であることでは定期更新を止めない。復帰時に古い表示対象だけを更新し、同時に全画面を再取得しない。アプリを閉じた後の監視・通知は初期版の範囲外。将来常駐同期を導入する際は更新の担当をRustへ移し、UIタイマーを廃止する。
+While the app is hidden, the first version stops periodic updates. A target whose fetch failed does not stop periodic updates either; its interval drops to 5 minutes (except for lost permission or deletion). Unsent text or an in-progress write does not stop periodic updates. On restore, only stale displayed targets are updated, and all screens are not refetched at the same time. Monitoring and notification after the app is closed are out of scope for the first version. When resident sync is introduced in the future, the responsibility for updates moves to Rust and the UI timers are removed.
 
-オフラインは読取り中心。未取得のMRや差分は開けないと表示する。書き込みのキューイングや自動再送は行わない。
+Offline use is mostly read-only. MRs and diffs that were not fetched are shown as not openable. Writes are not queued or resent automatically.
 
-## 7. IPC契約・通信制御
+## 7. IPC contract and communication control
 
-コマンドは`search_projects`、`search_merge_requests`、`get_merge_request`、`get_mr_diff_page`、`get_mr_discussions`のように用途単位にする。各読取コマンドはCacheOnly / NetworkOnlyを明示する。`request(url, headers)`や任意SQL実行は公開しない。
+Commands are split by purpose, such as `search_projects`, `search_merge_requests`, `get_merge_request`, `get_mr_diff_page` and `get_mr_discussions`. Each read command states CacheOnly or NetworkOnly. `request(url, headers)` and arbitrary SQL execution are not exposed.
 
 ```typescript
-// 契約の例。実装時にはRustから生成する。
+// Example of the contract. At implementation time it is generated from Rust.
 type RequestContext = {
   sessionId: string;
   requestId: string;
 };
 type Snapshot<T> = {
   data: T;
-  fetchedAt: string;        // UTC、サーバーで最後に確認した時刻
+  fetchedAt: string;        // UTC, the time last confirmed on the server
   source: 'cache' | 'network';
-  revision: string;        // この保存結果を識別
+  revision: string;        // identifies this stored result
   nextPageToken: string | null;
   completeness: 'page' | 'complete' | 'truncated';
 };
@@ -180,226 +180,226 @@ type ErrorCode =
   | 'CANCELLED' | 'INVALID_INPUT' | 'STORAGE' | 'UNKNOWN_OUTCOME';
 ```
 
-キャッシュ未取得はエラーと区別したmissを返す。エラーDTOにはcode、ユーザー向けmessage、retryAfterMs、サポート用request IDを持たせ、生のHTTP本文、資格情報、詳細なローカルパスは含めない。GitLab IDはRust側で整数として検証し、IPCでは十進文字列にしてJSの大整数丸めを避ける。日時はUTCで保存しUIでローカル表示する。
+A cache that is not fetched returns a miss, distinct from an error. The error DTO has a code, a user-facing message, retryAfterMs and a request ID for support, and does not include raw HTTP bodies, credentials or detailed local paths. GitLab IDs are validated as integers on the Rust side and sent as decimal strings over IPC to avoid JS big-number rounding. Times are stored in UTC and shown in local time by the UI.
 
-ページトークンは検索条件と接続セッションに結びつく不透明な値。UIが返した値を信用して任意URLへアクセスしない。GitLabのnext URLも登録済みorigin・ベースパス・APIパス内か検査する。
+A page token is an opaque value bound to the search conditions and the connection session. The app does not trust a value returned by the UI to access an arbitrary URL. GitLab's next URL is also checked to be within the registered origin, base path and API path.
 
-接続先ごとにHTTP Clientを再利用し、同時通信は4本、同一キーは1本を初期値にする。要求の待ち行列にも上限を設け、古い検索・プリフェッチから中止する。通常JSONは接続5秒/全体20秒/展開後5MiBを出発点とし、大きい応答には別の上限を与える。
+One HTTP client is reused per instance. The initial values are 4 concurrent requests, and 1 per identical key. The request queue also has a limit, and old searches and prefetches are canceled first. For normal JSON the starting points are 5 seconds to connect, 20 seconds overall, and 5 MiB after decompression; large responses get a separate limit.
 
-GETの一時的な通信失敗・一部5xxは最大2回、jitterを含むバックオフで再試行する。429の待機期限はRustで接続先単位に共有し、UIの手動更新でも迂回しない。長いRetry-Afterはタイマーを延々と保持せず、再試行可能時刻を返す。401/403は再試行しない。非冪等な投稿は通信結果が不明でも自動再送しない。
+A transient communication failure or some 5xx on a GET is retried up to 2 times with backoff including jitter. The wait deadline for 429 is shared per instance in Rust and is not bypassed by a manual update in the UI. A long Retry-After does not keep a timer for a long time; it returns the time when a retry is possible. 401/403 are not retried. A non-idempotent post is not resent automatically even when the communication result is unknown.
 
-再試行回数にはHTTPライブラリ内部の挙動も含めて検証する。Query、application、HTTP層がそれぞれ再試行して要求回数を増やさない。
+The retry count is verified including the behavior inside the HTTP library. Query, application and HTTP layers must not each retry and multiply the number of requests.
 
-## 8. Self-Managed接続と認証
+## 8. Self-Managed connection and authentication
 
-接続先はoriginだけでなく、例えば`https://git.example.local/gitlab/`のベースパスも保存する。URL末尾や既定ポートを正規化し、userinfo・query・fragmentを拒否する。IPや内部ホストはSelf-Managed用途として許容するが、通信先はユーザーが登録した接続に限定する。
+The instance saves not only the origin but also a base path such as `https://git.example.local/gitlab/`. The URL's trailing part and default port are normalized, and userinfo, query and fragment are rejected. An IP or internal host is accepted for Self-Managed use, but communication is limited to connections the user registered.
 
-社内ネットワークからの直接接続を前提にする。最初はPATを候補とする。読み取り専用の検証なら従来型PATの`read_api`を使えるが、レビュー投稿まで行う従来型PATには`api`が必要。`write_repository`はAPIへの書き込み権限の代わりにならない。細粒度トークンを利用できる場合は必要操作に絞る。利用可否はサーバーバージョン・組織設定で確認し、トークン種類を固定しない。[アクセストークンのscope](https://docs.gitlab.com/security/tokens/access_token_scopes/)。
+The design assumes a direct connection from the company network. A PAT is the first candidate. For read-only verification a classic PAT with `read_api` works, but a classic PAT that also posts reviews needs `api`. `write_repository` is not a substitute for write permission to the API. When fine-grained tokens are available, they are limited to the needed operations. Availability is checked with the server version and organization settings, and the token type is not fixed. [Access token scopes](https://docs.gitlab.com/security/tokens/access_token_scopes/).
 
-PATは専用フォームで一度受け取り、入力中のみUIメモリに存在する。IPCでRustへ渡し、接続先の本人情報を取得してユーザーIDを確定し、OS資格情報ストアへ保存する。成功/失敗時に入力値を破棄し、読出しAPIで秘密値をUIに返さない。資格情報ストアを利用できない場合に平文ファイルへ黙ってフォールバックしない。
+The PAT is received once in a dedicated form and exists in UI memory only while being typed. It is passed to Rust over IPC, the instance's own user information is fetched to fix the user ID, and the PAT is saved in the OS credential store. The input value is discarded on success or failure, and no read API returns the secret to the UI. If the credential store is unavailable, the app does not silently fall back to a plain-text file.
 
-ユーザーが「glabの認証情報で接続」を明示した場合だけ、glab保存済み認証の取り込みを許可する。Rustは接続URLから正規化したHTTPSの`authority`とサブパスを求め、`hosts[authority]`のキー、`api_host`、HTTPS、サブパスが一致する対象だけを扱う。PATとOAuthアクセストークンを対象にし、OAuthの期限はRFC3339として解釈でき、現在より未来であることを検証する。refresh tokenは取り込まず、アプリ自身のOAuthログインや自動refreshも行わない。
+Import of a glab-saved credential is allowed only when the user explicitly chose "Connect with glab credentials". From the connection URL, Rust derives the normalized HTTPS `authority` and subpath, and handles only entries where the key of `hosts[authority]`, `api_host`, HTTPS and the subpath all match. The targets are PATs and OAuth access tokens, and it verifies that the OAuth expiry parses as RFC3339 and is in the future. Refresh tokens are not imported, and the app's own OAuth login and automatic refresh are not performed.
 
-keyringから読む経路は、明示的に`use_keyring=true`となっている場合に限る。Rustはトークンを含まない対象hostだけの一時設定を作り、固定した`glab config get token --host`コマンドを実行する。既存のグローバル設定を書き換えず、`glab login`や`glab auth login`、`glab auth refresh`も起動しない。接続確認と`/user`確認が成功した後にだけ、取得したアクセストークンをWindows資格情報ストアへコピーし、その後のGitLab API通信はRustのHTTP adapterから直接行う。手動PAT接続はこの取り込み経路とは別に継続する。
+The path that reads from the keyring is used only when `use_keyring=true` is set explicitly. Rust creates a temporary configuration for the target host only, without the token, and runs the fixed `glab config get token --host` command. It does not rewrite the existing global configuration, and it does not start `glab login`, `glab auth login` or `glab auth refresh`. Only after the connection check and the `/user` check succeed is the obtained access token copied to the Windows credential store, and after that all GitLab API communication goes directly from Rust's HTTP adapter. Manual PAT connection continues separately from this import path.
 
-接続フローは「URLとネットワーク設定 → TLS/HTTP接続 → 認証と本人確認 → サーバー情報/必要APIの確認 → 保存対象の表示 → 使用開始」。企業SSOのログインページが返った場合、JSONエラーやパスワード再入力に誤誘導しない。PATが禁止されている環境ではOAuth PKCEとアプリ登録を別途設計する。クライアント秘密をアプリに埋め込まない。
+The connection flow is "URL and network settings → TLS/HTTP connection → authentication and identity check → server information and required API check → show what will be saved → start using". If a corporate SSO login page is returned, the app does not mislead the user with a JSON error or a prompt to re-enter the password. In an environment where PATs are prohibited, OAuth PKCE and app registration are designed separately. No client secret is embedded in the app.
 
-プロキシはOS/環境設定の利用可否を検証し、必要なら接続単位の明示設定を加える。プロキシの認証値も資格情報ストアに置く。社内CAはOS信頼ストア対応を優先し、不足時に選択した追加CAを接続単位で利用する。PAC、NTLM、mTLSは動作を仮定せず対象環境で確認する。証明書検証を無効にする回避策は採らない。[reqwestの設定API](https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html)。
+For the proxy, the use of OS and environment settings is verified, and an explicit per-connection setting is added if needed. Proxy authentication values are also kept in the credential store. For an internal CA, support for the OS trust store comes first, and when it is not enough, an additional CA that the user selected is used per connection. PAC, NTLM and mTLS are not assumed to work and are checked in the target environment. A workaround that disables certificate verification is not adopted. [reqwest settings API](https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html).
 
-全自動リダイレクトを避け、認証ヘッダーを別originに転送しない。本文中の外部画像や添付にもGitLabトークンを流用しない。Markdown内の画像はRustが接続先インスタンスの画像だけを認証付きで取得し、`data:` URLとして返す（PNG/JPEG/GIF/WebP/SVG、3MBまで。SVGは`<img>`で表示するためスクリプトや外部参照は動かない）。対象はコメント・MR説明の`uploads/`配下と、リポジトリ内のMarkdown（README、コードタブ、MR差分）の相対パス画像である。相対パスはファイルのフォルダ（`/`始まりはリポジトリのルート）から解決し、表示中の版のコミットまたはブランチで`api/v4/projects/<数値ID>/repository/files/<エンコード済みパス>/raw?ref=<ref>`から読む。Rustはこの形のURLだけを許可して他のAPIへは届かせず、型を返さない応答はファイル先頭のバイト（SVGは先頭の`<svg`要素）で画像形式を判定する。外部ホストの画像は表示しない。リポジトリ内のMarkdownの相対リンクは、表示中の版のGitLabのファイルURL（`<project>/-/blob/<ref>/<path>`）にし、アプリ内のURL処理でコードタブに開く。外部URLはプロトコルを検証してOSブラウザーへ渡す。資格情報付きURLを受け付けない。
+Automatic redirects are avoided in full, and the authentication header is not forwarded to another origin. The GitLab token is not reused for external images or attachments in the body. For images in Markdown, Rust fetches, with authentication, only images of the instance and returns them as `data:` URLs (PNG/JPEG/GIF/WebP/SVG, up to 3 MB; SVG is shown in `<img>`, so scripts and external references do not run). The targets are the `uploads/` paths in comments and MR descriptions, and relative-path images in Markdown in the repository (README, the Code tab, MR diffs). A relative path is resolved from the file's folder (a path starting with `/` from the repository root), and read from `api/v4/projects/<numeric ID>/repository/files/<encoded path>/raw?ref=<ref>` at the commit or branch of the version being shown. Rust allows only URLs of this form and does not let them reach other APIs. For a response that does not return a type, the image format is determined from the first bytes of the file (for SVG, the first `<svg` element). Images on external hosts are not shown. Relative links in Markdown in the repository become the GitLab file URL of the version being shown (`<project>/-/blob/<ref>/<path>`), and the in-app URL handling opens them in the Code tab. External URLs have their protocol validated and are handed to the OS browser. URLs with credentials are not accepted.
 
-接続変更・ログアウトはセッション世代を更新し、古い要求をキャンセル、Queryを破棄、進行中のDB書込も無効化する。ログアウト後に遅れて届いた応答がキャッシュを再作成しないことを保証する。401で再認証が必要になった場合は私的データの表示を止める。403/404で権限が失われた可能性のあるリソースは、保存済みデータへ自動的に戻さない。オフライン時に現在のサーバー権限まで検証できるとは保証しない。
+Changing the connection or logging out updates the session generation, cancels old requests, discards Query, and invalidates in-progress DB writes. It guarantees that a response arriving late after logout does not recreate the cache. When 401 requires re-authentication, the display of private data stops. A resource that may have lost permission, through 403/404, does not automatically fall back to stored data. Offline, the app does not guarantee that it can verify the current server permissions.
 
-## 9. データ保存と互換性
+## 9. Data storage and compatibility
 
-ユーザープロファイル配下のアプリ用ディレクトリに保存し、Gitリポジトリ内へは置かない。
+Data is stored in the app's directory under the user profile, not inside a Git repository.
 
-| 保存領域 | 内容 | 寿命 |
+| Storage | Content | Lifetime |
 | --- | --- | --- |
-| OS資格情報ストア | PAT/OAuth・プロキシの秘密値 | 明示的な更新/削除まで |
-| app-state.db | 接続ID/URL、テーマ、固定したID、保存した検索条件 | ユーザー設定。キャッシュとして再作成しない |
-| account別cache.db | 一覧・検索ページ・MR概要・取得済み議論と差分 | 再取得可能。容量/期限に従って削除 |
-| account別drafts.db | コメント下書き、diff位置、サーバー下書きID、送信状態 | 明示破棄/公開完了まで。キャッシュ削除で失わない |
-| 診断ログ | 操作種別、所要時間、件数、ステータスコード | 短期ローテーション |
+| OS credential store | Secret values of PAT/OAuth and proxy | Until explicitly updated or deleted |
+| app-state.db | Connection ID/URL, theme, pinned IDs, saved search conditions | User settings. Not recreated like a cache |
+| cache.db per account | Lists, search pages, MR overviews, fetched discussions and diffs | Can be fetched again. Deleted by capacity and expiry |
+| drafts.db per account | Comment drafts, diff positions, server draft IDs, sending state | Until explicitly discarded or published. Not lost by cache deletion |
+| Diagnostic log | Operation type, duration, count, status code | Short rotation |
 
-キャッシュDBは接続ID＋サーバーユーザーIDごとに分ける。`resources(kind, resource_key, payload_json, fetched_at, schema_version)`と`query_pages(query_key, page_token, item_keys, next_token, fetched_at)`を基本とし、一覧中の項目と検索結果の所属関係を分ける。JSONもアプリ内で検証・縮約したDTOにする。query keyはフィルターを安定ソートした正規形から作る。
+The cache DB is split by connection ID plus server user ID. It is based on `resources(kind, resource_key, payload_json, fetched_at, schema_version)` and `query_pages(query_key, page_token, item_keys, next_token, fetched_at)`, and separates the items in a list from the membership of search results. The JSON is also a DTO validated and reduced inside the app. The query key is made from a canonical form with the filters stably sorted.
 
-MRの識別は接続・ユーザーに加えてproject ID＋iidを使用する。表示用パスを主キーにしない。差分のキーにはdiffの版とbase/start/head SHA、ファイルパスを含める。MRの概要更新と差分の不変性を混同しない。
+An MR is identified by project ID plus iid, in addition to the connection and user. The display path is not the primary key. The key of a diff includes the diff version, the base/start/head SHA and the file path. Updating an MR overview is not confused with the immutability of a diff.
 
-DB接続は専用ワーカーが所有し、待ち行列は有限にする。SQLとファイルI/OでUIやTokioの実行スレッドを塞がない。保存はトランザクションで行い、永続化に失敗しても取得済みのデータはセッション内で表示し「保存できない」状態を通知する。
+A dedicated worker owns the DB connection, and its queue is finite. SQL and file I/O do not block the UI or the Tokio execution threads. Saving is done in a transaction, and even if persisting fails, the fetched data is shown within the session and a "Cannot save" state is notified.
 
-初期設定: 永続キャッシュを有効にし、閲覧・検索で取得した一覧、MR概要、議論、差分本文を保存する。全インスタンスを先読みしない。永続キャッシュ全体は200MiB・最終利用30日を暫定上限とし、LRUで削除する。単一項目にもサイズ上限を設け、DB/WALを含む使用量を監視する。差分の上限超過を保存済み完全データと偽らない。CIログはメモリのみとし、SQLiteキャッシュへ保存しない。
+The initial setting: the persistent cache is enabled, and lists, MR overviews, discussions and diff bodies fetched by viewing and searching are saved. The whole instance is not prefetched. The provisional limits of the whole persistent cache are 200 MiB and 30 days since last use, with LRU eviction. A single item also has a size limit, and usage including the DB/WAL is monitored. A diff that exceeded its limit is not presented as stored complete data. CI logs are kept in memory only and are not saved to the SQLite cache.
 
-保存を無効にする設定と、使用量・保存対象・キャッシュ削除を用意する。検索履歴は最大20件で削除可能にする。保存済み検索条件と未公開の下書きはキャッシュ容量整理で消さない。
+A setting to disable storage, and usage, stored targets and cache deletion, are provided. Search history is limited to 20 items and can be deleted. Saved search conditions and unpublished drafts are not deleted by cache capacity cleanup.
 
-キャッシュも会社の私的情報を含み得る。OSユーザー権限による保護はアプリ独自のDB暗号化とは異なる。保存先・対象・削除方法を設定画面で見せ、会社のローカル保存制約に合わなければ永続保存を無効にする。ログアウトは当該アカウントの秘密値とキャッシュを削除する。下書きがある段階では破棄確認を行う。DB/WAL削除は安全な媒体消去まで保証しない。
+The cache can also contain the company's private information. Protection by OS user permissions differs from app-specific DB encryption. The storage location, targets and deletion method are shown on the settings screen, and if the company's local storage constraints are not met, persistent storage is disabled. Logout deletes that account's secret values and cache. When there are drafts, a discard confirmation is shown. Deleting the DB/WAL does not guarantee secure media erasure.
 
-設定DBと下書きDBはスキーマ番号と移行履歴を持ち、破壊的移行前にバックアップする。移行失敗で勝手に初期化しない。再取得可能なキャッシュだけは不整合時に再作成可能とする。新しいスキーマを古いアプリで開いた場合は書き込まず、対応版での起動を案内する。
+The settings DB and the drafts DB have a schema number and a migration history, and are backed up before a destructive migration. A failed migration does not reset them on its own. Only the cache, which can be fetched again, may be recreated when it is inconsistent. When a new schema is opened with an old app, the app does not write and tells the user to start it with a supported version.
 
-## 10. MR差分・議論・書き込み
+## 10. MR diffs, discussions and writes
 
-概要と差分と議論は別リクエスト。開いていないタブをまとめて取得しない。まず概要、変更ファイルのページ、選択したファイルの描画を進める。GitLab側のAPIがページ単位の差分しか返さない場合はページを取得し、架空の「ファイルごとの軽量API」を前提にしない。
+The overview, diff and discussions are separate requests. Tabs that are not open are not fetched together. The work proceeds first with the overview, the page of changed files, and rendering of the selected file. If GitLab's API returns diffs only per page, the app fetches pages and does not assume an imaginary "lightweight per-file API".
 
-MRのバージョン（pushごとの差分）は`GET /projects/:id/merge_requests/:iid/versions`で一覧し、選んだバージョンから最新までの差分は両バージョンのhead commitを`GET /projects/:id/repository/compare?from=...&to=...&straight=true`で直接比較する（GitLab Webと同じく、リベースがあればターゲットブランチ由来の変更も含む）。compareはページングしないため、1応答の上限内で受け取りMR差分と同じ30ファイル単位に分けて表示する。`compare_timeout`は取得制限として示す。この比較とコミット別差分は閲覧専用で、行コメントと確認済みの記録に混ぜない。差分APIに空白無視の指定はないため、「空白を無視」はクライアント側で空白だけが違う削除行と追加行を未変更の行として表示する近似であり、表示中は新しい行コメントを止める。
+The versions of an MR (the diff for each push) are listed with `GET /projects/:id/merge_requests/:iid/versions`, and the diff from the chosen version to the latest is a direct comparison of the head commits of both versions with `GET /projects/:id/repository/compare?from=...&to=...&straight=true` (as in the GitLab web UI, changes from the target branch are included if there was a rebase). Compare does not paginate, so it is received within the limit of one response and shown in the same units of 30 files as the MR diff. `compare_timeout` is shown as a fetch limit. This comparison and the per-commit diff are view-only, and are not mixed with line comments and viewed records. The diff API has no option to ignore whitespace, so "Hide whitespace" is a client-side approximation that shows deleted and added lines that differ only in whitespace as unchanged lines, and new line comments are disabled while it is on.
 
-差分ビューはまずunified表示。1ファイル/ページの読み込み量に上限を設け、バイナリ、生成物、取得不可、途中省略を別状態として表示する。大きな差分は自動取得せず明示操作で続行またはWeb版へ移動する。GitLabのdiff制限や`collapsed`/`too_large`等はバージョンで異なるため、未知の項目を正常な空差分として扱わない。[MR差分API](https://docs.gitlab.com/api/merge_requests/)。
+The diff view starts with the unified display. The amount read per file/page has a limit, and binary, generated, unavailable and partially omitted files are shown as separate states. A large diff is not fetched automatically; the user continues by an explicit action or moves to the web version. GitLab's diff limits and `collapsed`/`too_large` differ by version, so an unknown item is not treated as a normal empty diff. [MR diff API](https://docs.gitlab.com/api/merge_requests/).
 
-### ローカルcloneとの差分
+### Diff with a local clone
 
-変更タブの「ローカルの変更」は、ユーザーがプロジェクトごとに紐付けたcloneの作業ツリーとMRの最新コミット（head SHA）の差、つまり未pushのコミット、未コミットの変更、未追跡ファイルを表示する。GitLabのデータではないため、閲覧専用とし、行コメント・既存スレッド・確認済みの記録に混ぜない。
+"Local changes" in the Changes tab shows the difference between the working tree of the clone that the user linked per project and the latest commit of the MR (head SHA), that is, unpushed commits, uncommitted changes and untracked files. It is not GitLab data, so it is view-only and is not mixed with line comments, existing threads and viewed records.
 
-- 紐付け: フロントエンドは`projectId`とMRの`projectPath`、入力または選択されたフォルダだけを渡す。フォルダ選択はRustの専用コマンドが`tauri-plugin-dialog`のフォルダ選択だけを呼び出す。プラグイン自身のコマンドの権限はウィンドウに与えず、ファイル選択や保存ダイアログ、ファイルシステムの読み書きをフロントエンドへ開かない。Rustは`git rev-parse --show-toplevel`で作業ツリーの最上位を求め、GitLabから取り直したプロジェクトのIDとパスが一致し、かつ`remote.*.url`のどれかが接続先と同じホスト（HTTPSはポートとサブパスも）で同じプロジェクトパスを指す場合だけ保存する。SSHの別名ホストは照合できない。紐付けは設定テーブルにアカウント単位で最大500件保持し、ログアウトで削除する。差分を読むたびにリモートを照合し直す。
-- 実行: PATH上の`git`を直接起動し、シェル・フロントエンド由来の引数を使わない。読み取りコマンド（`cat-file -e`、`rev-parse`、`symbolic-ref`、`merge-base --is-ancestor`、`rev-list --count`、`ls-files --others`、`diff <head> --`）だけを実行し、fetch・checkout・index更新はしない。環境変数は許可リスト以外を消して`GIT_DIR`等の上書きを防ぎ、`GIT_OPTIONAL_LOCKS=0`、`core.fsmonitor=false`、`--no-ext-diff`、`--no-textconv`を付ける。リポジトリ設定で定義したclean filter（Git LFS等）は利用者が自分でgit diffを実行した場合と同じく動く。gitのエラー文は表示せず、所有者の不一致とリポジトリでないことだけを案内する。
-- 上限と状態: 1コマンド30秒、差分16MiB（超えたら最後のファイルを捨てて打ち切りを表示）、未追跡ファイル一覧1MiB。MRのheadがローカルにない場合はfetchを促すエラーにし、自動でfetchしない。HEADがMRのheadを含まない場合は、MR側だけの変更が取り消しとして見えることを警告する。未追跡ファイル（`.gitignore`対象外）は、最大300件・差分全体16MiBの残りの範囲で新規ファイルの差分として加え、超えた分は件数だけを示す。git差分の各ファイルはUTF-8、次にShift_JISで解釈し、どちらでもなければ置換文字で表示する。
-- 作業ツリーの読み取り: 未追跡ファイルの内容と「ファイル全体」・ハンク間の展開に使う本文は、紐付けたフォルダ内の相対パスだけを読む。`..`・絶対パス・ドライブ指定・`\`を拒否し、親フォルダの実体が作業ツリーの外（リンクしたフォルダ経由を含む）なら拒否する。シンボリックリンクはたどらず、gitと同じくリンク先の文字列を内容とする。1ファイル1MiBまで、NULを含むかUTF-8でもShift_JISでもないものはバイナリとして本文を出さない。
-- 保存: ローカルの差分とファイル本文は利用者のソースそのものなのでSQLiteキャッシュへ保存せず、開くたび・再読み込みのたびに読み直す。
+- Linking: the frontend passes only `projectId`, the MR's `projectPath` and the folder that was typed or chosen. For folder selection, a dedicated Rust command calls only the `tauri-plugin-dialog` folder picker. The plugin's own command permissions are not given to the window, and file pickers, save dialogs and file system reads and writes are not opened to the frontend. Rust finds the top of the working tree with `git rev-parse --show-toplevel`, and saves the link only when the project ID and path fetched again from GitLab match and one of the `remote.*.url` entries points to the same project path on the same host as the instance (for HTTPS, also the same port and subpath). An SSH alias host cannot be matched. Links are kept per account in the settings table, up to 500, and are deleted by logout. The remote is checked again every time a diff is read.
+- Execution: `git` on PATH is started directly, without a shell and without arguments that come from the frontend. Only read commands (`cat-file -e`, `rev-parse`, `symbolic-ref`, `merge-base --is-ancestor`, `rev-list --count`, `ls-files --others`, `diff <head> --`) are run, and there is no fetch, checkout or index update. Environment variables other than an allowlist are removed to prevent overrides such as `GIT_DIR`, and `GIT_OPTIONAL_LOCKS=0`, `core.fsmonitor=false`, `--no-ext-diff` and `--no-textconv` are added. A clean filter defined in the repository configuration (such as Git LFS) runs, as when the user runs git diff themselves. Git error text is not shown; only an ownership mismatch and "not a repository" are explained.
+- Limits and states: 30 seconds per command, 16 MiB of diff (when exceeded, the last file is dropped and the cut-off is shown), and 1 MiB of untracked file list. If the MR's head is not local, the error asks the user to fetch, and the app does not fetch on its own. If HEAD does not contain the MR's head, a warning says that changes only on the MR side appear as reverts. Untracked files (not covered by `.gitignore`) are added as diffs of new files, up to 300 files and within the remaining part of the 16 MiB of the whole diff, and the excess is shown as a count only. Each file in the git diff is interpreted as UTF-8, then Shift_JIS, and shown with replacement characters if neither works.
+- Reading the working tree: the contents of untracked files and the body used for "Whole file" and expanding between hunks read only relative paths inside the linked folder. `..`, absolute paths, drive specifications and `\` are rejected, and it is rejected if the real path of the parent folder is outside the working tree (including through the linked folder). Symbolic links are not followed, and as in git the content is the link target string. Up to 1 MiB per file, and a file that contains NUL or is neither UTF-8 nor Shift_JIS is treated as binary and its body is not shown.
+- Storage: local diffs and file bodies are the user's own source, so they are not saved to the SQLite cache, and are read again every time they are opened or reloaded.
 
-選択ファイルのみDOMへ描画し、巨大ファイルには上限を設ける。大量の行・スレッドは可視範囲と前後だけを描画する仮想化を採用し、件数と実測で適用を切り替える。議論は解決済みを折り畳み、長い本文や返信を必要時に展開する。Markdown/ハイライトの結果は内容・言語・テーマをキーに再利用し、重い解析はWorkerかRustの専用処理へ分離する。日本語・タブ・改行コード・rename・削除行・長い一行をテストする。
+Only the selected file is rendered to the DOM, and huge files have a limit. For a large number of lines and threads, virtualization that renders only the visible range and its surroundings is adopted, and its use is switched by count and measurement. Resolved discussions are collapsed, and long bodies and replies are expanded when needed. Results of Markdown and highlighting are reused with the content, language and theme as the key, and heavy parsing is separated into a Worker or dedicated Rust processing. Japanese, tabs, line-ending codes, rename, deleted lines and very long lines are tested.
 
-ページングはGitLabから取得する量、仮想化はDOMへ描画する量を制限する。両方が必要である。議論APIのページ数を小さくしても、一つの議論に多数のnoteが含まれる場合がある。応答サイズ上限に達したら「取得制限」と表示し、架空の返信単位ページングを想定しない。
+Paging limits the amount fetched from GitLab, and virtualization limits the amount rendered to the DOM. Both are needed. Even if the page size of the discussions API is made small, one discussion can contain many notes. When the response size limit is reached, "Too large" is shown, and per-reply paging is not assumed to exist.
 
-Markdownはraw HTMLを無効にしてレンダリングし、リンクのschemeを検証する。GitLab特有の記法を再現できない場合は元ページを開けるようにする。SVGやリモートHTMLをWebViewの特権コンテキストで実行しない。
+Markdown is rendered with raw HTML disabled, and link schemes are validated. When GitLab-specific syntax cannot be reproduced, the original page can be opened. SVG and remote HTML do not run in the WebView's privileged context.
 
-レビュー操作は次の単位で実装する。
+Review operations are implemented in the following units.
 
-| 操作 | 契約 |
+| Operation | Contract |
 | --- | --- |
-| 全体コメント・行コメント・返信 | 本文、対象MR/議論、必要な差分位置を明示して送信 |
-| 自分のコメント編集・削除 | 対象IDと取得時の内容を確認。更新競合時は再確認し、他の更新を黙って上書きしない |
-| スレッド解決・再開 | 解決可能な議論だけに提供。サーバーの権限判定に従う |
-| 下書き・レビュー公開 | ローカル保存→対応APIがあればサーバー下書きへ保存→公開対象を確認→公開 |
-| 承認・承認取消 | 現在のユーザーの承認だけを操作。承認時は確認したhead SHAを送信 |
-| 担当者・レビュアーの変更 | 一覧全体を置き換えるため、画面で見ていた一覧がGitLab上でも変わっていない場合だけ送信する。GitLabが一部のユーザーを保存しなかった（権限・プラン制限）場合は成功扱いにしない |
-| ファイル確認済み | ローカルの進捗として差分版と結びつける。GitLabの承認状態とは区別 |
-| 複数行コメント | 同じハンク内の開始行〜終端行を`position[line_range]`で送る。行コード（ファイルパスのSHA-1と新旧の行位置）と範囲の検証はRust側で行い、位置は終端行に置く |
-| 変更提案（Suggestion）の適用 | REST notesの`suggestions`にあるIDで`PUT /suggestions/:id/apply`または`batch_apply`。表示時のMR head SHAをpreflightで確認し、返答の`applied`を確認できなければ結果不明として扱う |
+| Overall comment, line comment, reply | Send with the body, the target MR/discussion and the required diff position stated |
+| Edit and delete own comment | Confirm the target ID and the content at fetch time. On an update conflict, confirm again, and do not silently overwrite other updates |
+| Resolve and reopen a thread | Offered only for resolvable discussions. Follows the server's permission decision |
+| Draft and publish review | Save locally → save to a server draft if the API supports it → confirm what is published → publish |
+| Approve and revoke approval | Operates only the current user's approval. On approval, sends the head SHA that was confirmed |
+| Change assignees and reviewers | The whole list is replaced, so it is sent only when the list seen on the screen has not changed on GitLab. If GitLab did not save some users (permission or plan limit), it is not treated as success |
+| File viewed | Tied to the diff version as local progress. Kept separate from GitLab's approval state |
+| Multi-line comment | Sends the start line to the end line in the same hunk as `position[line_range]`. Rust validates the line code (the SHA-1 of the file path and the old and new line positions) and the range, and the position is placed on the end line |
+| Applying a suggestion | `PUT /suggestions/:id/apply` or `batch_apply` with the ID in `suggestions` of the REST notes. The MR head SHA at display time is confirmed in a preflight, and if `applied` in the reply cannot be confirmed, the result is treated as unknown |
 
-投稿は下書き→送信中→成功/失敗/結果不明を区別する。差分コメントにはbase/start/head SHAとold/new位置を保存し、headが変わったら古い位置に黙って投稿しない。[Discussions API](https://docs.gitlab.com/api/discussions/)。投稿タイムアウトでは「未投稿」と断定せず、サーバー側の結果を確認してから再送を選ぶ。ローカル操作IDや二重クリック防止だけでサーバーの冪等性を保証できるとは考えない。
+A post distinguishes draft → sending → success/failure/unknown outcome. A diff comment stores the base/start/head SHA and the old/new positions, and when the head changes it does not silently post to the old position. [Discussions API](https://docs.gitlab.com/api/discussions/). On a post timeout, the app does not declare "not posted"; it checks the result on the server before the user chooses to resend. A local operation ID and double-click prevention alone are not assumed to guarantee idempotency on the server.
 
-サーバー下書きIDとローカル下書きIDを対応させる。GitLabの`bulk_publish`はそのユーザーのMR内の全下書きを公開するため、Web側で作った下書きも対象になり得る。アプリで選んだ下書きだけを公開する場合は各IDのpublishを使い、逐次実行して個別の結果を記録する。一部だけ成功しても全件再送しない。下書きAPI非対応時はローカル下書きから個別投稿し、非公開の共同レビュー機能があるようには見せない。[Draft Notes API](https://docs.gitlab.com/api/draft_notes/)。
+Server draft IDs and local draft IDs are matched. GitLab's `bulk_publish` publishes all of that user's drafts in the MR, so drafts created on the web can also be included. To publish only the drafts chosen in the app, each ID's publish is used, run one at a time, and each result is recorded. If only some succeed, all are not resent. When the draft API is not supported, the app posts individually from local drafts, and does not make it look like a private collaborative review feature exists. [Draft Notes API](https://docs.gitlab.com/api/draft_notes/).
 
-コメント公開と承認は独立したAPI操作であり、一括トランザクションではない。結果も分けて表示する。新しいAPIの`reviewed`/`requested_changes`等は機能確認後に公開し、正式な承認と混同しない。
+Publishing comments and approving are independent API operations, not one transaction. Their results are also shown separately. New APIs such as `reviewed` and `requested_changes` are exposed after the feature is confirmed, and are not confused with a formal approval.
 
-コメント編集前の再取得で既知の変更を検出するが、対象APIに条件付き更新がない場合、確認直後の同時編集まで原子的に防げるとは保証しない。サーバーの返却内容を反映し、下書きを残して復旧できるようにする。
+Refetching before editing a comment detects known changes, but when the target API has no conditional update, the app does not guarantee that it atomically prevents a concurrent edit right after the check. It reflects what the server returned and keeps the draft so the user can recover.
 
-投稿成功時は対象note/議論/承認状態のキャッシュを更新し、関連する概要だけを失効させる。MRの全差分や全検索を再取得しない。書き込み開始前の読み取り結果が成功後の状態を上書きしないよう、リソースごとの世代とキャンセル・再取得を共通adapterで管理する。入力中の本文を定期更新で置き換えない。
+On a successful post, the cache of the target note, discussion and approval state is updated, and only the related overview is invalidated. The whole MR diff and all searches are not fetched again. The common adapter manages a generation per resource, cancellation and refetching, so that a read result from before the write started does not overwrite the state after success. Periodic updates do not replace text being typed.
 
-承認は初期完成範囲に含め、権限・サーバー対応と対象SHAを確認する。組織の再認証要件でAPI承認が成立しない場合はGitLabで開く。ジョブの再実行・取消・手動実行とパイプラインの再実行・取消は、起点のMRのproject/iidを持つ書き込みとして結果不明の記録に乗せ、送信直前にジョブ/パイプラインを取得して操作可能な状態（取消は実行中・待機中、再実行は終了済み、手動実行はmanual）か確認する。表示中の古い状態だけで実行を許可しない。サーバーが正式な権限制御を行い、ローカルのボタン表示はその代わりにならない。[承認API](https://docs.gitlab.com/api/merge_request_approvals/)。MR一覧の承認状態（誰が承認したか）はREST一覧に含まれないため、読み込んだ1ページ分（最大30件）ごとに読み取り専用のGraphQLクエリ1回で取得する。行ごとの承認APIは呼ばない。コメントの絵文字リアクションも同様にREST Discussionsに含まれないため、コメントごとのaward_emoji APIは呼ばず、表示中の議論の最古コメントまでをGraphQLで100件ごとに1回読む。リアクションとTo-Doの完了は、送信前にGitLabの現在値（自分のリアクションの有無、対象MRの未完了To-Doであること）を確認し、対象MRの`project_id`/`iid`で結果不明の記録に載せる。
+Approval is in the initial completion scope, and confirms permission, server support and the target SHA. When an organization's re-authentication requirement keeps API approval from succeeding, the MR is opened in GitLab. Rerunning, canceling and manually running jobs, and rerunning and canceling pipelines, are writes that carry the project/iid of the originating MR and use the unknown-outcome record. Just before sending, the job or pipeline is fetched and checked to be in an operable state (cancel for running or pending, rerun for finished, manual run for manual). Execution is not allowed based only on the old state on screen. The server performs the formal permission control, and showing a local button is not a substitute for it. [Approvals API](https://docs.gitlab.com/api/merge_request_approvals/). The approval state in the MR list (who approved) is not included in the REST list, so it is fetched with one read-only GraphQL query for each loaded page (up to 30 items). The approval API is not called per row. Emoji reactions on comments are also not included in REST Discussions, so the award_emoji API is not called per comment; instead they are read with GraphQL, once per 100 items, up to the oldest comment of the discussions being shown. Before sending a reaction or completing a To-Do, the app checks GitLab's current value (whether my reaction exists, and that it is an incomplete To-Do for the target MR), and records it as unknown outcome by the target MR's `project_id`/`iid`.
 
-マージは単一MRの取得（`include_diverged_commits_count`・`include_rebase_in_progress`付き）が返す`detailed_merge_status`、`user.can_merge`、`merge_when_pipeline_succeeds`等だけで可否を示し、値がない・未知の値は「判別できない」と表示してマージを許可しない。`PUT .../merge`にはダイアログを開いた時点のhead SHAを`sha`として付け、送信前の取得でもheadを確認する。自動マージは`auto_merge`（GitLab 17.11以降）と旧名`merge_when_pipeline_succeeds`を両方送る。GitLabはどちらかが真なら自動マージとして扱い、旧版は`auto_merge`を無視するため、どの版でも待たずにマージされることはない。取り消しは全版で使える`cancel_merge_when_pipeline_succeeds`（19.5で非推奨、後継`cancel_auto_merge`は19.5以降のみ）を使い、MRではなく`status`を返す応答を確認する。マージAPIはマージ権限のないユーザーに401を返すため、送信直前の取得が同じトークンで成功していることを前提にFORBIDDENとして扱い、セッションを失効させない。リベースは202で受け付けられ非同期に進むので、表示中に限り5秒間隔・最大12回だけ再取得する。クローズ/再オープン（`state_event`）、タイトル（Draftの付け外しを含む）、マイルストーン（解除は0）は表示時の値と一致するときだけ送り、応答の値も確認する。ラベルは`add_labels`/`remove_labels`で差分だけを送る。ラベル候補は`include_ancestor_groups=true`、マイルストーン候補は`state=active`と`include_parent_milestones=true`（後継の`include_ancestors`とは同時指定できず、旧版は旧名だけを解釈する）で上位グループの分も含める。変更の要求（`mergeRequestRequestChanges`、GitLab 18.9以降）とレビュー再依頼（`mergeRequestReviewerRereview`）はRESTにないためGraphQLで送り、承認一覧と同じ`/api/graphql`経路と変数渡しを使う。[Merge requests API](https://docs.gitlab.com/api/merge_requests/)、[Labels API](https://docs.gitlab.com/api/labels/)、[Milestones API](https://docs.gitlab.com/api/milestones/)。
+For merge, whether it is possible is shown only from `detailed_merge_status`, `user.can_merge`, `merge_when_pipeline_succeeds` and similar values returned by fetching a single MR (with `include_diverged_commits_count` and `include_rebase_in_progress`). A missing or unknown value is shown as "Cannot determine" and merge is not allowed. `PUT .../merge` carries the head SHA at the time the dialog was opened as `sha`, and the head is also checked in the fetch before sending. Auto-merge sends both `auto_merge` (GitLab 17.11 and later) and the old name `merge_when_pipeline_succeeds`. GitLab treats it as auto-merge if either is true, and old versions ignore `auto_merge`, so in no version does the MR merge immediately without waiting. Canceling uses `cancel_merge_when_pipeline_succeeds`, which works in all versions (deprecated in 19.5; its successor `cancel_auto_merge` exists only in 19.5 and later), and the app checks for a response that returns `status` rather than the MR. The merge API returns 401 to a user without merge permission, so on the premise that the fetch just before sending succeeded with the same token, it is treated as FORBIDDEN and the session is not invalidated. Rebase is accepted with 202 and proceeds asynchronously, so only while shown, the app refetches at 5-second intervals, up to 12 times. Close/reopen (`state_event`), title (including adding and removing Draft) and milestone (0 to clear) are sent only when they match the value at display time, and the value in the response is also checked. Labels send only the difference with `add_labels`/`remove_labels`. Label candidates include those of upper groups with `include_ancestor_groups=true`, and milestone candidates with `state=active` and `include_parent_milestones=true` (it cannot be combined with its successor `include_ancestors`, and old versions understand only the old name). Request changes (`mergeRequestRequestChanges`, GitLab 18.9 and later) and re-request review (`mergeRequestReviewerRereview`) are not in REST, so they are sent with GraphQL, using the same `/api/graphql` path and variable passing as the approval list. [Merge requests API](https://docs.gitlab.com/api/merge_requests/), [Labels API](https://docs.gitlab.com/api/labels/), [Milestones API](https://docs.gitlab.com/api/milestones/).
 
-Pipelineログは上限付きの一時データとして扱う。Jobs trace APIに汎用的な差分ストリーミングがあると仮定せず、末尾512KiBのsuffix Rangeを要求する。206なら`Content-Range`で先頭の省略を判定し、Rangeを無視して200で全体が返る場合は末尾512KiBだけを残して読み、16MiBを超えたら「GitLabで開く」を案内する。ANSIの前景色と太字だけを色名に変換し、他のエスケープ・制御文字・`section_start`/`section_end`マーカーはRustで除去する。実行中ジョブのログは表示中だけ15秒ごとに再取得する。[Jobs API](https://docs.gitlab.com/api/jobs/)。
+Pipeline logs are treated as temporary data with a limit. The app does not assume the Jobs trace API has generic incremental streaming, and requests a suffix Range of the last 512 KiB. For 206, it judges omission of the beginning with `Content-Range`; if Range is ignored and the whole log returns with 200, it reads and keeps only the last 512 KiB, and if it exceeds 16 MiB it shows "Open in GitLab". Only the ANSI foreground color and bold are converted into color names, and other escapes, control characters and `section_start`/`section_end` markers are removed in Rust. The log of a running job is refetched every 15 seconds only while shown. [Jobs API](https://docs.gitlab.com/api/jobs/).
 
-## 11. バージョン差とエラーの扱い
+## 11. Version differences and error handling
 
-接続時にmetadata/versionを可能な範囲で取得するが、その取得失敗だけで全機能を拒否しない。バージョン情報と実際の必要APIの応答から`CapabilitySet`を作り、各機能をsupported / unsupported / unknownで管理する。HTTP 403を「機能非対応」と一括解釈しない。[Metadata API](https://docs.gitlab.com/api/metadata/)。
+On connection, the app fetches metadata/version as far as possible, but does not refuse all features just because that fetch failed. It builds a `CapabilitySet` from the version information and the responses of the required APIs, and manages each feature as supported / unsupported / unknown. HTTP 403 is not interpreted across the board as "feature unsupported". [Metadata API](https://docs.gitlab.com/api/metadata/).
 
-最小対応GitLabバージョンは対象サーバーの確認後に決める。optionalフィールド、null、未知のenum値を受け入れ、不明な状態は「不明」と表示する。高度な検索が使えなくてもProjects/MR検索が成立することを優先する。RESTを基本とし、GraphQLは計測上のN+1等を解消する理由がある場合にadapter内部へ限定して追加する。
+The minimum supported GitLab version is decided after checking the target server. Optional fields, null and unknown enum values are accepted, and an unclear state is shown as "Unknown". Making Projects/MR search work even without advanced search takes priority. REST is the base, and GraphQL is added, limited to inside the adapter, only when there is a reason such as resolving a measured N+1.
 
-| 状態 | 表示と復旧 |
+| State | Display and recovery |
 | --- | --- |
-| 初回読込・保存済みなし | 骨組み表示。空一覧とは区別 |
-| 保存済みを再確認中 | 内容を維持し、更新中と時刻を表示 |
-| オフライン/一時障害 | 保存済みなら時刻付きで表示。未取得なら再試行案内 |
-| 401 | 再認証を案内し、私的データの通常表示を停止 |
-| 403/404 | 権限不足/不存在の可能性を説明。キャッシュで迂回しない |
-| 429 | 再試行可能時刻を表示 |
-| 取得上限・一部取得 | 「省略あり」「続きあり」を明示 |
-| 書き込み結果不明 | 自動再送せず、結果確認へ誘導 |
+| First load, nothing stored | Show a skeleton. Distinct from an empty list |
+| Rechecking stored data | Keep the content, and show updating and the time |
+| Offline / temporary failure | If stored, show it with the time. If not fetched, guide a retry |
+| 401 | Guide re-authentication, and stop the normal display of private data |
+| 403/404 | Explain possible lack of permission or nonexistence. Do not work around it with the cache |
+| 429 | Show the time when a retry is possible |
+| Fetch limit, partial fetch | State "Truncated" and "More available" |
+| Write outcome unknown | Do not resend automatically; guide to checking the result |
 
-## 12. UIを一貫させる設計
+## 12. Design for a consistent UI
 
-テーマだけでなく、部品と画面の構造も固定する。具体的な規則は[UI設計](ui-design.md)にまとめる。
+Not only the theme but also the structure of components and screens is fixed. Concrete rules are collected in [UI design](ui-design.md).
 
-デザイントークン → MUI既定値 → アプリ共通部品 → 機能画面という順序で構築する。新しい画面は既存の一覧・詳細・設定パターンへ当てはめる。feature側で別の色・行高・空状態を発明しない。共通パターン変更はUIカタログと代表スクリーンショットを一緒に更新する。
+Build in the order design tokens → MUI defaults → app shared components → feature screens. A new screen is fitted to the existing list, detail and settings patterns. A feature does not invent its own colors, row heights or empty states. A change to a shared pattern updates the UI catalog and representative screenshots together.
 
-現在のテーマは初期サンプルであり、現在のピンク色やカードの配置を製品デザインとして確定したわけではない。最初のプロジェクト/MR一覧を使って情報密度と操作感を決め、その時点の基準を固定する。
+The current theme is an initial sample, and the current pink color and card layout are not fixed as the product design. Information density and operation feel are decided with the first project and MR lists, and the standard at that point is fixed.
 
-## 13. 想定ディレクトリ
+## 13. Planned directories
 
-以下は移行先の設計。今回フォルダーの移動や機能の実装は行わない。
+The following is the design for the migration target. This time no folders are moved and no features are implemented.
 
 ```text
 src/
-  app/                 # Router、Provider、session、起動・終了
+  app/                 # Router, Provider, session, startup and shutdown
   features/
-    connections/       # 接続設定
-    projects/          # プロジェクト検索・固定
-    merge-requests/    # レビュー一覧・詳細・差分・議論
-    search/            # MR横断検索・保存条件
+    connections/       # Connection settings
+    projects/          # Project search and pinning
+    merge-requests/    # Review list, detail, diff, discussions
+    search/            # Cross-MR search and saved conditions
     settings/
   shared/
-    ui/                # AppShell、PageHeader、DataList、AsyncState等
-    theme/             # tokens、MUI defaults、typography
-    ipc/               # 唯一のinvoke入口、コマンドラッパー
-    query/             # キャッシュhydrate、キー、更新方針
-    contracts/         # Rustからの生成型
-  catalog/             # 状態別に表示できるUIカタログ
+    ui/                # AppShell, PageHeader, DataList, AsyncState, etc.
+    theme/             # tokens, MUI defaults, typography
+    ipc/               # The only invoke entry, command wrappers
+    query/             # Cache hydrate, keys, update policy
+    contracts/         # Types generated from Rust
+  catalog/             # UI catalog that can be shown per state
 src-tauri/src/
-  commands/            # Tauri境界
-  application/         # 接続・検索・MR等のユースケース
-  domain/              # ID、検索条件、MR、capability、error
-  adapters/gitlab/     # HTTP DTO、API、互換性
-  adapters/storage/    # SQLite、migration、cache
+  commands/            # Tauri boundary
+  application/         # Use cases for connection, search, MR, etc.
+  domain/              # ID, search conditions, MR, capability, error
+  adapters/gitlab/     # HTTP DTO, API, compatibility
+  adapters/storage/    # SQLite, migration, cache
   adapters/credentials/
-  runtime/             # session、cancel、limit、診断
+  runtime/             # session, cancel, limit, diagnostics
 ```
 
-現行の`src/theme.ts`や`src/components`は、利用先が増える段階で小さく移す。移行時にAGENTS.mdとdesign guardの許可パスも更新する。未実装機能のための空ディレクトリや空traitは先に大量生成しない。
+The current `src/theme.ts` and `src/components` are moved in small steps when the number of their users grows. At the time of the move, the allowed paths of AGENTS.md and the design guard are also updated. Empty directories and empty traits for unimplemented features are not generated in bulk beforehand.
 
-## 14. 性能目標と検証
+## 14. Performance goals and verification
 
-以下は合否を議論するための初期目標で、実測結果ではない。
+The following are initial goals for discussing pass or fail, not measured results.
 
-| 対象 | 目標案 | 計測条件 |
+| Target | Proposed goal | Measurement condition |
 | --- | --- | --- |
-| 起動から操作可能 | p95 2秒以内 | release、同じPC、ネットワーク待ちを起動の前提にしない |
-| 保存済み一覧・検索への復帰 | p95 100ms以内 | 一覧30件、ウォームキャッシュ |
-| DBからの初回キャッシュ表示 | p95 200ms以内 | 同じDB容量、ディスク条件を記録 |
-| API応答後の一覧反映 | p95 100ms以内 | 通信時間と分離 |
-| レビュー本文入力・ファイル切替の反応 | p95 150ms以内 | 保存済みデータ、下記の大量fixtureで計測 |
-| 検索応答の順序 | 古い条件の結果を一度も表示しない | 遅延・逆順応答を注入 |
-| MR差分操作 | 長い主スレッド停止を避ける | 小/大/長行/大量ファイルを別計測 |
+| Startup to usable | p95 within 2 seconds | Release, same PC, network wait is not a precondition of startup |
+| Return to stored list or search | p95 within 100 ms | 30 list items, warm cache |
+| First cache display from the DB | p95 within 200 ms | Same DB size, record the disk conditions |
+| List update after an API response | p95 within 100 ms | Separate from communication time |
+| Response of review text input and file switching | p95 within 150 ms | Stored data, measured with the large fixtures below |
+| Order of search responses | Never show the result of an old condition | Inject delayed and reversed responses |
+| MR diff operations | Avoid long main-thread stalls | Measure small, large, long-line and many-file cases separately |
 
-初期30件の一覧で行ごとの詳細APIを発行しない。未表示タブのリクエストは0件とする。フロントエンドの起動JS、取得件数、IPC payload、ネットワーク時間、DB時間、描画時間を別々に記録する。メモリはWebView2子プロセスを含め、キャッシュ温存後の往復操作で単調増加しないか確認する。具体的なメモリ上限は初回実測後に決める。
+The initial list of 30 items issues no per-row detail API. Requests for tabs that are not shown are 0. The frontend startup JS, fetched count, IPC payload, network time, DB time and rendering time are recorded separately. Memory includes the WebView2 child processes, and the app checks that it does not increase monotonically over round-trip operations with the cache kept warm. The concrete memory limit is decided after the first measurement.
 
-「レビューが多い」は、一覧のMR件数、差分量、議論/コメント数に分けて検証する。以下は利用実績ではなく、初期の負荷検証用データ規模である。
+"Many reviews" is verified split into the number of MRs in a list, the amount of diff, and the number of discussions and comments. The following is the data scale for the initial load verification, not actual usage.
 
-| 負荷 | fixtureと確認内容 |
+| Load | Fixture and what to check |
 | --- | --- |
-| 多数のMR | 初回30件、追加ページで累積1,000件。DOM量を可視行付近に制限し、戻る位置と選択を保持 |
-| 大きい差分 | 100ファイル・合計10,000行、および単一巨大ファイル/長行。選択ファイル以外の本文を描画しない |
-| 多数の議論 | 500スレッド・合計2,000コメント。スクロールと本文入力、返信公開、解決で全件を再描画しない |
-| 頻繁な移動 | 複数MRを往復、タブ切替、バックグラウンド更新。未使用メモリと解析結果の保持にも容量上限を設ける |
+| Many MRs | 30 on the first load, cumulative 1,000 with additional pages. Limit the DOM to near the visible rows, and keep the return position and selection |
+| Large diff | 100 files and 10,000 lines in total, and a single huge file or long lines. Do not render bodies other than the selected file |
+| Many discussions | 500 threads and 2,000 comments in total. Scrolling, text input, publishing a reply and resolving do not redraw everything |
+| Frequent navigation | Moving back and forth between MRs, tab switching, background updates. Unused memory and retained parse results also have a capacity limit |
 
-一覧/差分の仮想化は200行程度を初期の切替候補にし、可変高の議論は高さ計測とスクロール位置保持を検証する。フォーカス中・編集中の要素を不意にアンマウントしない。下書き状態は仮想化される行の外で保持する。各キー入力でMR全体のJSONを複製・保存せず、下書き単位で更新し、保存はdebounceと画面離脱時のflushを組み合わせる。最終編集の保存前に閉じる場合は未保存状態を扱う。
+Virtualization of lists and diffs uses about 200 rows as the initial switch candidate, and variable-height discussions are checked for height measurement and scroll position retention. An element that is focused or being edited is not unmounted unexpectedly. Draft state is kept outside the virtualized rows. Each key input does not copy or save the JSON of the whole MR; it updates per draft, and saving combines a debounce with a flush when leaving the screen. If the app is closed before the last edit is saved, the unsaved state is handled.
 
-同じreleaseビルド・PCでコールド/ウォームを分け、複数回の測定からp95を求める。キャッシュ表示、更新後の表示、入力応答を別々に評価する。GitLab側のAPI遅延はRust化だけでは消えない。キャッシュ済み表示を先に出し、更新中も操作を止めないことで待ち時間を減らす。Web版との比較は同じMR・同じネットワーク条件で行う。
+Cold and warm runs are separated on the same release build and PC, and p95 is obtained from multiple measurements. Cache display, display after update, and input response are evaluated separately. GitLab's API latency does not disappear just by using Rust. The wait is reduced by showing the cached display first and not blocking operation during updates. Comparison with the web version is done with the same MR and the same network conditions.
 
-テストは、URL/パス正規化、検索条件、DTO変換、ページング、401/403/429、通信キャンセル、ログアウト中の遅延応答、DB移行、キャッシュ容量上限を重点にする。実トークンなしのHTTP fixtureと隔離DBを使用する。UIは読み込み・空・失敗・古いデータ・部分取得と、明暗/狭幅/キーボードの代表ケースを確認する。
+Tests focus on URL/path normalization, search conditions, DTO conversion, paging, 401/403/429, communication cancellation, delayed responses during logout, DB migration and cache capacity limits. They use HTTP fixtures without real tokens and an isolated DB. For the UI, representative cases of loading, empty, failure, stale data, partial fetch, light and dark, narrow width and keyboard are checked.
 
-レビューの検証には、投稿成功後の古いGET応答、タイムアウト後の結果照合、下書き公開の部分成功、Web側下書きの混在、head変更、権限喪失、承認だけ失敗するケースを含める。
+Review verification includes a stale GET response after a successful post, result reconciliation after a timeout, partial success of publishing drafts, mixed web-side drafts, head change, lost permission, and a case where only approval fails.
 
-ログは構造化し、秘密値、検索本文、MR本文、コードを既定では記録しない。テレメトリーの外部送信は入れない。診断エクスポートは内容を確認できる形でユーザー操作から行う。
+Logs are structured, and by default do not record secrets, search text, MR bodies or code. No telemetry is sent externally. Diagnostic export is done from a user action in a form whose content the user can check.
 
-## 15. 開発順序と完了条件
+## 15. Development order and completion conditions
 
-| 段階 | 実装する一続きの体験 | 完了条件 |
+| Stage | The continuous experience to implement | Completion condition |
 | --- | --- | --- |
-| A: 接続とプロジェクト | 接続設定→本人確認→プロジェクト検索→固定 | 対象Self-Managedで動作。サブパス/CA/認証失敗を説明でき、秘密値を保存・削除できる |
-| B: 現在・過去のMR | レビュー待ち→MR検索→概要→戻る | merged/closedが検索できる。タイトル/説明と対象範囲を明示。条件と位置を復元できる |
-| C: 再訪の高速化 | 取得済みデータ保存→即時表示→再取得 | 二重取得、逆順応答、アカウント混在なし。容量制御と削除が動く |
-| D: 読むレビュー | 差分と議論→版の切替→Webで開く | 差分/議論も永続保存。取得制限と部分表示を区別。大量データで計測する中間地点 |
-| E: 投稿するレビュー | 下書き→コメント/行コメント/返信→編集/削除→解決/再開 | 版変更・重複防止・結果不明・部分成功・下書き復元を扱う |
-| F: レビューの完成 | 承認/承認取消→連続したMRレビュー | 対象サーバーの機能/権限を確認。検索・投稿・大量データ性能を通して**A〜Fでv0.1完成** |
-| G: 必要な拡張 | Issue等 | 実際の使用頻度と計測に基づいて一つずつ追加 |
+| A: Connection and projects | Connection settings → identity check → project search → pinning | Works on the target Self-Managed instance. Subpath, CA and authentication failure can be explained, and secrets can be saved and deleted |
+| B: Current and past MRs | Review requests → MR search → overview → back | Merged/closed can be searched. Title/description and the target scope are stated. Conditions and position can be restored |
+| C: Faster revisits | Save fetched data → show immediately → refetch | No double fetch, reversed response or account mixing. Capacity control and deletion work |
+| D: Reading review | Diff and discussions → switching versions → open on the web | Diffs and discussions are also saved persistently. Fetch limits and partial display are distinguished. A midpoint where load is measured with large data |
+| E: Posting review | Draft → comment/line comment/reply → edit/delete → resolve/reopen | Handles version change, duplicate prevention, unknown outcome, partial success and draft restore |
+| F: Completing review | Approve/revoke approval → consecutive MR review | Check the target server's features and permissions. Through search, posting and large-data performance, **A to F complete v0.1** |
+| G: Needed extensions | Issues, etc. | Add one at a time based on actual usage frequency and measurement |
 
-各段階で画面、Rustコマンド、エラー、検証を一緒に仕上げる。先に全バックエンドを作り切ってからUIを載せる順序にはしない。署名・インストーラー・自動更新は日常利用の配布形態が決まってから追加する。アプリ終了は初期版では終了とし、トレイに残る動作を暗黙に入れない。
+At each stage, the screen, Rust commands, errors and verification are finished together. The order is not to build all of the backend first and then put the UI on it. Signing, the installer and automatic update are added after the form of daily distribution is decided. In the first version, closing the app means quitting, and a behavior that stays in the tray is not included implicitly.
 
-## 16. 実装前に残る確認事項
+## 16. Items still to confirm before implementation
 
-- GitLabバージョンとPATの発行・利用可否。これで認証方式と対応機能の下限を確定する。秘密値はチャットでは受け取らない。
-- 実接続の段階で接続先URLをアプリに登録し、TLS/認証/必要APIを確認する。社内ネットワークに接続できることは確認済み。CAやプロキシの追加設定は実際に必要な場合に調べる。
-- 実データの規模と待ち時間は接続後に測る。それまでは第14節の負荷fixtureを使うため、件数の回答を設計の前提条件にしない。
+- The GitLab version and whether a PAT can be issued and used. This fixes the lower bound of the authentication method and supported features. Secret values are not received in chat.
+- At the real-connection stage, register the instance URL in the app and check TLS, authentication and the required APIs. It is confirmed that the company network can be reached. Additional CA or proxy settings are investigated if actually needed.
+- The scale and waiting time of real data are measured after connecting. Until then, the load fixtures in section 14 are used, so an answer about counts is not made a precondition of the design.
 
-タイトル/説明検索、レビュー操作、直接API接続、永続キャッシュ、性能改善という機能範囲は確定した。残るのは接続環境との互換性確認であり、全体設計はこの条件で進める。実サーバーで確認できていない機能を利用可能と断定しない。
+The feature scope is fixed: title/description search, review operations, direct API connection, a persistent cache and performance improvement. What remains is checking compatibility with the connection environment, and the overall design proceeds under these conditions. A feature that has not been confirmed on a real server is not declared available.
