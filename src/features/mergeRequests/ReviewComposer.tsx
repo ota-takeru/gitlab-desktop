@@ -19,6 +19,7 @@ import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import type { GitLabUser, Position } from '../../types/gitlab'
 import { positionLabel } from './diffLineThreads'
 import { MAX_SUGGESTION_LINES_ABOVE, suggestionBlock } from './suggestions'
+import { TemplateMenu } from './TemplateMenu'
 import { useMentionSuggestions } from './useMentionSuggestions'
 import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
@@ -49,6 +50,8 @@ interface ReviewComposerProps {
    * ending on a removed line). Without it the button is not shown.
    */
   suggestionLines?: (() => string[] | null) | null
+  /** The project whose comment templates are offered; without it the button is not shown. */
+  templateProjectPath?: string
   value: string
 }
 
@@ -70,6 +73,7 @@ export function ReviewComposer({
   replyDiscussionId,
   suggestionLines,
   targetPosition,
+  templateProjectPath,
   value,
 }: ReviewComposerProps) {
   const t = useT()
@@ -198,7 +202,8 @@ export function ReviewComposer({
           onPasteImage={onUploadAttachment ? (file) => { void uploadAttachment(file) } : undefined}
           placeholder={replyAuthor ? t('review.composer.replyTo', { author: replyAuthor }) : t('review.composer.placeholder')}
           ref={editorRef}
-          toolbarEnd={onUploadAttachment || suggestionLines !== undefined ? <>
+          toolbarEnd={onUploadAttachment || suggestionLines !== undefined || templateProjectPath ? <>
+            {templateProjectPath ? <TemplateMenu disabled={controlsDisabled} onInsert={(content) => editorRef.current?.insertBlock(content)} query={{ kind: 'commentTemplates', projectPath: templateProjectPath }} /> : null}
             {suggestionLines !== undefined ? (
               <Tooltip title={suggestionHint}>
                 <span>

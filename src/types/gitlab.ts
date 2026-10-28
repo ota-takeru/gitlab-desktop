@@ -366,6 +366,8 @@ export type GitLabQuery =
   | JobTraceQuery
   | LabelsQuery
   | MilestonesQuery
+  | DescriptionTemplatesQuery
+  | CommentTemplatesQuery
   | MrVersionsQuery
   | VersionCompareQuery
 
@@ -373,6 +375,18 @@ export type GitLabQuery =
 export interface LabelsQuery { kind: 'labels'; projectId: string; search: string; page: number }
 /** Active milestones of the project and its ancestor groups. */
 export interface MilestonesQuery { kind: 'milestones'; projectId: string; search: string; page: number }
+/** The project's MR description templates with their text. */
+export interface DescriptionTemplatesQuery { kind: 'descriptionTemplates'; projectId: string }
+/** Comment templates of the user, and of the project and its parent group where GitLab offers them. */
+export interface CommentTemplatesQuery { kind: 'commentTemplates'; projectPath: string }
+
+/** A description or comment template; `id` is unique within one list. */
+export interface TextTemplate {
+  id: string
+  name: string
+  content: string
+  scope: 'user' | 'group' | 'project'
+}
 
 export interface GitLabLabel {
   id: string
@@ -588,6 +602,7 @@ export type QueryData =
   | null
   | GitLabLabel[]
   | Milestone[]
+  | TextTemplate[]
   | MrVersion[]
 
 export interface GitLabSnapshot<T = QueryData> {
@@ -879,6 +894,8 @@ export type GitLabQueryData<Q extends GitLabQuery> =
                 : Q extends JobTraceQuery ? JobTrace
                 : Q extends LabelsQuery ? GitLabLabel[]
                 : Q extends MilestonesQuery ? Milestone[]
+                : Q extends DescriptionTemplatesQuery ? TextTemplate[]
+                : Q extends CommentTemplatesQuery ? TextTemplate[]
                 : Q extends MrVersionsQuery ? MrVersion[]
                 : Q extends VersionCompareQuery ? Diff[]
                 : QueryData

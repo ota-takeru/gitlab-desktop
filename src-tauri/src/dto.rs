@@ -353,6 +353,15 @@ pub enum Query {
         search: String,
         page: u32,
     },
+    /// The project's merge request description templates with their text.
+    DescriptionTemplates {
+        project_id: String,
+    },
+    /// Comment templates (GitLab's saved replies) of the user, and of the
+    /// project and its parent group where the GitLab edition offers them.
+    CommentTemplates {
+        project_path: String,
+    },
     /// The MR's diff versions (one per push), newest first.
     MrVersions {
         project_id: String,
@@ -805,6 +814,8 @@ mod tests {
         for value in [
             serde_json::json!({"kind": "labels", "projectId": "7", "search": "bug", "page": 1}),
             serde_json::json!({"kind": "milestones", "projectId": "7", "search": "", "page": 2}),
+            serde_json::json!({"kind": "descriptionTemplates", "projectId": "7"}),
+            serde_json::json!({"kind": "commentTemplates", "projectPath": "group/app"}),
         ] {
             let query: Query = serde_json::from_value(value.clone()).unwrap();
             assert_eq!(serde_json::to_value(query).unwrap(), value);

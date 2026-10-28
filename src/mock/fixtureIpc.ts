@@ -258,6 +258,14 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'jobTrace': return pipelines.trace(request.jobId)
       case 'labels': return data.labels.filter((label) => matches(label.name, request.search))
       case 'milestones': return data.milestones.filter((milestone) => matches(milestone.title, request.search))
+      case 'descriptionTemplates': return [
+        { content: '## 概要\n\n## 変更内容\n\n## 確認方法\n', id: 'Default', name: 'Default', scope: 'project' },
+        { content: '## 不具合\n\n## 原因\n\n## 修正\n', id: 'Bug', name: 'Bug', scope: 'project' },
+      ]
+      case 'commentTemplates': return [
+        { content: 'LGTM :thumbsup:', id: 'gid://gitlab/Users::SavedReply/1', name: 'LGTM', scope: 'user' },
+        { content: 'テストを追加してください。', id: 'gid://gitlab/Projects::SavedReply/1', name: 'テスト追加依頼', scope: 'project' },
+      ]
       // Each fixture commit stands for one push, newest first.
       case 'mrVersions': {
         const target = find(request)

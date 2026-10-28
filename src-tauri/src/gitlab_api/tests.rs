@@ -3483,3 +3483,87 @@ fn suggestions_are_applied_once_only_on_the_head_they_were_read_on() {
         assert_eq!(validate_action(&invalid).unwrap_err().code, "INVALID_INPUT");
     }
 }
+
+#[test]
+fn description_templates_are_listed_then_read_one_by_one() {
+    let fixture = Fixture::new(vec![
+        response(
+            "200 OK",
+            r#"[{"key":"Default","name":"Default"},{"key":"Bug fix","name":"Bug fix"}]"#,
+            "",
+        ),
+        response(
+            "200 OK",
+            r###"{"name":"Default","content":"## Summary\n"}"###,
+            "",
+        ),
+        response(
+            "200 OK",
+            r###"{"name":"Bug fix","content":"## Cause\n"}"###,
+            "",
+        ),
+    ]);
+    let result = runtime()
+        .block_on(fetch(
+            &Client::new(),
+            &fixture.url(),
+            &Query::DescriptionTemplates {
+                project_id: "7".to_owned(),
+            },
+        ))
+        .unwrap();
+    let requests = fixture.requests.lock().unwrap();
+    assert!(
+        requests[0].starts_with("GET /api/v4/projects/7/templates/merge_requests?per_page=100 ")
+    );
+    assert!(requests[1].starts_with("GET /api/v4/projects/7/templates/merge_requests/Default "));
+    assert!(requests[2].starts_with("GET /api/v4/projects/7/templates/merge_requests/Bug%20fix "));
+    assert!(!result.truncated);
+    assert_eq!(
+        result.data,
+        json!([
+            {"id": "Default", "name": "Default", "content": "## Summary\n", "scope": "project"},
+            {"id": "Bug fix", "name": "Bug fix", "content": "## Cause\n", "scope": "project"},
+        ])
+    );
+}
+
+#[test]
+fn comment_templates_fall_back_to_the_users_own_when_project_templates_are_unknown() {
+    let fixture = Fixture::new_at_path(
+        vec![
+            response(
+                "200 OK",
+                r#"{"errors":[{"message":"Field 'savedReplies' doesn't exist on type 'Project'"}]}"#,
+                "",
+            ),
+            response(
+                "200 OK",
+                r#"{"data":{"currentUser":{"savedReplies":{"pageInfo":{"hasNextPage":true},"nodes":[{"id":"gid://gitlab/Users::SavedReply/1","name":"LGTM","content":"Looks good"}]}}}}"#,
+                "",
+            ),
+        ],
+        "/GitLab/api/v4/",
+    );
+    let result = runtime()
+        .block_on(fetch(
+            &Client::new(),
+            &fixture.url(),
+            &Query::CommentTemplates {
+                project_path: "group/sub/app".to_owned(),
+            },
+        ))
+        .unwrap();
+    let requests = fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    let raw = &requests[0];
+    let body: Value = serde_json::from_str(&raw[raw.find("{\"query\"").unwrap()..]).unwrap();
+    assert_eq!(body["variables"]["project"], "group/sub/app");
+    assert_eq!(body["variables"]["group"], "group/sub");
+    assert!(!requests[1].contains("project(fullPath"));
+    assert!(result.truncated);
+    assert_eq!(
+        result.data,
+        json!([{"id": "gid://gitlab/Users::SavedReply/1", "name": "LGTM", "content": "Looks good", "scope": "user"}])
+    );
+}

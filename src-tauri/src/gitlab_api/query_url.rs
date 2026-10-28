@@ -521,6 +521,13 @@ pub(super) fn build_query_url(
                 Vec::new(),
             )
         }
+        Query::DescriptionTemplates { .. } | Query::CommentTemplates { .. } => {
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                "テンプレートはこの方法では取得できません。",
+            )
+            .key("native.query.templatesUnsupported"))
+        }
         Query::PipelineJobs { .. } | Query::JobTrace { .. } => {
             return Err(AppError::new(
                 "INVALID_INPUT",

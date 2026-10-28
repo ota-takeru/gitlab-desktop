@@ -166,6 +166,12 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     if let Query::JobTrace { project_id, job_id } = query {
         return fetch_job_trace(client, api_base, project_id, job_id).await;
     }
+    if let Query::DescriptionTemplates { project_id } = query {
+        return fetch_description_templates(client, api_base, project_id).await;
+    }
+    if let Query::CommentTemplates { project_path } = query {
+        return fetch_comment_templates(client, api_base, project_path).await;
+    }
     if let Query::Mrs {
         search,
         project_id,
@@ -1762,6 +1768,145 @@ async fn post_graphql(
         .filter(|data| data.is_object())
         .cloned()
         .ok_or(missing)
+}
+
+/// Description templates read with their text; more are marked truncated.
+const MAX_DESCRIPTION_TEMPLATES: usize = 30;
+
+/// Reads the project's merge request description templates. GitLab lists only
+/// their names, so each template's text costs one more request.
+async fn fetch_description_templates(
+    client: &Client,
+    api_base: &Url,
+    project_id: &str,
+) -> Result<ApiResult, AppError> {
+    validate_id(project_id, "projectId")?;
+    let malformed = || {
+        unsupported_response("GitLabから対応していない形式のテンプレートが返されました。")
+            .key("native.response.unsupportedTemplates")
+    };
+    let list_url = append_query(
+        endpoint(
+            api_base,
+            &["projects", project_id, "templates", "merge_requests"],
+        )?,
+        vec![("per_page".to_owned(), "100".to_owned())],
+    );
+    let (bytes, _headers) = get_bytes(client, &list_url, MAX_RESPONSE_BYTES).await?;
+    let list: Value = serde_json::from_slice(&bytes).map_err(|_| malformed())?;
+    let keys = list
+        .as_array()
+        .ok_or_else(malformed)?
+        .iter()
+        .map(|template| {
+            template
+                .get("key")
+                .and_then(Value::as_str)
+                .ok_or_else(malformed)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut items = Vec::new();
+    for key in keys.iter().take(MAX_DESCRIPTION_TEMPLATES) {
+        let url = endpoint(
+            api_base,
+            &["projects", project_id, "templates", "merge_requests", key],
+        )?;
+        let (bytes, _headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+        let template: Value = serde_json::from_slice(&bytes).map_err(|_| malformed())?;
+        require_object(
+            &template,
+            "native.response.unsupportedTemplates",
+            "GitLabから対応していない形式のテンプレートが返されました。",
+        )?;
+        let name = template.get("name").and_then(Value::as_str).unwrap_or(key);
+        items.push(json!({
+            "id": key,
+            "name": name,
+            "content": string_field(&template, "content"),
+            "scope": "project",
+        }));
+    }
+    Ok(ApiResult {
+        data: Value::Array(items),
+        next_page: None,
+        total_pages: None,
+        truncated: keys.len() > MAX_DESCRIPTION_TEMPLATES,
+    })
+}
+
+const SAVED_REPLY_FIELDS: &str =
+    "savedReplies(first: 100) { pageInfo { hasNextPage } nodes { id name content } }";
+
+/// Reads the comment templates of the user, the project and its parent group.
+/// GitLab editions without project and group templates reject the whole
+/// query, so the user's own templates are then read alone.
+async fn fetch_comment_templates(
+    client: &Client,
+    api_base: &Url,
+    project_path: &str,
+) -> Result<ApiResult, AppError> {
+    validate_project_path(project_path)?;
+    let group_path = project_path
+        .rsplit_once('/')
+        .map_or(project_path, |(group, _)| group);
+    let malformed = || {
+        unsupported_response("GitLabから対応していない形式のコメントテンプレートが返されました。")
+            .key("native.response.unsupportedTemplates")
+    };
+    let missing = || {
+        unsupported_response("GitLabからコメントテンプレートが返されませんでした。")
+            .key("native.response.missingTemplates")
+    };
+    let all = json!({
+        "query": format!("query($project: ID!, $group: ID!) {{ project(fullPath: $project) {{ {SAVED_REPLY_FIELDS} }} group(fullPath: $group) {{ {SAVED_REPLY_FIELDS} }} currentUser {{ {SAVED_REPLY_FIELDS} }} }}"),
+        "variables": { "project": project_path, "group": group_path },
+    });
+    let data = match post_graphql(client, api_base, &all, malformed(), missing()).await {
+        Err(error) if error.code == "UNSUPPORTED" => {
+            let user =
+                json!({ "query": format!("query {{ currentUser {{ {SAVED_REPLY_FIELDS} }} }}") });
+            post_graphql(client, api_base, &user, malformed(), missing()).await?
+        }
+        result => result?,
+    };
+    let mut items = Vec::new();
+    let mut truncated = false;
+    for (field, scope) in [
+        ("project", "project"),
+        ("group", "group"),
+        ("currentUser", "user"),
+    ] {
+        let Some(replies) = data.get(field).and_then(|owner| owner.get("savedReplies")) else {
+            continue;
+        };
+        truncated |= replies
+            .pointer("/pageInfo/hasNextPage")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        for node in replies
+            .get("nodes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let id = node
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(malformed)?;
+            items.push(json!({
+                "id": id,
+                "name": string_field(node, "name"),
+                "content": string_field(node, "content"),
+                "scope": scope,
+            }));
+        }
+    }
+    Ok(ApiResult {
+        data: Value::Array(items),
+        next_page: None,
+        total_pages: None,
+        truncated,
+    })
 }
 
 /// Comments per GraphQL page when reading reactions; GitLab's page size limit.

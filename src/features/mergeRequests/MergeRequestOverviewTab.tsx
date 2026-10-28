@@ -8,9 +8,9 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useConfirm } from '../../components/feedbackContext'
-import { MarkdownEditor } from '../../components/MarkdownEditor'
+import { MarkdownEditor, type MarkdownEditorHandle } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { LabelChip } from '../../components/LabelChip'
 import { statusBarHeight } from '../../components/StatusBar'
@@ -20,12 +20,14 @@ import type { GitLabUser, LabelsQuery, MergeRequest } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { formatNames } from './mergeActions'
+import { TemplateMenu } from './TemplateMenu'
 
 export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; reactions?: React.ReactNode }) {
   const t = useT()
   const confirm = useConfirm()
   const { session } = useConnection()
   const labels = useLabelChips(mergeRequest)
+  const editorRef = useRef<MarkdownEditorHandle | null>(null)
   const canRerequest = mergeRequest.state === 'opened' && Boolean(mergeRequest.projectPath)
   const rows: Array<[string, React.ReactNode]> = [
     [t('mergeRequest.overview.author'), `${mergeRequest.author.name} @${mergeRequest.author.username}`],
@@ -48,7 +50,7 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
         {descriptionEdit ? null : <Button disabled={editDisabled} onClick={onStartEdit} size="small" startIcon={<EditOutlinedIcon />}>{t('mergeRequest.overview.editDescription')}</Button>}
       </Stack>
       {descriptionEdit ? <Stack spacing={1}>
-        <MarkdownEditor autoFocus disabled={editDisabled} label={t('mergeRequest.overview.editDescription')} onChange={onChangeEdit} value={descriptionEdit.body} />
+        <MarkdownEditor autoFocus disabled={editDisabled} label={t('mergeRequest.overview.editDescription')} onChange={onChangeEdit} ref={editorRef} toolbarEnd={<TemplateMenu disabled={editDisabled} onInsert={(content) => editorRef.current?.insertBlock(content)} query={{ kind: 'descriptionTemplates', projectId: mergeRequest.projectId }} />} value={descriptionEdit.body} />
         {descriptionEdit.expected !== (description ?? '') ? <Alert severity="warning">{t('mergeRequest.overview.descriptionChanged')}</Alert> : null}
         <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
           <Button onClick={() => void (async () => { if (descriptionEdit.body === descriptionEdit.expected || await confirm({ cancelLabel: t('mergeRequest.overview.discardKeepEditing'), confirmLabel: t('mergeRequest.overview.discardConfirm'), destructive: true, title: t('mergeRequest.overview.discardTitle') })) onCancelEdit() })()}>{t('mergeRequest.common.cancel')}</Button>
