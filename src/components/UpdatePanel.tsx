@@ -21,6 +21,8 @@ import { translate } from '../i18n/i18n'
 import { useT } from '../i18n/useT'
 import { checkAppUpdate, downloadAppUpdate, installAppUpdate, type AppUpdate } from '../lib/updater'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
+import { normalizeGitLabError } from '../lib/gitlab'
+import { isGitLabErrorShape } from '../types/gitlab'
 import { flushComposerBuffers } from '../features/mergeRequests/useComposerBuffer'
 import { RelativeTime } from './RelativeTime'
 import { StatusPill, type StatusTone } from './StatusPill'
@@ -50,6 +52,7 @@ interface UpdateSnapshot {
 
 /** Tauri rejects with plain `{ code, message }` objects, not Error instances. */
 function errorMessage(error: unknown, fallback: string) {
+  if (isGitLabErrorShape(error)) error = normalizeGitLabError(error)
   if (error instanceof Error && error.message) return error.message
   const message = error && typeof error === 'object' ? (error as { message?: unknown }).message : error
   return typeof message === 'string' && message ? message : fallback

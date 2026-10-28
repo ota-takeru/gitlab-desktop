@@ -39,7 +39,7 @@ import { StatusBar } from '../components/StatusBar'
 import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
 import { setLocalePreference, translate, type MessageKey } from '../i18n/i18n'
 import { localeNames, supportedLocales, systemLocale, type LocalePreference } from '../i18n/locales'
-import { useLocale, useLocalePreference, useT } from '../i18n/useT'
+import { useLocalePreference, useT } from '../i18n/useT'
 import { clearLocalDrafts } from '../lib/localDrafts'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { GitLabCommandError, GitLabSnapshot, MergeRequest, Project } from '../types/gitlab'
@@ -797,16 +797,11 @@ function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceCh
 
 function LanguageSettings() {
   const t = useT()
-  const locale = useLocale()
   const preference = useLocalePreference()
-  return <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
-    <TextField label={t('settings.language.label')} onChange={(event) => { void setLocalePreference(event.target.value as LocalePreference) }} select size="small" sx={{ minWidth: 240 }} value={preference}>
-      <MenuItem value="system">{t('settings.language.system', { language: localeNames[systemLocale()] })}</MenuItem>
-      {supportedLocales.map((option) => <MenuItem key={option} lang={option} value={option}>{localeNames[option]}</MenuItem>)}
-    </TextField>
-    {/* Screens move into the message files feature by feature; until then the rest stays Japanese. */}
-    {locale === 'ja' ? null : <Typography color="textSecondary" variant="body2">{t('settings.language.partial')}</Typography>}
-  </Stack>
+  return <TextField label={t('settings.language.label')} onChange={(event) => { void setLocalePreference(event.target.value as LocalePreference) }} select size="small" sx={{ minWidth: 240 }} value={preference}>
+    <MenuItem value="system">{t('settings.language.system', { language: localeNames[systemLocale()] })}</MenuItem>
+    {supportedLocales.map((option) => <MenuItem key={option} lang={option} value={option}>{localeNames[option]}</MenuItem>)}
+  </TextField>
 }
 
 function CacheSettings({ sessionId }: { sessionId: string | null }) {

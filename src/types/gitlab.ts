@@ -41,6 +41,10 @@ export interface GitLabErrorShape {
   code: GitLabErrorCode
   message: string
   retryAfterMs?: number
+  /** The `native.*` message key of a native error, whose `message` is the Japanese fallback. */
+  messageKey?: string
+  /** Values for the placeholders of `messageKey`. */
+  messageValues?: Record<string, string>
 }
 
 export class GitLabCommandError extends Error implements GitLabErrorShape {

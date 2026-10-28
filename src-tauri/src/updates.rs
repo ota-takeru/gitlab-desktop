@@ -64,7 +64,7 @@ async fn ensure_downloaded(entry: &mut Pending<Update>) -> Result<(), AppError> 
                 AppError::new(
                     "NETWORK",
                     "署名付き更新をダウンロードできませんでした。現在のバージョンは引き続き使用できます。",
-                )
+                ).key("native.update.downloadFailed")
             })?;
         entry.bytes = Some(bytes);
     }
@@ -84,20 +84,24 @@ pub async fn check_app_update(
             downloaded: false,
         });
     }
-    let _operation = state
-        .operation
-        .try_lock()
-        .map_err(|_| AppError::new("CANCELLED", "更新の確認またはインストールを実行中です。"))?;
+    let _operation = state.operation.try_lock().map_err(|_| {
+        AppError::new("CANCELLED", "更新の確認またはインストールを実行中です。")
+            .key("native.update.busy")
+    })?;
     let updater = app
         .updater_builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
-        .map_err(|_| AppError::new("UNSUPPORTED", "自動更新の設定が正しくありません。"))?;
+        .map_err(|_| {
+            AppError::new("UNSUPPORTED", "自動更新の設定が正しくありません。")
+                .key("native.update.misconfigured")
+        })?;
     let update = updater.check().await.map_err(|_| {
         AppError::new(
             "NETWORK",
             "更新を確認できませんでした。現在のバージョンは引き続き使用できます。",
         )
+        .key("native.update.checkFailed")
     })?;
     let mut pending = state.pending.lock().await;
     *pending = replace_pending(pending.take(), update, |left, right| {
@@ -115,14 +119,15 @@ pub async fn check_app_update(
 /// background. It never installs; that stays the user's explicit action.
 #[tauri::command]
 pub async fn download_app_update(state: tauri::State<'_, UpdateState>) -> Result<(), AppError> {
-    let _operation = state
-        .operation
-        .try_lock()
-        .map_err(|_| AppError::new("CANCELLED", "更新の確認またはインストールを実行中です。"))?;
+    let _operation = state.operation.try_lock().map_err(|_| {
+        AppError::new("CANCELLED", "更新の確認またはインストールを実行中です。")
+            .key("native.update.busy")
+    })?;
     let mut pending = state.pending.lock().await;
-    let entry = pending
-        .as_mut()
-        .ok_or_else(|| AppError::new("INVALID_INPUT", "先に更新を確認してください。"))?;
+    let entry = pending.as_mut().ok_or_else(|| {
+        AppError::new("INVALID_INPUT", "先に更新を確認してください。")
+            .key("native.update.checkFirst")
+    })?;
     ensure_downloaded(entry).await
 }
 
@@ -136,9 +141,10 @@ pub async fn install_app_update(
     // Waits for a running background download instead of starting a second one.
     let _operation = state.operation.lock().await;
     let mut pending = state.pending.lock().await;
-    let entry = pending
-        .as_mut()
-        .ok_or_else(|| AppError::new("INVALID_INPUT", "先に更新を確認してください。"))?;
+    let entry = pending.as_mut().ok_or_else(|| {
+        AppError::new("INVALID_INPUT", "先に更新を確認してください。")
+            .key("native.update.checkFirst")
+    })?;
     ensure_downloaded(entry).await?;
     let bytes = entry.bytes.as_deref().unwrap_or_default();
     entry.update.install(bytes).map_err(|_| {
@@ -146,6 +152,7 @@ pub async fn install_app_update(
             "NETWORK",
             "署名付き更新をインストールできませんでした。再度更新を確認してください。",
         )
+        .key("native.update.installFailed")
     })?;
     app.restart();
 }

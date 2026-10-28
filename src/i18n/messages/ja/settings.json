@@ -13,7 +13,6 @@
   "language.description": "画面に表示する言語",
   "language.label": "言語",
   "language.system": "システムに合わせる（{language}）",
-  "language.partial": "一部の画面はまだ日本語で表示されます。",
   "workspace.title": "自動取得と通知",
   "workspace.description": "表示中のデータの自動取得とデスクトップ通知",
   "workspace.autoRefresh": "表示中のMR・コメントと通知を1分ごとに更新",

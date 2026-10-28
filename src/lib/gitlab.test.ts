@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { setLocalePreference } from '../i18n/i18n'
 import type { GitLabAction } from '../types/gitlab'
 
 const { invokeMock, isTauriMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), isTauriMock: vi.fn(() => true) }))
@@ -151,6 +152,35 @@ describe('normalizeGitLabError', () => {
     expect(normalizeGitLabError(new Error('boom'))).toMatchObject({ code: 'UNKNOWN', message: 'boom' })
     expect(normalizeGitLabError('plain')).toMatchObject({ code: 'UNKNOWN', message: 'plain' })
     expect(normalizeGitLabError(undefined).message).toBe('GitLabコマンドに失敗しました。')
+  })
+
+  describe('a native error with a message key', () => {
+    const rateLimited = {
+      code: 'RATE_LIMITED',
+      message: 'GitLabのリクエスト制限に達しました。5秒後に再試行してください。',
+      messageKey: 'native.request.rateLimited',
+      messageValues: { seconds: '5' },
+    }
+
+    afterEach(async () => {
+      await setLocalePreference('ja')
+    })
+
+    it('reads the same as the native Japanese text in Japanese', () => {
+      expect(normalizeGitLabError(rateLimited).message).toBe(rateLimited.message)
+      expect(normalizeGitLabError({ code: 'FORBIDDEN', message: 'このMRをマージする権限がありません。', messageKey: 'native.merge.forbidden' }).message).toBe('このMRをマージする権限がありません。')
+    })
+
+    it('is translated into the interface language with its values', async () => {
+      await setLocalePreference('en')
+      expect(normalizeGitLabError(rateLimited)).toMatchObject({ code: 'RATE_LIMITED', message: "GitLab's request limit was reached. Try again in 5 seconds." })
+      expect(normalizeGitLabError({ ...rateLimited, messageValues: { seconds: '1' } }).message).toBe("GitLab's request limit was reached. Try again in 1 second.")
+    })
+
+    it('keeps the native text when the key is unknown', async () => {
+      await setLocalePreference('en')
+      expect(normalizeGitLabError({ code: 'NETWORK', message: '新しいメッセージ', messageKey: 'native.notYetKnown' }).message).toBe('新しいメッセージ')
+    })
   })
 
   it('creates request ids with the given prefix', () => {

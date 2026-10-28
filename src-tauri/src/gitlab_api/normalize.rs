@@ -36,7 +36,11 @@ pub(super) fn normalize_response(kind: ResponseKind, value: Value) -> Result<Val
 }
 
 pub(super) fn normalize_label(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なラベル情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidLabel",
+        "GitLabから不正なラベル情報が返されました。",
+    )?;
     Ok(json!({
         "id": required_id_field(value, "id", "label")?,
         "name": required_string_field(value, "name", "label")?,
@@ -60,7 +64,11 @@ pub(super) fn label_color(value: &Value) -> Option<String> {
 }
 
 pub(super) fn normalize_milestone(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なマイルストーン情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidMilestone",
+        "GitLabから不正なマイルストーン情報が返されました。",
+    )?;
     Ok(json!({
         "id": required_id_field(value, "id", "milestone")?,
         "title": required_string_field(value, "title", "milestone")?,
@@ -99,14 +107,16 @@ pub(super) fn normalize_array(
         } else {
             value.get(wrapper).cloned().ok_or_else(|| {
                 unsupported_response("GitLabから想定外の形式の一覧が返されました。")
+                    .key("native.response.unexpectedList")
             })?
         }
     } else {
         value
     };
-    let values = value
-        .as_array()
-        .ok_or_else(|| unsupported_response("GitLabから想定外の形式の一覧が返されました。"))?;
+    let values = value.as_array().ok_or_else(|| {
+        unsupported_response("GitLabから想定外の形式の一覧が返されました。")
+            .key("native.response.unexpectedList")
+    })?;
     let mut normalized = Vec::with_capacity(values.len());
     for value in values {
         normalized.push(normalize_item(value)?);
@@ -115,7 +125,11 @@ pub(super) fn normalize_array(
 }
 
 pub(super) fn normalize_project(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なプロジェクト情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidProject",
+        "GitLabから不正なプロジェクト情報が返されました。",
+    )?;
     let id = required_id_field(value, "id", "project")?;
     let name = required_string_field(value, "name", "project")?;
     let path_with_namespace = required_string_field(value, "path_with_namespace", "project")?;
@@ -138,7 +152,11 @@ pub(super) fn normalize_project(value: &Value) -> Result<Value, AppError> {
 }
 
 pub(super) fn normalize_group(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なグループ情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidGroup",
+        "GitLabから不正なグループ情報が返されました。",
+    )?;
     Ok(json!({
         "id": required_id_field(value, "id", "group")?,
         "name": required_string_field(value, "name", "group")?,
@@ -149,7 +167,11 @@ pub(super) fn normalize_group(value: &Value) -> Result<Value, AppError> {
 }
 
 pub(super) fn normalize_branch(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なブランチ情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidBranch",
+        "GitLabから不正なブランチ情報が返されました。",
+    )?;
     let name = required_string_field(value, "name", "branch")?;
     let commit = value.get("commit").filter(|commit| commit.is_object());
     Ok(json!({
@@ -170,12 +192,17 @@ pub(super) fn normalize_branch(value: &Value) -> Result<Value, AppError> {
 
 /// A folder entry: `tree` is a folder, `blob` a file and `commit` a submodule.
 pub(super) fn normalize_tree_entry(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なファイル一覧が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidTree",
+        "GitLabから不正なファイル一覧が返されました。",
+    )?;
     let kind = required_string_field(value, "type", "tree entry")?;
     if !matches!(kind.as_str(), "tree" | "blob" | "commit") {
-        return Err(unsupported_response(
-            "GitLabから対応していない種類のファイルが返されました。",
-        ));
+        return Err(
+            unsupported_response("GitLabから対応していない種類のファイルが返されました。")
+                .key("native.response.unsupportedTreeEntry"),
+        );
     }
     Ok(json!({
         "id": required_string_field(value, "id", "tree entry")?,
@@ -186,22 +213,26 @@ pub(super) fn normalize_tree_entry(value: &Value) -> Result<Value, AppError> {
 }
 
 pub(super) fn normalize_todos(value: Value) -> Result<Value, AppError> {
-    let items = value
-        .as_array()
-        .ok_or_else(|| unsupported_response("GitLabから不正なToDo一覧が返されました。"))?;
+    let items = value.as_array().ok_or_else(|| {
+        unsupported_response("GitLabから不正なToDo一覧が返されました。")
+            .key("native.response.invalidTodos")
+    })?;
     let mut normalized = Vec::new();
     for item in items {
         if item.get("target_type").and_then(Value::as_str) != Some("MergeRequest") {
             continue;
         }
-        let target = item
-            .get("target")
-            .ok_or_else(|| unsupported_response("GitLabから不正なToDoの対象が返されました。"))?;
+        let target = item.get("target").ok_or_else(|| {
+            unsupported_response("GitLabから不正なToDoの対象が返されました。")
+                .key("native.response.invalidTodoTarget")
+        })?;
         let project = normalize_project(item.get("project").ok_or_else(|| {
             unsupported_response("GitLabから不正なToDoのプロジェクト情報が返されました。")
+                .key("native.response.invalidTodoProject")
         })?)?;
         let author = normalize_user(item.get("author").ok_or_else(|| {
             unsupported_response("GitLabから不正なToDoの作成者情報が返されました。")
+                .key("native.response.invalidTodoAuthor")
         })?)?;
         normalized.push(json!({
             "id": required_id_field(item, "id", "todo")?,
@@ -223,23 +254,28 @@ pub(super) fn optional_users(value: &Value, field: &str) -> Result<Vec<Value>, A
     match value.get(field) {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Array(users)) => users.iter().map(normalize_user).collect(),
-        _ => Err(unsupported_response(
-            "GitLabから不正なユーザー一覧が返されました。",
-        )),
+        _ => Err(
+            unsupported_response("GitLabから不正なユーザー一覧が返されました。")
+                .key("native.response.invalidUsers"),
+        ),
     }
 }
 
 pub(super) fn normalize_merge_request(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なMR情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidMergeRequest",
+        "GitLabから不正なMR情報が返されました。",
+    )?;
     let id = required_id_field(value, "id", "merge request")?;
     let iid = required_id_field(value, "iid", "merge request")?;
     let project_id = required_id_field(value, "project_id", "merge request")?;
     let title = required_string_field(value, "title", "merge request")?;
     let state = required_string_field(value, "state", "merge request")?;
-    let author =
-        normalize_user(value.get("author").ok_or_else(|| {
-            unsupported_response("GitLabから不正なMRの作成者情報が返されました。")
-        })?)?;
+    let author = normalize_user(value.get("author").ok_or_else(|| {
+        unsupported_response("GitLabから不正なMRの作成者情報が返されました。")
+            .key("native.response.invalidMergeRequestAuthor")
+    })?)?;
     let diff_refs = value.get("diff_refs").and_then(|diff_refs| {
         if diff_refs.is_null() {
             None
@@ -263,16 +299,17 @@ pub(super) fn normalize_merge_request(value: &Value) -> Result<Value, AppError> 
         Some(Value::Array(labels)) => labels
             .iter()
             .map(|label| {
-                label
-                    .as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| unsupported_response("GitLabから不正なラベルが返されました。"))
+                label.as_str().map(str::to_owned).ok_or_else(|| {
+                    unsupported_response("GitLabから不正なラベルが返されました。")
+                        .key("native.response.invalidLabels")
+                })
             })
             .collect::<Result<Vec<_>, _>>()?,
         _ => {
-            return Err(unsupported_response(
-                "GitLabから不正なラベルが返されました。",
-            ))
+            return Err(
+                unsupported_response("GitLabから不正なラベルが返されました。")
+                    .key("native.response.invalidLabels"),
+            )
         }
     };
     let pipeline = value
@@ -348,9 +385,10 @@ pub(super) fn normalize_merge_request(value: &Value) -> Result<Value, AppError> 
         .unwrap_or(Value::Null);
     if merge_request["milestone"].is_null() && value.get("milestone").is_some_and(|m| !m.is_null())
     {
-        return Err(unsupported_response(
-            "GitLabから不正なマイルストーン情報が返されました。",
-        ));
+        return Err(
+            unsupported_response("GitLabから不正なマイルストーン情報が返されました。")
+                .key("native.response.invalidMilestone"),
+        );
     }
     Ok(merge_request)
 }
@@ -372,7 +410,10 @@ pub(super) fn normalize_discussion(value: &Value) -> Result<Value, AppError> {
     let notes = value
         .get("notes")
         .and_then(Value::as_array)
-        .ok_or_else(|| unsupported_response("GitLabから不正なスレッドが返されました。"))?;
+        .ok_or_else(|| {
+            unsupported_response("GitLabから不正なスレッドが返されました。")
+                .key("native.response.invalidDiscussion")
+        })?;
     let notes = notes
         .iter()
         .map(normalize_note)
@@ -387,6 +428,7 @@ pub(super) fn normalize_discussion(value: &Value) -> Result<Value, AppError> {
 pub(super) fn normalize_note(value: &Value) -> Result<Value, AppError> {
     let author = normalize_user(value.get("author").ok_or_else(|| {
         unsupported_response("GitLabから不正なコメントの作成者情報が返されました。")
+            .key("native.response.invalidNoteAuthor")
     })?)?;
     let mut note = json!({
         "id": string_field(value, "id"),
@@ -429,10 +471,16 @@ pub(super) fn normalize_suggestion(value: &Value) -> Option<Value> {
 }
 
 pub(super) fn normalize_version(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なバージョン情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidVersion",
+        "GitLabから不正なバージョン情報が返されました。",
+    )?;
     let head_commit_sha = required_string_field(value, "head_commit_sha", "version")?;
-    validate_sha(&head_commit_sha, "headCommitSha")
-        .map_err(|_| unsupported_response("GitLabから不正なバージョン情報が返されました。"))?;
+    validate_sha(&head_commit_sha, "headCommitSha").map_err(|_| {
+        unsupported_response("GitLabから不正なバージョン情報が返されました。")
+            .key("native.response.invalidVersion")
+    })?;
     Ok(json!({
         "id": required_id_field(value, "id", "version")?,
         "headCommitSha": head_commit_sha,
@@ -525,22 +573,36 @@ pub(super) fn normalize_line_range(value: &Value) -> Option<Value> {
 }
 
 pub(super) fn normalize_blame_block(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なBlame情報が返されました。")?;
-    let commit = value
-        .get("commit")
-        .ok_or_else(|| unsupported_response("Blameのコミット情報がありません。"))?;
-    require_object(commit, "Blameのコミット情報が不正です。")?;
+    require_object(
+        value,
+        "native.response.invalidBlame",
+        "GitLabから不正なBlame情報が返されました。",
+    )?;
+    let commit = value.get("commit").ok_or_else(|| {
+        unsupported_response("Blameのコミット情報がありません。")
+            .key("native.response.blameCommitMissing")
+    })?;
+    require_object(
+        commit,
+        "native.response.blameCommitInvalid",
+        "Blameのコミット情報が不正です。",
+    )?;
     let lines = value
         .get("lines")
         .and_then(Value::as_array)
-        .ok_or_else(|| unsupported_response("Blameの行情報が不正です。"))?;
+        .ok_or_else(|| {
+            unsupported_response("Blameの行情報が不正です。")
+                .key("native.response.blameLinesInvalid")
+        })?;
     if lines.len() > 100 {
-        return Err(unsupported_response("Blameの行数が上限を超えています。"));
+        return Err(unsupported_response("Blameの行数が上限を超えています。")
+            .key("native.response.blameTooManyLines"));
     }
     let mut text = Vec::with_capacity(lines.len());
     for line in lines {
         let Some(line) = line.as_str() else {
-            return Err(unsupported_response("Blameの行情報が不正です。"));
+            return Err(unsupported_response("Blameの行情報が不正です。")
+                .key("native.response.blameLinesInvalid"));
         };
         text.push(line);
     }
@@ -554,7 +616,11 @@ pub(super) fn normalize_blame_block(value: &Value) -> Result<Value, AppError> {
 }
 
 pub(super) fn normalize_associated_merge_request(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正な関連MR情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidRelatedMergeRequests",
+        "GitLabから不正な関連MR情報が返されました。",
+    )?;
     Ok(json!({
         "projectId": required_id_field(value, "project_id", "associated MR")?,
         "iid": required_id_field(value, "iid", "associated MR")?,
@@ -595,7 +661,10 @@ pub(super) fn normalize_approvals(value: &Value) -> Result<Value, AppError> {
     let approved_by = value
         .get("approved_by")
         .and_then(Value::as_array)
-        .ok_or_else(|| unsupported_response("GitLabから不正な承認情報が返されました。"))?;
+        .ok_or_else(|| {
+            unsupported_response("GitLabから不正な承認情報が返されました。")
+                .key("native.response.invalidApprovals")
+        })?;
     let approved_by = approved_by
         .iter()
         .map(|item| normalize_user(item.get("user").unwrap_or(item)))
@@ -609,6 +678,7 @@ pub(super) fn normalize_approvals(value: &Value) -> Result<Value, AppError> {
 pub(super) fn normalize_award(value: &Value) -> Result<Value, AppError> {
     let user = normalize_user(value.get("user").ok_or_else(|| {
         unsupported_response("GitLabから不正なリアクションのユーザー情報が返されました。")
+            .key("native.response.invalidAwardUser")
     })?)?;
     Ok(json!({
         "name": required_string_field(value, "name", "award emoji")?,
@@ -617,7 +687,11 @@ pub(super) fn normalize_award(value: &Value) -> Result<Value, AppError> {
 }
 
 pub(super) fn normalize_pipeline(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なパイプライン情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidPipeline",
+        "GitLabから不正なパイプライン情報が返されました。",
+    )?;
     Ok(json!({
         "id": required_id_field(value, "id", "pipeline")?,
         // Absent on old servers; the MR's project is then assumed.
@@ -639,7 +713,11 @@ pub(super) fn normalize_pipeline(value: &Value) -> Result<Value, AppError> {
 }
 
 pub(super) fn normalize_job(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なジョブ情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidJob",
+        "GitLabから不正なジョブ情報が返されました。",
+    )?;
     Ok(json!({
         "id": required_id_field(value, "id", "job")?,
         "kind": "job",
@@ -675,7 +753,11 @@ pub(super) fn normalize_trigger_job(value: &Value) -> Result<Value, AppError> {
 }
 
 pub(super) fn normalize_user(value: &Value) -> Result<Value, AppError> {
-    require_object(value, "GitLabから不正なユーザー情報が返されました。")?;
+    require_object(
+        value,
+        "native.response.invalidUser",
+        "GitLabから不正なユーザー情報が返されました。",
+    )?;
     let mut user = json!({
         "id": required_id_field(value, "id", "user")?,
         "username": required_string_field(value, "username", "user")?,
@@ -691,9 +773,9 @@ pub(super) fn normalize_user(value: &Value) -> Result<Value, AppError> {
     Ok(user)
 }
 
-pub(super) fn require_object(value: &Value, message: &str) -> Result<(), AppError> {
+pub(super) fn require_object(value: &Value, key: &str, message: &str) -> Result<(), AppError> {
     if !value.is_object() {
-        return Err(unsupported_response(message));
+        return Err(unsupported_response(message).key(key));
     }
     Ok(())
 }
@@ -705,11 +787,15 @@ pub(super) fn required_id_field(
 ) -> Result<String, AppError> {
     let id = value.get(field).and_then(scalar_to_string).ok_or_else(|| {
         unsupported_response(&format!("GitLabから不正なIDが返されました（{resource}）。"))
+            .key("native.response.invalidId")
+            .value("resource", resource)
     })?;
     if !id.bytes().all(|byte| byte.is_ascii_digit()) || !id.parse::<u64>().is_ok_and(|id| id > 0) {
         return Err(unsupported_response(&format!(
             "GitLabから不正なIDが返されました（{resource}）。"
-        )));
+        ))
+        .key("native.response.invalidId")
+        .value("resource", resource));
     }
     Ok(id)
 }
@@ -727,6 +813,8 @@ pub(super) fn required_string_field(
             unsupported_response(&format!(
                 "GitLabから不正な応答が返されました（{resource}）。"
             ))
+            .key("native.response.invalidField")
+            .value("resource", resource)
         })?;
     Ok(string.to_owned())
 }

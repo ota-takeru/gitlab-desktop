@@ -33,6 +33,7 @@ pub fn storage_error() -> AppError {
         "STORAGE",
         "ローカル保存に失敗しました。ディスクの空き容量とアクセス権を確認してください。",
     )
+    .key("native.storage.failed")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +86,7 @@ impl Store {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|_| storage_error())?;
         if version > STORAGE_SCHEMA_VERSION {
-            return Err(AppError::new("STORAGE", "この保存データは新しいアプリで作成されています。新しいバージョンを使用してください。"));
+            return Err(AppError::new("STORAGE", "この保存データは新しいアプリで作成されています。新しいバージョンを使用してください。").key("native.storage.newerVersion"));
         }
         let quick_check: String = connection
             .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
@@ -162,10 +163,10 @@ impl Store {
     pub fn put(&mut self, account: &str, key: &str, snapshot: &Snapshot) -> Result<(), AppError> {
         let text = serde_json::to_string(snapshot).map_err(|_| storage_error())?;
         if text.len() > 8 * 1024 * 1024 {
-            return Err(AppError::new(
-                "TOO_LARGE",
-                "保存するデータが上限を超えました。",
-            ));
+            return Err(
+                AppError::new("TOO_LARGE", "保存するデータが上限を超えました。")
+                    .key("native.storage.tooLarge"),
+            );
         }
         self.0
             .execute(
@@ -285,10 +286,10 @@ impl Store {
     pub fn save_draft(&mut self, account: &str, key: &str, body: &str) -> Result<(), AppError> {
         validate_draft_key(key)?;
         if body.len() > MAX_LOCAL_DRAFT_BODY_BYTES {
-            return Err(AppError::new(
-                "TOO_LARGE",
-                "未送信コメントが上限を超えました。",
-            ));
+            return Err(
+                AppError::new("TOO_LARGE", "未送信コメントが上限を超えました。")
+                    .key("native.draft.tooLarge"),
+            );
         }
         if body.is_empty() {
             self.0
@@ -321,7 +322,8 @@ impl Store {
                 return Err(AppError::new(
                     "TOO_LARGE",
                     "未送信コメントの保存件数が上限に達しました。不要な下書きを削除してください。",
-                ));
+                )
+                .key("native.draft.tooMany"));
             }
         }
         self.0
@@ -369,7 +371,8 @@ impl Store {
         validate_pending_resource(resource)?;
         let text = serde_json::to_string(action).map_err(|_| storage_error())?;
         if text.len() > MAX_PENDING_ACTION_BYTES {
-            return Err(AppError::new("TOO_LARGE", "送信記録が上限を超えました。"));
+            return Err(AppError::new("TOO_LARGE", "送信記録が上限を超えました。")
+                .key("native.receipt.tooLarge"));
         }
         let transaction = self.0.transaction().map_err(|_| storage_error())?;
         let exists: bool = transaction
@@ -383,7 +386,8 @@ impl Store {
             return Err(AppError::new(
                 "UNKNOWN_OUTCOME",
                 "同じ操作の結果を確認できるまで再送できません。",
-            ));
+            )
+            .key("native.receipt.pending"));
         }
         let count: i64 = transaction
             .query_row(
@@ -396,7 +400,8 @@ impl Store {
             return Err(AppError::new(
                 "TOO_LARGE",
                 "送信記録の保存件数が上限に達しました。結果を確認してから整理してください。",
-            ));
+            )
+            .key("native.receipt.tooMany"));
         }
         transaction
             .execute(
@@ -504,7 +509,8 @@ fn validate_draft_key(key: &str) -> Result<(), AppError> {
         return Err(AppError::new(
             "INVALID_INPUT",
             "下書きの識別子が空、長すぎる、または不正です。",
-        ));
+        )
+        .key("native.draft.invalidKey"));
     }
     Ok(())
 }
@@ -515,7 +521,8 @@ fn validate_pending_resource(resource: &str) -> Result<(), AppError> {
         return Err(AppError::new(
             "INVALID_INPUT",
             "送信記録の識別子が空、長すぎる、または不正です。",
-        ));
+        )
+        .key("native.receipt.invalidKey"));
     }
     Ok(())
 }

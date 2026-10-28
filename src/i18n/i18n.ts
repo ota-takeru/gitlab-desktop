@@ -70,6 +70,11 @@ export function subscribeToLocale(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
+/** Whether `key` names a message, such as a key sent by the native side. */
+export function hasMessage(key: string): key is MessageKey {
+  return Object.hasOwn(en, key)
+}
+
 /** The message in the current language, or the English one when it is not translated yet. */
 export function translate(key: MessageKey, values?: MessageValues): string {
   let formatter = formatters.get(key)

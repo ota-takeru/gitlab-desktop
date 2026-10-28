@@ -82,7 +82,8 @@ fn operation_resource(project: &str, iid: &str) -> Result<String, AppError> {
         return Err(AppError::new(
             "INVALID_INPUT",
             "有効なプロジェクトIDとMR番号を指定してください。",
-        ));
+        )
+        .key("native.input.mergeRequest"));
     }
     Ok(format!(
         "{}:{}",
@@ -92,13 +93,15 @@ fn operation_resource(project: &str, iid: &str) -> Result<String, AppError> {
 }
 
 fn validate_receipt_id(receipt_id: &str) -> Result<(), AppError> {
-    let parsed = uuid::Uuid::parse_str(receipt_id)
-        .map_err(|_| AppError::new("INVALID_INPUT", "送信記録の識別子が正しくありません。"))?;
+    let parsed = uuid::Uuid::parse_str(receipt_id).map_err(|_| {
+        AppError::new("INVALID_INPUT", "送信記録の識別子が正しくありません。")
+            .key("native.input.receiptId")
+    })?;
     if receipt_id.len() != 36 || parsed.hyphenated().to_string() != receipt_id {
-        return Err(AppError::new(
-            "INVALID_INPUT",
-            "送信記録の識別子が正しくありません。",
-        ));
+        return Err(
+            AppError::new("INVALID_INPUT", "送信記録の識別子が正しくありません。")
+                .key("native.input.receiptId"),
+        );
     }
     Ok(())
 }
@@ -108,23 +111,30 @@ fn cancelled() -> AppError {
         "CANCELLED",
         "接続またはデータが変わりました。再読み込みしてください。",
     )
+    .key("native.connection.changed")
 }
 fn auth_required() -> AppError {
     AppError::new(
         "AUTH_REQUIRED",
         "GitLabに接続されていません。再接続してください。",
     )
+    .key("native.connection.notConnected")
 }
 /// A token rejected while the user is entering one on the connection form.
 fn invalid_token(from_glab: bool) -> AppError {
-    AppError::new(
-        "AUTH_REQUIRED",
-        if from_glab {
-            "glabのアクセストークンが無効か期限切れです。glab側で認証を更新するか、トークンを直接入力してください。"
-        } else {
-            "アクセストークンが無効か期限切れです。新しいトークンを入力してください。"
-        },
-    )
+    if from_glab {
+        AppError::new(
+            "AUTH_REQUIRED",
+            "glabのアクセストークンが無効か期限切れです。glab側で認証を更新するか、トークンを直接入力してください。",
+        )
+        .key("native.connection.glabTokenInvalid")
+    } else {
+        AppError::new(
+            "AUTH_REQUIRED",
+            "アクセストークンが無効か期限切れです。新しいトークンを入力してください。",
+        )
+        .key("native.connection.tokenInvalid")
+    }
 }
 
 pub fn normalize_instance(input: &str) -> Result<Url, AppError> {
@@ -133,6 +143,7 @@ pub fn normalize_instance(input: &str) -> Result<Url, AppError> {
             "INVALID_INPUT",
             "HTTPSのGitLab URLを指定してください。資格情報・クエリ・フラグメントは指定できません。",
         )
+        .key("native.connection.httpsUrl")
     };
     if input.len() > 2048 {
         return Err(invalid());
@@ -174,7 +185,8 @@ fn credential_entry(key: &str) -> Result<keyring::Entry, AppError> {
         return Err(AppError::new(
             "UNSUPPORTED",
             "このビルドの資格情報保存はWindowsのみ対応しています。",
-        ));
+        )
+        .key("native.connection.credentialsWindowsOnly"));
     }
     keyring::Entry::new("GitLabDesktop", key).map_err(|_| storage_error())
 }
@@ -210,7 +222,8 @@ fn credential_headers(token: &str, bearer: bool) -> Result<HeaderMap, AppError> 
         return Err(AppError::new(
             "INVALID_INPUT",
             "有効なアクセストークンを入力してください。",
-        ));
+        )
+        .key("native.connection.tokenRequired"));
     }
     let mut headers = HeaderMap::new();
     let header = if bearer {
@@ -218,8 +231,10 @@ fn credential_headers(token: &str, bearer: bool) -> Result<HeaderMap, AppError> 
     } else {
         token.into()
     };
-    let mut value = HeaderValue::from_str(&header)
-        .map_err(|_| AppError::new("INVALID_INPUT", "トークンの形式が正しくありません。"))?;
+    let mut value = HeaderValue::from_str(&header).map_err(|_| {
+        AppError::new("INVALID_INPUT", "トークンの形式が正しくありません。")
+            .key("native.connection.tokenFormat")
+    })?;
     value.set_sensitive(true);
     headers.insert(
         if bearer {
@@ -242,13 +257,16 @@ fn http_client(token: &str, bearer: bool) -> Result<reqwest::Client, AppError> {
         .timeout(Duration::from_secs(20))
         .user_agent(concat!("gitlab-desktop/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|_| AppError::new("NETWORK", "HTTPSクライアントを初期化できませんでした。"))
+        .map_err(|_| {
+            AppError::new("NETWORK", "HTTPSクライアントを初期化できませんでした。")
+                .key("native.connection.clientFailed")
+        })
 }
 
 async fn small_json(client: &reqwest::Client, url: Url) -> Result<serde_json::Value, AppError> {
     let mut response = client.get(url).send().await.map_err(|error| {
-        if error.is_timeout() { AppError::new("TIMEOUT", "接続がタイムアウトしました。") }
-        else { AppError::new("NETWORK", "GitLabに接続できません。ネットワーク・プロキシ・信頼済み証明書を確認してください。") }
+        if error.is_timeout() { AppError::new("TIMEOUT", "接続がタイムアウトしました。").key("native.connection.timeout") }
+        else { AppError::new("NETWORK", "GitLabに接続できません。ネットワーク・プロキシ・信頼済み証明書を確認してください。").key("native.connection.cannotConnect") }
     })?;
     match response.status().as_u16() {
         200 => (),
@@ -263,28 +281,28 @@ async fn small_json(client: &reqwest::Client, url: Url) -> Result<serde_json::Va
             return Err(AppError::new(
                 "FORBIDDEN",
                 "このトークンではGitLab APIを利用できません。api スコープ（閲覧のみなら read_api）のトークンを使用してください。",
-            ))
+            ).key("native.connection.tokenScope"))
         }
         404 => {
             return Err(AppError::new(
                 "NOT_FOUND",
                 "GitLab APIが見つかりません。URLのベースパスを確認してください。",
-            ))
+            ).key("native.connection.apiNotFound"))
         }
         300..=399 => return Err(AppError::new(
             "UNSUPPORTED",
             "認証ページへの転送を検出しました。GitLab APIのURLとトークン方式を確認してください。",
-        )),
-        _ => return Err(AppError::new("NETWORK", "GitLabが接続確認に失敗しました。")),
+        ).key("native.connection.authRedirect")),
+        _ => return Err(AppError::new("NETWORK", "GitLabが接続確認に失敗しました。").key("native.connection.checkFailed")),
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| AppError::new("NETWORK", "接続確認の応答を受信できませんでした。"))?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(|_| {
+        AppError::new("NETWORK", "接続確認の応答を受信できませんでした。")
+            .key("native.connection.checkUnreadable")
+    })? {
         if body.len() + chunk.len() > 64 * 1024 {
-            return Err(AppError::new("TOO_LARGE", "接続確認の応答が大きすぎます。"));
+            return Err(AppError::new("TOO_LARGE", "接続確認の応答が大きすぎます。")
+                .key("native.connection.checkTooLarge"));
         }
         body.extend_from_slice(&chunk);
     }
@@ -293,18 +311,20 @@ async fn small_json(client: &reqwest::Client, url: Url) -> Result<serde_json::Va
             "UNSUPPORTED",
             "GitLab APIのJSON応答ではありません。URLや組織の認証方式を確認してください。",
         )
+        .key("native.connection.notJson")
     })
 }
 
 async fn identify(client: &reqwest::Client, api: &Url) -> Result<User, AppError> {
     let body = small_json(client, api.join("user").map_err(|_| cancelled())?).await?;
-    let id = body["id"]
-        .as_u64()
-        .filter(|id| *id > 0)
-        .ok_or_else(|| AppError::new("UNSUPPORTED", "本人情報の形式が対応していません。"))?;
-    let username = body["username"]
-        .as_str()
-        .ok_or_else(|| AppError::new("UNSUPPORTED", "本人情報の形式が対応していません。"))?;
+    let id = body["id"].as_u64().filter(|id| *id > 0).ok_or_else(|| {
+        AppError::new("UNSUPPORTED", "本人情報の形式が対応していません。")
+            .key("native.connection.unsupportedUser")
+    })?;
+    let username = body["username"].as_str().ok_or_else(|| {
+        AppError::new("UNSUPPORTED", "本人情報の形式が対応していません。")
+            .key("native.connection.unsupportedUser")
+    })?;
     Ok(User {
         id: id.to_string(),
         username: username.into(),
@@ -446,7 +466,9 @@ impl NativeState {
                     "このトークンは接続中のアカウント（@{}）のものではありません。同じアカウントのトークンを入力してください。",
                     expected.username
                 ),
-            ));
+            )
+            .key("native.connection.otherAccount")
+            .value("username", &expected.username));
         }
         let version = small_json(&client, api.join("version").map_err(|_| cancelled())?)
             .await
@@ -486,7 +508,7 @@ impl NativeState {
                         return Err(AppError::new(
                             "STORAGE",
                             "以前のWindows資格情報を削除できず、復元にも失敗しました。資格情報マネージャーを確認してください。",
-                        ));
+                        ).key("native.connection.oldCredentialRestoreFailed"));
                     }
                     return Err(error);
                 }
@@ -513,12 +535,12 @@ impl NativeState {
                     return Err(AppError::new(
                         "STORAGE",
                         "接続を保存できず、Windows資格情報の復元にも失敗しました。資格情報マネージャーを確認してください。",
-                    ));
+                    ).key("native.connection.saveRestoreFailed"));
                 }
                 return Err(AppError::new(
                     "STORAGE",
                     "Windows資格情報ストアへ保存できません。接続は保存されませんでした。",
-                ));
+                ).key("native.connection.credentialSaveFailed"));
             }
             if let Err(error) = inner.store.set_setting("connection", &saved) {
                 let new_rollback =
@@ -536,7 +558,7 @@ impl NativeState {
                     return Err(AppError::new(
                         "STORAGE",
                         "接続設定を保存できず、Windows資格情報の復元にも失敗しました。資格情報マネージャーを確認してください。",
-                    ));
+                    ).key("native.connection.settingsRestoreFailed"));
                 }
                 return Err(error);
             }
@@ -615,7 +637,7 @@ impl NativeState {
             inner.store.delete_setting("connection")?;
             match credential_entry(&clear_session.account)?.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-                Err(_) => Err(AppError::new("STORAGE", "データを削除しましたが、Windows資格情報の削除に失敗しました。資格情報マネージャーでGitLabDesktopを削除してください。")),
+                Err(_) => Err(AppError::new("STORAGE", "データを削除しましたが、Windows資格情報の削除に失敗しました。資格情報マネージャーでGitLabDesktopを削除してください。").key("native.connection.credentialDeleteFailed")),
             }
         }).await
     }
@@ -636,11 +658,9 @@ impl NativeState {
         key: String,
     ) -> Result<Option<LocalDraft>, AppError> {
         let session = self.active(&id)?;
-        let _pending = session
-            .pending
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        let _pending = session.pending.clone().try_acquire_owned().map_err(|_| {
+            AppError::new("RATE_LIMITED", "処理待ちが多すぎます。").key("native.queue.busy")
+        })?;
         self.blocking(move |inner| {
             ensure_active(inner, &session)?;
             inner.store.draft(&session.account, &key)
@@ -655,11 +675,9 @@ impl NativeState {
         body: String,
     ) -> Result<(), AppError> {
         let session = self.active(&id)?;
-        let _pending = session
-            .pending
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        let _pending = session.pending.clone().try_acquire_owned().map_err(|_| {
+            AppError::new("RATE_LIMITED", "処理待ちが多すぎます。").key("native.queue.busy")
+        })?;
         self.blocking(move |inner| {
             ensure_active(inner, &session)?;
             inner.store.save_draft(&session.account, &key, &body)
@@ -773,7 +791,8 @@ impl NativeState {
         let session = self.active(&input.session_id)?;
         let key = serde_json::to_string(&input.query).map_err(|_| cancelled())?;
         if key.len() > 8192 {
-            return Err(AppError::new("INVALID_INPUT", "検索条件が長すぎます。"));
+            return Err(AppError::new("INVALID_INPUT", "検索条件が長すぎます。")
+                .key("native.query.searchTooLong"));
         }
         if input.mode == ReadMode::CacheOnly {
             return self
@@ -788,6 +807,7 @@ impl NativeState {
                 "RATE_LIMITED",
                 "処理待ちが多すぎます。少し待って再試行してください。",
             )
+            .key("native.queue.busyRetry")
         })?;
         let queued_at = now_ms();
         let registration = RequestRegistration::new(session.clone(), input.request_id)?;
@@ -919,7 +939,8 @@ impl NativeState {
     ) -> Result<Option<String>, AppError> {
         let session = self.active(&input.session_id)?;
         if matches!(input.action, Action::UploadAttachment { .. }) != upload.is_some() {
-            return Err(AppError::new("INVALID_INPUT", "添付データが必要です。"));
+            return Err(AppError::new("INVALID_INPUT", "添付データが必要です。")
+                .key("native.attachment.required"));
         }
         // An upload adds no MR, discussion or diff data, so it keeps the cache
         // and in-flight queries; the receipt still guards against a resend.
@@ -935,7 +956,8 @@ impl NativeState {
                 return Err(AppError::new(
                     "INVALID_INPUT",
                     "この操作に未送信コメントを関連付けることはできません。",
-                ))
+                )
+                .key("native.draft.notAllowed"))
             }
             (None, _) => None,
         };
@@ -949,11 +971,9 @@ impl NativeState {
             action_value["projectId"].as_str().unwrap_or_default(),
             action_value["iid"].as_str().unwrap_or_default(),
         )?;
-        let _pending = session
-            .pending
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        let _pending = session.pending.clone().try_acquire_owned().map_err(|_| {
+            AppError::new("RATE_LIMITED", "処理待ちが多すぎます。").key("native.queue.busy")
+        })?;
         let registration = RequestRegistration::new(session.clone(), input.request_id)?;
         let work = async {
             // Before a receipt exists, cancelling a queued operation is known
@@ -988,12 +1008,14 @@ impl NativeState {
                                 "INVALID_INPUT",
                                 "送信前の未送信コメントを確認できませんでした。",
                             )
+                            .key("native.draft.checkFailed")
                         })?;
                     if draft.body.trim() != submitted_body {
                         return Err(AppError::new(
                             "INVALID_INPUT",
                             "未送信コメントが変更されています。保存後に再試行してください。",
-                        ));
+                        )
+                        .key("native.draft.changed"));
                     }
                 }
                 inner
@@ -1069,7 +1091,7 @@ impl NativeState {
                     .is_err()
                 {
                     session.cancelled.cancel();
-                    return Err(AppError::new("UNKNOWN_OUTCOME", "送信後の保存データを更新できませんでした。再送せずGitLabで結果を確認してください。"));
+                    return Err(AppError::new("UNKNOWN_OUTCOME", "送信後の保存データを更新できませんでした。再送せずGitLabで結果を確認してください。").key("native.receipt.saveAfterSendFailed"));
                 }
             }
             if !result
@@ -1097,7 +1119,7 @@ impl NativeState {
                     .await
                     .is_err()
                 {
-                    return Err(AppError::new("UNKNOWN_OUTCOME", "操作の確認記録を更新できませんでした。再送せずGitLabで結果を確認してください。"));
+                    return Err(AppError::new("UNKNOWN_OUTCOME", "操作の確認記録を更新できませんでした。再送せずGitLabで結果を確認してください。").key("native.receipt.updateFailed"));
                 }
             }
             result
@@ -1217,21 +1239,24 @@ impl NativeState {
     pub fn open_url(&self, id: &str, input: &str) -> Result<(), AppError> {
         let session = self.active(id)?;
         let base = normalize_instance(&session.public.instance_url)?;
-        let url = Url::parse(input)
-            .map_err(|_| AppError::new("INVALID_INPUT", "URLが正しくありません。"))?;
+        let url = Url::parse(input).map_err(|_| {
+            AppError::new("INVALID_INPUT", "URLが正しくありません。").key("native.link.invalidUrl")
+        })?;
         if url.origin() != base.origin()
             || url.scheme() != "https"
             || !url.username().is_empty()
             || url.password().is_some()
             || !url.path().starts_with(base.path())
         {
-            return Err(AppError::new(
-                "INVALID_INPUT",
-                "接続先GitLabのURLだけを開けます。",
-            ));
+            return Err(
+                AppError::new("INVALID_INPUT", "接続先GitLabのURLだけを開けます。")
+                    .key("native.link.otherInstance"),
+            );
         }
-        open::that_detached(url.as_str())
-            .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
+        open::that_detached(url.as_str()).map_err(|_| {
+            AppError::new("NETWORK", "既定のブラウザーで開けませんでした。")
+                .key("native.link.browserFailed")
+        })
     }
 
     pub async fn local_repository(
@@ -1274,6 +1299,7 @@ impl NativeState {
             .filter(|_| fetched.data["id"].as_str() == Some(project.as_str()))
             .ok_or_else(|| {
                 AppError::new("NOT_FOUND", "プロジェクトをGitLabで確認できませんでした。")
+                    .key("native.localGit.projectUnavailable")
             })?
             .to_owned();
         let instance = normalize_instance(&session.public.instance_url)?;
@@ -1281,7 +1307,7 @@ impl NativeState {
             .iter()
             .any(|remote| local_git::remote_matches(remote, &instance, &project_path))
         {
-            return Err(AppError::new("INVALID_INPUT", &format!("このフォルダのgitリモートは {project_path} を指していません。このプロジェクトをcloneしたフォルダを指定してください（SSHの別名ホストは照合できないため、HTTPSかホスト名どおりのリモートが必要です）。")));
+            return Err(AppError::new("INVALID_INPUT", &format!("このフォルダのgitリモートは {project_path} を指していません。このプロジェクトをcloneしたフォルダを指定してください（SSHの別名ホストは照合できないため、HTTPSかホスト名どおりのリモートが必要です）。")).key("native.localGit.remoteMismatch").value("projectPath", &project_path));
         }
         let linked = LocalRepository {
             path: root.to_string_lossy().into_owned(),
@@ -1296,7 +1322,8 @@ impl NativeState {
                 return Err(AppError::new(
                     "TOO_LARGE",
                     "紐付けたローカルリポジトリが多すぎます。使わない紐付けを解除してください。",
-                ));
+                )
+                .key("native.localGit.tooManyLinks"));
             }
             let mut declined = local_scan_declined(&inner.store, &session.account)?;
             declined.retain(|known| known != &project);
@@ -1379,13 +1406,12 @@ impl NativeState {
                     "NOT_FOUND",
                     "このプロジェクトにはローカルリポジトリが紐付けられていません。",
                 )
+                .key("native.localGit.notLinked")
             })?;
         let session = self.active(&id)?;
-        let _pending = session
-            .pending
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        let _pending = session.pending.clone().try_acquire_owned().map_err(|_| {
+            AppError::new("RATE_LIMITED", "処理待ちが多すぎます。").key("native.queue.busy")
+        })?;
         let root = PathBuf::from(&linked.path);
         // The folder may have been re-pointed since it was linked.
         let instance = normalize_instance(&session.public.instance_url)?;
@@ -1394,7 +1420,7 @@ impl NativeState {
             .iter()
             .any(|remote| local_git::remote_matches(remote, &instance, &linked.project_path))
         {
-            return Err(AppError::new("INVALID_INPUT", &format!("紐付けたフォルダのgitリモートが {} を指していません。紐付けをやり直してください。", linked.project_path)));
+            return Err(AppError::new("INVALID_INPUT", &format!("紐付けたフォルダのgitリモートが {} を指していません。紐付けをやり直してください。", linked.project_path)).key("native.localGit.linkedRemoteMismatch").value("projectPath", &linked.project_path));
         }
         let result = async {
             match read {
@@ -1435,13 +1461,16 @@ impl NativeState {
                 return Err(AppError::new(
                     "INVALID_INPUT",
                     "探すフォルダを絶対パスで指定してください。",
-                ));
+                )
+                .key("native.localGit.scanAbsolutePath"));
             }
             if !path.is_dir() {
                 return Err(AppError::new(
                     "NOT_FOUND",
                     &format!("フォルダが見つかりません: {trimmed}"),
-                ));
+                )
+                .key("native.localGit.scanFolderMissing")
+                .value("path", trimmed));
             }
             if !saved
                 .iter()
@@ -1454,7 +1483,9 @@ impl NativeState {
             return Err(AppError::new(
                 "TOO_LARGE",
                 &format!("探すフォルダは{MAX_LOCAL_SCAN_FOLDERS}件までです。"),
-            ));
+            )
+            .key("native.localGit.tooManyScanFolders")
+            .value("count", MAX_LOCAL_SCAN_FOLDERS));
         }
         let stored = saved.clone();
         self.blocking(move |inner| {
@@ -1542,13 +1573,12 @@ impl NativeState {
                     "NOT_FOUND",
                     "このプロジェクトにはローカルリポジトリが紐付けられていません。",
                 )
+                .key("native.localGit.notLinked")
             })?;
         let session = self.active(&id)?;
-        let _pending = session
-            .pending
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| AppError::new("RATE_LIMITED", "処理待ちが多すぎます。"))?;
+        let _pending = session.pending.clone().try_acquire_owned().map_err(|_| {
+            AppError::new("RATE_LIMITED", "処理待ちが多すぎます。").key("native.queue.busy")
+        })?;
         let file = tauri::async_runtime::spawn_blocking(move || {
             local_git::read_worktree_file(Path::new(&linked.path), &path)
         })
@@ -1559,11 +1589,13 @@ impl NativeState {
             local_git::WorktreeFile::Binary => Err(AppError::new(
                 "UNSUPPORTED",
                 "このファイルはUTF-8またはShift_JISのテキストではないため表示できません。",
-            )),
+            )
+            .key("native.localGit.notText")),
             local_git::WorktreeFile::TooLarge => Err(AppError::new(
                 "TOO_LARGE",
                 "1MiBを超えるファイルは表示できません。",
-            )),
+            )
+            .key("native.localGit.fileTooLarge")),
         }
     }
 }
@@ -1584,10 +1616,10 @@ fn validate_project_id(project: &str) -> Result<(), AppError> {
         || !project.bytes().all(|byte| byte.is_ascii_digit())
         || project.bytes().all(|byte| byte == b'0')
     {
-        return Err(AppError::new(
-            "INVALID_INPUT",
-            "有効なプロジェクトIDを指定してください。",
-        ));
+        return Err(
+            AppError::new("INVALID_INPUT", "有効なプロジェクトIDを指定してください。")
+                .key("native.input.projectId"),
+        );
     }
     Ok(())
 }
@@ -1634,37 +1666,45 @@ fn local_repositories(
 pub fn token_creation_url(instance_url: &str) -> Result<Url, AppError> {
     let base = normalize_instance(instance_url)?;
     base.join("-/user_settings/personal_access_tokens?name=GitLab%20Desktop&scopes=api")
-        .map_err(|_| AppError::new("INVALID_INPUT", "GitLab URLが正しくありません。"))
+        .map_err(|_| {
+            AppError::new("INVALID_INPUT", "GitLab URLが正しくありません。")
+                .key("native.link.invalidInstanceUrl")
+        })
 }
 
 pub fn open_token_creation_page(instance_url: &str) -> Result<(), AppError> {
     let url = token_creation_url(instance_url)?;
-    open::that_detached(url.as_str())
-        .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
+    open::that_detached(url.as_str()).map_err(|_| {
+        AppError::new("NETWORK", "既定のブラウザーで開けませんでした。")
+            .key("native.link.browserFailed")
+    })
 }
 
 /// A web link from a comment or description, checked before the default
 /// browser opens it: only http(s) without embedded credentials.
 pub fn external_url(input: &str) -> Result<Url, AppError> {
-    let url = Url::parse(input.trim())
-        .map_err(|_| AppError::new("INVALID_INPUT", "URLが正しくありません。"))?;
+    let url = Url::parse(input.trim()).map_err(|_| {
+        AppError::new("INVALID_INPUT", "URLが正しくありません。").key("native.link.invalidUrl")
+    })?;
     if !matches!(url.scheme(), "https" | "http")
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
     {
-        return Err(AppError::new(
-            "INVALID_INPUT",
-            "http/httpsのリンクだけを開けます。",
-        ));
+        return Err(
+            AppError::new("INVALID_INPUT", "http/httpsのリンクだけを開けます。")
+                .key("native.link.httpOnly"),
+        );
     }
     Ok(url)
 }
 
 pub fn open_external_url(input: &str) -> Result<(), AppError> {
     let url = external_url(input)?;
-    open::that_detached(url.as_str())
-        .map_err(|_| AppError::new("NETWORK", "既定のブラウザーで開けませんでした。"))
+    open::that_detached(url.as_str()).map_err(|_| {
+        AppError::new("NETWORK", "既定のブラウザーで開けませんでした。")
+            .key("native.link.browserFailed")
+    })
 }
 
 /// Accepts only uploads served by the connected instance (relative URLs are
@@ -1748,7 +1788,10 @@ fn anonymous_client() -> Result<reqwest::Client, AppError> {
         .timeout(Duration::from_secs(20))
         .user_agent(concat!("gitlab-desktop/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|_| AppError::new("NETWORK", "HTTPSクライアントを初期化できませんでした。"))?;
+        .map_err(|_| {
+            AppError::new("NETWORK", "HTTPSクライアントを初期化できませんでした。")
+                .key("native.connection.clientFailed")
+        })?;
     Ok(CLIENT.get_or_init(|| client).clone())
 }
 
@@ -1848,6 +1891,7 @@ fn write_busy() -> AppError {
         "BUSY",
         "投稿処理中は接続を変更できません。処理結果を確認してから操作してください。",
     )
+    .key("native.connection.writeBusy")
 }
 
 fn unknown_write() -> AppError {
@@ -1855,6 +1899,7 @@ fn unknown_write() -> AppError {
         "UNKNOWN_OUTCOME",
         "送信の確認を中断しました。GitLabで結果を確認してください。",
     )
+    .key("native.receipt.cancelled")
 }
 
 /// The saved query answers a successful write to the merge request
@@ -1976,12 +2021,7 @@ fn check_cooldown(session: &LiveSession) -> Result<(), AppError> {
     let now = now_ms();
     if retry_at > now {
         let wait = retry_at - now;
-        let mut error = AppError::new(
-            "RATE_LIMITED",
-            &gitlab_api::rate_limited_message(Some(wait)),
-        );
-        error.retry_after_ms = Some(wait);
-        Err(error)
+        Err(gitlab_api::rate_limited(Some(wait)))
     } else {
         Ok(())
     }
@@ -1995,13 +2035,15 @@ struct RequestRegistration {
 impl RequestRegistration {
     fn new(session: Arc<LiveSession>, id: String) -> Result<Self, AppError> {
         if id.is_empty() || id.len() > 128 {
-            return Err(AppError::new("INVALID_INPUT", "要求IDが正しくありません。"));
+            return Err(AppError::new("INVALID_INPUT", "要求IDが正しくありません。")
+                .key("native.input.requestId"));
         }
         let token = session.cancelled.child_token();
         {
             let mut requests = session.requests.lock().map_err(|_| storage_error())?;
             if requests.contains_key(&id) {
-                return Err(AppError::new("INVALID_INPUT", "要求IDが重複しています。"));
+                return Err(AppError::new("INVALID_INPUT", "要求IDが重複しています。")
+                    .key("native.input.duplicateRequestId"));
             }
             requests.insert(id.clone(), token.clone());
         }

@@ -40,7 +40,8 @@ pub(super) async fn get_trace_tail(
         if !matches!(status, StatusCode::OK | StatusCode::PARTIAL_CONTENT) {
             return Err(unsupported_response(
                 "GitLabから対応していない形式のジョブログが返されました。",
-            ));
+            )
+            .key("native.response.unsupportedJobLog"));
         }
         let range_start = (status == StatusCode::PARTIAL_CONTENT)
             .then(|| content_range_start(response.headers()))
@@ -89,6 +90,7 @@ pub(super) async fn read_tail(mut response: Response) -> Result<(Vec<u8>, bool),
             "TOO_LARGE",
             "ジョブログが大きすぎるため表示できません。GitLabで開いてください。",
         )
+        .key("native.jobLog.tooLarge")
     };
     if response
         .content_length()

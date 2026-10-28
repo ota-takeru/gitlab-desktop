@@ -490,13 +490,11 @@ it('switches the settings page to the chosen language', async () => {
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={vi.fn()} /></ThemeProvider>)
 
   expect(await screen.findByRole('heading', { name: '設定' })).toBeInTheDocument()
-  expect(screen.queryByText('一部の画面はまだ日本語で表示されます。')).not.toBeInTheDocument()
   fireEvent.mouseDown(screen.getByRole('combobox', { name: '言語' }))
   fireEvent.click(screen.getByRole('option', { name: 'English' }))
 
   expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Match system' })).toBeInTheDocument()
-  expect(screen.getByText('Some screens are still shown in Japanese.')).toBeInTheDocument()
   expect(document.documentElement.lang).toBe('en')
   await act(() => setLocalePreference('ja'))
 })

@@ -31,7 +31,7 @@ const SAFE_ENV: &[&str] = &[
 ];
 
 fn missing_auth() -> AppError {
-    AppError::new("AUTH_REQUIRED", "この接続先のglab認証情報を取得できません。glabでログインするか、トークンを直接入力してください。")
+    AppError::new("AUTH_REQUIRED", "この接続先のglab認証情報を取得できません。glabでログインするか、トークンを直接入力してください。").key("native.glab.missingAuth")
 }
 
 fn resolve_program() -> Result<PathBuf, AppError> {
@@ -43,7 +43,7 @@ fn resolve_program() -> Result<PathBuf, AppError> {
         .map(|directory| directory.join(name))
         .find(|path| path.is_file())
         .and_then(|path| path.canonicalize().ok())
-        .ok_or_else(|| AppError::new("UNSUPPORTED", "glabが見つかりません。インストール済みglabをPATHへ追加するか、トークンを直接入力してください。"))
+        .ok_or_else(|| AppError::new("UNSUPPORTED", "glabが見つかりません。インストール済みglabをPATHへ追加するか、トークンを直接入力してください。").key("native.glab.notFound"))
 }
 
 fn config_command(program: &Path, directory: &Path, host: &str, config_dir: &Path) -> Command {
@@ -95,7 +95,8 @@ async fn capture(mut command: Command, timeout: Duration) -> Result<String, AppE
             return Err(AppError::new(
                 "TOO_LARGE",
                 "glabの認証情報が対応するサイズを超えています。",
-            ));
+            )
+            .key("native.glab.tooLarge"));
         }
         let status = child.wait().await.map_err(|_| missing_auth())?;
         if !status.success() {
@@ -105,7 +106,10 @@ async fn capture(mut command: Command, timeout: Duration) -> Result<String, AppE
         Ok(output.trim_end_matches(['\r', '\n']).to_owned())
     })
     .await
-    .map_err(|_| AppError::new("TIMEOUT", "glabの認証情報取得がタイムアウトしました。"))?
+    .map_err(|_| {
+        AppError::new("TIMEOUT", "glabの認証情報取得がタイムアウトしました。")
+            .key("native.glab.timeout")
+    })?
 }
 
 fn check_scope(
@@ -133,7 +137,7 @@ fn check_scope(
     ))
     .map_err(|_| missing_auth())?;
     if &configured != instance {
-        return Err(AppError::new("AUTH_REQUIRED", "glabのAPI接続先と入力URLが一致しません。接続先URLを確認するか、トークンを直接入力してください。"));
+        return Err(AppError::new("AUTH_REQUIRED", "glabのAPI接続先と入力URLが一致しません。接続先URLを確認するか、トークンを直接入力してください。").key("native.glab.urlMismatch"));
     }
     Ok(())
 }
@@ -157,6 +161,7 @@ fn config_path() -> Result<PathBuf, AppError> {
                 "AUTH_REQUIRED",
                 "glab認証の取り込みにはGLAB_CONFIG_DIRを絶対パスで指定してください。",
             )
+            .key("native.glab.configDir")
         })?;
         return Ok(directory.join("config.yml"));
     }
@@ -324,9 +329,9 @@ fn select_source(text: &str, instance: &Url) -> Result<CredentialSource, AppErro
     )?;
     if flag(node, "is_oauth2")? {
         let expiry = time::OffsetDateTime::parse(optional_string(node, "oauth2_expiry_date", "")?, &time::format_description::well_known::Rfc3339)
-            .map_err(|_| AppError::new("AUTH_REQUIRED", "glabのOAuth有効期限を確認できません。glab側で認証を更新してから再度取り込んでください。"))?;
+            .map_err(|_| AppError::new("AUTH_REQUIRED", "glabのOAuth有効期限を確認できません。glab側で認証を更新してから再度取り込んでください。").key("native.glab.oauthExpiryUnknown"))?;
         if expiry.unix_timestamp() <= (crate::storage::now_ms() / 1000) as i64 + 60 {
-            return Err(AppError::new("AUTH_REQUIRED", "glabのOAuth認証が期限切れ、または有効期限が近づいています。glab側で認証を更新してから再度取り込んでください。"));
+            return Err(AppError::new("AUTH_REQUIRED", "glabのOAuth認証が期限切れ、または有効期限が近づいています。glab側で認証を更新してから再度取り込んでください。").key("native.glab.oauthExpired"));
         }
     }
     if flag(node, "use_keyring")? {
@@ -388,7 +393,8 @@ pub fn list_connections() -> Result<Vec<String>, AppError> {
         return Err(AppError::new(
             "UNSUPPORTED",
             "glab認証情報の取り込みはWindows版のみ対応しています。",
-        ));
+        )
+        .key("native.glab.windowsOnly"));
     }
     configured_connections(&read_config_text()?)
 }
@@ -423,7 +429,8 @@ pub async fn read_token(instance: &Url, directory: &Path) -> Result<String, AppE
         return Err(AppError::new(
             "UNSUPPORTED",
             "glab認証情報の取り込みはWindows版のみ対応しています。",
-        ));
+        )
+        .key("native.glab.windowsOnly"));
     }
     let requested = instance.clone();
     let source = tauri::async_runtime::spawn_blocking(move || load_source(&requested))

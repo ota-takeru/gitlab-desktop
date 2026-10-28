@@ -24,7 +24,8 @@ pub fn validate_filename(name: &str) -> Result<(), AppError> {
             .chars()
             .any(|c| c.is_control() || matches!(c, '/' | '\\' | '"'))
     {
-        return Err(AppError::new("INVALID_INPUT", "添付ファイル名が不正です。"));
+        return Err(AppError::new("INVALID_INPUT", "添付ファイル名が不正です。")
+            .key("native.attachment.invalidName"));
     }
     Ok(())
 }
@@ -32,13 +33,18 @@ pub fn validate_filename(name: &str) -> Result<(), AppError> {
 pub fn decode_upload(name: &str, encoded: &str) -> Result<Vec<u8>, AppError> {
     validate_filename(name)?;
     if encoded.len() > MAX_UPLOAD_BYTES.div_ceil(3) * 4 {
-        return Err(AppError::new("TOO_LARGE", "添付は10MiBまでです。"));
+        return Err(
+            AppError::new("TOO_LARGE", "添付は10MiBまでです。").key("native.attachment.tooLarge")
+        );
     }
-    let data = STANDARD
-        .decode(encoded)
-        .map_err(|_| AppError::new("INVALID_INPUT", "添付データが不正です。"))?;
+    let data = STANDARD.decode(encoded).map_err(|_| {
+        AppError::new("INVALID_INPUT", "添付データが不正です。")
+            .key("native.attachment.invalidData")
+    })?;
     if data.len() > MAX_UPLOAD_BYTES {
-        return Err(AppError::new("TOO_LARGE", "添付は10MiBまでです。"));
+        return Err(
+            AppError::new("TOO_LARGE", "添付は10MiBまでです。").key("native.attachment.tooLarge")
+        );
     }
     Ok(data)
 }
@@ -48,6 +54,7 @@ fn unknown_upload() -> AppError {
         "UNKNOWN_OUTCOME",
         "添付がGitLabに届いた可能性があります。再送せずGitLabで確認してください。",
     )
+    .key("native.attachment.unknownOutcome")
 }
 
 /// Send once. Filename/data are supplied by the file picker, never an arbitrary
@@ -62,7 +69,9 @@ pub async fn upload(
     validate_id(project_id, "projectId")?;
     validate_filename(file_name)?;
     if data.len() > MAX_UPLOAD_BYTES {
-        return Err(AppError::new("TOO_LARGE", "添付は10MiBまでです。"));
+        return Err(
+            AppError::new("TOO_LARGE", "添付は10MiBまでです。").key("native.attachment.tooLarge")
+        );
     }
     let boundary = format!("gitlab-desktop-{}", uuid::Uuid::new_v4());
     let mut body = format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n").into_bytes();

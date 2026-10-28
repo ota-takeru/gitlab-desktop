@@ -186,6 +186,7 @@
   "gitlab.requestCancelled": "The GitLab request was canceled.",
   "gitlab.invalidPendingOperation": "The pending post record is invalid.",
   "localRepository.browserUnavailable": "Local repositories can't be read in the browser preview. Use the desktop app.",
+  "localRepository.pickFolderTitle": "Choose the local repository folder",
   "localRepository.otherBranch": "Other branch",
   "localRepository.uncommitted": "{count, plural, other {# uncommitted}}",
   "localRepository.uncommittedMore": "{count, plural, other {#+ uncommitted}}",

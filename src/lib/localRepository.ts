@@ -61,7 +61,7 @@ export function getLocalFile(sessionId: string, projectId: string, path: string)
 
 /** The folder chosen in the system folder picker, or null when cancelled. */
 export function pickLocalRepositoryFolder(): Promise<string | null> {
-  return call('pick_local_repository_folder', {})
+  return call('pick_local_repository_folder', { title: translate('common.localRepository.pickFolderTitle') })
 }
 
 export function getLocalChanges(sessionId: string, projectId: string, headSha: string): Promise<LocalChanges> {

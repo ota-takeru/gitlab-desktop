@@ -13,7 +13,6 @@
   "language.description": "Language of the app's screens",
   "language.label": "Language",
   "language.system": "Match system ({language})",
-  "language.partial": "Some screens are still shown in Japanese.",
   "workspace.title": "Auto refresh and notifications",
   "workspace.description": "Automatic refresh of the data on screen and desktop notifications",
   "workspace.autoRefresh": "Refresh the shown MRs, comments, and notifications every minute",

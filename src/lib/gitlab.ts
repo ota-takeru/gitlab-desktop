@@ -1,6 +1,6 @@
 import { invoke, isTauri as tauriIsTauri } from '@tauri-apps/api/core'
 
-import { translate } from '../i18n/i18n'
+import { hasMessage, translate } from '../i18n/i18n'
 import {
   GitLabCommandError,
   isGitLabErrorShape,
@@ -246,7 +246,7 @@ export function normalizeGitLabError(error: unknown): GitLabCommandError {
   if (isGitLabErrorShape(error)) {
     return new GitLabCommandError({
       code: normalizeErrorCode(error.code),
-      message: error.message,
+      message: error.messageKey && hasMessage(error.messageKey) ? translate(error.messageKey, error.messageValues) : error.message,
       retryAfterMs: error.retryAfterMs,
     })
   }

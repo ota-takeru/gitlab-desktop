@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// The user identity returned by GitLab and used by the IPC contract.
@@ -36,6 +38,13 @@ pub struct AppError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_after_ms: Option<u64>,
+    /// The frontend message key (`native.*`) for `message`, which stays the
+    /// Japanese fallback and log text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_key: Option<String>,
+    /// Values for the placeholders of the `message_key` message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_values: Option<BTreeMap<String, String>>,
 }
 
 impl AppError {
@@ -44,7 +53,23 @@ impl AppError {
             code: code.to_owned(),
             message: message.to_owned(),
             retry_after_ms: None,
+            message_key: None,
+            message_values: None,
         }
+    }
+
+    /// Names the frontend message that translates `message`.
+    pub fn key(mut self, key: &str) -> Self {
+        self.message_key = Some(key.to_owned());
+        self
+    }
+
+    /// Adds a placeholder value for the `key` message.
+    pub fn value(mut self, name: &str, value: impl std::fmt::Display) -> Self {
+        self.message_values
+            .get_or_insert_with(BTreeMap::new)
+            .insert(name.to_owned(), value.to_string());
+        self
     }
 }
 
@@ -595,6 +620,26 @@ pub enum Action {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_error_sends_its_message_key_and_values_only_when_set() {
+        assert_eq!(
+            serde_json::to_value(AppError::new("NETWORK", "失敗")).unwrap(),
+            serde_json::json!({ "code": "NETWORK", "message": "失敗" })
+        );
+        let error = AppError::new("RATE_LIMITED", "5秒後")
+            .key("native.request.rateLimited")
+            .value("seconds", 5);
+        assert_eq!(
+            serde_json::to_value(error).unwrap(),
+            serde_json::json!({
+                "code": "RATE_LIMITED",
+                "message": "5秒後",
+                "messageKey": "native.request.rateLimited",
+                "messageValues": { "seconds": "5" },
+            })
+        );
+    }
 
     #[test]
     fn query_wire_shape_uses_camel_case_fields() {

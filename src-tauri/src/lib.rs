@@ -53,7 +53,10 @@ async fn reauthenticate_gitlab(
 async fn list_glab_connections() -> Result<Vec<String>, AppError> {
     tauri::async_runtime::spawn_blocking(glab::list_connections)
         .await
-        .map_err(|_| AppError::new("AUTH_REQUIRED", "glabの接続先を読み取れませんでした。"))?
+        .map_err(|_| {
+            AppError::new("AUTH_REQUIRED", "glabの接続先を読み取れませんでした。")
+                .key("native.glab.readHosts")
+        })?
 }
 
 #[tauri::command]
@@ -302,20 +305,25 @@ async fn get_local_file(
         .await
 }
 /// Shows the system folder picker. The dialog plugin's own commands are not
-/// granted to the window; only this fixed folder choice is.
+/// granted to the window; only this fixed folder choice is. The frontend
+/// passes the title in the interface language.
 #[tauri::command]
-async fn pick_local_repository_folder(app: tauri::AppHandle) -> Result<Option<String>, AppError> {
+async fn pick_local_repository_folder(
+    app: tauri::AppHandle,
+    title: String,
+) -> Result<Option<String>, AppError> {
     use tauri_plugin_dialog::DialogExt;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
-        .set_title("ローカルリポジトリのフォルダを選択")
+        .set_title(title)
         .pick_folder(move |folder| {
             let _ = sender.send(folder);
         });
-    let folder = receiver
-        .await
-        .map_err(|_| AppError::new("UNSUPPORTED", "フォルダ選択を開けませんでした。"))?;
+    let folder = receiver.await.map_err(|_| {
+        AppError::new("UNSUPPORTED", "フォルダ選択を開けませんでした。")
+            .key("native.app.folderPickerFailed")
+    })?;
     Ok(folder
         .and_then(|folder| folder.into_path().ok())
         .map(|path| path.to_string_lossy().into_owned()))
@@ -337,10 +345,10 @@ fn close_app_window(
     state.closing.store(true, Ordering::SeqCst);
     if window.close().is_err() {
         state.closing.store(false, Ordering::SeqCst);
-        return Err(AppError::new(
-            "UNSUPPORTED",
-            "アプリを終了できませんでした。",
-        ));
+        return Err(
+            AppError::new("UNSUPPORTED", "アプリを終了できませんでした。")
+                .key("native.app.closeFailed"),
+        );
     }
     Ok(())
 }

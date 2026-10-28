@@ -193,10 +193,10 @@ pub(super) fn build_query_url(
             let order_by = order_by.as_deref().unwrap_or("updated_at");
             let sort = sort.as_deref().unwrap_or("desc");
             if !matches!(order_by, "updated_at" | "created_at") || !matches!(sort, "asc" | "desc") {
-                return Err(AppError::new(
-                    "INVALID_INPUT",
-                    "MRの並び順の指定が正しくありません。",
-                ));
+                return Err(
+                    AppError::new("INVALID_INPUT", "MRの並び順の指定が正しくありません。")
+                        .key("native.query.invalidSort"),
+                );
             }
             if let Some(project_id) = project_id {
                 validate_id(project_id, "projectId")?;
@@ -205,7 +205,8 @@ pub(super) fn build_query_url(
                 return Err(AppError::new(
                     "INVALID_INPUT",
                     "MR検索ではグループとプロジェクトを同時に指定できません。",
-                ));
+                )
+                .key("native.query.groupAndProject"));
             }
             if let Some(group_id) = group_id {
                 validate_group_id(group_id)?;
@@ -382,7 +383,8 @@ pub(super) fn build_query_url(
                 return Err(AppError::new(
                     "INVALID_INPUT",
                     "Blameは1回につき100行以内で指定してください。",
-                ));
+                )
+                .key("native.query.blameTooManyLines"));
             }
             (
                 endpoint(
@@ -470,7 +472,8 @@ pub(super) fn build_query_url(
             return Err(AppError::new(
                 "INVALID_INPUT",
                 "MRの承認状況はこの方法では取得できません。",
-            ))
+            )
+            .key("native.query.approvalsUnsupported"))
         }
         Query::MrAwards { project_id, iid } => {
             validate_id(project_id, "projectId")?;
@@ -488,7 +491,8 @@ pub(super) fn build_query_url(
             return Err(AppError::new(
                 "INVALID_INPUT",
                 "コメントのリアクションはこの方法では取得できません。",
-            ))
+            )
+            .key("native.query.noteAwardsUnsupported"))
         }
         Query::MrPipelines {
             project_id,
@@ -521,7 +525,8 @@ pub(super) fn build_query_url(
             return Err(AppError::new(
                 "INVALID_INPUT",
                 "ジョブの情報はこの方法では取得できません。",
-            ))
+            )
+            .key("native.query.jobUnsupported"))
         }
         Query::Labels {
             project_id,

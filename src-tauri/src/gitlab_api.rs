@@ -223,6 +223,7 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         let exact_user = {
             let users = result.data.as_array().ok_or_else(|| {
                 unsupported_response("GitLabから想定外の形式のユーザー情報が返されました。")
+                    .key("native.response.unexpectedUser")
             })?;
             let mut exact_matches = users.iter().filter(|user| {
                 user["username"]
@@ -231,9 +232,10 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
             });
             let exact_user = exact_matches.next().cloned();
             if exact_matches.next().is_some() {
-                return Err(unsupported_response(
-                    "GitLabから同じユーザーが複数返されました。",
-                ));
+                return Err(
+                    unsupported_response("GitLabから同じユーザーが複数返されました。")
+                        .key("native.response.duplicateUser"),
+                );
             }
             exact_user.unwrap_or(Value::Null)
         };
@@ -262,7 +264,8 @@ fn decode_file_text(bytes: Vec<u8>) -> Result<String, AppError> {
     Err(AppError::new(
         "UNSUPPORTED",
         "GitLabから返されたファイルはUTF-8またはShift_JISのテキストではないため表示できません。",
-    ))
+    )
+    .key("native.response.notText"))
 }
 
 /// GitLab returns a comparison in one response, so its files are split into
@@ -280,11 +283,13 @@ async fn fetch_version_compare(
             "UNSUPPORTED",
             "GitLabから対応していない形式の応答が返されました。",
         )
+        .key("native.response.unsupported")
     })?;
     if !value.is_object() {
-        return Err(unsupported_response(
-            "GitLabから想定外の形式の比較結果が返されました。",
-        ));
+        return Err(
+            unsupported_response("GitLabから想定外の形式の比較結果が返されました。")
+                .key("native.response.unexpectedCompare"),
+        );
     }
     // GitLab stopped comparing at its size or time limit: some files are missing.
     let timed_out = bool_field(&value, "compare_timeout");
@@ -311,6 +316,7 @@ fn decode_page(
             "UNSUPPORTED",
             "GitLabから対応していない形式の応答が返されました。",
         )
+        .key("native.response.unsupported")
     })?;
     let data = normalize_response(response_kind, value)?;
     let next_page = parse_next_page(headers)?;
@@ -457,6 +463,7 @@ fn meets_mr_conditions(mr: &Value, query: &Query) -> Result<bool, AppError> {
         let Some(bound) = bound else { return Ok(true) };
         let bound = timestamp(bound).ok_or_else(|| {
             AppError::new("INVALID_INPUT", "MRの更新日の指定が正しくありません。")
+                .key("native.query.invalidUpdatedDate")
         })?;
         Ok(updated.is_some_and(|updated| {
             if after {
@@ -751,7 +758,8 @@ pub async fn mutate(
             (Method::POST, url, Value::Null, MutationPreflight::None)
         }
         Action::UploadAttachment { .. } => {
-            return Err(AppError::new("INVALID_INPUT", "添付データが必要です。"));
+            return Err(AppError::new("INVALID_INPUT", "添付データが必要です。")
+                .key("native.attachment.required"));
         }
         Action::SetAssignees {
             project_id,
@@ -773,6 +781,7 @@ pub async fn mutate(
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| {
                     AppError::new("INVALID_INPUT", "ユーザーIDの形式が正しくありません。")
+                        .key("native.input.userId")
                 })?;
             (
                 Method::PUT,
@@ -810,7 +819,8 @@ pub async fn mutate(
                 return Err(AppError::new(
                     "INVALID_INPUT",
                     "このリアクションは既に付いています。再読み込みしてください。",
-                ));
+                )
+                .key("native.write.awardExists"));
             }
             let url = award_endpoint(api_base, project_id, iid, note_id, None)?;
             (
@@ -836,6 +846,7 @@ pub async fn mutate(
                             "INVALID_INPUT",
                             "このリアクションは既に外されています。再読み込みしてください。",
                         )
+                        .key("native.write.awardRemoved")
                     })?;
             let url = award_endpoint(api_base, project_id, iid, note_id, Some(&award_id))?;
             (Method::DELETE, url, Value::Null, MutationPreflight::None)
@@ -1056,6 +1067,7 @@ pub async fn mutate(
                 .parse::<u64>()
                 .map_err(|_| {
                     AppError::new("INVALID_INPUT", "milestoneIdは数値のIDで指定してください。")
+                        .key("native.input.milestoneId")
                 })?;
             (
                 Method::PUT,
@@ -1109,6 +1121,7 @@ pub async fn mutate(
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|_| {
                         AppError::new("INVALID_INPUT", "提案IDの形式が正しくありません。")
+                            .key("native.input.suggestionId")
                     })?;
                 payload.insert("ids".to_owned(), Value::Array(ids));
                 endpoint(api_base, &["suggestions", "batch_apply"])?
@@ -1232,7 +1245,7 @@ pub async fn mutate(
     .map_err(|error| {
         // The generic write message names comments and approvals.
         if is_ci && error.code == "FORBIDDEN" {
-            AppError::new("FORBIDDEN", CI_FORBIDDEN_MESSAGE)
+            AppError::new("FORBIDDEN", CI_FORBIDDEN_MESSAGE).key("native.ci.forbidden")
         } else {
             error
         }
@@ -1241,7 +1254,7 @@ pub async fn mutate(
         return Err(AppError::new(
             "UNSUPPORTED",
             "GitLabに保存された内容が要求と異なります。権限や接続先の設定で反映されなかった可能性があります。再読み込みして確認してください。",
-        ));
+        ).key("native.write.notApplied"));
     }
     if let Action::ApplySuggestions { .. } = action {
         // GitLab answers with the suggestions; each must now be applied.
@@ -1265,7 +1278,7 @@ pub async fn mutate(
             return Err(AppError::new(
                 "UNSUPPORTED",
                 "GitLabに保存されたユーザーが選択と異なります。アクセス権のないユーザーが含まれているか、プランで1人しか設定できない可能性があります。再読み込みして保存内容を確認してください。",
-            ));
+            ).key("native.write.usersNotApplied"));
         }
     }
     Ok(())
@@ -1408,35 +1421,37 @@ fn write_refusal(action: &Action) -> fn(StatusCode) -> Option<AppError> {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Some(AppError::new(
                 "FORBIDDEN",
                 "このMRをマージする権限がありません。",
-            )),
+            ).key("native.merge.forbidden")),
             StatusCode::METHOD_NOT_ALLOWED => Some(AppError::new(
                 "INVALID_INPUT",
                 "GitLabがマージを受け付けませんでした。現在はマージできない状態です。再読み込みして理由を確認してください。",
-            )),
+            ).key("native.merge.refused")),
             StatusCode::CONFLICT => Some(stale_merge_request()),
             StatusCode::BAD_REQUEST
             | StatusCode::NOT_ACCEPTABLE
             | StatusCode::UNPROCESSABLE_ENTITY => Some(AppError::new(
                 "INVALID_INPUT",
                 "GitLabでマージできませんでした。再読み込みしてMRの状態を確認してください。",
-            )),
+            ).key("native.merge.failed")),
             _ => None,
         }
         },
         Action::CancelAutoMerge { .. } => |status| {
-            matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
-                .then(|| AppError::new("FORBIDDEN", "自動マージを取り消す権限がありません。"))
+            matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN).then(|| {
+                AppError::new("FORBIDDEN", "自動マージを取り消す権限がありません。")
+                    .key("native.merge.cancelAutoForbidden")
+            })
         },
         Action::Rebase { .. } => |status| {
             match status {
             StatusCode::FORBIDDEN => Some(AppError::new(
                 "FORBIDDEN",
                 "ソースブランチにプッシュできないため、リベースできません。権限とブランチの保護設定を確認してください。",
-            )),
+            ).key("native.merge.rebaseForbidden")),
             StatusCode::CONFLICT => Some(AppError::new(
                 "INVALID_INPUT",
                 "GitLabがリベースを開始できませんでした。しばらくしてから再試行してください。",
-            )),
+            ).key("native.merge.rebaseFailed")),
             _ => None,
         }
         },
@@ -1504,9 +1519,10 @@ fn milestone_id(value: &Value) -> Option<String> {
 
 /// GitLab's GraphQL endpoint beside the REST base (`…/api/v4/` → `…/api/graphql`).
 fn graphql_url(api_base: &Url) -> Result<Url, AppError> {
-    api_base
-        .join("../graphql")
-        .map_err(|_| AppError::new("INVALID_INPUT", "GitLab GraphQLのURLが正しくありません。"))
+    api_base.join("../graphql").map_err(|_| {
+        AppError::new("INVALID_INPUT", "GitLab GraphQLのURLが正しくありません。")
+            .key("native.request.graphqlUrl")
+    })
 }
 
 fn paged_mr_query(
@@ -1569,10 +1585,10 @@ fn append_query(mut url: Url, params: Vec<(String, String)>) -> Url {
 /// percent-encodes each untrusted segment.
 pub(crate) fn endpoint(api_base: &Url, segments: &[&str]) -> Result<Url, AppError> {
     if api_base.host_str().is_none() || api_base.cannot_be_a_base() {
-        return Err(AppError::new(
-            "INVALID_INPUT",
-            "GitLab APIのURLが正しくありません。",
-        ));
+        return Err(
+            AppError::new("INVALID_INPUT", "GitLab APIのURLが正しくありません。")
+                .key("native.request.apiUrl"),
+        );
     }
 
     let mut url = api_base.clone();
@@ -1588,9 +1604,10 @@ pub(crate) fn endpoint(api_base: &Url, segments: &[&str]) -> Result<Url, AppErro
     url.set_path(&path);
 
     {
-        let mut path_segments = url
-            .path_segments_mut()
-            .map_err(|_| AppError::new("INVALID_INPUT", "GitLab APIのURLが正しくありません。"))?;
+        let mut path_segments = url.path_segments_mut().map_err(|_| {
+            AppError::new("INVALID_INPUT", "GitLab APIのURLが正しくありません。")
+                .key("native.request.apiUrl")
+        })?;
         path_segments.pop_if_empty();
         for segment in segments {
             path_segments.push(segment);
@@ -1654,7 +1671,8 @@ async fn fetch_mr_approvals(
         return Err(AppError::new(
             "INVALID_INPUT",
             "承認状況は1ページ分のMRごとに取得してください。",
-        ));
+        )
+        .key("native.query.approvalsPerPage"));
     }
     let mut declarations = Vec::new();
     let mut fields = Vec::new();
@@ -1677,8 +1695,10 @@ async fn fetch_mr_approvals(
         client,
         api_base,
         &body,
-        "GitLabから対応していない形式の承認情報が返されました。",
-        "GitLabから承認情報が返されませんでした。",
+        unsupported_response("GitLabから対応していない形式の承認情報が返されました。")
+            .key("native.response.unsupportedApprovals"),
+        unsupported_response("GitLabから承認情報が返されませんでした。")
+            .key("native.response.missingApprovals"),
     )
     .await?;
     let data = &data;
@@ -1723,12 +1743,13 @@ async fn post_graphql(
     client: &Client,
     api_base: &Url,
     body: &Value,
-    malformed_message: &str,
-    missing_message: &str,
+    malformed: AppError,
+    missing: AppError,
 ) -> Result<Value, AppError> {
-    let url = api_base
-        .join("../graphql")
-        .map_err(|_| AppError::new("INVALID_INPUT", "GitLab GraphQLのURLが正しくありません。"))?;
+    let url = api_base.join("../graphql").map_err(|_| {
+        AppError::new("INVALID_INPUT", "GitLab GraphQLのURLが正しくありません。")
+            .key("native.request.graphqlUrl")
+    })?;
     let response = client
         .post(url)
         .json(body)
@@ -1740,13 +1761,12 @@ async fn post_graphql(
         return Err(status_error(status, response.headers(), false));
     }
     let bytes = read_limited(response, MAX_RESPONSE_BYTES).await?;
-    let value: Value =
-        serde_json::from_slice(&bytes).map_err(|_| unsupported_response(malformed_message))?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| malformed)?;
     value
         .get("data")
         .filter(|data| data.is_object())
         .cloned()
-        .ok_or_else(|| unsupported_response(missing_message))
+        .ok_or(missing)
 }
 
 /// Comments per GraphQL page when reading reactions; GitLab's page size limit.
@@ -1783,8 +1803,10 @@ async fn fetch_note_awards(
             client,
             api_base,
             &body,
-            "GitLabから対応していない形式のリアクションが返されました。",
-            "GitLabからリアクションが返されませんでした。",
+            unsupported_response("GitLabから対応していない形式のリアクションが返されました。")
+                .key("native.response.unsupportedAwards"),
+            unsupported_response("GitLabからリアクションが返されませんでした。")
+                .key("native.response.missingAwards"),
         )
         .await?;
         let notes = data
@@ -1795,12 +1817,15 @@ async fn fetch_note_awards(
             .ok_or_else(|| {
                 unsupported_response(
                     "GitLabからこのMRのリアクションが返されませんでした。GitLabで確認してください。",
-                )
+                ).key("native.response.missingMergeRequestAwards")
             })?;
         let nodes = notes
             .get("nodes")
             .and_then(Value::as_array)
-            .ok_or_else(|| unsupported_response("GitLabから不正なリアクションが返されました。"))?;
+            .ok_or_else(|| {
+                unsupported_response("GitLabから不正なリアクションが返されました。")
+                    .key("native.response.invalidAward")
+            })?;
         for node in nodes {
             let note_id = node
                 .get("id")
@@ -1809,6 +1834,7 @@ async fn fetch_note_awards(
                 .filter(|id| validate_id(id, "noteId").is_ok())
                 .ok_or_else(|| {
                     unsupported_response("GitLabから不正なコメントIDが返されました。")
+                        .key("native.response.invalidNoteId")
                 })?;
             let numeric = note_id.parse::<u64>().unwrap_or(0);
             if numeric <= since {
@@ -1854,7 +1880,10 @@ fn normalize_graphql_award(value: &Value) -> Result<Value, AppError> {
     let user = value
         .get("user")
         .filter(|user| user.is_object())
-        .ok_or_else(|| unsupported_response("GitLabから不正なリアクションが返されました。"))?;
+        .ok_or_else(|| {
+            unsupported_response("GitLabから不正なリアクションが返されました。")
+                .key("native.response.invalidAward")
+        })?;
     let id = user
         .get("id")
         .and_then(Value::as_str)
@@ -1914,11 +1943,14 @@ async fn find_own_award(
             ],
         );
         let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-        let awards: Value = serde_json::from_slice(&bytes)
-            .map_err(|_| unsupported_response("GitLabから不正なリアクションが返されました。"))?;
-        let awards = awards
-            .as_array()
-            .ok_or_else(|| unsupported_response("GitLabから不正なリアクションが返されました。"))?;
+        let awards: Value = serde_json::from_slice(&bytes).map_err(|_| {
+            unsupported_response("GitLabから不正なリアクションが返されました。")
+                .key("native.response.invalidAward")
+        })?;
+        let awards = awards.as_array().ok_or_else(|| {
+            unsupported_response("GitLabから不正なリアクションが返されました。")
+                .key("native.response.invalidAward")
+        })?;
         let own = awards.iter().find(|award| {
             award.get("name").and_then(Value::as_str) == Some(name)
                 && award
@@ -1939,7 +1971,8 @@ async fn find_own_award(
     Err(AppError::new(
         "UNSUPPORTED",
         "リアクションが多すぎるため確認できません。GitLabで操作してください。",
-    ))
+    )
+    .key("native.write.tooManyAwards"))
 }
 
 /// Confirms the To-Do is still pending and belongs to the named merge request,
@@ -1965,11 +1998,14 @@ async fn ensure_pending_merge_request_todo(
             ],
         );
         let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-        let todos: Value = serde_json::from_slice(&bytes)
-            .map_err(|_| unsupported_response("GitLabから不正なToDo一覧が返されました。"))?;
-        let todos = todos
-            .as_array()
-            .ok_or_else(|| unsupported_response("GitLabから不正なToDo一覧が返されました。"))?;
+        let todos: Value = serde_json::from_slice(&bytes).map_err(|_| {
+            unsupported_response("GitLabから不正なToDo一覧が返されました。")
+                .key("native.response.invalidTodos")
+        })?;
+        let todos = todos.as_array().ok_or_else(|| {
+            unsupported_response("GitLabから不正なToDo一覧が返されました。")
+                .key("native.response.invalidTodos")
+        })?;
         if let Some(todo) = todos
             .iter()
             .find(|todo| todo.get("id").and_then(scalar_to_string).as_deref() == Some(todo_id))
@@ -2000,7 +2036,8 @@ async fn ensure_pending_merge_request_todo(
     Err(AppError::new(
         "INVALID_INPUT",
         "このTo-Doは完了済みか、このMRのものではありません。To-Do一覧を更新してください。",
-    ))
+    )
+    .key("native.write.todoGone"))
 }
 
 async fn get_json_once(client: &Client, url: &Url) -> Result<Value, AppError> {
@@ -2019,6 +2056,7 @@ async fn get_json_once(client: &Client, url: &Url) -> Result<Value, AppError> {
             "UNSUPPORTED",
             "GitLabから対応していない形式の応答が返されました。",
         )
+        .key("native.response.unsupported")
     })
 }
 
@@ -2098,7 +2136,8 @@ async fn confirm_cancel_auto_merge(response: Response) -> Result<(), AppError> {
         Some("error") => Err(AppError::new(
             "INVALID_INPUT",
             "このMRは自動マージに設定されていません。再読み込みして状態を確認してください。",
-        )),
+        )
+        .key("native.merge.notAutoMerge")),
         _ => Err(unknown_mutation_result()),
     }
 }
@@ -2127,7 +2166,7 @@ async fn confirm_graphql_write(response: Response, field: &str) -> Result<(), Ap
                 Some(errors) if !errors.is_empty() => Err(AppError::new(
                     "UNSUPPORTED",
                     "GitLabがこの操作を受け付けませんでした。レビュアーに指定されているか、権限と接続先のプランを確認してください。",
-                )),
+                ).key("native.write.reviewRefused")),
                 _ => Err(unknown_mutation_result()),
             }
         }
@@ -2139,14 +2178,19 @@ async fn confirm_graphql_write(response: Response, field: &str) -> Result<(), Ap
                     .and_then(Value::as_str)
                     .is_some_and(|message| message.contains("doesn't exist on type"))
             });
-            Err(AppError::new(
-                "UNSUPPORTED",
-                if unknown_field {
-                    "接続先のGitLabはこの操作に対応していません。GitLabで開いて操作してください。"
-                } else {
-                    "GitLabがこの操作を受け付けませんでした。権限と接続先の版・プランを確認してください。"
-                },
-            ))
+            Err(if unknown_field {
+                AppError::new(
+                    "UNSUPPORTED",
+                    "接続先のGitLabはこの操作に対応していません。GitLabで開いて操作してください。",
+                )
+                .key("native.write.unsupportedByInstance")
+            } else {
+                AppError::new(
+                    "UNSUPPORTED",
+                    "GitLabがこの操作を受け付けませんでした。権限と接続先の版・プランを確認してください。",
+                )
+                .key("native.write.refused")
+            })
         }
         (None, None) => Err(unknown_mutation_result()),
     }
@@ -2177,20 +2221,23 @@ async fn send_write(
                 Err(AppError::new(
                     "UNKNOWN_OUTCOME",
                     "GitLabから変更結果の確認が得られませんでした。",
-                ))
+                )
+                .key("native.write.unconfirmed"))
             } else {
                 Err(refusal(status)
                     .unwrap_or_else(|| status_error(status, response.headers(), true)))
             }
         }
-        Err(error) => Err(AppError::new(
+        Err(error) if error.is_timeout() => Err(AppError::new(
             "UNKNOWN_OUTCOME",
-            if error.is_timeout() {
-                "変更がGitLabに届いた可能性がありますが、応答がタイムアウトしました。"
-            } else {
-                "変更がGitLabに届いた可能性がありますが、結果を確認できませんでした。"
-            },
-        )),
+            "変更がGitLabに届いた可能性がありますが、応答がタイムアウトしました。",
+        )
+        .key("native.write.timeout")),
+        Err(_) => Err(AppError::new(
+            "UNKNOWN_OUTCOME",
+            "変更がGitLabに届いた可能性がありますが、結果を確認できませんでした。",
+        )
+        .key("native.write.unknownOutcome")),
     }
 }
 
@@ -2198,7 +2245,7 @@ fn unknown_mutation_result() -> AppError {
     AppError::new(
         "UNKNOWN_OUTCOME",
         "GitLabから変更結果の確認が得られませんでした。再送する前にGitLabで結果を確認してください。",
-    )
+    ).key("native.write.checkBeforeRetry")
 }
 
 pub(crate) async fn read_limited(
@@ -2212,7 +2259,8 @@ pub(crate) async fn read_limited(
         return Err(AppError::new(
             "TOO_LARGE",
             "GitLabの応答が対応できるサイズの上限を超えています。",
-        ));
+        )
+        .key("native.response.tooLarge"));
     }
 
     let mut output = Vec::new();
@@ -2225,7 +2273,8 @@ pub(crate) async fn read_limited(
             return Err(AppError::new(
                 "TOO_LARGE",
                 "GitLabの応答が対応できるサイズの上限を超えています。",
-            ));
+            )
+            .key("native.response.tooLarge"));
         }
         output.extend_from_slice(&chunk);
     }
@@ -2254,59 +2303,76 @@ pub(crate) fn status_error(status: StatusCode, headers: &HeaderMap, mutation: bo
         StatusCode::UNAUTHORIZED => AppError::new(
             "AUTH_REQUIRED",
             "GitLabの認証が切れました。再接続してください。",
-        ),
+        )
+        .key("native.request.authExpired"),
         StatusCode::FORBIDDEN if mutation => AppError::new(
             "FORBIDDEN",
             "この操作の権限がありません。コメントや承認には api スコープのトークンが必要です。",
-        ),
-        StatusCode::FORBIDDEN => AppError::new("FORBIDDEN", "表示する権限がありません。"),
+        )
+        .key("native.request.writeForbidden"),
+        StatusCode::FORBIDDEN => {
+            AppError::new("FORBIDDEN", "表示する権限がありません。").key("native.request.forbidden")
+        }
         StatusCode::NOT_FOUND => AppError::new(
             "NOT_FOUND",
             "対象が見つからないか、表示する権限がありません。",
-        ),
+        )
+        .key("native.request.notFound"),
         StatusCode::TOO_MANY_REQUESTS => {
-            let mut error = retry_after_ms(AppError::new("RATE_LIMITED", ""), headers);
-            error.message = rate_limited_message(error.retry_after_ms);
-            error
+            rate_limited(retry_after_ms(AppError::new("RATE_LIMITED", ""), headers).retry_after_ms)
         }
         StatusCode::METHOD_NOT_ALLOWED
         | StatusCode::NOT_IMPLEMENTED
         | StatusCode::HTTP_VERSION_NOT_SUPPORTED => AppError::new(
             "UNSUPPORTED",
             "この操作は接続先のGitLabでは利用できません。",
-        ),
+        )
+        .key("native.request.unsupported"),
         _ if status.is_server_error() && mutation => AppError::new(
             "UNKNOWN_OUTCOME",
             "GitLabから変更結果の確認が得られませんでした。",
-        ),
+        )
+        .key("native.write.unconfirmed"),
         _ if status.is_server_error() => AppError::new(
             "NETWORK",
             "GitLabで一時的なサーバーエラーが発生しました。しばらくしてから再試行してください。",
-        ),
+        )
+        .key("native.request.serverError"),
         StatusCode::BAD_REQUEST | StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY => {
             AppError::new(
                 "INVALID_INPUT",
                 "GitLabがリクエストを受け付けませんでした。入力内容を確認してください。",
             )
+            .key("native.request.invalidInput")
         }
         StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => {
-            AppError::new("TIMEOUT", TIMEOUT_MESSAGE)
+            AppError::new("TIMEOUT", TIMEOUT_MESSAGE).key("native.request.timeout")
         }
-        _ => AppError::new("UNSUPPORTED", "GitLabがリクエストを受け付けませんでした。"),
+        _ => AppError::new("UNSUPPORTED", "GitLabがリクエストを受け付けませんでした。")
+            .key("native.request.refused"),
     }
 }
 
-/// The message for a rate-limited request, naming the wait when GitLab gave one.
-pub(crate) fn rate_limited_message(retry_after_ms: Option<u64>) -> String {
-    match retry_after_ms {
-        Some(ms) => format!(
-            "GitLabのリクエスト制限に達しました。{}秒後に再試行してください。",
-            ms.div_ceil(1_000).max(1)
-        ),
-        None => {
-            "GitLabのリクエスト制限に達しました。しばらく待ってから再試行してください。".to_owned()
+/// The error for a rate-limited request, naming the wait when GitLab gave one.
+pub(crate) fn rate_limited(retry_after_ms: Option<u64>) -> AppError {
+    let mut error = match retry_after_ms {
+        Some(ms) => {
+            let seconds = ms.div_ceil(1_000).max(1);
+            AppError::new(
+                "RATE_LIMITED",
+                &format!("GitLabのリクエスト制限に達しました。{seconds}秒後に再試行してください。"),
+            )
+            .key("native.request.rateLimited")
+            .value("seconds", seconds)
         }
-    }
+        None => AppError::new(
+            "RATE_LIMITED",
+            "GitLabのリクエスト制限に達しました。しばらく待ってから再試行してください。",
+        )
+        .key("native.request.rateLimitedNoWait"),
+    };
+    error.retry_after_ms = retry_after_ms;
+    error
 }
 
 fn retry_after_ms(mut error: AppError, headers: &HeaderMap) -> AppError {
@@ -2338,14 +2404,16 @@ const TIMEOUT_MESSAGE: &str =
 
 fn transport_error(error: &reqwest::Error) -> AppError {
     if error.is_timeout() {
-        AppError::new("TIMEOUT", TIMEOUT_MESSAGE)
+        AppError::new("TIMEOUT", TIMEOUT_MESSAGE).key("native.request.timeout")
     } else if error.is_connect() {
         AppError::new(
             "NETWORK",
             "GitLabに接続できません。ネットワーク接続を確認してください。",
         )
+        .key("native.request.cannotConnect")
     } else {
         AppError::new("NETWORK", "GitLabへのリクエストを完了できませんでした。")
+            .key("native.request.failed")
     }
 }
 
@@ -2366,21 +2434,24 @@ fn parse_next_page(headers: &HeaderMap) -> Result<Option<u32>, AppError> {
     let Some(value) = headers.get("x-next-page") else {
         return Ok(None);
     };
-    let value = value
-        .to_str()
-        .map_err(|_| AppError::new("UNSUPPORTED", "GitLabから不正なページ情報が返されました。"))?;
+    let value = value.to_str().map_err(|_| {
+        AppError::new("UNSUPPORTED", "GitLabから不正なページ情報が返されました。")
+            .key("native.response.invalidPage")
+    })?;
     let value = value.trim();
     if value.is_empty() {
         return Ok(None);
     }
-    let page = value
-        .parse::<u32>()
-        .map_err(|_| AppError::new("UNSUPPORTED", "GitLabから不正なページ情報が返されました。"))?;
+    let page = value.parse::<u32>().map_err(|_| {
+        AppError::new("UNSUPPORTED", "GitLabから不正なページ情報が返されました。")
+            .key("native.response.invalidPage")
+    })?;
     if page == 0 || page > MAX_PAGE {
         return Err(AppError::new(
             "UNSUPPORTED",
             "GitLabから対応していないページ番号が返されました。",
-        ));
+        )
+        .key("native.response.unsupportedPage"));
     }
     Ok(Some(page))
 }
@@ -2716,28 +2787,37 @@ async fn ensure_ci_operation_allowed(
     if allowed {
         return Ok(());
     }
-    let shown = if !status.is_empty()
+    let known = (!status.is_empty()
         && status.len() <= 32
         && status
             .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
-    {
-        status
-    } else {
-        "不明"
-    };
+            .all(|byte| byte.is_ascii_lowercase() || byte == b'_'))
+    .then_some(status);
+    let shown = known.unwrap_or("不明");
     let subject = match target {
         CiTarget::Job => "ジョブ",
         CiTarget::Pipeline => "パイプライン",
     };
-    Err(AppError::new(
+    let error = AppError::new(
         "INVALID_INPUT",
         &if archived {
             format!("この{subject}はアーカイブ済みのため操作できません。")
         } else {
             format!("{subject}の状態が変わったため、この操作はできません（現在: {shown}）。再読み込みしてから操作してください。")
         },
-    ))
+    );
+    Err(match (target, archived, known) {
+        (CiTarget::Job, true, _) => error.key("native.ci.jobArchived"),
+        (CiTarget::Pipeline, true, _) => error.key("native.ci.pipelineArchived"),
+        (CiTarget::Job, false, Some(status)) => error
+            .key("native.ci.jobStateChanged")
+            .value("status", status),
+        (CiTarget::Pipeline, false, Some(status)) => error
+            .key("native.ci.pipelineStateChanged")
+            .value("status", status),
+        (CiTarget::Job, false, None) => error.key("native.ci.jobStateUnknown"),
+        (CiTarget::Pipeline, false, None) => error.key("native.ci.pipelineStateUnknown"),
+    })
 }
 
 /// Reads a pipeline's jobs and trigger jobs, each up to a page bound. More
@@ -2821,6 +2901,7 @@ async fn fetch_job_pages(
         let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
         let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
             unsupported_response("GitLabから対応していない形式の応答が返されました。")
+                .key("native.response.unsupported")
         })?;
         if let Value::Array(values) = normalize_array(value, None, normalize_item)? {
             items.extend(values);
@@ -2828,9 +2909,10 @@ async fn fetch_job_pages(
         match parse_next_page(&headers)? {
             None => return Ok((items, false)),
             Some(next) if next <= page => {
-                return Err(unsupported_response(
-                    "GitLabから不正なページ情報が返されました。",
-                ))
+                return Err(
+                    unsupported_response("GitLabから不正なページ情報が返されました。")
+                        .key("native.response.invalidPage"),
+                )
             }
             Some(_) if page >= max_pages => return Ok((items, true)),
             Some(next) => page = next,
@@ -2868,6 +2950,7 @@ fn stale_merge_request() -> AppError {
         "INVALID_INPUT",
         "MRが更新されています。再読み込みしてから再試行してください。",
     )
+    .key("native.write.staleMergeRequest")
 }
 
 async fn ensure_note_owner(
@@ -2896,10 +2979,10 @@ async fn ensure_note_owner(
         .and_then(scalar_to_string)
         .or_else(|| value.get("author_id").and_then(scalar_to_string));
     if author_id.as_deref() != Some(user_id) {
-        return Err(AppError::new(
-            "FORBIDDEN",
-            "コメントを変更できるのは投稿者だけです。",
-        ));
+        return Err(
+            AppError::new("FORBIDDEN", "コメントを変更できるのは投稿者だけです。")
+                .key("native.write.authorOnly"),
+        );
     }
     Ok(())
 }

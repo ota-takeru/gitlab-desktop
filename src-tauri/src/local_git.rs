@@ -41,6 +41,7 @@ fn git_failed() -> AppError {
         "UNSUPPORTED",
         "ローカルリポジトリをgitで読み取れませんでした。",
     )
+    .key("native.localGit.readFailed")
 }
 
 fn resolve_program() -> Result<PathBuf, AppError> {
@@ -56,6 +57,7 @@ fn resolve_program() -> Result<PathBuf, AppError> {
                 "UNSUPPORTED",
                 "gitが見つかりません。Git for WindowsをインストールしてPATHへ追加してください。",
             )
+            .key("native.localGit.gitMissing")
         })
 }
 
@@ -147,6 +149,7 @@ async fn run(
             "TIMEOUT",
             "ローカルリポジトリの読み取りがタイムアウトしました。",
         )
+        .key("native.localGit.timeout")
     })?
 }
 
@@ -155,12 +158,13 @@ async fn run(
 fn explain(output: &Output) -> AppError {
     let message = output.stderr.to_ascii_lowercase();
     if message.contains("dubious ownership") || message.contains("safe.directory") {
-        AppError::new("FORBIDDEN", "gitがこのフォルダの所有者を信頼していないため読み取れません。git config --global --add safe.directory でこのフォルダを登録してください。")
+        AppError::new("FORBIDDEN", "gitがこのフォルダの所有者を信頼していないため読み取れません。git config --global --add safe.directory でこのフォルダを登録してください。").key("native.localGit.unsafeOwner")
     } else if message.contains("not a git repository") {
         AppError::new(
             "INVALID_INPUT",
             "このフォルダはgitリポジトリではありません。",
         )
+        .key("native.localGit.notRepository")
     } else {
         git_failed()
     }
@@ -181,13 +185,14 @@ pub async fn repository_root(input: &str) -> Result<PathBuf, AppError> {
         return Err(AppError::new(
             "INVALID_INPUT",
             "ローカルリポジトリのフォルダを絶対パスで指定してください。",
-        ));
+        )
+        .key("native.localGit.absolutePath"));
     }
     if !path.is_dir() {
-        return Err(AppError::new(
-            "NOT_FOUND",
-            "指定したフォルダが見つかりません。",
-        ));
+        return Err(
+            AppError::new("NOT_FOUND", "指定したフォルダが見つかりません。")
+                .key("native.localGit.folderNotFound"),
+        );
     }
     let program = resolve_program()?;
     let output = run(
@@ -269,16 +274,17 @@ fn valid_sha(value: &str) -> bool {
 /// head, and how many untracked files could be added as new files.
 pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppError> {
     if !valid_sha(head_sha) {
-        return Err(AppError::new(
-            "INVALID_INPUT",
-            "MRの最新コミットが正しくありません。",
-        ));
+        return Err(
+            AppError::new("INVALID_INPUT", "MRの最新コミットが正しくありません。")
+                .key("native.localGit.invalidHead"),
+        );
     }
     if !root.is_dir() {
         return Err(AppError::new(
             "NOT_FOUND",
             "紐付けたローカルリポジトリのフォルダが見つかりません。紐付けをやり直してください。",
-        ));
+        )
+        .key("native.localGit.linkedFolderMissing"));
     }
     let program = resolve_program()?;
     let commit = format!("{head_sha}^{{commit}}");
@@ -302,7 +308,9 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
                 "MRの最新コミット {} がローカルにありません。git fetchしてから再読み込みしてください。",
                 &head_sha[..8]
             ),
-        ));
+        )
+        .key("native.localGit.headMissing")
+        .value("sha", &head_sha[..8]));
     }
     let (local_head, branch, contains_head, ahead) =
         head_facts(&program, root, Some(head_sha)).await?;
@@ -443,16 +451,17 @@ async fn head_facts(
 /// untracked. It is cheap enough to read whenever the MR is opened.
 pub async fn local_status(root: &Path, head_sha: &str) -> Result<Value, AppError> {
     if !valid_sha(head_sha) {
-        return Err(AppError::new(
-            "INVALID_INPUT",
-            "MRの最新コミットが正しくありません。",
-        ));
+        return Err(
+            AppError::new("INVALID_INPUT", "MRの最新コミットが正しくありません。")
+                .key("native.localGit.invalidHead"),
+        );
     }
     if !root.is_dir() {
         return Err(AppError::new(
             "NOT_FOUND",
             "紐付けたローカルリポジトリのフォルダが見つかりません。紐付けをやり直してください。",
-        ));
+        )
+        .key("native.localGit.linkedFolderMissing"));
     }
     let program = resolve_program()?;
     let commit = format!("{head_sha}^{{commit}}");
@@ -603,6 +612,7 @@ pub fn read_worktree_file(root: &Path, relative: &str) -> Result<WorktreeFile, A
             "INVALID_INPUT",
             "リポジトリ内のファイルを指定してください。",
         )
+        .key("native.localGit.pathOutside")
     };
     if relative.is_empty()
         || relative.len() > 4096
@@ -618,7 +628,10 @@ pub fn read_worktree_file(root: &Path, relative: &str) -> Result<WorktreeFile, A
     let path = relative
         .split('/')
         .fold(root.to_path_buf(), |path, part| path.join(part));
-    let missing = || AppError::new("NOT_FOUND", "作業ツリーにこのファイルがありません。");
+    let missing = || {
+        AppError::new("NOT_FOUND", "作業ツリーにこのファイルがありません。")
+            .key("native.localGit.fileMissing")
+    };
     let metadata = std::fs::symlink_metadata(&path).map_err(|_| missing())?;
     let base = root.canonicalize().map_err(|_| missing())?;
     let parent = path

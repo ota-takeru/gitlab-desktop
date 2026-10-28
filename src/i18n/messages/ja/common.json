@@ -186,6 +186,7 @@
   "gitlab.requestCancelled": "GitLabリクエストをキャンセルしました。",
   "gitlab.invalidPendingOperation": "保留中の投稿記録が不正です。",
   "localRepository.browserUnavailable": "ブラウザプレビューではローカルリポジトリを読めません。デスクトップ版で利用してください。",
+  "localRepository.pickFolderTitle": "ローカルリポジトリのフォルダを選択",
   "localRepository.otherBranch": "別ブランチ",
   "localRepository.uncommitted": "未コミット{count}",
   "localRepository.uncommittedMore": "未コミット{count}+",
