@@ -257,6 +257,13 @@ export function createAppTheme(mode: PaletteMode) {
     spacing: 8,
     // MUI transitions (Dialog, Menu, Collapse, the tab indicator) follow the system's reduced-motion setting.
     motion: { reducedMotion: 'system' },
+    // A reaction starts on the frame of the input: hover and press feedback within 80–120ms, and
+    // movement (tab indicator, menus, dialogs) within 160ms. MUI's default curve eases in, which
+    // holds the first frames back, so the default is a decelerating curve that moves at once.
+    transitions: {
+      duration: { shortest: 80, shorter: 100, short: 120, standard: 160, complex: 200, enteringScreen: 160, leavingScreen: 120 },
+      easing: { easeInOut: 'cubic-bezier(0, 0, 0.2, 1)' },
+    },
     components: {
       MuiButtonBase: {
         defaultProps: { disableRipple: true },
@@ -437,7 +444,12 @@ export function createAppTheme(mode: PaletteMode) {
       MuiInputLabel: {
         styleOverrides: { root: { fontSize: '0.8125rem' } },
       },
+      // Menus and popovers otherwise take a height-based "auto" time, which grows with long menus.
+      MuiPopover: {
+        defaultProps: { transitionDuration: { enter: 160, exit: 100 } },
+      },
       MuiMenu: {
+        defaultProps: { transitionDuration: { enter: 160, exit: 100 } },
         styleOverrides: { paper: { border: `1px solid ${palette.border}`, boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.12)}` } },
       },
       MuiMenuItem: {
