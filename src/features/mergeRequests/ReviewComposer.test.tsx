@@ -149,6 +149,45 @@ describe('ReviewComposer', () => {
     expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('@alicia ')
   })
 
+  it('offers the MR participants right after @ and filters them by a Japanese display name', () => {
+    const participants = [
+      { id: 'u1', name: '太田 健', username: 'ota' },
+      { id: 'u2', name: 'Suzuki', username: 'suzuki' },
+    ]
+    function StatefulComposer() {
+      const [value, setValue] = useState('@')
+      return <ReviewComposer enableMentions mentionParticipants={participants} onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} value={value} />
+    }
+
+    render(<StatefulComposer />)
+    const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
+    textbox.setSelectionRange(1, 1)
+    fireEvent.click(textbox)
+    // No search wait: the participants are already known.
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['太田 健@ota', 'Suzuki@suzuki'])
+
+    fireEvent.change(textbox, { target: { selectionEnd: 5, selectionStart: 5, value: '＠太田健' } })
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['太田 健@ota'])
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+
+    expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('@ota ')
+  })
+
+  it('leaves Enter to the IME while it is composing a mention query', () => {
+    function StatefulComposer() {
+      const [value, setValue] = useState('@')
+      return <ReviewComposer enableMentions mentionParticipants={[{ id: 'u1', name: '太田', username: 'ota' }]} onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} value={value} />
+    }
+
+    render(<StatefulComposer />)
+    const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
+    textbox.setSelectionRange(1, 1)
+    fireEvent.click(textbox)
+    fireEvent.keyDown(textbox, { isComposing: true, key: 'Enter' })
+
+    expect(textbox).toHaveValue('@')
+  })
+
   it('preserves text typed during upload and selected text at the current caret', async () => {
     let resolveUpload!: (markdown: string) => void
     const onUploadAttachment = vi.fn<(file: File) => Promise<string>>(() => new Promise<string>((resolve) => { resolveUpload = resolve }))

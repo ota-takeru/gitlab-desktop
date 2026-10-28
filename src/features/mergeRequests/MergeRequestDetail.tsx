@@ -248,6 +248,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const fileResult = useGitLabQuery<FileQuery>(session?.id ?? null, fileQuery)
   const previousCommentIds = useRef<{ sessionId: string; notes: Map<string, string> } | null>(null)
   const commentNotes = useMemo(() => discussions.flatMap((discussion) => discussion.notes).filter((note) => !note.system), [discussions])
+  const mentionParticipants = useMemo(() => mergeRequestParticipants(mergeRequest, commentNotes, session?.user.id), [commentNotes, mergeRequest, session?.user.id])
   const unreadNoteIds = workspace.unreadIds({ projectId: resourceId, iid }, commentNotes)
   // Reactions on the comments shown, read back to the oldest one in a single GraphQL request.
   const projectPath = mergeRequest?.projectPath ?? null
@@ -866,6 +867,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
       disabled={mutation.isLocked}
       enableMentions={Boolean(session)}
       key={replyKey}
+      mentionParticipants={mentionParticipants}
       onCancelReply={() => setReplyDiscussion(null)}
       onClearPosition={() => undefined}
       onSaveDraft={(body) => saveReplyDraft(replyDiscussion, body)}
@@ -878,7 +880,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const lineComposerKey = commentPosition ? createComposerBufferKey(session, resourceId, iid, 'new', commentPosition) : null
   const lineComposer = commentPosition && lineComposerKey && !readOnlyChanges ? {
     position: commentPosition,
-    node: <BufferedReviewComposer attachmentTargetKey={`${attachmentScope}:${lineComposerKey}`} bufferKey={lineComposerKey} disabled={mutation.isLocked} enableMentions={Boolean(session)} inlineTarget key={lineComposerKey} onCancelReply={() => undefined} onClearPosition={() => setPosition(undefined)} onSaveDraft={saveDraft} onSubmitComment={submitComment} onUploadAttachment={uploadAttachment} pending={mutation.isPending} suggestionLines={commentPosition.newLine === undefined ? null : () => suggestionSourceLines(diffs, commentPosition)} targetPosition={commentPosition} />,
+    node: <BufferedReviewComposer attachmentTargetKey={`${attachmentScope}:${lineComposerKey}`} bufferKey={lineComposerKey} disabled={mutation.isLocked} enableMentions={Boolean(session)} inlineTarget key={lineComposerKey} mentionParticipants={mentionParticipants} onCancelReply={() => undefined} onClearPosition={() => setPosition(undefined)} onSaveDraft={saveDraft} onSubmitComment={submitComment} onUploadAttachment={uploadAttachment} pending={mutation.isPending} suggestionLines={commentPosition.newLine === undefined ? null : () => suggestionSourceLines(diffs, commentPosition)} targetPosition={commentPosition} />,
   } : undefined
   const commentOnLines = (nextPosition: Position) => {
     const next = normalizePosition(nextPosition, mergeRequest)
@@ -943,7 +945,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.reactions.truncated')}</Alert> : null}
         {/* Visited tabs stay mounted, hidden, so switching back shows them at once with their scroll, input and highlighted code. */}
         <Box><KeepAlive activeKey={activeTab} max={4}>
-        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab projectId={resourceId} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
+        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab projectId={resourceId} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} mentionParticipants={mentionParticipants} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {activeTab === 'changes' ? <Stack spacing={1}>
         {drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">{t('mergeRequest.drafts.publishInDiscussion')}</Button>} severity="info">{t('mergeRequest.drafts.pending', { count: drafts.length })}</Alert> : null}
         <ChangesTab fileSource={session && fileSha ? { projectId: resourceId, sessionId: session.id, sha: fileSha, beforeSha: beforeFileSha } : undefined} threadActions={readOnlyChanges ? undefined : {
@@ -969,7 +971,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   )
 }
 
-function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
+function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, mentionParticipants, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
   const t = useT()
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
@@ -982,7 +984,7 @@ function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeC
   return (
     <DiscussionLayout
       composer={(
-        <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={mutationPending} />
+        <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={mutationPending} />
       )}
       navigator={discussions.length ? <UnresolvedThreadNav discussions={discussions} olderNotLoaded={older.hasOlder} onSelect={openThread} /> : null}
       side={<>
@@ -1016,6 +1018,7 @@ interface DiscussionTabProps {
   /** The editor of the reply being written in a thread, if any. */
   replyComposer: React.ReactNode
   currentUserId: string
+  mentionParticipants: GitLabUser[]
   discussionError: Error | null
   older: OlderDiscussions
   discussions: Discussion[]
@@ -1143,6 +1146,15 @@ function compareNotesByTime(left: Note, right: Note): number {
   const leftTime = Date.parse(left.createdAt)
   const rightTime = Date.parse(right.createdAt)
   return (Number.isNaN(leftTime) ? Number.NEGATIVE_INFINITY : leftTime) - (Number.isNaN(rightTime) ? Number.NEGATIVE_INFINITY : rightTime) || left.id.localeCompare(right.id)
+}
+
+/** The MR's people for mention candidates: author, reviewers, assignees, then the latest commenters; not the current user. */
+function mergeRequestParticipants(mergeRequest: MergeRequest | null, notes: Note[], currentUserId: string | undefined): GitLabUser[] {
+  const commenters = [...notes].sort(compareNotesByTime).reverse().map((note) => note.author)
+  const people = mergeRequest ? [mergeRequest.author, ...(mergeRequest.reviewers ?? []), ...(mergeRequest.assignees ?? []), ...commenters] : commenters
+  const byId = new Map<string, GitLabUser>()
+  for (const user of people) if (user.id !== currentUserId && !byId.has(user.id)) byId.set(user.id, user)
+  return [...byId.values()]
 }
 
 /** Names the write whose result is unknown, for the notice that stops resending. */

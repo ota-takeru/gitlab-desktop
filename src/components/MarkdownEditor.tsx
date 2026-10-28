@@ -32,6 +32,8 @@ export interface MarkdownEditorHandle {
   insertBlock: (markdown: string) => void
   /** Replaces the `@query` last reported through onMentionQueryChange. */
   insertMention: (text: string) => void
+  /** Where that `@query` starts on screen, for placing its candidates; null without one. */
+  mentionAnchorRect: () => DOMRect | null
 }
 
 interface MarkdownEditorProps {
@@ -50,7 +52,7 @@ interface MarkdownEditorProps {
   onChange: (value: string) => void
   /** Runs before the editor's own key handling; return true when the key was used. */
   onKeyDown?: (event: MarkdownEditorKeyEvent) => boolean
-  /** Reports the `@query` (two or more characters) at the caret, or null. */
+  /** Reports the `@query` at the caret (empty right after `@`), or null. */
   onMentionQueryChange?: (query: string | null) => void
   onPasteImage?: (file: File) => void
 }
@@ -216,6 +218,17 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
       const separator = tail && /^[\s.,!?)]/.test(tail) ? '' : ' '
       editor.chain().focus().insertContentAt(range, { text: `${text}${separator}`, type: 'text' }).run()
     },
+    mentionAnchorRect: () => {
+      const range = mentionRef.current
+      if (!range || !editor || editor.isDestroyed) return null
+      try {
+        const coords = editor.view.coordsAtPos(range.from)
+        return new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top)
+      } catch {
+        // Not laid out, as in tests.
+        return null
+      }
+    },
   }), [editor])
 
   return <Box ref={wrapperRef} sx={richEditorSx}><EditorContent editor={editor} /></Box>
@@ -279,6 +292,10 @@ function SourceInput({ activeDescendantId, autoFocus, controlsId, disabled = fal
       mentionRef.current = null
       inputRef.current?.focus()
     },
+    mentionAnchorRect: () => {
+      const range = mentionRef.current
+      return range && inputRef.current ? textareaCaretRect(inputRef.current, range.start) : null
+    },
   }))
 
   return (
@@ -296,6 +313,8 @@ function SourceInput({ activeDescendantId, autoFocus, controlsId, disabled = fal
       }}
       onClick={reportMention}
       onKeyDown={(event) => {
+        // Keys such as Enter confirm the IME's text then, as in the rich editor.
+        if (event.nativeEvent.isComposing) return
         if (onKeyDown?.(event)) return
         handleFormatShortcut(event)
       }}
@@ -326,12 +345,31 @@ function imageFromClipboard(data: DataTransfer): File | null {
 
 /** The `@query` around the caret; `before`/`after` count its characters on each side of the caret. */
 function findMention(beforeCaret: string, afterCaret: string): { after: number; before: number; query: string } | null {
-  const match = /(?:^|[\s([{])@([a-zA-Z0-9_.-]*)$/.exec(beforeCaret)
+  // A full-width ＠ from an IME starts one too; the query may be part of a display name in any script.
+  const match = /(?:^|[\s([{])[@\uFF20]([^\s@\uFF20()[\]{}<>,;:!?'"`\uFFFC]*)$/u.exec(beforeCaret)
   if (!match) return null
-  const trailing = /^[a-zA-Z0-9_.-]*/.exec(afterCaret)?.[0] ?? ''
-  const query = `${match[1]}${trailing}`
-  return query.length >= 2 ? { after: trailing.length, before: match[1].length + 1, query } : null
+  const trailing = /^[^\s@\uFF20()[\]{}<>,;:!?'"`\uFFFC]*/u.exec(afterCaret)?.[0] ?? ''
+  return { after: trailing.length, before: match[1].length + 1, query: `${match[1]}${trailing}` }
 }
+
+/** The textarea's caret position on screen, measured by laying out its text in a hidden copy. */
+function textareaCaretRect(textarea: HTMLTextAreaElement, index: number): DOMRect {
+  const style = globalThis.getComputedStyle(textarea)
+  const mirror = document.createElement('div')
+  for (const name of MIRRORED_TEXTAREA_STYLES) mirror.style.setProperty(name, style.getPropertyValue(name))
+  Object.assign(mirror.style, { left: '0', overflowWrap: 'break-word', position: 'absolute', top: '0', visibility: 'hidden', whiteSpace: 'pre-wrap' })
+  mirror.textContent = textarea.value.slice(0, index)
+  const marker = document.createElement('span')
+  marker.textContent = '\u200b'
+  mirror.append(marker)
+  document.body.append(mirror)
+  const box = textarea.getBoundingClientRect()
+  const rect = new DOMRect(box.left + marker.offsetLeft - textarea.scrollLeft, box.top + marker.offsetTop - textarea.scrollTop, 0, marker.offsetHeight)
+  mirror.remove()
+  return rect
+}
+
+const MIRRORED_TEXTAREA_STYLES = ['box-sizing', 'width', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width', 'border-style', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'line-height', 'tab-size', 'text-transform', 'word-spacing']
 
 function readMode(): MarkdownEditorMode {
   try {
