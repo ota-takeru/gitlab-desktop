@@ -118,7 +118,7 @@
   "local.link.submit": "Lier",
   "local.scan.label": "Dossiers où rechercher des clones",
   "local.scan.description": "Ajoutez un dossier contenant vos clones : le clone du projet sera trouvé et lié automatiquement à l’ouverture d’une MR.",
-  "local.scan.readOnly": "Seuls les noms de dossiers jusqu’à deux niveaux sous les dossiers ajoutés et les fichiers .git/config sont lus. Les projets que vous avez déliés ne sont pas liés automatiquement.",
+  "local.scan.readOnly": "Seuls les noms de dossiers sous les dossiers ajoutés et les fichiers .git/config sont lus ; l’intérieur d’un clone et les dossiers dont le nom commence par « . » sont ignorés. Les projets que vous avez dissociés ne sont pas associés automatiquement.",
   "local.scan.removeLabel": "Retirer {folder} des dossiers de recherche",
   "local.scan.remove": "Retirer",
   "local.scan.add": "Ajouter un dossier de recherche…",

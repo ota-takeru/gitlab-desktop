@@ -118,7 +118,7 @@
   "local.link.submit": "Vincular",
   "local.scan.label": "Carpetas en las que buscar clones",
   "local.scan.description": "Añade una carpeta que contenga tus clones y, al abrir una MR, el clon del proyecto se encontrará y vinculará automáticamente.",
-  "local.scan.readOnly": "Solo se leen los nombres de carpeta hasta dos niveles por debajo de las carpetas añadidas y .git/config. Los proyectos que desvinculaste no se vinculan automáticamente.",
+  "local.scan.readOnly": "Solo se leen los nombres de carpeta por debajo de las carpetas añadidas y .git/config; se omiten el interior de un clon y las carpetas cuyo nombre empieza por «.». Los proyectos que desvinculaste no se vinculan automáticamente.",
   "local.scan.removeLabel": "Quitar {folder} de las carpetas de búsqueda",
   "local.scan.remove": "Quitar",
   "local.scan.add": "Añadir carpeta de búsqueda…",

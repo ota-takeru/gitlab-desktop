@@ -527,21 +527,19 @@ fn count_status(bytes: &[u8], cut_off: bool) -> (usize, usize) {
     (changed, untracked)
 }
 
-/// Folders searched below each scan folder: the folder itself, its children
-/// and grandchildren (for example `C:\src\app` or `C:\src\group\app`).
-const SCAN_DEPTH: usize = 2;
-/// Folders looked at in one search, so a large tree is not walked.
-const MAX_SCANNED_FOLDERS: usize = 3000;
+/// Folders looked at in one search, at any depth below the scan folders, so
+/// a large tree added by mistake (a drive or the home folder) is not walked
+/// every time an MR is opened.
+const MAX_SCANNED_FOLDERS: usize = 50_000;
 
 /// The first clone below `roots` whose `.git/config` has a remote naming
 /// `project_path` on the instance. Only folder names and that small file are
 /// read; linked folders, hidden folders and the inside of a clone are skipped.
 /// The match is checked again with git when it is linked.
 pub fn find_clone(roots: &[PathBuf], instance: &Url, project_path: &str) -> Option<PathBuf> {
-    let mut queue: VecDeque<(PathBuf, usize)> =
-        roots.iter().map(|root| (root.clone(), 0)).collect();
+    let mut queue: VecDeque<PathBuf> = roots.iter().cloned().collect();
     let mut scanned = 0;
-    while let Some((folder, depth)) = queue.pop_front() {
+    while let Some(folder) = queue.pop_front() {
         scanned += 1;
         if scanned > MAX_SCANNED_FOLDERS {
             break;
@@ -556,9 +554,6 @@ pub fn find_clone(roots: &[PathBuf], instance: &Url, project_path: &str) -> Opti
             }
             continue;
         }
-        if depth >= SCAN_DEPTH {
-            continue;
-        }
         let Ok(entries) = std::fs::read_dir(&folder) else {
             continue;
         };
@@ -569,7 +564,7 @@ pub fn find_clone(roots: &[PathBuf], instance: &Url, project_path: &str) -> Opti
             .map(|entry| entry.path())
             .collect();
         children.sort();
-        queue.extend(children.into_iter().map(|child| (child, depth + 1)));
+        queue.extend(children);
     }
     None
 }
@@ -1087,8 +1082,8 @@ mod tests {
         };
         clone("other", "https://gitlab.example.com/group/other.git");
         clone("group/app", "git@gitlab.example.com:group/app.git");
-        // Too deep, hidden or inside another clone: not searched.
-        clone("a/b/deep", "https://gitlab.example.com/group/deep.git");
+        clone("a/b/c/deep", "https://gitlab.example.com/group/deep.git");
+        // Hidden or inside another clone: not searched.
         clone(
             ".hidden/secret",
             "https://gitlab.example.com/group/secret.git",
@@ -1110,7 +1105,10 @@ mod tests {
         );
         std::fs::remove_dir_all(&directory).ok();
         assert_eq!(found, Some(directory.join("group").join("app")));
-        assert_eq!(deep, None);
+        assert_eq!(
+            deep,
+            Some(directory.join("a").join("b").join("c").join("deep"))
+        );
         assert_eq!(hidden, None);
         assert_eq!(nested, None);
         assert_eq!(elsewhere, None);

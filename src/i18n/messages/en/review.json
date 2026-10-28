@@ -118,7 +118,7 @@
   "local.link.submit": "Link",
   "local.scan.label": "Folders to search for clones",
   "local.scan.description": "Add a folder that holds your clones, and the project’s clone is found and linked automatically when you open an MR.",
-  "local.scan.readOnly": "Only folder names up to two levels below the added folders and .git/config are read. Projects you unlinked are not linked automatically.",
+  "local.scan.readOnly": "Only folder names below the added folders and .git/config are read; the inside of a clone and folders whose names start with . are skipped. Projects you unlinked are not linked automatically.",
   "local.scan.removeLabel": "Remove {folder} from the folders to search",
   "local.scan.remove": "Remove",
   "local.scan.add": "Add folder to search…",

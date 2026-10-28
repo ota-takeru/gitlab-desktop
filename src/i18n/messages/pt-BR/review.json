@@ -118,7 +118,7 @@
   "local.link.submit": "Vincular",
   "local.scan.label": "Pastas para procurar clones",
   "local.scan.description": "Adicione uma pasta que contenha seus clones, e o clone do projeto será encontrado e vinculado automaticamente quando você abrir um MR.",
-  "local.scan.readOnly": "Apenas os nomes de pastas até dois níveis abaixo das pastas adicionadas e o .git/config são lidos. Projetos que você desvinculou não são vinculados automaticamente.",
+  "local.scan.readOnly": "Apenas os nomes de pastas abaixo das pastas adicionadas e o .git/config são lidos; o interior de um clone e as pastas cujo nome começa com . são ignorados. Projetos que você desvinculou não são vinculados automaticamente.",
   "local.scan.removeLabel": "Remover {folder} das pastas de pesquisa",
   "local.scan.remove": "Remover",
   "local.scan.add": "Adicionar pasta de pesquisa…",

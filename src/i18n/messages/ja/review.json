@@ -118,7 +118,7 @@
   "local.link.submit": "紐付ける",
   "local.scan.label": "cloneを探すフォルダ",
   "local.scan.description": "cloneをまとめたフォルダを登録すると、MRを開いたときにプロジェクトのcloneを探して自動で紐付けます。",
-  "local.scan.readOnly": "登録したフォルダから2階層下までのフォルダ名と.git/configだけを読みます。紐付けを解除したプロジェクトは自動では紐付けません。",
+  "local.scan.readOnly": "登録したフォルダより下のフォルダ名と.git/configだけを読みます。cloneの中と、名前が.で始まるフォルダには入りません。紐付けを解除したプロジェクトは自動では紐付けません。",
   "local.scan.removeLabel": "{folder} を探すフォルダから外す",
   "local.scan.remove": "外す",
   "local.scan.add": "探すフォルダを追加…",

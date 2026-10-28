@@ -118,7 +118,7 @@
   "local.link.submit": "关联",
   "local.scan.label": "用于搜索克隆的文件夹",
   "local.scan.description": "添加存放克隆的文件夹后，打开 MR 时会自动找到并关联该项目的克隆。",
-  "local.scan.readOnly": "仅读取已添加文件夹下两层以内的文件夹名称和 .git/config。已取消关联的项目不会被自动关联。",
+  "local.scan.readOnly": "仅读取已添加文件夹下的文件夹名称和 .git/config；不会进入克隆内部以及名称以 . 开头的文件夹。已取消关联的项目不会被自动关联。",
   "local.scan.removeLabel": "从要搜索的文件夹中移除 {folder}",
   "local.scan.remove": "移除",
   "local.scan.add": "添加要搜索的文件夹…",
