@@ -92,7 +92,7 @@ describe('switching languages', () => {
   })
 
   it('saves the choice and keeps the last one when changes overlap', async () => {
-    // Japanese loads its file; English is bundled and settles first.
+    // Whichever file loads first, the later choice wins.
     await Promise.all([setLocalePreference('ja'), setLocalePreference('en')])
     expect(currentLocale()).toBe('en')
     expect(readLocalePreference()).toBe('en')

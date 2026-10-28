@@ -21,7 +21,7 @@ if (!rootElement) {
 // error details elsewhere.
 const ignoreReactError = () => undefined
 
-// A failed language load leaves the app in English; it still opens.
+// The app opens even if no language could load.
 void initializeLocale().catch(() => undefined).then(() => createRoot(rootElement, {
   onCaughtError: ignoreReactError,
   onRecoverableError: ignoreReactError,
