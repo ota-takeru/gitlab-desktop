@@ -4,6 +4,7 @@
 //! in the folder the user linked, with a bounded output and time.
 use crate::dto::AppError;
 use serde_json::{json, Value};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -303,47 +304,8 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
             ),
         ));
     }
-    let local_head = single_line(
-        &run(
-            &program,
-            root,
-            &["rev-parse", "--verify", "-q", "HEAD"],
-            MAX_SMALL_OUTPUT,
-        )
-        .await?,
-    );
-    let branch = single_line(
-        &run(
-            &program,
-            root,
-            &["symbolic-ref", "--short", "-q", "HEAD"],
-            MAX_SMALL_OUTPUT,
-        )
-        .await?,
-    );
-    let (contains_head, ahead) = if local_head.is_some() {
-        let ancestor = run(
-            &program,
-            root,
-            &["merge-base", "--is-ancestor", head_sha, "HEAD"],
-            MAX_SMALL_OUTPUT,
-        )
-        .await?;
-        let range = format!("{head_sha}..HEAD");
-        let count = single_line(
-            &run(
-                &program,
-                root,
-                &["rev-list", "--count", &range],
-                MAX_SMALL_OUTPUT,
-            )
-            .await?,
-        )
-        .and_then(|text| text.parse::<u64>().ok());
-        (ancestor.success, count)
-    } else {
-        (false, None)
-    };
+    let (local_head, branch, contains_head, ahead) =
+        head_facts(&program, root, Some(head_sha)).await?;
     let untracked = run(
         &program,
         root,
@@ -422,6 +384,206 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
         "diffs": diffs,
         "truncated": truncated,
     }))
+}
+
+/// The clone's HEAD and branch, and, when the MR head is present locally,
+/// whether HEAD contains it and how many commits HEAD has beyond it.
+async fn head_facts(
+    program: &Path,
+    root: &Path,
+    head_sha: Option<&str>,
+) -> Result<(Option<String>, Option<String>, bool, Option<u64>), AppError> {
+    let local_head = single_line(
+        &run(
+            program,
+            root,
+            &["rev-parse", "--verify", "-q", "HEAD"],
+            MAX_SMALL_OUTPUT,
+        )
+        .await?,
+    );
+    let branch = single_line(
+        &run(
+            program,
+            root,
+            &["symbolic-ref", "--short", "-q", "HEAD"],
+            MAX_SMALL_OUTPUT,
+        )
+        .await?,
+    );
+    let (contains_head, ahead) = match head_sha {
+        Some(head_sha) if local_head.is_some() => {
+            let ancestor = run(
+                program,
+                root,
+                &["merge-base", "--is-ancestor", head_sha, "HEAD"],
+                MAX_SMALL_OUTPUT,
+            )
+            .await?;
+            let range = format!("{head_sha}..HEAD");
+            let count = single_line(
+                &run(
+                    program,
+                    root,
+                    &["rev-list", "--count", &range],
+                    MAX_SMALL_OUTPUT,
+                )
+                .await?,
+            )
+            .and_then(|text| text.parse::<u64>().ok());
+            (ancestor.success, count)
+        }
+        _ => (false, None),
+    };
+    Ok((local_head, branch, contains_head, ahead))
+}
+
+/// A short summary of the clone against the MR head, read without building a
+/// diff: the branch, unpushed commits and how many paths are changed or
+/// untracked. It is cheap enough to read whenever the MR is opened.
+pub async fn local_status(root: &Path, head_sha: &str) -> Result<Value, AppError> {
+    if !valid_sha(head_sha) {
+        return Err(AppError::new(
+            "INVALID_INPUT",
+            "MRの最新コミットが正しくありません。",
+        ));
+    }
+    if !root.is_dir() {
+        return Err(AppError::new(
+            "NOT_FOUND",
+            "紐付けたローカルリポジトリのフォルダが見つかりません。紐付けをやり直してください。",
+        ));
+    }
+    let program = resolve_program()?;
+    let commit = format!("{head_sha}^{{commit}}");
+    let present = run(
+        &program,
+        root,
+        &["cat-file", "-e", &commit],
+        MAX_SMALL_OUTPUT,
+    )
+    .await?
+    .success;
+    let (local_head, branch, contains_head, ahead) =
+        head_facts(&program, root, present.then_some(head_sha)).await?;
+    let status = run(
+        &program,
+        root,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=normal"],
+        MAX_UNTRACKED_BYTES,
+    )
+    .await?;
+    if !status.success && !status.truncated {
+        return Err(explain(&status));
+    }
+    let (changed, untracked) = count_status(&status.stdout, status.truncated);
+    Ok(json!({
+        "localHead": local_head,
+        "branch": branch,
+        "mrHeadPresent": present,
+        "containsMrHead": contains_head,
+        "aheadCount": ahead,
+        "changedCount": changed,
+        "untrackedCount": untracked,
+        "countMore": status.truncated,
+    }))
+}
+
+/// Changed and untracked paths in `git status --porcelain=v1 -z` output. A
+/// rename or copy is followed by its source path, which is not counted again;
+/// a cut-off listing drops its partial last entry.
+fn count_status(bytes: &[u8], cut_off: bool) -> (usize, usize) {
+    let mut entries: Vec<&[u8]> = bytes.split(|byte| *byte == 0).collect();
+    if cut_off || entries.last().is_some_and(|last| last.is_empty()) {
+        entries.pop();
+    }
+    let (mut changed, mut untracked) = (0, 0);
+    let mut entries = entries.into_iter();
+    while let Some(entry) = entries.next() {
+        if entry.len() < 4 {
+            continue;
+        }
+        match &entry[..2] {
+            b"??" => untracked += 1,
+            b"!!" => {}
+            code => {
+                changed += 1;
+                if code.contains(&b'R') || code.contains(&b'C') {
+                    entries.next();
+                }
+            }
+        }
+    }
+    (changed, untracked)
+}
+
+/// Folders searched below each scan folder: the folder itself, its children
+/// and grandchildren (for example `C:\src\app` or `C:\src\group\app`).
+const SCAN_DEPTH: usize = 2;
+/// Folders looked at in one search, so a large tree is not walked.
+const MAX_SCANNED_FOLDERS: usize = 3000;
+
+/// The first clone below `roots` whose `.git/config` has a remote naming
+/// `project_path` on the instance. Only folder names and that small file are
+/// read; linked folders, hidden folders and the inside of a clone are skipped.
+/// The match is checked again with git when it is linked.
+pub fn find_clone(roots: &[PathBuf], instance: &Url, project_path: &str) -> Option<PathBuf> {
+    let mut queue: VecDeque<(PathBuf, usize)> =
+        roots.iter().map(|root| (root.clone(), 0)).collect();
+    let mut scanned = 0;
+    while let Some((folder, depth)) = queue.pop_front() {
+        scanned += 1;
+        if scanned > MAX_SCANNED_FOLDERS {
+            break;
+        }
+        let git = folder.join(".git");
+        if git.is_dir() {
+            if config_remotes(&git.join("config"))
+                .iter()
+                .any(|remote| remote_matches(remote, instance, project_path))
+            {
+                return Some(folder);
+            }
+            continue;
+        }
+        if depth >= SCAN_DEPTH {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        let mut children: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+            .map(|entry| entry.path())
+            .collect();
+        children.sort();
+        queue.extend(children.into_iter().map(|child| (child, depth + 1)));
+    }
+    None
+}
+
+/// The remote URLs in a git config file of at most 64 KiB.
+fn config_remotes(path: &Path) -> Vec<String> {
+    let small =
+        std::fs::metadata(path).is_ok_and(|metadata| metadata.len() <= MAX_SMALL_OUTPUT as u64);
+    let Some(text) = small.then(|| std::fs::read_to_string(path).ok()).flatten() else {
+        return Vec::new();
+    };
+    let mut in_remote = false;
+    let mut urls = Vec::new();
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_remote = line.starts_with("[remote ");
+        } else if let Some((key, value)) = line.split_once('=').filter(|_| in_remote) {
+            let url = value.trim().trim_matches('"').trim();
+            if key.trim().eq_ignore_ascii_case("url") && !url.is_empty() {
+                urls.push(url.to_owned());
+            }
+        }
+    }
+    urls
 }
 
 /// A working-tree file as read for display, without following a symbolic link.
@@ -815,7 +977,21 @@ mod tests {
             .unwrap();
         let result = runtime.block_on(local_changes(&root, &head)).unwrap();
         let missing = runtime.block_on(local_changes(&root, &"0".repeat(40)));
+        let status = runtime.block_on(local_status(&root, &head)).unwrap();
+        let status_missing = runtime
+            .block_on(local_status(&root, &"0".repeat(40)))
+            .unwrap();
         std::fs::remove_dir_all(&directory).ok();
+        assert_eq!(status["mrHeadPresent"], true);
+        assert_eq!(status["containsMrHead"], true);
+        assert_eq!(status["aheadCount"], 1);
+        assert_eq!(status["changedCount"], 1);
+        assert_eq!(status["untrackedCount"], 2);
+        assert_eq!(status["countMore"], false);
+        // An MR head that was not fetched still reports the working tree.
+        assert_eq!(status_missing["mrHeadPresent"], false);
+        assert_eq!(status_missing["aheadCount"], Value::Null);
+        assert_eq!(status_missing["changedCount"], 1);
         assert_eq!(result["containsMrHead"], true);
         assert_eq!(result["aheadCount"], 1);
         assert_eq!(result["untrackedCount"], 2);
@@ -892,5 +1068,57 @@ mod tests {
             new_file_diff("a"),
             "@@ -0,0 +1 @@\n+a\n\\ No newline at end of file\n"
         );
+    }
+
+    #[test]
+    fn status_counts_skip_rename_sources_and_cut_off_entries() {
+        let listing = b" M a.txt\0R  new.txt\0old.txt\0?? b.txt\0?? dir/\0!! ignored\0";
+        assert_eq!(count_status(listing, false), (2, 2));
+        assert_eq!(count_status(b" M a.txt\0?? par", true), (1, 0));
+        assert_eq!(count_status(b"", false), (0, 0));
+    }
+
+    #[test]
+    fn clones_are_found_by_their_remote_below_scan_folders() {
+        let directory =
+            std::env::temp_dir().join(format!("gitlab-desktop-scan-{}", uuid::Uuid::new_v4()));
+        let clone = |path: &str, url: &str| {
+            let git = directory.join(path).join(".git");
+            std::fs::create_dir_all(&git).unwrap();
+            std::fs::write(
+                git.join("config"),
+                format!("[core]\n\tbare = false\n[remote \"origin\"]\n\turl = {url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"),
+            )
+            .unwrap();
+        };
+        clone("other", "https://gitlab.example.com/group/other.git");
+        clone("group/app", "git@gitlab.example.com:group/app.git");
+        // Too deep, hidden or inside another clone: not searched.
+        clone("a/b/deep", "https://gitlab.example.com/group/deep.git");
+        clone(
+            ".hidden/secret",
+            "https://gitlab.example.com/group/secret.git",
+        );
+        clone(
+            "other/nested",
+            "https://gitlab.example.com/group/nested.git",
+        );
+        let instance = Url::parse("https://gitlab.example.com").unwrap();
+        let roots = [directory.clone()];
+        let found = find_clone(&roots, &instance, "group/app");
+        let deep = find_clone(&roots, &instance, "group/deep");
+        let hidden = find_clone(&roots, &instance, "group/secret");
+        let nested = find_clone(&roots, &instance, "group/nested");
+        let elsewhere = find_clone(
+            &roots,
+            &Url::parse("https://gitlab.com").unwrap(),
+            "group/app",
+        );
+        std::fs::remove_dir_all(&directory).ok();
+        assert_eq!(found, Some(directory.join("group").join("app")));
+        assert_eq!(deep, None);
+        assert_eq!(hidden, None);
+        assert_eq!(nested, None);
+        assert_eq!(elsewhere, None);
     }
 }

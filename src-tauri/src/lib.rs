@@ -248,6 +248,48 @@ async fn get_local_changes(
         .await
 }
 #[tauri::command]
+async fn get_local_status(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    project_id: String,
+    head_sha: String,
+) -> Result<serde_json::Value, AppError> {
+    state
+        .native()?
+        .local_status(session_id, project_id, head_sha)
+        .await
+}
+#[tauri::command]
+async fn get_local_scan_folders(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+) -> Result<Vec<String>, AppError> {
+    state.native()?.local_scan_folders(session_id).await
+}
+#[tauri::command]
+async fn set_local_scan_folders(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    folders: Vec<String>,
+) -> Result<Vec<String>, AppError> {
+    state
+        .native()?
+        .set_local_scan_folders(session_id, folders)
+        .await
+}
+#[tauri::command]
+async fn find_local_repository(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+    project_id: String,
+    project_path: String,
+) -> Result<Option<LocalRepository>, AppError> {
+    state
+        .native()?
+        .find_local_repository(session_id, project_id, project_path)
+        .await
+}
+#[tauri::command]
 async fn get_local_file(
     state: tauri::State<'_, ApplicationState>,
     session_id: String,
@@ -395,6 +437,10 @@ pub fn run() {
             link_local_repository,
             unlink_local_repository,
             get_local_changes,
+            get_local_status,
+            get_local_scan_folders,
+            set_local_scan_folders,
+            find_local_repository,
             get_local_file,
             pick_local_repository_folder,
             set_window_close_guard,

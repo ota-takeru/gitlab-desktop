@@ -610,6 +610,8 @@ impl NativeState {
             inner.active = None;
             inner.store.clear_private_account(&clear_session.account)?;
             inner.store.delete_setting(&local_repositories_key(&clear_session.account))?;
+            inner.store.delete_setting(&local_scan_folders_key(&clear_session.account))?;
+            inner.store.delete_setting(&local_scan_declined_key(&clear_session.account))?;
             inner.store.delete_setting("connection")?;
             match credential_entry(&clear_session.account)?.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -1296,10 +1298,15 @@ impl NativeState {
                     "紐付けたローカルリポジトリが多すぎます。使わない紐付けを解除してください。",
                 ));
             }
+            let mut declined = local_scan_declined(&inner.store, &session.account)?;
+            declined.retain(|known| known != &project);
             repositories.insert(project, saved);
             inner
                 .store
-                .set_setting(&local_repositories_key(&session.account), &repositories)
+                .set_setting(&local_repositories_key(&session.account), &repositories)?;
+            inner
+                .store
+                .set_setting(&local_scan_declined_key(&session.account), &declined)
         })
         .await?;
         Ok(linked)
@@ -1315,10 +1322,20 @@ impl NativeState {
         self.blocking(move |inner| {
             ensure_active(inner, &session)?;
             let mut repositories = local_repositories(&inner.store, &session.account)?;
-            repositories.remove(&project);
+            // A clone the user unlinked is not linked again by the folder search.
+            let mut declined = local_scan_declined(&inner.store, &session.account)?;
+            if repositories.remove(&project).is_some() && !declined.contains(&project) {
+                if declined.len() >= MAX_LOCAL_REPOSITORIES {
+                    declined.remove(0);
+                }
+                declined.push(project);
+            }
             inner
                 .store
-                .set_setting(&local_repositories_key(&session.account), &repositories)
+                .set_setting(&local_repositories_key(&session.account), &repositories)?;
+            inner
+                .store
+                .set_setting(&local_scan_declined_key(&session.account), &declined)
         })
         .await
     }
@@ -1330,6 +1347,29 @@ impl NativeState {
         id: String,
         project: String,
         head_sha: String,
+    ) -> Result<serde_json::Value, AppError> {
+        self.read_linked(id, project, head_sha, LocalRead::Changes)
+            .await
+    }
+
+    /// A summary of the linked clone against the MR head (branch, unpushed
+    /// commits, changed and untracked paths), read fresh like the changes.
+    pub async fn local_status(
+        &self,
+        id: String,
+        project: String,
+        head_sha: String,
+    ) -> Result<serde_json::Value, AppError> {
+        self.read_linked(id, project, head_sha, LocalRead::Status)
+            .await
+    }
+
+    async fn read_linked(
+        &self,
+        id: String,
+        project: String,
+        head_sha: String,
+        read: LocalRead,
     ) -> Result<serde_json::Value, AppError> {
         let linked = self
             .local_repository(id.clone(), project)
@@ -1356,11 +1396,133 @@ impl NativeState {
         {
             return Err(AppError::new("INVALID_INPUT", &format!("紐付けたフォルダのgitリモートが {} を指していません。紐付けをやり直してください。", linked.project_path)));
         }
+        let result = async {
+            match read {
+                LocalRead::Changes => local_git::local_changes(&root, &head_sha).await,
+                LocalRead::Status => local_git::local_status(&root, &head_sha).await,
+            }
+        };
         tokio::select! {
-            result = local_git::local_changes(&root, &head_sha) => result,
+            result = result => result,
             _ = session.cancelled.cancelled() => Err(cancelled()),
         }
     }
+
+    /// The folders searched for clones of projects that are not linked yet.
+    pub async fn local_scan_folders(&self, id: String) -> Result<Vec<String>, AppError> {
+        let session = self.active(&id)?;
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            local_scan_folders(&inner.store, &session.account)
+        })
+        .await
+    }
+
+    /// Replaces the folders searched for clones. Each must be an existing
+    /// folder given by its absolute path.
+    pub async fn set_local_scan_folders(
+        &self,
+        id: String,
+        folders: Vec<String>,
+    ) -> Result<Vec<String>, AppError> {
+        let session = self.active(&id)?;
+        let mut saved: Vec<String> = Vec::new();
+        for folder in &folders {
+            // Explorer's "Copy as path" wraps the path in quotes.
+            let trimmed = folder.trim().trim_matches('"').trim();
+            let path = Path::new(trimmed);
+            if trimmed.is_empty() || trimmed.chars().any(char::is_control) || !path.is_absolute() {
+                return Err(AppError::new(
+                    "INVALID_INPUT",
+                    "探すフォルダを絶対パスで指定してください。",
+                ));
+            }
+            if !path.is_dir() {
+                return Err(AppError::new(
+                    "NOT_FOUND",
+                    &format!("フォルダが見つかりません: {trimmed}"),
+                ));
+            }
+            if !saved
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(trimmed))
+            {
+                saved.push(trimmed.to_owned());
+            }
+        }
+        if saved.len() > MAX_LOCAL_SCAN_FOLDERS {
+            return Err(AppError::new(
+                "TOO_LARGE",
+                &format!("探すフォルダは{MAX_LOCAL_SCAN_FOLDERS}件までです。"),
+            ));
+        }
+        let stored = saved.clone();
+        self.blocking(move |inner| {
+            ensure_active(inner, &session)?;
+            inner
+                .store
+                .set_setting(&local_scan_folders_key(&session.account), &stored)
+        })
+        .await?;
+        Ok(saved)
+    }
+
+    /// The project's clone: the linked one, or else the first clone of the
+    /// project found below the scan folders, which is then linked after the
+    /// same checks as a folder the user chose. Null when there is none.
+    pub async fn find_local_repository(
+        &self,
+        id: String,
+        project: String,
+        project_path: String,
+    ) -> Result<Option<LocalRepository>, AppError> {
+        if let Some(linked) = self.local_repository(id.clone(), project.clone()).await? {
+            return Ok(Some(linked));
+        }
+        validate_project_id(&project)?;
+        let session = self.active(&id)?;
+        let wanted_project = project.clone();
+        let scanned = session.clone();
+        let folders = self
+            .blocking(move |inner| {
+                ensure_active(inner, &scanned)?;
+                let declined = local_scan_declined(&inner.store, &scanned.account)?;
+                if declined.contains(&wanted_project) {
+                    return Ok(Vec::new());
+                }
+                local_scan_folders(&inner.store, &scanned.account)
+            })
+            .await?;
+        if folders.is_empty() {
+            return Ok(None);
+        }
+        let instance = normalize_instance(&session.public.instance_url)?;
+        let wanted = project_path.clone();
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            let roots: Vec<PathBuf> = folders.iter().map(PathBuf::from).collect();
+            local_git::find_clone(&roots, &instance, &wanted)
+        })
+        .await
+        .map_err(|_| storage_error())?;
+        match found {
+            Some(folder) => self
+                .link_local_repository(
+                    id,
+                    project,
+                    project_path,
+                    folder.to_string_lossy().into_owned(),
+                )
+                .await
+                .map(Some),
+            None => Ok(None),
+        }
+    }
+}
+
+/// What is read from a linked clone.
+enum LocalRead {
+    Changes,
+    Status,
 }
 
 impl NativeState {
@@ -1428,6 +1590,29 @@ fn validate_project_id(project: &str) -> Result<(), AppError> {
         ));
     }
     Ok(())
+}
+
+const MAX_LOCAL_SCAN_FOLDERS: usize = 10;
+
+fn local_scan_folders_key(account: &str) -> String {
+    format!("local_scan_folders:{account}")
+}
+
+fn local_scan_folders(store: &Store, account: &str) -> Result<Vec<String>, AppError> {
+    Ok(store
+        .setting(&local_scan_folders_key(account))?
+        .unwrap_or_default())
+}
+
+/// Projects whose clone the user unlinked, which the folder search leaves alone.
+fn local_scan_declined_key(account: &str) -> String {
+    format!("local_scan_declined:{account}")
+}
+
+fn local_scan_declined(store: &Store, account: &str) -> Result<Vec<String>, AppError> {
+    Ok(store
+        .setting(&local_scan_declined_key(account))?
+        .unwrap_or_default())
 }
 
 fn local_repositories_key(account: &str) -> String {

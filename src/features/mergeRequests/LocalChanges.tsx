@@ -7,18 +7,68 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { RelativeTime } from '../../components/RelativeTime'
 import { delayedRevealSx } from '../../components/paneSx'
 import { shortSha } from '../../lib/format'
-import { getLocalChanges, getLocalFile, getLocalRepository, linkLocalRepository, pickLocalRepositoryFolder, unlinkLocalRepository } from '../../lib/localRepository'
+import { findLocalRepository, getLocalChanges, getLocalFile, getLocalRepository, getLocalScanFolders, getLocalStatus, linkLocalRepository, pickLocalRepositoryFolder, setLocalScanFolders, summarizeLocalStatus, unlinkLocalRepository, type LocalRepository } from '../../lib/localRepository'
 import { normalizeGitLabError } from '../../lib/gitlab'
 import { DiffViewer } from './DiffViewer'
 
 const NO_COMMENT = () => undefined
 const codeSx = { color: 'text.primary', fontFamily: 'code.fontFamily' } as const
+
+/** Runs `onFocus` when the window regains focus, as after editing in another app. */
+function useWindowFocus(onFocus: () => void) {
+  const latest = useRef(onFocus)
+  useEffect(() => { latest.current = onFocus })
+  useEffect(() => {
+    const handle = () => latest.current()
+    window.addEventListener('focus', handle)
+    return () => window.removeEventListener('focus', handle)
+  }, [])
+}
+
+/**
+ * The project's linked clone. When none is linked, the clone is looked for
+ * below the user's scan folders and linked by the native side when found.
+ */
+function useLinkedRepository(sessionId: string, projectId: string, projectPath: string | null) {
+  const client = useQueryClient()
+  const repositoryKey = ['localRepository', sessionId, projectId]
+  const repository = useQuery({ queryFn: () => getLocalRepository(sessionId, projectId), queryKey: repositoryKey, staleTime: Infinity })
+  const found = useQuery({
+    enabled: repository.data === null && Boolean(projectPath),
+    queryFn: async () => {
+      const next = await findLocalRepository(sessionId, projectId, projectPath ?? '')
+      if (next) client.setQueryData(repositoryKey, next)
+      return next
+    },
+    queryKey: ['localRepositoryFind', sessionId, projectId, projectPath],
+    staleTime: 60_000,
+  })
+  return { found, linked: repository.data ?? null, repository, repositoryKey }
+}
+
+/**
+ * The clone's state for the 「ローカルの変更」 button, read when the MR opens and
+ * whenever the window regains focus, so local work is noticed without opening
+ * the view. Nothing is shown when no clone is linked or found.
+ */
+export function LocalStatusBadge({ headSha, projectId, projectPath, sessionId, sourceBranch }: { headSha: string; projectId: string; projectPath: string | null; sessionId: string; sourceBranch?: string }) {
+  const { found, linked, repository } = useLinkedRepository(sessionId, projectId, projectPath)
+  const status = useQuery({ enabled: Boolean(linked), queryFn: () => getLocalStatus(sessionId, projectId, headSha), queryKey: ['localStatus', sessionId, projectId, headSha, linked?.path], staleTime: 0 })
+  useWindowFocus(() => {
+    if (linked) void status.refetch()
+    else if (repository.data === null && projectPath) void found.refetch()
+  })
+  if (!linked) return null
+  const summary = status.data ? summarizeLocalStatus(status.data, sourceBranch) : status.error ? { label: '読み取れません', tone: 'warning' as const } : null
+  if (!summary) return null
+  return <Box component="span" sx={{ bgcolor: summary.tone === 'quiet' ? 'transparent' : 'action.selected', borderRadius: 2, color: summary.tone === 'changes' ? 'text.primary' : summary.tone === 'warning' ? 'warning.main' : 'text.secondary', fontSize: 'caption.fontSize', fontWeight: 400, ml: 1, px: summary.tone === 'quiet' ? 0 : 0.75, whiteSpace: 'nowrap' }}>{summary.label}</Box>
+}
 
 /**
  * The MR's changes as they are in the user's own clone: its working tree
@@ -27,11 +77,11 @@ const codeSx = { color: 'text.primary', fontFamily: 'code.fontFamily' } as const
  */
 export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, selectedFile, sessionId }: { headSha: string; onSelectFile: (path: string) => void; projectId: string; projectPath: string | null; selectedFile: string | null; sessionId: string }) {
   const client = useQueryClient()
-  const repositoryKey = ['localRepository', sessionId, projectId]
-  const repository = useQuery({ queryFn: () => getLocalRepository(sessionId, projectId), queryKey: repositoryKey, staleTime: Infinity })
-  const linked = repository.data ?? null
-  // The working tree changes outside the app, so it is read again each time the view opens.
+  const { found, linked, repository, repositoryKey } = useLinkedRepository(sessionId, projectId, projectPath)
+  // The working tree changes outside the app, so it is read again each time the view opens
+  // and when the window regains focus.
   const changes = useQuery({ enabled: Boolean(linked), gcTime: 0, queryFn: () => getLocalChanges(sessionId, projectId, headSha), queryKey: ['localChanges', sessionId, projectId, headSha, linked?.path], staleTime: 0 })
+  useWindowFocus(() => { if (linked && !changes.isFetching) void changes.refetch() })
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [viewChoice, setViewChoice] = useState<{ path: string; view: 'diff' | 'file' } | null>(null)
@@ -53,7 +103,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
 
   if (repository.isPending) return <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">ローカルリポジトリの紐付けを確認中…</Typography>
   if (repository.error) return <Alert severity="error">ローカルリポジトリの紐付けを読めませんでした: {normalizeGitLabError(repository.error).message}</Alert>
-  if (!linked) return <LinkRepository fieldRef={focusOnMount('unlinked')} onLinked={(next) => { focusAfter.current = 'linked'; client.setQueryData(repositoryKey, next) }} projectId={projectId} projectPath={projectPath} sessionId={sessionId} />
+  if (!linked) return <LinkRepository fieldRef={focusOnMount('unlinked')} notFound={found.data === null && !found.isFetching} onLinked={(next) => { focusAfter.current = 'linked'; client.setQueryData(repositoryKey, next) }} projectId={projectId} projectPath={projectPath} searching={found.isFetching} sessionId={sessionId} />
 
   const unlink = async () => {
     setUnlinking(true)
@@ -61,6 +111,8 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
     try {
       await unlinkLocalRepository(sessionId, projectId)
       focusAfter.current = 'unlinked'
+      // The native side no longer links this project from the scan folders.
+      client.setQueryData(['localRepositoryFind', sessionId, projectId, projectPath], null)
       client.setQueryData(repositoryKey, null)
     } catch (error) {
       setUnlinkError(normalizeGitLabError(error).message)
@@ -108,7 +160,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   )
 }
 
-function LinkRepository({ fieldRef, onLinked, projectId, projectPath, sessionId }: { fieldRef: (node: HTMLElement | null) => void; onLinked: (repository: Awaited<ReturnType<typeof linkLocalRepository>>) => void; projectId: string; projectPath: string | null; sessionId: string }) {
+function LinkRepository({ fieldRef, notFound, onLinked, projectId, projectPath, searching, sessionId }: { fieldRef: (node: HTMLElement | null) => void; notFound: boolean; onLinked: (repository: LocalRepository) => void; projectId: string; projectPath: string | null; searching: boolean; sessionId: string }) {
   const [path, setPath] = useState('')
   const [linking, setLinking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -145,6 +197,57 @@ function LinkRepository({ fieldRef, onLinked, projectId, projectPath, sessionId 
         <Button disabled={linking || !projectPath} onClick={() => void pick()} sx={{ flexShrink: 0 }} variant="outlined">フォルダを選択…</Button>
         <Button disabled={linking || !projectPath || !path.trim()} sx={{ flexShrink: 0 }} type="submit" variant="contained">{linking ? '確認中…' : '紐付ける'}</Button>
       </Stack>
+      {error ? <Alert severity="error">{error}</Alert> : null}
+      <ScanFolders notFound={notFound} projectPath={projectPath} searching={searching} sessionId={sessionId} />
+    </Stack>
+  )
+}
+
+/**
+ * The folders where clones are looked for, so projects are linked without
+ * choosing each folder. Saving them searches again for this project.
+ */
+function ScanFolders({ notFound, projectPath, searching, sessionId }: { notFound: boolean; projectPath: string | null; searching: boolean; sessionId: string }) {
+  const client = useQueryClient()
+  const foldersKey = ['localScanFolders', sessionId]
+  const folders = useQuery({ queryFn: () => getLocalScanFolders(sessionId), queryKey: foldersKey, staleTime: Infinity })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const saved = folders.data ?? []
+  const save = async (next: string[]) => {
+    setSaving(true)
+    setError(null)
+    try {
+      client.setQueryData(foldersKey, await setLocalScanFolders(sessionId, next))
+      await client.invalidateQueries({ queryKey: ['localRepositoryFind', sessionId] })
+    } catch (cause) {
+      setError(normalizeGitLabError(cause).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+  const add = async () => {
+    setError(null)
+    try {
+      const folder = await pickLocalRepositoryFolder()
+      if (folder) await save([...saved, folder])
+    } catch (cause) {
+      setError(normalizeGitLabError(cause).message)
+    }
+  }
+  return (
+    <Stack aria-label="cloneを探すフォルダ" component="section" spacing={0.5} sx={{ pt: 1 }}>
+      <Typography variant="body2">cloneをまとめたフォルダを登録すると、MRを開いたときにプロジェクトのcloneを探して自動で紐付けます。</Typography>
+      <Typography color="textSecondary" variant="caption">登録したフォルダから2階層下までのフォルダ名と.git/configだけを読みます。紐付けを解除したプロジェクトは自動では紐付けません。</Typography>
+      {saved.map((folder) => <Stack direction="row" key={folder} spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+        <Tooltip title={folder}><Typography noWrap sx={{ ...codeSx, flex: '0 1 auto', minWidth: 0 }} variant="caption">{folder}</Typography></Tooltip>
+        <Button aria-label={`${folder} を探すフォルダから外す`} disabled={saving} onClick={() => void save(saved.filter((known) => known !== folder))} size="small" sx={{ flexShrink: 0 }}>外す</Button>
+      </Stack>)}
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <Button disabled={saving || folders.isPending} onClick={() => void add()} size="small" sx={{ flexShrink: 0 }} variant="outlined">探すフォルダを追加…</Button>
+        {searching ? <Typography color="textSecondary" role="status" variant="caption">cloneを探しています…</Typography> : saved.length && notFound && projectPath ? <Typography color="textSecondary" role="status" variant="caption">登録したフォルダに {projectPath} のcloneは見つかりませんでした。</Typography> : null}
+      </Stack>
+      {folders.error ? <Alert severity="error">探すフォルダを読めませんでした: {normalizeGitLabError(folders.error).message}</Alert> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
     </Stack>
   )

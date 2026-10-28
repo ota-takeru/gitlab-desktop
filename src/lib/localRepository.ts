@@ -66,3 +66,50 @@ export function pickLocalRepositoryFolder(): Promise<string | null> {
 export function getLocalChanges(sessionId: string, projectId: string, headSha: string): Promise<LocalChanges> {
   return call('get_local_changes', { headSha, projectId, sessionId })
 }
+
+/** A short summary of the linked clone against the MR head, read without a diff. */
+export interface LocalStatus {
+  localHead: string | null
+  branch: string | null
+  /** Whether the MR head commit has been fetched into the clone. */
+  mrHeadPresent: boolean
+  containsMrHead: boolean
+  aheadCount: number | null
+  /** Tracked paths with uncommitted changes. */
+  changedCount: number
+  untrackedCount: number
+  /** More paths exist than were counted. */
+  countMore: boolean
+}
+
+export function getLocalStatus(sessionId: string, projectId: string, headSha: string): Promise<LocalStatus> {
+  return call('get_local_status', { headSha, projectId, sessionId })
+}
+
+/** The folders searched for clones of projects that are not linked yet. */
+export function getLocalScanFolders(sessionId: string): Promise<string[]> {
+  return call('get_local_scan_folders', { sessionId })
+}
+
+export function setLocalScanFolders(sessionId: string, folders: string[]): Promise<string[]> {
+  return call('set_local_scan_folders', { folders, sessionId })
+}
+
+/** The linked clone, or else one found below the scan folders and linked; null when none is found. */
+export function findLocalRepository(sessionId: string, projectId: string, projectPath: string): Promise<LocalRepository | null> {
+  return call('find_local_repository', { projectId, projectPath, sessionId })
+}
+
+/** What the 「ローカルの変更」 button says about the clone: work not yet pushed, or why it cannot be compared. */
+export function summarizeLocalStatus(status: LocalStatus, sourceBranch?: string): { label: string; tone: 'changes' | 'warning' | 'quiet' } {
+  if (!status.containsMrHead && status.branch !== sourceBranch) return { label: '別ブランチ', tone: 'quiet' }
+  const uncommitted = status.changedCount + status.untrackedCount
+  const ahead = status.containsMrHead ? status.aheadCount ?? 0 : 0
+  const parts = [
+    uncommitted || status.countMore ? `未コミット${uncommitted}${status.countMore ? '+' : ''}` : null,
+    ahead ? `未push${ahead}` : null,
+    !status.mrHeadPresent ? '未fetch' : !status.containsMrHead ? '要pull' : null,
+  ].filter(Boolean)
+  if (!parts.length) return { label: '変更なし', tone: 'quiet' }
+  return { label: parts.join(' · '), tone: uncommitted || status.countMore || ahead ? 'changes' : 'warning' }
+}

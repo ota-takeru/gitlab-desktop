@@ -38,6 +38,7 @@ export function installFixtureIpc(state: FixtureState): void {
   const localDrafts = new Map<string, { body: string; updatedAt: number }>()
   // Linked clones by project ID; the fixture never reads a real folder.
   const localRepositories = new Map<string, { path: string; projectPath: string }>()
+  let localScanFolders: string[] = []
   const localFiles: Record<string, string> = {
     'notes/todo.md': '# 手元のメモ\n未追跡のファイルです。\n',
     'src/config.ts': '// 固定データ: ローカルの作業ツリー\nexport const name = \'fixture\'\nexport const region = \'jp\'\nexport const debug = false\n\nexport const enabled = true\nexport const limit = 20\nexport const local = true\nexport const retries = 3\n',
@@ -111,6 +112,19 @@ export function installFixtureIpc(state: FixtureState): void {
         return { content }
       }
       case 'pick_local_repository_folder': return 'C:\\repos\\fixture-project'
+      case 'get_local_status': {
+        if (!localRepositories.has(String(payload.projectId))) throw { code: 'NOT_FOUND', message: 'このプロジェクトにはローカルリポジトリが紐付けられていません。' } satisfies GitLabErrorShape
+        return { aheadCount: 1, branch: 'feature/local-fixture', changedCount: 1, containsMrHead: true, countMore: false, localHead: 'f'.repeat(40), mrHeadPresent: true, untrackedCount: 1 }
+      }
+      case 'get_local_scan_folders': return localScanFolders
+      case 'set_local_scan_folders':
+        localScanFolders = (payload.folders as string[]).filter((folder, index, all) => all.indexOf(folder) === index)
+        return localScanFolders
+      case 'find_local_repository': {
+        const projectId = String(payload.projectId)
+        if (!localRepositories.has(projectId) && localScanFolders.length) localRepositories.set(projectId, { path: localScanFolders[0], projectPath: String(payload.projectPath) })
+        return localRepositories.get(projectId) ?? null
+      }
       case 'check_app_update': return { configured: false, downloaded: false, notes: null, version: null }
       case 'download_app_update': return null
       case 'get_pending_operation':

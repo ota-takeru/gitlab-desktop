@@ -105,7 +105,7 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
         {' → '}比較先 <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily' }}>{showingLocal ? 'ローカルの作業ツリー' : selected ? shortSha(selected) : headSha ? shortSha(headSha) : 'MRの最新'}</Box>
       </Typography>
       {versionPicker}
-      {local ? <Tooltip describeChild title="MRの最新コミットとローカルの作業ツリーの差（未pushのコミット、未コミットの変更、未追跡ファイル）を表示します。"><Button aria-pressed={showingLocal} color="inherit" onClick={local.onSelect} size="small" sx={item(showingLocal)}>ローカルの変更</Button></Tooltip> : null}
+      {local ? <Tooltip describeChild title="MRの最新コミットとローカルの作業ツリーの差（未pushのコミット、未コミットの変更、未追跡ファイル）を表示します。"><Button aria-pressed={showingLocal} color="inherit" onClick={local.onSelect} size="small" sx={item(showingLocal)}>ローカルの変更{local.badge}</Button></Tooltip> : null}
     </Stack>
     {selected ? <Typography color="textSecondary" role="note" variant="caption">コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。</Typography> : null}
     {showingLocal ? <Typography color="textSecondary" role="note" variant="caption">MRの最新からローカルの作業ツリーまでの変更です（未pushのコミット、未コミットの変更、未追跡ファイル）。この表示では行コメントできず、確認済みの記録にも含めません。</Typography> : null}
@@ -116,6 +116,8 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
 /** The linked local clone as a comparison target, with the view that shows it. */
 interface LocalChoice {
   active: boolean
+  /** The clone's state, read without opening the view. */
+  badge?: React.ReactNode
   content: React.ReactNode
   onSelect: () => void
 }

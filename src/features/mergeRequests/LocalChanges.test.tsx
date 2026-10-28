@@ -7,16 +7,21 @@ import { GitLabCommandError } from '../../types/gitlab'
 import { createAppTheme } from '../../theme'
 
 const mocks = vi.hoisted(() => ({
+  findLocalRepository: vi.fn(),
   getLocalChanges: vi.fn(),
   getLocalFile: vi.fn(),
   getLocalRepository: vi.fn(),
+  getLocalScanFolders: vi.fn(),
+  getLocalStatus: vi.fn(),
   linkLocalRepository: vi.fn(),
   pickLocalRepositoryFolder: vi.fn(),
+  setLocalScanFolders: vi.fn(),
   unlinkLocalRepository: vi.fn(),
 }))
-vi.mock('../../lib/localRepository', () => mocks)
+vi.mock('../../lib/localRepository', async () => ({ ...await vi.importActual<typeof import('../../lib/localRepository')>('../../lib/localRepository'), ...mocks }))
 
-import { LocalChanges } from './LocalChanges'
+import { summarizeLocalStatus, type LocalStatus } from '../../lib/localRepository'
+import { LocalChanges, LocalStatusBadge } from './LocalChanges'
 
 const changes = { aheadCount: 0, branch: 'feature', comparedSha: 'a'.repeat(40), containsMrHead: true, diffs: [{ collapsed: false, deletedFile: false, diff: '@@ -1 +1,2 @@\n one\n+two\n', newFile: false, newPath: 'a.txt', oldPath: 'a.txt', renamedFile: false, tooLarge: false }], localHead: 'b'.repeat(40), repositoryPath: 'C:/repos/app', truncated: false, untrackedCount: 0, untrackedIncluded: 0, untrackedMore: false }
 
@@ -29,6 +34,8 @@ describe('LocalChanges', () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset())
     mocks.getLocalFile.mockResolvedValue({ content: 'one\ntwo\n' })
+    mocks.findLocalRepository.mockResolvedValue(null)
+    mocks.getLocalScanFolders.mockResolvedValue([])
   })
 
   it('links a folder through the native check and then reads its changes', async () => {
@@ -180,6 +187,86 @@ describe('LocalChanges', () => {
     expect(await screen.findByText('前回読み取った差分を表示中です。読み直しに失敗しました: ローカルリポジトリの読み取りがタイムアウトしました。')).toBeInTheDocument()
     expect(screen.getByText('two')).toBeInTheDocument()
     expect(screen.queryByText(/^ローカルの変更を読めませんでした/u)).not.toBeInTheDocument()
+  })
+})
+
+describe('local changes found without opening the view', () => {
+  const status: LocalStatus = { aheadCount: 0, branch: 'feature', changedCount: 0, containsMrHead: true, countMore: false, localHead: 'b'.repeat(40), mrHeadPresent: true, untrackedCount: 0 }
+
+  beforeEach(() => {
+    Object.values(mocks).forEach((mock) => mock.mockReset())
+    mocks.findLocalRepository.mockResolvedValue(null)
+    mocks.getLocalScanFolders.mockResolvedValue([])
+  })
+
+  function renderBadge() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><button type="button">ローカルの変更<LocalStatusBadge headSha={'a'.repeat(40)} projectId="7" projectPath="group/app" sessionId="s1" sourceBranch="feature" /></button></ThemeProvider></QueryClientProvider>)
+  }
+
+  it('names unpushed work, and what keeps the clone from matching the MR', () => {
+    expect(summarizeLocalStatus({ ...status, aheadCount: 2, changedCount: 1, untrackedCount: 2 }, 'feature')).toEqual({ label: '未コミット3 · 未push2', tone: 'changes' })
+    expect(summarizeLocalStatus({ ...status, changedCount: 300, countMore: true }, 'feature').label).toBe('未コミット300+')
+    expect(summarizeLocalStatus(status, 'feature')).toEqual({ label: '変更なし', tone: 'quiet' })
+    // Work on another branch is not this MR's.
+    expect(summarizeLocalStatus({ ...status, branch: 'main', changedCount: 4, containsMrHead: false }, 'feature')).toEqual({ label: '別ブランチ', tone: 'quiet' })
+    expect(summarizeLocalStatus({ ...status, aheadCount: null, changedCount: 1, containsMrHead: false, mrHeadPresent: false }, 'feature')).toEqual({ label: '未コミット1 · 未fetch', tone: 'changes' })
+    expect(summarizeLocalStatus({ ...status, aheadCount: 3, containsMrHead: false }, 'feature')).toEqual({ label: '要pull', tone: 'warning' })
+  })
+
+  it('reads the linked clone at once and again when the window regains focus', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalStatus.mockResolvedValueOnce({ ...status, changedCount: 1 }).mockResolvedValueOnce({ ...status, aheadCount: 1, changedCount: 2 })
+    renderBadge()
+
+    expect(await screen.findByRole('button', { name: 'ローカルの変更未コミット1' })).toBeInTheDocument()
+    expect(mocks.getLocalStatus).toHaveBeenCalledWith('s1', '7', 'a'.repeat(40))
+    fireEvent.focus(window)
+    expect(await screen.findByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toBeInTheDocument()
+    expect(mocks.findLocalRepository).not.toHaveBeenCalled()
+  })
+
+  it('looks for an unlinked clone below the scan folders and shows nothing when none is found', async () => {
+    mocks.getLocalRepository.mockResolvedValue(null)
+    renderBadge()
+
+    await waitFor(() => expect(mocks.findLocalRepository).toHaveBeenCalledWith('s1', '7', 'group/app'))
+    expect(screen.getByRole('button', { name: 'ローカルの変更' })).toBeInTheDocument()
+    expect(mocks.getLocalStatus).not.toHaveBeenCalled()
+  })
+
+  it('says when the clone cannot be read', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalStatus.mockRejectedValue(new GitLabCommandError({ code: 'NOT_FOUND', message: '紐付けたローカルリポジトリのフォルダが見つかりません。' }))
+    renderBadge()
+    expect(await screen.findByRole('button', { name: 'ローカルの変更読み取れません' })).toBeInTheDocument()
+  })
+
+  it('links the clone found after a scan folder is added', async () => {
+    mocks.getLocalRepository.mockResolvedValue(null)
+    mocks.pickLocalRepositoryFolder.mockResolvedValue('C:\\src')
+    mocks.setLocalScanFolders.mockImplementation(async (_session: string, folders: string[]) => folders)
+    mocks.getLocalChanges.mockResolvedValue(changes)
+    renderLocal()
+
+    const section = await screen.findByRole('region', { name: 'cloneを探すフォルダ' })
+    mocks.findLocalRepository.mockResolvedValue({ path: 'C:/src/app', projectPath: 'group/app' })
+    await waitFor(() => expect(within(section).getByRole('button', { name: '探すフォルダを追加…' })).toBeEnabled())
+    fireEvent.click(within(section).getByRole('button', { name: '探すフォルダを追加…' }))
+
+    expect(await screen.findByText('two')).toBeInTheDocument()
+    expect(mocks.setLocalScanFolders).toHaveBeenCalledWith('s1', ['C:\\src'])
+    expect(screen.getByText('C:/src/app')).toBeInTheDocument()
+    expect(mocks.linkLocalRepository).not.toHaveBeenCalled()
+  })
+
+  it('says when the scan folders hold no clone of the project', async () => {
+    mocks.getLocalRepository.mockResolvedValue(null)
+    mocks.getLocalScanFolders.mockResolvedValue(['C:\\src'])
+    renderLocal()
+
+    expect(await screen.findByText('登録したフォルダに group/app のcloneは見つかりませんでした。')).toBeInTheDocument()
+    expect(screen.getByText('C:\\src')).toBeInTheDocument()
   })
 })
 
