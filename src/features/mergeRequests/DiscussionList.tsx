@@ -17,11 +17,11 @@ import Typography from '@mui/material/Typography'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
-import { MarkdownEditor } from '../../components/MarkdownEditor'
+import { MarkdownEditor, type MarkdownEditorHandle } from '../../components/MarkdownEditor'
 import { ReactionBar } from '../../components/ReactionBar'
 import { RelativeTime } from '../../components/RelativeTime'
 import { ResolveToggle } from '../../components/ResolveToggle'
-import type { AwardEmoji, Discussion, Note, Position } from '../../types/gitlab'
+import type { AwardEmoji, Discussion, GitLabUser, Note, Position } from '../../types/gitlab'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useStableCallback } from '../shared/useStableCallback'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
@@ -32,6 +32,7 @@ import { positionLabel as formatPositionLabel } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
 import { NoteBody, type SuggestionActions } from './SuggestionBlock'
 import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
+import { useMentionSuggestions } from './useMentionSuggestions'
 import { useT } from '../../i18n/useT'
 
 const NOTES_PER_PAGE = 50
@@ -67,6 +68,8 @@ interface DiscussionListProps {
   onEditingNoteChange?: (noteId: string | null) => void
   /** Where an edit's text is kept, like new comments, so it survives leaving the tab. */
   noteEditBufferKey?: (note: Note) => string
+  /** People of the MR, offered first when `@` is typed in an edit. */
+  mentionParticipants?: GitLabUser[]
   /** The emoji reactions shown under each comment. */
   reactions?: NoteReactions
   /** Applying the suggestions in the comments. */
@@ -93,7 +96,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
@@ -312,6 +315,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                 divided={index > 0}
                 editBufferKey={editing === note.id ? noteEditBufferKey?.(note) ?? JSON.stringify({ noteEdit: note.id }) : null}
                 key={note.id}
+                mentionParticipants={mentionParticipants}
                 note={note}
                 onDelete={deleteNote}
                 onEdit={editNote}
@@ -356,6 +360,7 @@ interface NoteItemProps {
   divided: boolean
   /** Where the edit's text is kept while this comment is being edited; null otherwise. */
   editBufferKey: string | null
+  mentionParticipants?: GitLabUser[]
   note: Note
   onDelete: (note: Note) => Promise<boolean>
   onEdit: (note: Note, body: string) => Promise<boolean>
@@ -368,7 +373,7 @@ interface NoteItemProps {
 }
 
 /** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
-const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, note, onDelete, onEdit, onToggleReaction, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, mentionParticipants, note, onDelete, onEdit, onToggleReaction, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
   const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
@@ -412,7 +417,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
           ) : null}
         </Stack>
         {editing ? (
-          <NoteEditor bufferKey={editBufferKey} disabled={disabled} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
+          <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
         ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
         {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={t('review.note.reactions', { author: note.author.name })} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
       </Box>
@@ -424,12 +429,14 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
  * Edits an own comment. Its text is kept in the composer buffer, so closing
  * (Esc) or leaving the tab keeps it; cancelling a changed text asks first.
  */
-function NoteEditor({ bufferKey, disabled, note, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; note: Note; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; mentionParticipants?: GitLabUser[]; note: Note; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
   const t = useT()
   const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
   const confirm = useConfirm()
   const [saving, setSaving] = useState(false)
   const seededRef = useRef(false)
+  const editorRef = useRef<MarkdownEditorHandle | null>(null)
+  const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: disabled || saving, editorRef, enabled: Boolean(sessionId), participants: mentionParticipants })
   useEffect(() => {
     // Start from the comment, or from the text kept when the edit was last closed.
     if (seededRef.current || persistenceStatus === 'hydrating') return
@@ -463,19 +470,23 @@ function NoteEditor({ bufferKey, disabled, note, onClose, onSave, sessionId }: {
     }
   }
   return (
-    <Stack data-composer="" spacing={1} sx={{ mt: 1 }}>
+    <Stack data-composer="" ref={mentionContainerRef} spacing={1} sx={{ mt: 1 }}>
       <MarkdownEditor
+        {...mentionEditorProps}
         autoFocus
         disabled={disabled || saving}
         label={t('review.note.editTooltip')}
         onChange={change}
         onKeyDown={(event) => {
+          if (handleMentionKeyDown(event)) return true
           if (event.key === 'Escape') { event.preventDefault(); close(); return true }
           if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void save(); return true }
           return false
         }}
+        ref={editorRef}
         value={body}
       />
+      {mentionPopup}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
         <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
         <Button disabled={saving} onClick={() => void cancel()}>{t('review.editor.cancel')}</Button>

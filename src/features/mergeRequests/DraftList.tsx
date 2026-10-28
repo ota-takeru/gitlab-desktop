@@ -15,13 +15,14 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useRef, useState } from 'react'
 import { useConfirm } from '../../components/feedbackContext'
-import { MarkdownEditor, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
-import type { Draft, Position } from '../../types/gitlab'
+import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
+import type { Draft, GitLabUser, Position } from '../../types/gitlab'
 import { plainExcerpt } from './discussionText'
 import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
+import { useMentionSuggestions } from './useMentionSuggestions'
 import { useT } from '../../i18n/useT'
 
-export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
+export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, mentionParticipants, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; mentionParticipants?: GitLabUser[]; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
   const t = useT()
   const confirm = useConfirm()
   if (!drafts.length && page === 1) return null
@@ -52,7 +53,7 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, n
                   <Tooltip title={t('review.drafts.deleteTooltip')}><span><IconButton aria-label={t('review.drafts.delete', { name })} disabled={disabled || status === 'pending'} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: excerpt, title: t('review.drafts.delete.title') }).then((ok) => { if (ok) void onDelete(draft) })} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
                 </Stack>
               </Stack>
-              {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} onClose={() => onSetEdit(null)} onSave={(body) => onEdit(draft, body)} sessionId={sessionId} /> : null}
+              {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} mentionParticipants={mentionParticipants} onClose={() => onSetEdit(null)} onSave={(body) => onEdit(draft, body)} sessionId={sessionId} /> : null}
             </ListItem>
           })}
         </List>
@@ -67,12 +68,14 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, n
  * Edits a pending-review comment in place. Its text is kept in the composer
  * buffer, so closing (Esc) or leaving the tab keeps it; 取消 of a changed text asks first.
  */
-function DraftEditor({ bufferKey, disabled, draft, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; mentionParticipants?: GitLabUser[]; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
   const t = useT()
   const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
   const confirm = useConfirm()
   const [saving, setSaving] = useState(false)
   const seededRef = useRef(false)
+  const editorRef = useRef<MarkdownEditorHandle | null>(null)
+  const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: disabled || saving, editorRef, enabled: Boolean(sessionId), participants: mentionParticipants })
   useEffect(() => {
     // Start from the draft, or from the text kept when the edit was last closed.
     if (seededRef.current || persistenceStatus === 'hydrating') return
@@ -104,12 +107,14 @@ function DraftEditor({ bufferKey, disabled, draft, onClose, onSave, sessionId }:
     }
   }
   const handleKeyDown = (event: MarkdownEditorKeyEvent) => {
+    if (handleMentionKeyDown(event)) return true
     if (event.key === 'Escape') { event.preventDefault(); close(); return true }
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void save(); return true }
     return false
   }
-  return <Stack data-composer="" spacing={1} sx={{ pb: 1, pt: 0.5 }}>
-    <MarkdownEditor autoFocus disabled={disabled || saving} label={t('review.drafts.editTooltip')} onChange={change} onKeyDown={handleKeyDown} value={body} />
+  return <Stack data-composer="" ref={mentionContainerRef} spacing={1} sx={{ pb: 1, pt: 0.5 }}>
+    <MarkdownEditor {...mentionEditorProps} autoFocus disabled={disabled || saving} label={t('review.drafts.editTooltip')} onChange={change} onKeyDown={handleKeyDown} ref={editorRef} value={body} />
+    {mentionPopup}
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
       <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
       <Button disabled={saving} onClick={() => void cancel()} size="small">{t('review.editor.cancel')}</Button>

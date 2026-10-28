@@ -3,26 +3,23 @@ import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
 import DifferenceOutlinedIcon from '@mui/icons-material/DifferenceOutlined'
 import SendRoundedIcon from '@mui/icons-material/SendRounded'
 import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
-import Popper, { type PopperProps } from '@mui/material/Popper'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
-import type { GitLabUser, Position, UsersQuery } from '../../types/gitlab'
-import { useConnection } from '../connections/connectionContext'
-import { useGitLabQuery } from '../shared/useGitLabQuery'
+import type { GitLabUser, Position } from '../../types/gitlab'
 import { positionLabel } from './diffLineThreads'
 import { MAX_SUGGESTION_LINES_ABOVE, suggestionBlock } from './suggestions'
+import { useMentionSuggestions } from './useMentionSuggestions'
 import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
 
@@ -81,21 +78,10 @@ export function ReviewComposer({
   const [uploading, setUploading] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
-  const [mentionCandidates, setMentionCandidates] = useState<GitLabUser[]>([])
-  const [activeMentionIndex, setActiveMentionIndex] = useState(0)
   const submittingRef = useRef(false)
   const uploadingRef = useRef(false)
   const mountedRef = useRef(true)
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
-  const mentionListId = useId()
-  const composerRef = useRef<HTMLElement | null>(null)
-  const mentionPopperRef = useRef<PopperInstance | null>(null)
-  // The candidates follow the `@` being typed; the composer's scroll containers move them too.
-  const mentionAnchor = useMemo(() => ({
-    getBoundingClientRect: () => editorRef.current?.mentionAnchorRect() ?? new DOMRect(),
-    get contextElement() { return composerRef.current ?? undefined },
-  }), [])
   const valueRef = useRef(value)
   const onChangeRef = useRef(onChange)
   const fallbackTargetKey = JSON.stringify({ discussionId: replyDiscussionId ?? '', position: targetPosition ?? null })
@@ -121,11 +107,6 @@ export function ReviewComposer({
     if (replyDiscussionId || inlineTarget) editorRef.current?.focus()
   }, [inlineTarget, replyDiscussionId])
 
-  const onMentionCandidatesChange = useCallback((users: GitLabUser[]) => {
-    setMentionCandidates(users)
-    setActiveMentionIndex(0)
-  }, [])
-
   const submit = async (submitKind: 'comment' | 'draft') => {
     const trimmed = valueRef.current.trim()
     if (!trimmed || pending || disabled || submittingRef.current || uploadingRef.current) return
@@ -143,19 +124,7 @@ export function ReviewComposer({
   }
   const controlsDisabled = disabled || (pending && !uploading) || submitting
   const targetControlsDisabled = controlsDisabled || uploading
-  const showMentionCandidates = enableMentions && mentionQuery !== null
-  const visibleMentionCandidates = mentionCandidates.slice(0, 8)
-  const mentionListShown = showMentionCandidates && visibleMentionCandidates.length > 0 && !controlsDisabled
-
-  useEffect(() => {
-    mentionPopperRef.current?.update()
-  }, [mentionQuery, value])
-
-  const insertMention = (user: GitLabUser) => {
-    editorRef.current?.insertMention(`@${user.username}`)
-    setMentionQuery(null)
-    setMentionCandidates([])
-  }
+  const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: controlsDisabled, editorRef, enabled: enableMentions, participants: mentionParticipants })
 
   const uploadAttachment = async (file: File) => {
     if (!onUploadAttachment || disabled || pending || submittingRef.current || uploadingRef.current) return
@@ -188,29 +157,7 @@ export function ReviewComposer({
   }
 
   const handleKeyDown = (event: MarkdownEditorKeyEvent) => {
-    if (showMentionCandidates && visibleMentionCandidates.length > 0) {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault()
-        setActiveMentionIndex((current) => (current + 1) % visibleMentionCandidates.length)
-        return true
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        setActiveMentionIndex((current) => (current - 1 + visibleMentionCandidates.length) % visibleMentionCandidates.length)
-        return true
-      }
-      if (event.key === 'Enter' && !event.ctrlKey && !event.shiftKey) {
-        event.preventDefault()
-        insertMention(visibleMentionCandidates[activeMentionIndex] ?? visibleMentionCandidates[0])
-        return true
-      }
-    }
-    if (showMentionCandidates && event.key === 'Escape') {
-      event.preventDefault()
-      setMentionQuery(null)
-      setMentionCandidates([])
-      return true
-    }
+    if (handleMentionKeyDown(event)) return true
     if ((replyDiscussionId || inlineTarget) && event.key === 'Escape' && !targetControlsDisabled && !uploadingRef.current) {
       // The body stays in its buffer, so closing loses nothing.
       event.preventDefault()
@@ -235,21 +182,19 @@ export function ReviewComposer({
   }
   return (
     // A reply opens in place of the thread's reply field, so it has no frame or heading of its own.
-    <Paper component="section" ref={composerRef} aria-label={t('review.composer.label')} data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.5 }} variant="outlined">
+    <Paper component="section" ref={mentionContainerRef} aria-label={t('review.composer.label')} data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.5 }} variant="outlined">
       <Stack spacing={1}>
         {replyDiscussionId ? null : <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
           <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? t('review.composer.commentOn', { target: targetLabel }) : t('review.composer.addComment')}</Typography>
           {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={targetLabel} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} variant="outlined" /> : null}
         </Stack>}
         <MarkdownEditor
-          activeDescendantId={mentionListShown ? mentionOptionId(mentionListId, activeMentionIndex) : null}
+          {...mentionEditorProps}
           autoFocus={Boolean(replyDiscussionId) || inlineTarget}
-          controlsId={mentionListShown ? mentionListId : null}
           disabled={controlsDisabled}
           label={t('review.composer.body')}
           onChange={updateValue}
           onKeyDown={handleKeyDown}
-          onMentionQueryChange={enableMentions ? (query) => { setMentionQuery(query); setActiveMentionIndex(0) } : undefined}
           onPasteImage={onUploadAttachment ? (file) => { void uploadAttachment(file) } : undefined}
           placeholder={replyAuthor ? t('review.composer.replyTo', { author: replyAuthor }) : t('review.composer.placeholder')}
           ref={editorRef}
@@ -286,9 +231,7 @@ export function ReviewComposer({
         {uploading ? <Typography aria-live="polite" color="textSecondary" variant="caption">{t('review.composer.attach.uploadingNotice')}</Typography> : null}
         {attachmentError ? <Alert onClose={() => setAttachmentError(null)} severity="error">{attachmentError}</Alert> : null}
         {suggestionError ? <Alert onClose={() => setSuggestionError(null)} severity="warning">{suggestionError}</Alert> : null}
-        <Popper anchorEl={mentionAnchor} modifiers={[{ name: 'offset', options: { offset: [0, 4] } }]} open={showMentionCandidates && !controlsDisabled} placement="bottom-start" popperRef={mentionPopperRef} sx={{ zIndex: 'modal' }}>
-          <MentionSuggestions id={mentionListId} onSelect={insertMention} onUsersChange={onMentionCandidatesChange} participants={mentionParticipants} search={mentionQuery ?? ''} selectedIndex={activeMentionIndex} />
-        </Popper>
+        {mentionPopup}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 1 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
             {/* Line comments always start a resolvable thread. */}
@@ -309,73 +252,7 @@ export function ReviewComposer({
   )
 }
 
-function MentionSuggestions({ id, onSelect, onUsersChange, participants, search, selectedIndex }: { id: string; onSelect: (user: GitLabUser) => void; onUsersChange: (users: GitLabUser[]) => void; participants: GitLabUser[]; search: string; selectedIndex: number }) {
-  const t = useT()
-  const { session } = useConnection()
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const trimmed = search.trim()
-  const searchesServer = trimmed.length >= 2
-
-  useEffect(() => {
-    const timer = globalThis.setTimeout(() => setDebouncedSearch(search.trim()), 350)
-    return () => globalThis.clearTimeout(timer)
-  }, [search])
-
-  const query: UsersQuery | null = session && searchesServer && trimmed === debouncedSearch
-    ? { kind: 'users', page: 1, search: debouncedSearch }
-    : null
-  const result = useGitLabQuery<UsersQuery>(session?.id ?? null, query)
-  const searched = searchesServer && trimmed === debouncedSearch
-  const serverUsers = searched ? (result.data ?? EMPTY_USERS) : EMPTY_USERS
-  const users = useMemo(() => {
-    const matches = participants.filter((user) => matchesMention(user, trimmed))
-    const seen = new Set(matches.map((user) => user.id))
-    return [...matches, ...serverUsers.filter((user) => !seen.has(user.id))].slice(0, 8)
-  }, [participants, serverUsers, trimmed])
-
-  useEffect(() => {
-    onUsersChange(users)
-  }, [onUsersChange, users])
-
-  const searching = searchesServer && (!searched || result.loading)
-  if (!users.length && !searchesServer) return null
-  return (
-    <Paper elevation={4} sx={{ maxHeight: 240, maxWidth: 360, minWidth: 240, overflowY: 'auto', p: 0.5 }}>
-      {!users.length && searching ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">{t('review.mention.searching')}</Typography> : null}
-      {!users.length && !searching ? <Typography color="textSecondary" role="status" sx={{ display: 'block', p: 1 }} variant="caption">{t('review.mention.none')}</Typography> : null}
-      {/* The editor keeps the focus; ↑/↓ move aria-activedescendant through these options. */}
-      <Box aria-label={t('review.mention.label')} component="ul" id={id} role="listbox" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-        {users.map((user, index) => (
-          <Box
-            aria-selected={index === selectedIndex}
-            component="li"
-            id={mentionOptionId(id, index)}
-            key={user.id}
-            onClick={() => onSelect(user)}
-            onMouseDown={(event) => event.preventDefault()}
-            role="option"
-            sx={{ bgcolor: index === selectedIndex ? 'action.selected' : 'transparent', borderRadius: 1, cursor: 'pointer', px: 1, py: 0.5, '&:hover': { bgcolor: 'action.hover' } }}
-          ><Typography component="span" variant="body2">{user.name}</Typography><Typography color="textSecondary" component="span" sx={{ ml: 1 }} variant="caption">@{user.username}</Typography></Box>
-        ))}
-      </Box>
-    </Paper>
-  )
-}
-
-/** Matches the username or the display name, also when the name's spaces are left out. */
-function matchesMention(user: GitLabUser, search: string): boolean {
-  const needle = search.toLocaleLowerCase()
-  const name = user.name.toLocaleLowerCase()
-  return user.username.toLocaleLowerCase().includes(needle) || name.includes(needle) || name.replace(/\s+/gu, '').includes(needle)
-}
-
-function mentionOptionId(listId: string, index: number): string {
-  return `${listId}-option-${index}`
-}
-
 const EMPTY_USERS: GitLabUser[] = []
-
-type PopperInstance = PopperProps['popperRef'] extends Ref<infer Instance> | undefined ? Instance : never
 
 const composerChipSx = {
   height: 'auto',
