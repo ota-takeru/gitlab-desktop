@@ -35,9 +35,9 @@ const traceColors: Record<TraceColor, string> = {
 /** Log lines with the colours and bold kept from the job's output; also shown in the UI catalog. */
 export function JobLogLines({ label, lines }: { label: string; lines: TraceSpan[][] }) {
   return (
-    <Box aria-label={label} component="pre" tabIndex={0} sx={{ bgcolor: 'surface.raised', ...frame(), borderRadius: 1, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', lineHeight: gridLine(5), m: 0, overflowWrap: 'anywhere', px: 1.5, py: 1, whiteSpace: 'pre-wrap' }}>
+    <Box aria-label={label} component="pre" tabIndex={0} sx={{ bgcolor: 'surface.raised', ...frame(), '&:focus-visible': { outline: (theme) => `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 }, borderRadius: 1, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', lineHeight: gridLine(5), m: 0, overflowWrap: 'anywhere', px: 1.5, py: 1, whiteSpace: 'pre-wrap' }}>
       {lines.map((spans, index) => (
-        <Box component="span" key={index} sx={{ display: 'block', minHeight: '1.6em' }}>
+        <Box component="span" key={index} sx={{ display: 'block', minHeight: gridLine(5) }}>
           {spans.map((span, at) => span.fg || span.bold
             ? <Box component="span" key={at} sx={{ color: span.fg ? traceColors[span.fg] : undefined, fontWeight: span.bold ? 600 : undefined }}>{span.text}</Box>
             : span.text)}

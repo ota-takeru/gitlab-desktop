@@ -900,7 +900,7 @@ function MergeRequestSkeleton() {
       <Typography color="textSecondary" variant="caption">{t('app.mergeRequest.loading')}</Typography>
     </Stack>
     <Stack spacing={1.5} sx={{ mt: 1 }}>
-      {bar('60%', 22)}
+      {bar('60%', 20)}
       {bar('45%')}
       {bar('30%')}
     </Stack>

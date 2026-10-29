@@ -14,7 +14,9 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+import { frame } from '../../components/hairline'
 import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
+import { gridLine } from '../../theme'
 import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import type { GitLabUser, Position } from '../../types/gitlab'
 import { positionLabel } from './diffLineThreads'
@@ -186,7 +188,7 @@ export function ReviewComposer({
   }
   return (
     // A reply opens in place of the thread's reply field, so it has no frame or heading of its own.
-    <Paper component="section" ref={mentionContainerRef} aria-label={t('review.composer.label')} data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', border: 0, p: 0 } : { p: 1.5 }} variant="outlined">
+    <Paper component="section" ref={mentionContainerRef} aria-label={t('review.composer.label')} data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', p: 0, '&::after': { content: 'none' } } : { p: 1.5 }} variant="outlined">
       <Stack spacing={1}>
         {replyDiscussionId ? null : <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
           <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? t('review.composer.commentOn', { target: targetLabel }) : t('review.composer.addComment')}</Typography>
@@ -260,10 +262,12 @@ export function ReviewComposer({
 const EMPTY_USERS: GitLabUser[] = []
 
 const composerChipSx = {
+  border: 0,
+  ...frame({ color: 'surface.borderStrong' }),
   height: 'auto',
   maxWidth: '100%',
   minWidth: 0,
-  '& .MuiChip-label': { overflowWrap: 'anywhere', py: 0.25, whiteSpace: 'normal' },
+  '& .MuiChip-label': { lineHeight: gridLine(5), overflowWrap: 'anywhere', py: 0, whiteSpace: 'normal' },
 }
 
 function getAttachmentErrorMessage(error: unknown): string {

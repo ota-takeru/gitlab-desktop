@@ -14,8 +14,12 @@ const typographyPattern = /\bfontSize\s*:\s*(?:(?:\d|1[0-3])(?:\.\d+)?\b|(['"`])
 const radiusPattern = /\bborderRadius\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])\d+(?:\.\d+)?px\2)/gu
 // Spacing follows the 4px grid: multiples of 0.5 in sx, with 0.25 allowed as a 2px optical nudge inside a row.
 const spacingPattern = /(?:\b(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|rowGap|columnGap)\s*:\s*-?|\bspacing=\{)(\d+\.\d+)\b/gu
-// Between stacked rows a 2px margin starts every row after it off the grid; an icon may still be nudged.
-const rowNudgePattern = /\b(?:m|my|mt|mb|rowGap)\s*:\s*-?0\.25\b|\bspacing=\{0\.25\}/gu
+// A 2px margin, gap or padding starts the text or the rows after it off the grid. 2px stays for nudging a
+// mark (pt on an icon or avatar wrapper), inside controls that centre their content in a fixed height
+// (toggle and list buttons), in a centred row that does not wrap, and in an inline span of running text.
+const rowNudgePattern = /\b(?:m|my|mt|mb|p|py|pb|rowGap)\s*:\s*-?0\.25\b|\bspacing=\{0\.25\}/gu
+// Lengths written as strings: vertical px off the grid, em or rem (which follow the font size), and calc().
+const lengthStringPattern = /\b(padding|margin|paddingTop|paddingBottom|marginTop|marginBottom|paddingBlock|marginBlock|height|minHeight|maxHeight)\s*:\s*(['"`])([^'"`]+)\2/gu
 // Line boxes and row heights stay on the 4px grid, so text, chips and buttons in one row share pixel edges.
 // A line height is gridLine(n), px on the grid, or 1 for a lone glyph; a ratio such as 1.45 makes a 17.4px
 // line, and sx drops a theme key such as 'caption.lineHeight' as an invalid value. Heights from 16px up are
@@ -24,7 +28,7 @@ const lineHeightPattern = /\blineHeight\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])(\d+(?
 const heightPattern = /\b(?:height|minHeight|maxHeight)\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])(\d+(?:\.\d+)?)px\2)/gu
 // A border adds its width to the box, so the rows after it start off the grid; hairline(), frame() and
 // panelFrame() draw over the edge instead. A box taken out of the flow (absolute, fixed, a pseudo-element)
-// may keep a border, and a line marked `grid-exempt` (Markdown table cells) is left alone.
+// may keep a border, and a line marked `grid-exempt` with its reason is left alone.
 const borderPattern = /\bborder(?:Top|Bottom|Left|Right)?(?:Width)?\s*:\s*(?:[1-9]|[\w.]+\s*\?\s*[1-9]|(['"`])[1-9][^'"`]*\1|`[1-9])/gu
 
 /** The text of the innermost { … } around an index, and the key it is the value of. */
@@ -47,7 +51,62 @@ function enclosingObject(source, index) {
       depth -= 1
     }
   }
-  return { key: source.slice(Math.max(0, start - 80), start - 1), text: source.slice(start, end) }
+  // Nested objects (a pseudo-element, a hover state) are left out of the text, so their keys do not count.
+  let text = source.slice(start, end)
+  for (let previous = ''; previous !== text;) {
+    previous = text
+    text = text.replace(/\{[^{}]*\}/gu, '{}')
+  }
+  return { key: source.slice(Math.max(0, start - 80), start - 1), text }
+}
+
+/** The JSX opening tag around an index, read past the `=>` and braces inside its attributes. */
+function enclosingTag(source, index) {
+  const start = source.lastIndexOf('<', index)
+  let depth = 0
+  for (let end = start; end < source.length; end += 1) {
+    const char = source[end]
+    if (char === '{') depth += 1
+    else if (char === '}') depth -= 1
+    else if (char === '>' && depth === 0) return source.slice(start, end)
+  }
+  return source.slice(start)
+}
+
+/** Grid rules, shared by the components and the theme's own overrides. */
+function gridChecks(source, relativePath) {
+  const at = (match) => `${relativePath}:${lineOf(source, match.index)}`
+  for (const match of source.matchAll(lineHeightPattern)) {
+    if (match[1] === '1' || (match[3] !== undefined && Number(match[3]) % 4 === 0)) continue
+    violations.push(`${at(match)}: line height ${match[0]}; use gridLine(n) from the theme or px in 4px steps`)
+  }
+  for (const match of source.matchAll(borderPattern)) {
+    const { key, text } = enclosingObject(source, match.index)
+    if (/position\s*:\s*'(?:absolute|fixed)'/u.test(text) || /::(?:after|before)['"`]?\s*\]?\s*:\s*(?:[\w.]+\s*\?\s*)?$/u.test(key) || exempted(source, match.index)) continue
+    violations.push(`${at(match)}: border ${match[0]}; it adds to the box and moves the rows after it off the grid, so use hairline(), frame() or panelFrame() from components/hairline`)
+  }
+  for (const match of source.matchAll(rowNudgePattern)) {
+    const tag = enclosingTag(source, match.index)
+    const { text } = enclosingObject(source, match.index)
+    if (/^<(?:\w+Icon|ToggleButton|ListItemButton|Avatar)\b/u.test(tag)) continue
+    if (match[0].startsWith('spacing') && /direction=(?:"row"|\{\{[^}]*'row')/u.test(tag)) continue
+    if (/^(?:p|py|pb)\b/u.test(match[0]) && ((/alignItems\s*:\s*'center'/u.test(text) && !/flexWrap\s*:\s*'wrap'/u.test(text)) || /verticalAlign/u.test(text))) continue
+    violations.push(`${at(match)}: ${match[0]} moves the text or the rows after it off the grid; use 0 or multiples of 0.5`)
+  }
+  for (const match of source.matchAll(heightPattern)) {
+    const value = Number(match[1] ?? match[3])
+    if (value < 16 || value % 4 === 0) continue
+    violations.push(`${at(match)}: height ${match[0]}; use multiples of 4px`)
+  }
+  for (const match of source.matchAll(lengthStringPattern)) {
+    const [, property, , value] = match
+    const tokens = value.trim().split(/\s+/u)
+    const vertical = /^(?:padding|margin)$/u.test(property) ? [tokens[0], tokens[2] ?? tokens[0]] : property.endsWith('Block') ? [tokens[0], tokens[1] ?? tokens[0]] : [tokens[0]]
+    // A height may follow the window (calc with vh) or be a mark under 16px, as with the numeric heights.
+    const isHeight = /height$/iu.test(property)
+    const off = vertical.filter((token) => token !== undefined && (/r?em$/u.test(token) || (!isHeight && /^calc\(/u.test(token)) || (/^-?[\d.]+px$/u.test(token) && Number.parseFloat(token) % 4 !== 0 && !(isHeight && Number.parseFloat(token) < 16))))
+    if (off.length && !exempted(source, match.index)) violations.push(`${at(match)}: ${property} '${value}'; vertical lengths are px in 4px steps (or gridLine(n)), not em, rem or calc()`)
+  }
 }
 
 const exempted = (source, index) => {
@@ -91,31 +150,16 @@ function visit(directory) {
           if (match[1] !== undefined && ['0', '1', '2'].includes(match[1])) continue
           violations.push(`${relativePath}:${lineOf(source, match.index)}: radius ${match[0]}; use borderRadius 1 (4px), 2 (8px) or '50%'`)
         }
-        for (const match of source.matchAll(lineHeightPattern)) {
-          if (match[1] === '1' || (match[3] !== undefined && Number(match[3]) % 4 === 0)) continue
-          violations.push(`${relativePath}:${lineOf(source, match.index)}: line height ${match[0]}; use gridLine(n) from the theme or px in 4px steps`)
-        }
-        for (const match of source.matchAll(borderPattern)) {
-          const { key, text } = enclosingObject(source, match.index)
-          if (/position\s*:\s*'(?:absolute|fixed)'/u.test(text) || /::(?:after|before)['"`]?\s*\]?\s*:\s*(?:[\w.]+\s*\?\s*)?$/u.test(key) || exempted(source, match.index)) continue
-          violations.push(`${relativePath}:${lineOf(source, match.index)}: border ${match[0]}; it adds to the box and moves the rows after it off the grid, so use hairline(), frame() or panelFrame() from components/hairline`)
-        }
-        for (const match of source.matchAll(rowNudgePattern)) {
-          const tag = source.slice(source.lastIndexOf('<', match.index), source.indexOf('>', match.index))
-          if (/^<\w+Icon\b/u.test(tag) || (match[0].startsWith('spacing') && /direction=(?:"row"|\{\{[^}]*'row')/u.test(tag))) continue
-          violations.push(`${relativePath}:${lineOf(source, match.index)}: ${match[0]} between stacked rows; use 0 or multiples of 0.5 so the rows after it stay on the 4px grid`)
-        }
-        for (const match of source.matchAll(heightPattern)) {
-          const value = Number(match[1] ?? match[3])
-          if (value < 16 || value % 4 === 0) continue
-          violations.push(`${relativePath}:${lineOf(source, match.index)}: height ${match[0]}; use multiples of 4px`)
-        }
+        gridChecks(source, relativePath)
         for (const match of source.matchAll(spacingPattern)) {
           const value = Number(match[1])
           if (Number.isInteger(value * 2) || value === 0.25) continue
           violations.push(`${relativePath}:${lineOf(source, match.index)}: spacing ${match[0]}; use multiples of 0.5 (4px)`)
         }
       }
+    } else if (relativePath === join('src', 'theme.ts')) {
+      // The theme keeps its literal colours and type sizes, but its overrides follow the same grid.
+      gridChecks(source, relativePath)
     }
     if (/\.tsx?$/u.test(entry) && !textExempt(relativePath)) {
       const code = withoutComments(source)

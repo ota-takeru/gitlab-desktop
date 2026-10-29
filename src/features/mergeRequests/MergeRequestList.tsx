@@ -868,5 +868,5 @@ function ApprovalStatus({ approval, pending, state }: { approval: RowApproval | 
 
 function LoadingRows() {
   const t = useT()
-  return <Box aria-label={t('mrList.results.loading')} role="status" sx={{ ...delayedRevealSx, p: 1.5 }}><Stack spacing={1.5}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 14, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 10, width: '60%' }} /></Stack>)}</Stack></Box>
+  return <Box aria-label={t('mrList.results.loading')} role="status" sx={{ ...delayedRevealSx, p: 1.5 }}><Stack spacing={1.5}>{[0, 1, 2, 3].map((index) => <Stack key={index} spacing={0.5}><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 12, width: '40%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 16, width: '90%' }} /><Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height: 12, width: '60%' }} /></Stack>)}</Stack></Box>
 }

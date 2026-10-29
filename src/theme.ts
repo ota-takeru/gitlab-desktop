@@ -1,6 +1,6 @@
 import { alpha, createTheme, type PaletteMode } from '@mui/material/styles'
 
-import { frame, panelFrame } from './components/hairline'
+import { frame, hairline, panelFrame } from './components/hairline'
 import type { Locale } from './i18n/locales'
 
 interface SyntaxPalette {
@@ -272,9 +272,10 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       body2: { fontSize: '0.8125rem', lineHeight: gridLine(5) },
       // Titles of list rows, so they stand out from the metadata around them.
       subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: gridLine(5) },
+      subtitle2: { lineHeight: gridLine(5) },
       caption: { fontSize: '0.75rem', lineHeight: gridLine(4), letterSpacing: 0 },
       overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: gridLine(4) },
-      iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: 1 },
+      iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: gridLine(4) },
     },
     // Radii are 4 (small) or 8 (standard): `borderRadius: 1` or `2` in sx.
     shape: {
@@ -378,7 +379,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       MuiTooltip: {
         defaultProps: { disableInteractive: true, enterDelay: 350 },
         styleOverrides: {
-          tooltip: { backgroundColor: palette.tooltip, border: `1px solid ${palette.borderStrong}`, color: '#eef1f5', fontSize: '0.75rem', fontWeight: 400, padding: '4px 8px' },
+          tooltip: { backgroundColor: palette.tooltip, ...frame({ color: palette.borderStrong }), color: '#eef1f5', fontSize: '0.75rem', fontWeight: 400, lineHeight: gridLine(4), padding: '4px 8px' },
         },
       },
       MuiCard: {
@@ -486,14 +487,20 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             '& .MuiOutlinedInput-notchedOutline': { borderColor: palette.inputBorder },
             '&:hover:not(.Mui-focused, .Mui-error, .Mui-disabled) .MuiOutlinedInput-notchedOutline': { borderColor: palette.inkMuted },
             '&.MuiInputBase-sizeSmall .MuiSelect-select': { height: 20, lineHeight: '20px', minHeight: 0 },
+            '&.MuiInputBase-multiline.MuiInputBase-sizeSmall': { paddingBottom: 6, paddingTop: 6 },
           },
           // A small field or select is 32px, the height of the buttons beside it. MUI marks the size only on the
           // root, so it is read from the owner state; a field's own sx (a dense toolbar field) still wins.
-          input: ({ ownerState }) => ownerState.size === 'small' ? { paddingBottom: 6, paddingTop: 6, ...(ownerState.multiline ? {} : { height: 20, lineHeight: '20px' }) } : {},
+          input: ({ ownerState }) => ownerState.size === 'small' && !ownerState.multiline ? { height: 20, lineHeight: '20px', paddingBottom: 6, paddingTop: 6 } : {},
         },
       },
       MuiInputLabel: {
-        styleOverrides: { root: { fontSize: '0.8125rem' } },
+        styleOverrides: { root: { fontSize: '0.8125rem', lineHeight: gridLine(5) } },
+      },
+      // MUI's own 2.5px around an autocomplete's text made a 37px field; the root's 6px alone keeps it 32px.
+      MuiAutocomplete: {
+        defaultProps: { size: 'small' },
+        styleOverrides: { inputRoot: { '&.MuiInputBase-sizeSmall .MuiAutocomplete-input': { paddingBottom: 0, paddingTop: 0 } } },
       },
       // Menus and popovers otherwise take a height-based "auto" time, which grows with long menus.
       MuiPopover: {
@@ -510,12 +517,19 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         styleOverrides: { paper: { backgroundColor: palette.surface, borderRadius: 8, ...frame({ color: palette.border }) } },
       },
       MuiDialogTitle: {
-        styleOverrides: { root: { fontSize: '0.9375rem', fontWeight: 600, padding: '16px 24px 8px' } },
+        styleOverrides: { root: { fontSize: '0.9375rem', fontWeight: 600, padding: '16px 24px 8px', '&:has(+ .MuiDialogContent-dividers)': hairline('bottom', { color: palette.border }) } },
+      },
+      MuiDialogContent: {
+        styleOverrides: { dividers: { border: 0 } },
+      },
+      MuiDialogActions: {
+        styleOverrides: { root: { '.MuiDialogContent-dividers + &': hairline('top', { color: palette.border }) } },
       },
       MuiAlert: {
         styleOverrides: {
           root: {
             alignItems: 'center',
+            border: 0,
             ...frame({ color: 'transparent' }),
             fontSize: '0.8125rem',
             padding: '0 12px',

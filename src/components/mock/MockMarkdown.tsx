@@ -1,7 +1,7 @@
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
-import { memo, type ReactElement, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -10,6 +10,7 @@ import { remarkGitLabReferences, resolveMarkdownUrl, type MarkdownLinkBase } fro
 import { useMarkdownLinks } from '../markdownLinksContext'
 import { markdownBodySx } from '../markdownBodySx'
 import { rehypeReviewDiff } from '../../lib/markdownReview'
+import { grid } from '../../theme'
 import type { FullFileDiffAnnotations } from '../../features/mergeRequests/fullFileAnnotations'
 import { useGitLabImage } from '../../features/shared/useGitLabImage'
 
@@ -36,8 +37,24 @@ function MarkdownAnchor({ children, href }: { children?: ReactNode; href?: strin
 function MarkdownImage({ alt, src }: { alt?: string; src?: string }) {
   const { sessionId } = useMarkdownLinks()
   const { data, ready } = useGitLabImage(sessionId, src)
-  if (data) return <Box component="img" alt={alt ?? ''} loading="lazy" sx={{ display: 'block', height: 'auto', maxHeight: 480, maxWidth: '100%', objectFit: 'contain' }} src={data} />
+  if (data) return <GridImage alt={alt ?? ''} src={data} />
   return <Typography component="span" color="textSecondary" variant="caption">[画像: {alt || '説明なし'} · {sessionId && src && !ready ? '読み込み中' : '表示できません'}]</Typography>
+}
+
+function GridImage({ alt, src }: { alt: string; src: string }) {
+  const ref = useRef<HTMLImageElement | null>(null)
+  const [rest, setRest] = useState(0)
+  useEffect(() => {
+    const image = ref.current
+    if (!image || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const height = image.getBoundingClientRect().height
+      setRest(Math.ceil(height / grid - 0.01) * grid - height)
+    })
+    observer.observe(image)
+    return () => observer.disconnect()
+  }, [])
+  return <Box component="img" alt={alt} loading="lazy" ref={ref} src={src} sx={{ display: 'block', height: 'auto', maxHeight: 480, maxWidth: '100%', mb: `${rest}px`, objectFit: 'contain' }} />
 }
 
 const components: Components = {

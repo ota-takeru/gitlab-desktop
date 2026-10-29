@@ -89,7 +89,7 @@ describe('language fonts', () => {
 describe('layout grid', () => {
   it('gives every text variant a line box of whole grid steps', () => {
     const typography = createAppTheme('light').typography as unknown as Record<string, { fontSize?: string; lineHeight?: number | string }>
-    for (const variant of ['h1', 'h2', 'h3', 'body1', 'body2', 'subtitle1', 'caption', 'overline', 'code']) {
+    for (const variant of ['h1', 'h2', 'h3', 'body1', 'body2', 'subtitle1', 'subtitle2', 'caption', 'overline', 'code']) {
       const lineHeight = String(typography[variant].lineHeight)
       expect(lineHeight, variant).toMatch(/^\d+px$/u)
       expect(Number.parseInt(lineHeight, 10) % grid, variant).toBe(0)
@@ -98,7 +98,10 @@ describe('layout grid', () => {
 
   it('draws the frames of content-sized surfaces over their edge, so they add no height', () => {
     const { components } = createAppTheme('light')
-    const overrides = [components?.MuiCard?.styleOverrides?.root, components?.MuiPaper?.styleOverrides?.outlined, components?.MuiMenu?.styleOverrides?.paper, components?.MuiDialog?.styleOverrides?.paper, components?.MuiAlert?.styleOverrides?.root, components?.MuiDivider?.styleOverrides?.root] as Record<string, unknown>[]
-    for (const style of overrides) expect(style.border ?? 0).toBe(0)
+    // These have a border in MUI's own styles, so the override has to remove it, not just leave it out.
+    const ownBorder = [components?.MuiPaper?.styleOverrides?.outlined, components?.MuiAlert?.styleOverrides?.root, components?.MuiDialogContent?.styleOverrides?.dividers, components?.MuiDivider?.styleOverrides?.root] as Record<string, unknown>[]
+    for (const style of ownBorder) expect(style.border).toBe(0)
+    const framed = [components?.MuiCard?.styleOverrides?.root, components?.MuiMenu?.styleOverrides?.paper, components?.MuiDialog?.styleOverrides?.paper] as Record<string, unknown>[]
+    for (const style of framed) expect(style.border ?? 0).toBe(0)
   })
 })

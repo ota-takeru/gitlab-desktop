@@ -19,7 +19,7 @@ import { DiffViewer } from './DiffViewer'
 import { useT } from '../../i18n/useT'
 
 const NO_COMMENT = () => undefined
-const codeSx = { color: 'text.primary', fontFamily: 'code.fontFamily' } as const
+const codeSx = { color: 'text.primary', fontFamily: 'code.fontFamily', verticalAlign: 'top' } as const
 
 /** Runs `onFocus` when the window regains focus, as after editing in another app. */
 function useWindowFocus(onFocus: () => void) {

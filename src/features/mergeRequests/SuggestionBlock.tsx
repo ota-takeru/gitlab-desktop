@@ -12,6 +12,7 @@ import { useId, useMemo, useState } from 'react'
 
 import { hairline, panelFrame } from '../../components/hairline'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { gridLine } from '../../theme'
 import { shortSha } from '../../lib/format'
 import type { Note, Suggestion } from '../../types/gitlab'
 import { contentLines, hasSuggestionBlock, splitSuggestions } from './suggestions'
@@ -60,7 +61,7 @@ export function SuggestionBlock({ actions, above, below, lines, suggestion, unid
   const removed = suggestion ? contentLines(suggestion.fromContent) : null
   const scope = above || below ? t('review.suggestion.scopeRange', { above, below }) : t('review.suggestion.scope')
   return <Box aria-label={t('review.suggestion.title')} component="figure" sx={{ ...panelFrame(), borderRadius: 1, m: 0, overflow: 'hidden' }}>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', ...hairline('bottom'), flexWrap: 'wrap', minHeight: 32, px: 1, py: 0.25, rowGap: 0.5 }}>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', ...hairline('bottom'), flexWrap: 'wrap', minHeight: 32, px: 1, rowGap: 0.5 }}>
       <Typography component="figcaption" sx={{ fontWeight: 600 }} variant="caption">{t('review.suggestion.title')}</Typography>
       <Typography color="textSecondary" sx={{ flex: 1 }} variant="caption">{scope}</Typography>
       {suggestion?.applied ? <Typography color="success" variant="caption">{t('review.suggestion.applied')}</Typography>
@@ -82,7 +83,7 @@ export function SuggestionBlock({ actions, above, below, lines, suggestion, unid
       {lines.map((line, index) => <div className="suggestion-line" data-kind="add" key={`a${index}`}><span aria-hidden className="suggestion-prefix">+</span><span>{line}</span></div>)}
       {lines.length === 0 ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">{t('review.suggestion.removesLines')}</Typography> : null}
     </Box>
-    {removed ? null : <Typography color="textSecondary" component="p" sx={{ ...hairline('top'), m: 0, px: 1, py: 0.25 }} variant="caption">{t('review.suggestion.originalHint')}</Typography>}
+    {removed ? null : <Typography color="textSecondary" component="p" sx={{ ...hairline('top'), lineHeight: gridLine(5), m: 0, px: 1 }} variant="caption">{t('review.suggestion.originalHint')}</Typography>}
   </Box>
 }
 
