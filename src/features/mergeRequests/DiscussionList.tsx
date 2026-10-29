@@ -448,7 +448,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
         </Stack>
         {editing ? (
           <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={shown} onClose={closeEditor} onSave={saveEdit} sessionId={sessionId ?? null} />
-        ) : <Box sx={{ color: 'text.primary', '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={shown} size="body1" /></Box>}
+        ) : <Box sx={{ color: 'text.primary', mt: 0.5, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={shown} size="body1" /></Box>}
         {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={t('review.note.reactions', { author: note.author.name })} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
       </Box>
     </Box>

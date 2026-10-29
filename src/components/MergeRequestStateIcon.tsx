@@ -8,13 +8,16 @@ import Tooltip from '@mui/material/Tooltip'
 import { useLocale } from '../i18n/useT'
 import { formatMergeRequestState } from '../lib/format'
 
-/** The MR state's icon, also used inside the state pill of headers. Open is the split icon turned over, as in GitLab. */
-export function MergeRequestStateGlyph({ state }: { state: string }) {
+/**
+ * The MR state's icon, also used inside the state pill of headers. Open is the split icon turned over, as in GitLab.
+ * The class a Chip gives its icon is passed on, so the glyph takes the chip's icon size and inset.
+ */
+export function MergeRequestStateGlyph({ state, className }: { state: string; className?: string }) {
   const opened = state === 'opened' || state === 'open'
-  if (opened) return <CallSplitRoundedIcon fontSize="inherit" sx={{ transform: 'rotate(180deg)' }} />
-  if (state === 'merged') return <CallMergeRoundedIcon fontSize="inherit" />
-  if (state === 'closed') return <DoNotDisturbAltRoundedIcon fontSize="inherit" />
-  return <HelpOutlineRoundedIcon fontSize="inherit" />
+  if (opened) return <CallSplitRoundedIcon className={className} fontSize="inherit" sx={{ transform: 'rotate(180deg)' }} />
+  if (state === 'merged') return <CallMergeRoundedIcon className={className} fontSize="inherit" />
+  if (state === 'closed') return <DoNotDisturbAltRoundedIcon className={className} fontSize="inherit" />
+  return <HelpOutlineRoundedIcon className={className} fontSize="inherit" />
 }
 
 /** Compact MR state marker for list rows. The state name is the accessible label and tooltip. */

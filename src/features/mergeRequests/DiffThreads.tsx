@@ -93,7 +93,7 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
             <RelativeTime value={note.createdAt} />
           </Stack>
-          <Box sx={{ color: 'text.primary' }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>
+          <Box sx={{ color: 'text.primary', mt: 0.5 }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>
           {actions?.renderReactions ? <Box sx={{ mt: 1 }}>{actions.renderReactions(note)}</Box> : null}
         </Box>
       </Box>)}

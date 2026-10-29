@@ -271,9 +271,9 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       body1: { fontSize: '0.875rem', lineHeight: gridLine(6) },
       body2: { fontSize: '0.8125rem', lineHeight: gridLine(5) },
       // Titles of list rows, so they stand out from the metadata around them.
-      subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: gridLine(5) },
+      subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: gridLine(6) },
       subtitle2: { lineHeight: gridLine(5) },
-      caption: { fontSize: '0.75rem', lineHeight: gridLine(4), letterSpacing: 0 },
+      caption: { fontSize: '0.75rem', lineHeight: gridLine(5), letterSpacing: 0 },
       overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: gridLine(4) },
       iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: gridLine(4) },
     },
