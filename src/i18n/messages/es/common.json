@@ -20,6 +20,7 @@
   "markdownToolbar.numberedList": "Lista numerada",
   "markdownToolbar.taskList": "Lista de tareas",
   "markdownToolbar.table": "Tabla",
+  "markdownToolbar.emoji": "Emoji",
   "markdownToolbar.withShortcut": "{label} ({shortcut})",
   "markdownToolbar.insert": "Insertar {label}",
   "errorBoundary.label": "Error de pantalla",

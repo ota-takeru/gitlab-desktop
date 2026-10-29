@@ -20,6 +20,7 @@
   "markdownToolbar.numberedList": "Нумерованный список",
   "markdownToolbar.taskList": "Список задач",
   "markdownToolbar.table": "Таблица",
+  "markdownToolbar.emoji": "Эмодзи",
   "markdownToolbar.withShortcut": "{label} ({shortcut})",
   "markdownToolbar.insert": "Вставить: {label}",
   "errorBoundary.label": "Ошибка экрана",

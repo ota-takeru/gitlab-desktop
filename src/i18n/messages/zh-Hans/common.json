@@ -20,6 +20,7 @@
   "markdownToolbar.numberedList": "有序列表",
   "markdownToolbar.taskList": "任务列表",
   "markdownToolbar.table": "表格",
+  "markdownToolbar.emoji": "表情符号",
   "markdownToolbar.withShortcut": "{label}（{shortcut}）",
   "markdownToolbar.insert": "插入{label}",
   "errorBoundary.label": "界面错误",

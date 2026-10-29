@@ -20,6 +20,7 @@
   "markdownToolbar.numberedList": "番号付きリスト",
   "markdownToolbar.taskList": "タスクリスト",
   "markdownToolbar.table": "表",
+  "markdownToolbar.emoji": "絵文字",
   "markdownToolbar.withShortcut": "{label}（{shortcut}）",
   "markdownToolbar.insert": "{label}を挿入",
   "errorBoundary.label": "画面エラー",

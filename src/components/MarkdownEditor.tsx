@@ -17,6 +17,8 @@ import { hairline, panelFrame } from './hairline'
 import { useT } from '../i18n/useT'
 import { findScrollContainer } from '../features/mergeRequests/discussionScroll'
 import { insertTextareaText, useMarkdownFormatting } from '../features/shared/useMarkdownFormatting'
+import { emojiForName } from '../lib/awardEmoji'
+import { EmojiPicker } from './EmojiPicker'
 import { MarkdownToolbar } from './MarkdownToolbar'
 import { markdownBodySx } from './markdownBodySx'
 import { alignTop } from './rows'
@@ -90,6 +92,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
   // After a mode switch the other input takes the same selection, in its own offsets: source offsets in the
   // Markdown input, offsets in the shown text in the rich editor.
   const [switchedCaret, setSwitchedCaret] = useState<SwitchedSelection | null>(null)
+  const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null)
 
   const changeMode = (next: MarkdownEditorMode) => {
     if (next === 'rich' && !canEditAsRichText(value)) {
@@ -131,14 +134,25 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
     target.addEventListener('compositionend', () => { setTimeout(apply, COMPOSITION_SETTLE_MS) }, { once: true })
   }
 
+  // The emoji goes in as text at the caret, as GitLab's own picker puts it in a comment.
+  const insertEmoji = (name: string) => {
+    setEmojiAnchor(null)
+    const emoji = emojiForName(name)
+    const rich = mode === 'rich' ? richRef.current : null
+    if (rich) rich.chain().focus().insertContent(emoji).run()
+    else sourceRef.current?.insertText(emoji)
+  }
+
   return (
     <Box ref={rootRef} sx={{ bgcolor: 'background.paper', ...panelFrame({ color: 'surface.inputBorder' }), borderRadius: 1, minWidth: 0, '&:focus-within::after': { borderColor: 'primary.main', borderWidth: '2px' } }}>
       {/* The editor grows with its text, so its toolbar stays in view below the MR header. */}
       <Row ref={toolbarRef} sx={{ bgcolor: 'background.paper', ...hairline('bottom', { position: false }), borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.5, top: 'var(--composer-sticky-top, var(--detail-header-height, 0px))', zIndex: 1 }}>
         <MarkdownToolbar
           disabled={disabled}
+          onEmoji={setEmojiAnchor}
           onFormat={applyFormat}
         />
+        <EmojiPicker anchorEl={emojiAnchor} keepFocus label={label} mine={NO_EMOJI} onClose={() => setEmojiAnchor(null)} onPick={insertEmoji} />
         {toolbarEnd}
         <ToggleButtonGroup
           aria-label={t('common.markdownEditor.mode')}
@@ -175,6 +189,8 @@ interface InputProps extends Omit<MarkdownEditorProps, 'ref' | 'toolbarEnd'> {
 interface SwitchedSelection { anchor: number; head: number }
 
 const COMPOSITION_SETTLE_MS = 50
+/** The editor gives no reactions, so the picker marks none as given. */
+const NO_EMOJI: ReadonlySet<string> = new Set()
 
 function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false, editorRef, handleRef, initialCaret, label, onChange, onKeyDown, onMentionQueryChange, onPasteImage, onUnsupported, placeholder, restoreKey, value }: InputProps & { editorRef: { current: Editor | null }; onUnsupported: () => void }) {
   const lastValueRef = useRef(value)
@@ -354,6 +370,8 @@ interface SourceInputHandle {
   /** Whether the IME is converting text in the input. */
   composing: () => boolean
   element: () => HTMLTextAreaElement | null
+  /** Replaces the selection with the text and puts the caret after it. */
+  insertText: (text: string) => void
   selection: () => SwitchedSelection | null
 }
 
@@ -411,6 +429,13 @@ function SourceInput({ activeDescendantId, autoFocus, controlsId, disabled = fal
       applyFormat,
       composing: () => composingRef.current,
       element: () => inputRef.current,
+      insertText: (text) => {
+        const textarea = inputRef.current
+        const start = textarea?.selectionStart ?? valueRef.current.length
+        const end = textarea?.selectionEnd ?? start
+        textarea?.focus()
+        replaceText(start, end, text, start + text.length)
+      },
       selection: () => {
         const textarea = inputRef.current
         if (!textarea) return null

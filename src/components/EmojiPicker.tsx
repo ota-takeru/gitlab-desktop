@@ -27,8 +27,10 @@ const RECENT = 'recent'
  * category tabs and a grid. The user's own reactions are marked; picking one
  * of them asks the caller to remove it. Arrow keys move through the grid.
  */
-export function EmojiPicker({ anchorEl, label, mine, onClose, onPick }: {
+export function EmojiPicker({ anchorEl, keepFocus = false, label, mine, onClose, onPick }: {
   anchorEl: HTMLElement | null
+  /** Leaves the focus where onPick put it instead of returning it to the anchor. */
+  keepFocus?: boolean
   /** What the reaction is for, for the dialog's accessible name. */
   label: string
   /** The names the user has already given. */
@@ -40,6 +42,7 @@ export function EmojiPicker({ anchorEl, label, mine, onClose, onPick }: {
   return <Popover
     anchorEl={anchorEl}
     anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
+    disableRestoreFocus={keepFocus}
     onClose={onClose}
     open={Boolean(anchorEl)}
     slotProps={{ paper: { 'aria-label': t('common.emoji.dialog', { label }), role: 'dialog' } }}

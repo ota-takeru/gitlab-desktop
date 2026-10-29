@@ -6,6 +6,7 @@ import FormatListBulletedRoundedIcon from '@mui/icons-material/FormatListBullete
 import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumberedRounded'
 import FormatQuoteRoundedIcon from '@mui/icons-material/FormatQuoteRounded'
 import GridOnRoundedIcon from '@mui/icons-material/GridOnRounded'
+import InsertEmoticonRoundedIcon from '@mui/icons-material/InsertEmoticonRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import StrikethroughSRoundedIcon from '@mui/icons-material/StrikethroughSRounded'
 import TitleRoundedIcon from '@mui/icons-material/TitleRounded'
@@ -32,8 +33,8 @@ const tools: { format: MarkdownFormat; icon: ReactNode; label: MessageKey; short
   { format: 'table', icon: <GridOnRoundedIcon />, label: 'common.markdownToolbar.table' },
 ]
 
-/** GitLab-style formatting buttons for a Markdown textarea. */
-export function MarkdownToolbar({ disabled = false, onFormat }: { disabled?: boolean; onFormat: (format: MarkdownFormat) => void }) {
+/** GitLab-style formatting buttons for a Markdown textarea, and one that opens an emoji picker at itself. */
+export function MarkdownToolbar({ disabled = false, onEmoji, onFormat }: { disabled?: boolean; onEmoji?: (anchor: HTMLElement) => void; onFormat: (format: MarkdownFormat) => void }) {
   const t = useT()
   return (
     <Row aria-label={t('common.markdownToolbar.label')} role="toolbar" sx={{ columnGap: 0.25, flexWrap: 'wrap', rowGap: 0.5 }}>
@@ -51,6 +52,18 @@ export function MarkdownToolbar({ disabled = false, onFormat }: { disabled?: boo
           </span>
         </Tooltip>
       ))}
+      {onEmoji ? <Tooltip title={t('common.markdownToolbar.emoji')}>
+        <span>
+          <IconButton
+            aria-haspopup="dialog"
+            aria-label={t('common.markdownToolbar.insert', { label: t('common.markdownToolbar.emoji') })}
+            disabled={disabled}
+            onClick={(event) => onEmoji(event.currentTarget)}
+            onMouseDown={(event) => event.preventDefault()}
+            size="small"
+          ><InsertEmoticonRoundedIcon /></IconButton>
+        </span>
+      </Tooltip> : null}
     </Row>
   )
 }

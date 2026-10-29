@@ -20,6 +20,7 @@
   "markdownToolbar.numberedList": "번호 매기기 목록",
   "markdownToolbar.taskList": "작업 목록",
   "markdownToolbar.table": "표",
+  "markdownToolbar.emoji": "이모지",
   "markdownToolbar.withShortcut": "{label}({shortcut})",
   "markdownToolbar.insert": "{label} 삽입",
   "errorBoundary.label": "화면 오류",

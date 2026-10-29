@@ -236,4 +236,30 @@ describe('MarkdownEditor', () => {
     })
     expect(onPasteImage).toHaveBeenCalledWith(file)
   })
+
+  it.each(['source', 'rich'] as const)('puts a picked emoji at the caret in %s mode', async (mode) => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, mode)
+    function Stateful() {
+      const [value, setValue] = useState('確認')
+      return <MarkdownEditor label="本文" onChange={setValue} value={value} />
+    }
+    render(<Stateful />)
+    if (mode === 'source') {
+      const source = screen.getByRole('textbox', { name: '本文' }) as HTMLTextAreaElement
+      source.setSelectionRange(2, 2)
+    } else {
+      act(() => { richEditor('本文').commands.focus('end') })
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: '絵文字を挿入' }))
+    const picker = screen.getByRole('dialog', { name: '本文に付ける絵文字' })
+    const search = within(picker).getByRole('textbox', { name: '絵文字を検索' })
+    fireEvent.change(search, { target: { value: 'thumbsup' } })
+    await within(picker).findByRole('group', { name: '検索結果' })
+    fireEvent.keyDown(search, { key: 'Enter' })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '本文に付ける絵文字' })).not.toBeInTheDocument())
+    if (mode === 'source') expect(screen.getByRole('textbox', { name: '本文' })).toHaveValue('確認👍')
+    else expect(richEditor('本文').getText()).toBe('確認👍')
+  })
 })
