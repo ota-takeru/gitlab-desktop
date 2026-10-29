@@ -1,8 +1,8 @@
 import Button from '@mui/material/Button'
-import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 
 import { useT } from '../i18n/useT'
+import { Row } from './Row'
 
 interface PagerProps {
   page: number
@@ -20,13 +20,13 @@ export function Pager({ page, hasPrevious, hasNext, onPrevious, onNext, disabled
   const t = useT()
   if (!hasPrevious && !hasNext && !summary) return null
   return (
-    <Stack component="nav" aria-label={t('common.pager.label')} direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end', minHeight: 32 }}>
+    <Row component="nav" aria-label={t('common.pager.label')} spacing={0.5} sx={{ justifyContent: 'flex-end', minHeight: 32 }}>
       {summary ? <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{summary}</Typography> : null}
       {hasPrevious || hasNext ? <>
         <Button disabled={disabled || !hasPrevious} onClick={onPrevious} size="small">{t('common.pager.previous')}</Button>
         <Typography color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{t('common.pager.page', { page })}</Typography>
         <Button disabled={disabled || !hasNext} onClick={onNext} size="small">{t('common.pager.next')}</Button>
       </> : null}
-    </Stack>
+    </Row>
   )
 }

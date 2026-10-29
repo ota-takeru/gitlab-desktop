@@ -1,7 +1,6 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useEffect, useState } from 'react'
 
@@ -12,6 +11,7 @@ import { ensureBeforeUnloadProtection, initializeWindowCloseProtection, queueWin
 import { useRetainedComposerUnsafe } from '../features/mergeRequests/useComposerBuffer'
 import { useAutoUpdateAllowed, useAutoUpdateSafety, useUnsafeSources } from '../features/shared/autoUpdateSafetyContext'
 import { useChoose, useConfirm, useNotify } from './feedbackContext'
+import { Row } from './Row'
 
 type ProtectionStatus = 'starting' | 'ready' | 'failed'
 
@@ -77,10 +77,10 @@ export function WindowCloseProtection() {
 
   if (status !== 'failed' || !isTauri()) return null
   return <Alert role="status" severity="warning">
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+    <Row spacing={1} sx={{ justifyContent: 'space-between' }}>
       <Typography variant="body2">{t('common.closeProtection.enableFailed')}</Typography>
       <Button onClick={() => { setStatus('starting'); setRetry((current) => current + 1) }} size="small" variant="outlined">{t('common.closeProtection.retry')}</Button>
-    </Stack>
+    </Row>
   </Alert>
 }
 

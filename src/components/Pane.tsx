@@ -6,7 +6,7 @@ import { gridLine } from '../theme'
 import { edgeRow } from './edges'
 import { frame, hairline } from './hairline'
 import { paneGutter } from './paneSx'
-import { alignTop } from './rows'
+import { Bar, Row } from './Row'
 
 /**
  * Heading of the list pane: title, short context and icon actions on one line.
@@ -17,16 +17,16 @@ import { alignTop } from './rows'
  */
 export function PaneHeader({ title, subtitle, actions, children, navigation }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode; navigation?: ReactNode }) {
   const titleRef = useFullTextTitle<HTMLHeadingElement>()
-  const actionsGroup = actions ? <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, minHeight: 32 }}>{actions}</Stack> : null
+  const actionsGroup = actions ? <Row spacing={0.25} sx={{ flexShrink: 0, minHeight: 32 }}>{actions}</Row> : null
   if (navigation) return <>
     <Box sx={{ ...hairline('bottom'), flexShrink: 0, px: paneGutter, pt: 1.5 }}>
-      <Stack direction="row" spacing={1} sx={{ ...alignTop, minWidth: 0, ...edgeRow }}>
+      <Bar align="top" spacing={1} sx={{ minWidth: 0 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component="h1" sx={visuallyHiddenSx}>{title}</Typography>
           {navigation}
         </Box>
         {actionsGroup}
-      </Stack>
+      </Bar>
     </Box>
     {subtitle || children ? <Box sx={{ ...hairline('bottom'), flexShrink: 0, px: paneGutter, py: 1 }}>
       {subtitle ? <Typography color="textSecondary" component="div" variant="caption">{subtitle}</Typography> : null}
@@ -35,12 +35,12 @@ export function PaneHeader({ title, subtitle, actions, children, navigation }: {
   </>
   return (
     <Box sx={{ ...hairline('bottom'), flexShrink: 0, px: paneGutter, pb: 1, pt: 1.5 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32, minWidth: 0, ...edgeRow }}>
+      <Bar spacing={1} sx={{ minHeight: 32, minWidth: 0 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component="h1" noWrap ref={titleRef} variant="h1">{title}</Typography>
         </Box>
         {actionsGroup}
-      </Stack>
+      </Bar>
       {subtitle ? <Typography color="textSecondary" component="div" variant="caption">{subtitle}</Typography> : null}
       {children ? <Box sx={{ mt: 1 }}>{children}</Box> : null}
     </Box>
@@ -54,7 +54,7 @@ export function PaneHeader({ title, subtitle, actions, children, navigation }: {
  */
 export function PaneNavigation({ heading, tabs }: { heading: ReactNode; tabs: ReactNode }) {
   return <Box sx={{ minWidth: 0 }}>
-    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minHeight: 32, minWidth: 0 }}>{heading}</Stack>
+    <Row spacing={1.5} sx={{ minHeight: 32, minWidth: 0 }}>{heading}</Row>
     <Box sx={{ mt: 0.5, ...edgeRow }}>{tabs}</Box>
   </Box>
 }
@@ -93,7 +93,7 @@ const visuallyHiddenSx = { clip: 'rect(0 0 0 0)', height: '1px', overflow: 'hidd
 export function PaneEmpty({ icon, title, description, children }: { icon?: ReactNode; title: string; description?: ReactNode; children?: ReactNode }) {
   return (
     <Stack spacing={1} sx={{ alignItems: 'center', color: 'text.secondary', justifyContent: 'center', minHeight: 240, px: 3, py: 6, textAlign: 'center' }}>
-      {icon ? <Box sx={{ color: 'text.disabled', display: 'flex', fontSize: 40, mb: 0.5 }}>{icon}</Box> : null}
+      {icon ? <Box sx={{ alignItems: 'center', color: 'text.disabled', display: 'flex', fontSize: 40, mb: 0.5 }}>{icon}</Box> : null}
       <Typography color="textPrimary" sx={{ fontWeight: 600 }} variant="body2">{title}</Typography>
       {description ? <Typography color="textSecondary" sx={{ maxWidth: 360 }} variant="body2">{description}</Typography> : null}
       {children}

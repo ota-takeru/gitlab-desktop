@@ -7,7 +7,6 @@ import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
-import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 
@@ -18,6 +17,7 @@ import { useT } from '../../i18n/useT'
 import { gridLine } from '../../theme'
 import { useConnection } from '../connections/connectionContext'
 import { mrRefKey, usePersonalWorkspace, type MrRef, type TabMeta } from '../shared/personalWorkspace'
+import { Row } from '../../components/Row'
 
 /**
  * Open and pinned MRs as tabs in the navigation, like Arc's sidebar: pinned
@@ -64,10 +64,10 @@ function TabSection({ children, items, label, onMove, subheader }: { children: (
 }
 
 function SectionHeading({ action, children }: { action?: React.ReactNode; children: React.ReactNode }) {
-  return <Stack component="li" direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', minHeight: 24, pl: 1, pt: 1.5 }}>
+  return <Row component="li" sx={{ justifyContent: 'space-between', minHeight: 24, pl: 1, pt: 1.5 }}>
     <Typography color="textSecondary" variant="overline">{children}</Typography>
     {action}
-  </Stack>
+  </Row>
 }
 
 /** One sidebar tab; exported for the UI catalog. */
@@ -98,17 +98,17 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
           <Typography sx={{ fontFamily: 'code.fontFamily', fontWeight: selected ? 600 : 500, letterSpacing: 0, lineHeight: gridLine(5), maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }} variant="overline">{mrRef.iid}</Typography>
         </ListItemButton>
         : <ListItemButton aria-current={selected ? 'page' : undefined} aria-description={t('mergeRequest.tabs.reorderHint')} aria-label={expandedName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ ...alignTop, cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 32, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
-          <Box sx={firstLine(5)}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
+          <Box sx={firstLine('body2')}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', fontWeight: selected ? 600 : 500, lineHeight: gridLine(5), overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{name}</Typography>
             {project ? <Typography color="textSecondary" noWrap sx={{ pr: onClose ? 6 : 3 }} variant="caption">{project} !{mrRef.iid}</Typography> : null}
           </Box>
         </ListItemButton>}
     </Tooltip>
-    {collapsed ? null : <Stack className="tab-actions" data-no-reorder direction="row" sx={{ alignItems: 'center', bottom: 1, opacity: selected || pinned ? 1 : 0, position: 'absolute', right: 2, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 }, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+    {collapsed ? null : <Row className="tab-actions" data-no-reorder sx={{ bottom: 1, opacity: selected || pinned ? 1 : 0, position: 'absolute', right: 2, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 }, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
       <Tooltip title={pinned ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')}><IconButton aria-label={pinned ? t('mergeRequest.tabs.unpinTab', { iid: mrRef.iid }) : t('mergeRequest.tabs.pinTab', { iid: mrRef.iid })} color={pinned ? 'primary' : 'default'} onClick={onTogglePin} size="small" sx={tabActionSx}>{pinned ? <PushPinIcon fontSize="inherit" /> : <PushPinOutlinedIcon fontSize="inherit" />}</IconButton></Tooltip>
       {onClose ? <Tooltip title={t('mergeRequest.common.close')}><IconButton aria-label={t('mergeRequest.tabs.closeTab', { iid: mrRef.iid })} onClick={onClose} size="small" sx={tabActionSx}><CloseRoundedIcon fontSize="inherit" /></IconButton></Tooltip> : null}
-    </Stack>}
+    </Row>}
   </Box>
 }
 

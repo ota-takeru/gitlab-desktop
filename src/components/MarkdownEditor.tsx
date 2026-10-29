@@ -1,6 +1,5 @@
 import Box from '@mui/material/Box'
 import InputBase from '@mui/material/InputBase'
-import Stack from '@mui/material/Stack'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
@@ -21,6 +20,7 @@ import { insertTextareaText, useMarkdownFormatting } from '../features/shared/us
 import { MarkdownToolbar } from './MarkdownToolbar'
 import { markdownBodySx } from './markdownBodySx'
 import { alignTop } from './rows'
+import { Row } from './Row'
 
 export type MarkdownEditorMode = 'rich' | 'source'
 export const MARKDOWN_EDITOR_MODE_KEY = 'gitlab-desktop.markdownEditorMode'
@@ -134,7 +134,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
   return (
     <Box ref={rootRef} sx={{ bgcolor: 'background.paper', ...panelFrame({ color: 'surface.inputBorder' }), borderRadius: 1, minWidth: 0, '&:focus-within::after': { borderColor: 'primary.main', borderWidth: '2px' } }}>
       {/* The editor grows with its text, so its toolbar stays in view below the MR header. */}
-      <Stack direction="row" ref={toolbarRef} sx={{ alignItems: 'center', bgcolor: 'background.paper', ...hairline('bottom', { position: false }), borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.5, top: 'var(--composer-sticky-top, var(--detail-header-height, 0px))', zIndex: 1 }}>
+      <Row ref={toolbarRef} sx={{ bgcolor: 'background.paper', ...hairline('bottom', { position: false }), borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.5, top: 'var(--composer-sticky-top, var(--detail-header-height, 0px))', zIndex: 1 }}>
         <MarkdownToolbar
           disabled={disabled}
           onFormat={applyFormat}
@@ -152,7 +152,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
           <ToggleButton sx={{ px: 1, py: 0.25 }} title={t('common.markdownEditor.richTitle')} value="rich">{t('common.markdownEditor.rich')}</ToggleButton>
           <ToggleButton sx={{ px: 1, py: 0.25 }} title={t('common.markdownEditor.sourceTitle')} value="source">Markdown</ToggleButton>
         </ToggleButtonGroup>
-      </Stack>
+      </Row>
       {mode === 'rich'
         ? <RichInput {...inputProps} autoFocus={inputProps.autoFocus && switchedCaret === null} editorRef={richRef} handleRef={ref} initialCaret={switchedCaret} onUnsupported={() => setRichBlocked(true)} />
         : <SourceInput {...inputProps} autoFocus={inputProps.autoFocus && switchedCaret === null} handleRef={ref} initialCaret={switchedCaret} inputHandleRef={sourceRef} />}

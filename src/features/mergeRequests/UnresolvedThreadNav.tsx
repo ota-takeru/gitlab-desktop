@@ -12,6 +12,7 @@ import type { Discussion } from '../../types/gitlab'
 import { isUnresolvedDiscussion } from './discussionStatus'
 import { plainExcerpt } from './discussionText'
 import { useT } from '../../i18n/useT'
+import { Row } from '../../components/Row'
 
 /** Unresolved threads of the loaded discussions; choosing one scrolls the list to it. */
 export function UnresolvedThreadNav({ discussions, olderNotLoaded, onSelect }: { discussions: Discussion[]; olderNotLoaded: boolean; onSelect: (discussionId: string) => void }) {
@@ -19,10 +20,10 @@ export function UnresolvedThreadNav({ discussions, olderNotLoaded, onSelect }: {
   const threads = discussions.filter(isUnresolvedDiscussion)
   return (
     <Stack aria-label={t('review.unresolved.title')} component="nav" sx={{ bgcolor: 'surface.raised', ...panelFrame(), borderRadius: 1, minWidth: 0 }}>
-      <Stack direction="row" sx={{ alignItems: 'center', ...hairline('bottom'), px: 1.5, py: 0.5 }}>
+      <Row sx={{ ...hairline('bottom'), px: 1.5, py: 0.5 }}>
         <Typography color="textSecondary" variant="overline">{t('review.unresolved.title')}</Typography>
         <Typography color="textSecondary" sx={{ ml: 'auto' }} variant="caption">{t('review.unresolved.count', { count: threads.length })}</Typography>
-      </Stack>
+      </Row>
       {threads.length === 0 ? <Typography color="textSecondary" sx={{ px: 1.5, py: 1 }} variant="caption">{t('review.unresolved.none')}</Typography> : (
         <List disablePadding sx={{ py: 0.5 }}>
           {threads.map((discussion) => {
@@ -50,10 +51,10 @@ const stepSx = { fontSize: 16, height: 24, width: 24, '--edge-inset': '4px' }
 export function UnresolvedThreadStepper({ count, onStep }: { count: number; onStep: (direction: 1 | -1) => void }) {
   const t = useT()
   return (
-    <Stack aria-label={t('review.unresolved.navigate')} direction="row" role="group" sx={{ alignItems: 'center', flexShrink: 0 }}>
+    <Row aria-label={t('review.unresolved.navigate')} role="group" sx={{ flexShrink: 0 }}>
       <Typography color="textSecondary" noWrap sx={{ pr: 0.25 }} variant="caption">{t('review.unresolved.stepperCount', { count })}</Typography>
       <Tooltip title={t('review.unresolved.previousTooltip')}><IconButton aria-label={t('review.unresolved.previous')} aria-keyshortcuts="P" onClick={() => onStep(-1)} sx={stepSx}><KeyboardArrowUpRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
       <Tooltip title={t('review.unresolved.nextTooltip')}><IconButton aria-label={t('review.unresolved.next')} aria-keyshortcuts="N" onClick={() => onStep(1)} sx={stepSx}><KeyboardArrowDownRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
-    </Stack>
+    </Row>
   )
 }

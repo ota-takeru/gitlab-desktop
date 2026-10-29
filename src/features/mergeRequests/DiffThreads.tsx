@@ -5,7 +5,6 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 
-import { edgeRow } from '../../components/edges'
 import { frame, hairline, panelFrame } from '../../components/hairline'
 import { gridLine } from '../../theme'
 import { RelativeTime } from '../../components/RelativeTime'
@@ -19,6 +18,7 @@ import { lineKey, positionLines } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
 import { NoteBody, type SuggestionActions } from './SuggestionBlock'
 import { useT } from '../../i18n/useT'
+import { Bar, Row } from '../../components/Row'
 
 /**
  * What the diff shows under its lines, as on GitLab: line comment threads,
@@ -61,10 +61,10 @@ export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadVi
     <Stack spacing={1} sx={{ maxWidth: 900 }}>
       {threads.map((discussion) => <DiffThread actions={view?.actions} discussion={discussion} key={discussion.id} onOpen={view?.onOpen} sessionId={view?.sessionId} suggestionActions={view?.suggestionActions} />)}
       {drafts.map((draft) => <Box aria-label={t('review.thread.draft')} component="article" key={draft.id} sx={{ bgcolor: 'surface.raised', ...frame({ color: 'warning.main' }), outlineStyle: 'dashed', borderRadius: 1, px: 1.5, py: 1 }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <Row spacing={1}>
           <StateIcon icon={<ScheduleSendOutlinedIcon fontSize="inherit" />} label={t('review.thread.draftState')} tone="warning" />
           {draft.position?.lineRange ? <Typography color="textSecondary" variant="caption">{t('review.thread.lines', { lines: positionLines(draft.position) })}</Typography> : null}
-        </Stack>
+        </Row>
         <NoteBody note={{ body: draft.body }} size="body2" />
       </Box>)}
       {composer}
@@ -91,23 +91,23 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
       {notes.map((note) => <Box key={note.id} sx={{ columnGap: 1.5, display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', px: 1.5, py: 1 }}>
         <Box sx={{ ...firstLine(6), mt: 0.5 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
         <Box sx={{ minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', minHeight: 24, minWidth: 0, pt: 0.5, rowGap: 0 }}>
+          <Row spacing={1} sx={{ flexWrap: 'wrap', minHeight: 24, minWidth: 0, pt: 0.5, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
             <RelativeTime value={note.createdAt} />
-          </Stack>
+          </Row>
           <Box sx={{ color: 'text.primary', mt: 0.5 }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>
           {actions?.renderReactions ? <Box sx={{ mt: 1 }}>{actions.renderReactions(note)}</Box> : null}
         </Box>
       </Box>)}
     </Stack> : null}
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', ...(expanded ? hairline('top') : {}), px: 1, py: 0.25, ...edgeRow }}>
+    <Bar spacing={1} sx={{ bgcolor: 'action.hover', ...(expanded ? hairline('top') : {}), px: 1, py: 0.25 }}>
       {actions && resolvable.length > 0 ? <ResolveToggle dense disabled={actions.disabled} onToggle={(resolve) => { setFolded(resolve); actions.onResolve(discussion, resolve) }} resolved={resolved} /> : null}
       {!expanded ? <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} title={notes[0] ? plainExcerpt(notes[0].body, 200) : undefined} variant="caption">{rangeLabel ? `${rangeLabel} · ` : ''}{notes.length > 1 ? t('review.thread.summaryMore', { author: notes[0]?.author.name ?? '', count: notes.length - 1 }) : t('review.thread.summary', { author: notes[0]?.author.name ?? '' })}</Typography>
         : <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{rangeLabel}</Typography>}
       {resolved && !replying ? <Button onClick={() => setFolded(expanded)} size="dense">{expanded ? t('review.discussion.collapse') : t('review.thread.show')}</Button> : null}
       {actions && !replying ? <Button disabled={actions.disabled} onClick={() => actions.onReply(discussion)} size="dense">{t('review.discussion.reply')}</Button> : null}
       {onOpen ? <Button onClick={() => onOpen(discussion.id)} size="dense">{actions ? t('review.thread.openInDiscussions') : t('review.thread.replyInDiscussions')}</Button> : null}
-    </Stack>
+    </Bar>
     {replying ? <Box sx={{ ...hairline('top'), px: 1, py: 1 }}>{actions?.replyComposer}</Box> : null}
   </Box>
 }

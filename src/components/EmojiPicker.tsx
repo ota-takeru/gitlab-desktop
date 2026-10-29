@@ -14,6 +14,7 @@ import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useT } from '../i18n/useT'
 import { hairline } from './hairline'
 import { EMOJI_CATEGORIES, REACTION_CHOICES, readRecentReactions, rememberRecentReaction, searchEmoji, useEmojiCatalog, type EmojiChoice } from '../lib/awardEmoji'
+import { Row } from './Row'
 
 const COLUMNS = 9
 const CELL = 34
@@ -177,7 +178,7 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
         })}
       </Box>}
     </Box>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('top'), minHeight: 48, px: 1.5, py: 0.5 }}>
+    <Row spacing={1} sx={{ ...hairline('top'), minHeight: 48, px: 1.5, py: 0.5 }}>
       {preview ? <>
         <Box aria-hidden sx={{ fontSize: 32, lineHeight: 1 }}>{preview.emoji}</Box>
         <Box sx={{ minWidth: 0 }}>
@@ -185,6 +186,6 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
           <Typography color="textSecondary" noWrap sx={{ display: 'block', fontFamily: 'code.fontFamily' }} variant="caption">:{preview.name}:</Typography>
         </Box>
       </> : null}
-    </Stack>
+    </Row>
   </Stack>
 }

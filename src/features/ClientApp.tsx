@@ -78,6 +78,7 @@ import type { GitLabPageLocation } from './shared/gitlabPageLocation'
 import { UserView, type UserTab } from './users/UserView'
 import { clearGitLabMutationStates } from './shared/useGitLabMutation'
 import { useGitLabQuery } from './shared/useGitLabQuery'
+import { Row } from '../components/Row'
 
 const SIDEBAR_COLLAPSED_BROWSING_KEY = 'gitlab-desktop:sidebar-collapsed'
 const SIDEBAR_WIDTH_KEY = 'gitlab-desktop:sidebar-width'
@@ -519,11 +520,11 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   return (
     <MarkdownLinkProvider instanceUrl={session?.instanceUrl} open={openMarkdownLink}>
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Box sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
         {/* In a narrow window an expanded navigation lies over the page, like the peek, instead of taking its width. */}
         <PeekingNavigation collapsed={sidebarIsCollapsed} overlays={isNarrowNav && !sidebarIsCollapsed} resizeHandle={sidebarIsCollapsed || isNarrowNav ? null : <SidebarResizeHandle onResize={setSidebarWidth} onResizingChange={setResizing} width={sidebarWidth} />} resizing={resizing} slotWidth={sidebarIsCollapsed || isNarrowNav ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} width={sidebarWidth}>
         {({ collapsed: navCollapsed, foldForNotifications, stopPeek }) => <>
-          <Stack direction="row" sx={{ alignItems: 'center', justifyContent: navCollapsed ? 'center' : 'space-between', minHeight: 36, mb: 1, pl: navCollapsed ? 0 : 1 }}>
+          <Row sx={{ justifyContent: navCollapsed ? 'center' : 'space-between', minHeight: 36, mb: 1, pl: navCollapsed ? 0 : 1 }}>
             {navCollapsed ? null : <Typography component="div" noWrap variant="h3">GitLab Desktop</Typography>}
             <Tooltip placement="right" title={sidebarIsCollapsed ? t('app.nav.expand') : t('app.nav.collapse')}>
               <IconButton
@@ -533,7 +534,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 {sidebarIsCollapsed ? <MenuRoundedIcon /> : <MenuOpenRoundedIcon />}
               </IconButton>
             </Tooltip>
-          </Stack>
+          </Row>
           {/* Only the tabs scroll, so the places above and the settings below stay in view. */}
           <Box component="nav" aria-label={t('app.nav.label')} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
             <List disablePadding>
@@ -548,7 +549,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>
             <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ ...hairline('top'), color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
-              <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>{session ? <GitLabUserAvatar sessionId={session.id} size={24} user={session.user} /> : <SettingsOutlinedIcon sx={{ fontSize: 20, m: 0.25 }} />}</Box>
+              <Box component="span" sx={{ alignItems: 'center', display: 'flex', flexShrink: 0 }}>{session ? <GitLabUserAvatar sessionId={session.id} size={24} user={session.user} /> : <SettingsOutlinedIcon sx={{ fontSize: 20, m: 0.25 }} />}</Box>
               {navCollapsed ? null : <Typography color="inherit" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{session ? `@${session.user.username}` : t('app.nav.disconnected')}</Typography>}
               {navCollapsed || !session ? null : <SettingsOutlinedIcon sx={{ fontSize: 18 }} />}
             </ListItemButton>
@@ -564,7 +565,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           </Dialog>
           <KeyboardShortcutsDialog onClose={closeShortcuts} open={shortcutsOpen} />
           <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestRef} onOpenPage={openGitLabPage} />
-          <Box key={sessionKey} sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+          <Box key={sessionKey} sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
             {/* The same pane as the restored screen, so nothing moves when it arrives. */}
             {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
@@ -839,10 +840,10 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
   return <Stack spacing={1.5}>
     <Dialog aria-labelledby="discard-inputs-title" open={discarding}><DialogTitle id="discard-inputs-title">{t('settings.data.discard.progressTitle')}</DialogTitle><DialogContent><Typography variant="body2">{t('settings.data.discard.progress')}</Typography></DialogContent></Dialog>
     <Typography color="textSecondary" variant="body2">{t('settings.data.note')}</Typography>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
+    <Row spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
       <Button disabled={!sessionId} onClick={() => void clear()} variant="outlined">{t('settings.data.clearCache')}</Button>
       <Button color="error" disabled={discarding} onClick={() => void discardInputs()} variant="outlined">{t('settings.data.discard.button')}</Button>
-    </Stack>
+    </Row>
     {status ? <Typography color="textSecondary" role="status" variant="caption">{status}</Typography> : null}
   </Stack>
 }
@@ -866,10 +867,10 @@ const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMe
     if (lookup.loading) return <MergeRequestSkeleton />
     const failure = describeMergeRequestFailure(lookup.error)
     return <PaneEmpty description={failure.description} title={failure.title}>
-      <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}>
+      <Row spacing={1}>
         {failure.retry ? <Button onClick={lookup.refresh} variant="outlined">{t('app.mergeRequest.retry')}</Button> : null}
         <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />}>{backLabel}</Button>
-      </Stack>
+      </Row>
     </PaneEmpty>
   }
   return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} />
@@ -896,9 +897,9 @@ function MergeRequestSkeleton() {
   const t = useT()
   const bar = (width: number | string, height = 12) => <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height, width }} />
   return <Box aria-live="polite" role="status" sx={{ ...delayedRevealSx, ...hairline('bottom'), px: { md: 3, xs: 2 }, pb: 1.5, pt: 1.5 }}>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
+    <Row spacing={1} sx={{ minHeight: 32 }}>
       <Typography color="textSecondary" variant="caption">{t('app.mergeRequest.loading')}</Typography>
-    </Stack>
+    </Row>
     <Stack spacing={1.5} sx={{ mt: 1 }}>
       {bar('60%', 20)}
       {bar('45%')}

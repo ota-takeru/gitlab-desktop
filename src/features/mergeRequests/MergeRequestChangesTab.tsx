@@ -20,6 +20,7 @@ import type { SuggestionActions } from './SuggestionBlock'
 import { LoadingPanel } from './LoadingPanel'
 import { currentLocale, translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
+import { Row } from '../../components/Row'
 
 /** The MR's versions, and the earlier one the changes tab compares from, if any. */
 export interface VersionChoice {
@@ -51,7 +52,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
       {!changesLoading && !changesError && compareFrom && changePage === 1 && !diffs.length ? <Typography color="textSecondary" role="status" variant="body2">{t('review.changes.noChangesSinceVersion')}</Typography> : null}
       {(!changesLoading || diffs.length) && (!changesError || diffs.length) ? <DiffViewer threadActions={threadActions} pendingDrafts={pendingDrafts} lineComposer={lineComposer} discussionHeadSha={discussionHeadSha} discussions={discussions} discussionsIncomplete={discussionsIncomplete} onOpenDiscussion={onOpenDiscussion} reviewContext={!changesLoading && !changesError ? reviewContext : undefined} key={selectedCommit ?? (compareFrom ? `version:${compareFrom}` : 'mr')} allowComments={allowComments} diffs={diffs} fileContent={fileResult.data?.content} fileLoading={fileResult.loading} fileSource={fileSource} onComment={onComment} onSelectFile={onSelectFile} onViewChange={onViewChange} selectedFile={selectedFile} selectedPosition={selectedPosition} suggestionActions={suggestionActions} view={fileView} /> : null}
       {fileResult.error ? <Alert severity="error">{t('review.changes.fileError', { message: fileResult.error.message })}</Alert> : null}
-      {changeNextPage !== null || changePage > 1 ? <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}><Button aria-label={t('review.changes.page.previous')} disabled={changePage <= 1} onClick={onPrevChangePage} size="small">{t('review.diff.page.previous')}</Button><Typography color="textSecondary" variant="caption">{t('review.changes.page.current', { page: changePage })}</Typography><Button aria-label={t('review.changes.page.next')} disabled={changeNextPage === null} onClick={onNextChangePage} size="small">{t('review.diff.page.next')}</Button></Stack> : null}
+      {changeNextPage !== null || changePage > 1 ? <Row spacing={0.5} sx={{ justifyContent: 'flex-end' }}><Button aria-label={t('review.changes.page.previous')} disabled={changePage <= 1} onClick={onPrevChangePage} size="small">{t('review.diff.page.previous')}</Button><Typography color="textSecondary" variant="caption">{t('review.changes.page.current', { page: changePage })}</Typography><Button aria-label={t('review.changes.page.next')} disabled={changeNextPage === null} onClick={onNextChangePage} size="small">{t('review.diff.page.next')}</Button></Row> : null}
       </>}
     </Stack>
   )
@@ -94,24 +95,24 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
   }
   const scrollable = overflow.left || overflow.right
   return <Stack spacing={0.5}>
-    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+    <Row spacing={0.5} sx={{ minWidth: 0 }}>
       {page > 1 ? <Button onClick={onPrevPage} size="small" sx={{ flexShrink: 0 }}>{t('review.changes.previousCommits')}</Button> : null}
       {scrollable ? <Tooltip title={t('review.changes.scrollLeftTooltip')}><span><IconButton aria-label={t('review.changes.scrollLeft')} disabled={!overflow.left} onClick={() => scrollBy(-1)}><ChevronLeftRoundedIcon /></IconButton></span></Tooltip> : null}
-      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, height: 48, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}><Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 'max-content' }}>
+      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, height: 48, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}><Row spacing={0.5} sx={{ minWidth: 'max-content' }}>
         <Button aria-pressed={wholeMergeRequest} color="inherit" data-commit-item onClick={() => onSelect(null)} sx={item(wholeMergeRequest)} tabIndex={tabStop === null ? 0 : -1}>{t('review.changes.wholeMr')}</Button>
         {loading ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">{t('review.changes.loadingCommits')}</Typography> : commits.map((commit) => { const time = commit.committedAt || commit.createdAt; return <Tooltip describeChild key={commit.id} title={`${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={selected === commit.id} color="inherit" data-commit-item onClick={() => onSelect(commit.id)} sx={{ ...item(selected === commit.id), justifyContent: 'flex-start', gap: 1, maxWidth: 420 }} tabIndex={tabStop === commit.id ? 0 : -1}><Box component="span" sx={{ color: 'primary.main', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', flexShrink: 0 }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box>{time ? <Box component="time" dateTime={time} sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 'caption.fontSize' }}>{formatAbsoluteTime(time)}</Box> : null}</Button></Tooltip> })}
-      </Stack></Box>
+      </Row></Box>
       {scrollable ? <Tooltip title={t('review.changes.scrollRightTooltip')}><span><IconButton aria-label={t('review.changes.scrollRight')} disabled={!overflow.right} onClick={() => scrollBy(1)}><ChevronRightRoundedIcon /></IconButton></span></Tooltip> : null}
       {nextPage !== null ? <Button onClick={onNextPage} size="small" sx={{ flexShrink: 0 }}>{t('review.changes.nextCommits')}</Button> : null}
-    </Stack>
-    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+    </Row>
+    <Row spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
       <Typography color="textSecondary" variant="caption">
         {t('review.changes.from')} <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily', verticalAlign: 'top' }}>{showingLocal ? (headSha ? t('review.changes.mrHeadSha', { sha: shortSha(headSha) }) : t('review.changes.mrHead')) : selected ? t('review.changes.parentCommit') : compareFrom ? t('review.changes.pastVersion', { sha: shortSha(compareFrom) }) : baseSha ? shortSha(baseSha) : t('review.changes.targetBranch')}</Box>
         {' → '}{t('review.changes.to')} <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily', verticalAlign: 'top' }}>{showingLocal ? t('review.changes.workingTree') : selected ? shortSha(selected) : headSha ? shortSha(headSha) : t('review.changes.mrHead')}</Box>
       </Typography>
       {versionPicker}
       {local ? <Tooltip describeChild title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" onClick={local.onSelect} size="small" sx={item(showingLocal)}>{t('review.changes.local')}{local.badge}</Button></Tooltip> : null}
-    </Stack>
+    </Row>
     {selected ? <Typography color="textSecondary" role="note" variant="caption">{t('review.changes.commitNote')}</Typography> : null}
     {showingLocal ? <Typography color="textSecondary" role="note" variant="caption">{t('review.changes.localNote')}</Typography> : null}
     {compareFrom && !selected ? <Typography color="textSecondary" role="note" variant="caption">{t('review.changes.versionNote')}</Typography> : null}

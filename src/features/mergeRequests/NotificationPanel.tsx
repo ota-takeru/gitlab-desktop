@@ -50,6 +50,7 @@ import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { todoNoteId, type ActivityKind, type MergeRequestActivity } from './activityFeed'
 import { useLoadedActivity } from './activityStore'
 import { forgetDoneTodos, isNotificationTodo } from './todoCache'
+import { Row } from '../../components/Row'
 
 const actionLabels: Record<string, MessageKey> = { assigned: 'mrList.notifications.action.assigned', mentioned: 'mrList.notifications.action.mentioned', directly_addressed: 'mrList.notifications.action.directlyAddressed', approval_required: 'mrList.notifications.action.approvalRequired', marked: 'mrList.notifications.action.marked', build_failed: 'mrList.notifications.action.buildFailed', unmergeable: 'mrList.notifications.action.unmergeable', merge_train_removed: 'mrList.notifications.action.mergeTrainRemoved', review_requested: 'mrList.notifications.action.reviewRequested' }
 // What blocks the MR stands out from requests and mentions.
@@ -280,7 +281,7 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
       : { message: t('mrList.notifications.markedAll', { count: read.length + events }), severity: 'success' })
   }
   return <>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
+    <Row spacing={1} sx={{ ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
       <Typography component="h2" variant="h2">{t('mrList.notifications.title')}</Typography>
       <ToggleButtonGroup aria-label={t('mrList.notifications.show')} disabled={marking !== null} exclusive onChange={(_, next: 'unread' | 'read' | null) => { if (next) showRead(next === 'read') }} size="small" value={read ? 'read' : 'unread'}>
         <ToggleButton sx={{ px: 1, py: 0.25 }} value="unread">{t('mrList.notifications.unread')}</ToggleButton>
@@ -291,7 +292,7 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
       </Typography>
       {read ? null : <Button disabled={!shown || !entries.length || marking !== null} onClick={() => void markAllRead()} size="small">{marking ? marking.total === null ? t('mrList.notifications.checking') : t('mrList.notifications.marking', { done: marking.done, total: marking.total }) : t('mrList.notifications.markAll')}</Button>}
       <Tooltip title={t('mrList.notifications.refresh')}><span><IconButton aria-label={t('mrList.notifications.refreshAria')} disabled={result.loading || result.refreshing} onClick={() => { setMorePages(0); result.refresh() }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
-    </Stack>
+    </Row>
     <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
       {result.error ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('mrList.notifications.retry')}</Button>} severity={result.data ? 'warning' : 'error'} sx={{ m: 1 }}>{result.data ? t('mrList.notifications.staleError', { error: result.error.message }) : result.error.message}</Alert> : null}
       {shown && entries.length === 0 && nextPage === null ? read
@@ -361,14 +362,14 @@ function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; grou
     {Array.from({ length: behind }, (_, index) => <Box aria-hidden key={index} sx={{ bgcolor: 'surface.raised', ...frame(), borderRadius: 2, bottom: (behind - 1 - index) * 4, left: (index + 1) * 6, position: 'absolute', right: (index + 1) * 6, top: 8 }} />)}
     <Box sx={{ bgcolor: 'surface.raised', ...panelFrame(), borderRadius: 2, overflow: 'hidden' }}>
       <ButtonBase data-list-row="true" disabled={disabled} onClick={onOpen} sx={{ alignItems: 'stretch', display: 'flex', flexDirection: 'column', pb: 1, px: 1.5, pt: 1, textAlign: 'left', width: '100%', '&:hover': { bgcolor: 'action.hover' }, '&:focus-visible': { outlineOffset: -2 } }}>
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+        <Row spacing={0.5} sx={{ minWidth: 0 }}>
           <StateIcon icon={todo ? actionIcons[todo.actionName] ?? <NotificationsNoneRoundedIcon fontSize="inherit" /> : activityIcons[activity.kind]} label={label} tone={(todo ? actionTones[todo.actionName] : activityTones[activity.kind]) ?? 'info'} />
           <Typography aria-hidden sx={{ fontWeight: 600 }} variant="caption">{label}</Typography>
           <Typography aria-hidden color="textSecondary" variant="caption">·</Typography>
           <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{todo ? todo.projectName : activity.projectLabel} !{item.iid}</Typography>
           {/* When the newest notification arrived, not when the MR changed. */}
           <RelativeTime value={item.createdAt} />
-        </Stack>
+        </Row>
         <Typography sx={{ display: '-webkit-box', fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{item.title}</Typography>
         {activity?.path ? <Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily' }} variant="caption">{activity.path}{activity.line ? `:${activity.line}` : ''}</Typography> : null}
         {quote ? <Typography color="textSecondary" sx={{ display: '-webkit-box', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="caption">{item.author.name}: {quote}</Typography>

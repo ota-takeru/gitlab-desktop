@@ -27,7 +27,6 @@ import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { paneGutter, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
-import { alignTop } from '../../components/rows'
 import { StateIcon } from '../../components/StateIcon'
 import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
@@ -38,6 +37,7 @@ import { preferenceScope, readPinnedProjectIds, readRecentProjectIds, writePinne
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useRememberedListState } from './listState'
 import { type ProjectLabel, readProjectLabels, sameProjectLabel, writeProjectLabels } from './projectLabels'
+import { Row } from '../../components/Row'
 
 const defaultConditions = { includeArchived: false, membershipOnly: true, page: 1, search: '', searchInput: '' }
 const userProjectDefaultConditions = { ...defaultConditions, membershipOnly: false }
@@ -144,11 +144,11 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
             }}
             value={searchInput}
           />
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
+          <Row spacing={2} sx={{ flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
             {!user ? <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.membershipOnlyLabel') } }} />} label={t('project.list.membershipOnly')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} /> : null}
             <FormControlLabel control={<Switch checked={includeArchived} onChange={(event) => setConditions({ includeArchived: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.includeArchivedLabel') } }} />} label={t('project.list.archived')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
             {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 24, ml: 'auto !important', px: 1 }}>{t('project.list.clearConditions')}</Button> : null}
-          </Stack>
+          </Row>
         </Box>
       </PaneHeader>
 
@@ -173,11 +173,11 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
                 leading={<SourceOutlinedIcon sx={{ color: 'place.projects', fontSize: 16 }} />}
                 onOpen={() => openProject(project)}
               >
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+                <Row spacing={1} sx={{ minWidth: 0 }}>
                   <Tooltip enterDelay={600} title={project.name}><Typography noWrap sx={{ fontWeight: 600, minWidth: 0 }} variant="body2">{project.name}</Typography></Tooltip>
                   {project.archived ? <StateIcon icon={<Inventory2OutlinedIcon fontSize="inherit" />} label={t('project.list.archived')} /> : null}
                   {project.lastActivityAt ? <RelativeTime prefix={t('project.list.activity')} value={project.lastActivityAt} /> : null}
-                </Stack>
+                </Row>
                 <Tooltip enterDelay={600} title={project.pathWithNamespace}><Typography color="textSecondary" component="div" noWrap variant="caption">{project.pathWithNamespace}</Typography></Tooltip>
                 {project.description ? <Typography color="textSecondary" component="div" noWrap title={project.description} variant="caption">{project.description}</Typography> : null}
               </ListRow>
@@ -199,12 +199,12 @@ export function ProjectShortcuts({ ids, label, labelOf, onOpen, secondaryIds, se
 function ShortcutGroup({ icon, ids, label, labelOf, onOpen }: { icon?: React.ReactNode; ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void }) {
   const t = useT()
   if (ids.length === 0) return null
-  return <Stack direction="row" spacing={1} sx={alignTop}><Typography color="textSecondary" sx={{ alignItems: 'center', display: 'inline-flex', flex: '0 0 auto', gap: 0.5, minHeight: 24, minWidth: 32 }} variant="caption">{icon}{label}</Typography><Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => {
+  return <Row align="top" spacing={1}><Typography color="textSecondary" sx={{ alignItems: 'center', display: 'inline-flex', flex: '0 0 auto', gap: 0.5, minHeight: 24, minWidth: 32 }} variant="caption">{icon}{label}</Typography><Row sx={{ flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => {
     const project = labelOf(id)
     // A shortcut saved before names were kept shows its id until the project is listed again.
     if (!project) return <Chip clickable key={`${label}:${id}`} label={t('project.fallbackName', { id })} onClick={() => onOpen(id)} size="small" variant="outlined" />
     return <Tooltip key={`${label}:${id}`} title={project.pathWithNamespace}><Chip aria-label={t('project.shortcuts.chip', { name: project.name, path: project.pathWithNamespace })} clickable label={project.name} onClick={() => onOpen(id)} size="small" variant="outlined" /></Tooltip>
-  })}</Stack></Stack>
+  })}</Row></Row>
 }
 
 function projectConditionSummary(search: string, membershipOnly: boolean, includeArchived: boolean): string {

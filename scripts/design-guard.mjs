@@ -41,13 +41,18 @@ const iconSizePattern = /\bfontSize\s*:\s*(\d+)\b(?!\.)/gu
 // button by MUI's size classes makes one that matches nothing beside it.
 const buttonSizePattern = /MuiButton-size\w*|MuiIconButton-size\w*/gu
 const iconSizes = new Set([14, 16, 18, 20, 24, 32, 40])
-// Rows align one way (components/rows): one-line items centre, a mark beside content that wraps sits on its
-// first line (alignTop with firstLine(n)), cells that fill the row stretch. Baseline alignment stretches the
-// row off the grid, top alignment written by hand skips the first-line rule, and a row that says nothing
-// stretches its items to the top by default.
+// Rows align one way (components/rows) and are written with Row and Bar (components/Row), which carry the
+// rule: one-line items centre, a mark beside content that wraps sits on its first line (align="top" with
+// firstLine around the mark), cells that fill the row stretch, and a Bar's edge controls meet the edge line.
+// A row Stack written by hand skips all of that, baseline alignment stretches the row off the grid, top
+// alignment written by hand skips the first-line rule, and a flex box that says nothing stretches its items
+// to the top by default.
 const baselinePattern = /\balignItems\s*:\s*(['"`])baseline\1/gu
 const topPattern = /\balignItems\s*:\s*(['"`])(?:flex-)?start\1/gu
 const rowStackPattern = /<Stack\b/gu
+const rowComponentPattern = /<(?:Row|Bar)\b/gu
+const flexBoxPattern = /\bdisplay\s*:\s*(['"`])flex\1/gu
+const rowRuleFiles = new Set([join('src', 'components', 'rows.ts'), join('src', 'components', 'Row.tsx')])
 const borderPattern = /\bborder(?:Top|Bottom|Left|Right)?(?:Width)?\s*:\s*(?:[1-9]|[\w.]+\s*\?\s*[1-9]|(['"`])[1-9][^'"`]*\1|`[1-9])/gu
 
 /** The text of the innermost { … } around an index, and the key it is the value of. */
@@ -108,8 +113,10 @@ function gridChecks(source, relativePath) {
     const tag = enclosingTag(source, match.index)
     const { text } = enclosingObject(source, match.index)
     if (/^<(?:\w+Icon|ToggleButton|ListItemButton|Avatar)\b/u.test(tag)) continue
-    if (match[0].startsWith('spacing') && /direction=(?:"row"|\{\{[^}]*'row')/u.test(tag)) continue
-    if (/^(?:p|py|pb)\b/u.test(match[0]) && ((/alignItems\s*:\s*'center'/u.test(text) && !/flexWrap\s*:\s*'wrap'/u.test(text)) || /verticalAlign/u.test(text))) continue
+    // A Row or Bar is a row, centred unless its align prop says otherwise.
+    const centredRow = /^<(?:Row|Bar)\b/u.test(tag) && !/\balign="/u.test(tag)
+    if (match[0].startsWith('spacing') && (/direction=(?:"row"|\{\{[^}]*'row')/u.test(tag) || /^<(?:Row|Bar)\b/u.test(tag))) continue
+    if (/^(?:p|py|pb)\b/u.test(match[0]) && (((/alignItems\s*:\s*'center'/u.test(text) || centredRow) && !/flexWrap\s*:\s*'wrap'/u.test(text)) || /verticalAlign/u.test(text))) continue
     violations.push(`${at(match)}: ${match[0]} moves the text or the rows after it off the grid; use 0 or multiples of 0.5`)
   }
   for (const match of source.matchAll(heightPattern)) {
@@ -145,19 +152,28 @@ function consistencyChecks(source, relativePath) {
   for (const match of source.matchAll(baselinePattern)) {
     violations.push(`${at(match)}: baseline alignment; centre the row (alignItems: 'center'), see components/rows`)
   }
-  if (relativePath !== join('src', 'components', 'rows.ts')) {
+  if (!rowRuleFiles.has(relativePath)) {
     for (const match of source.matchAll(topPattern)) {
       const tag = enclosingTag(source, match.index)
       const { text } = enclosingObject(source, match.index)
       const column = /flexDirection\s*:\s*'column'/u.test(text) || (/^<Stack\b/u.test(tag) && (!/\bdirection=/u.test(tag) || /direction="column"/u.test(tag)))
       if (column) continue
-      violations.push(`${at(match)}: top alignment in a row; use alignTop with firstLine(n) around the mark, from components/rows`)
+      violations.push(`${at(match)}: top alignment in a row; use <Row align="top"> with firstLine around the mark, from components/Row and components/rows`)
     }
-  }
-  for (const match of source.matchAll(rowStackPattern)) {
-    const tag = enclosingTag(source, match.index + 1)
-    if (!/\bdirection="row"/u.test(tag) || /alignItems|alignTop|firstLine\(/u.test(tag)) continue
-    violations.push(`${at(match)}: a row that leaves its vertical alignment unsaid; centre it (alignItems: 'center'), or use alignTop or 'stretch' (components/rows)`)
+    for (const match of source.matchAll(rowStackPattern)) {
+      const tag = enclosingTag(source, match.index + 1)
+      if (!/\bdirection="row"/u.test(tag)) continue
+      violations.push(`${at(match)}: a row Stack; use <Row> (or <Bar> at a pane or card edge) from components/Row, which carries the alignment and edge rules`)
+    }
+    for (const match of source.matchAll(rowComponentPattern)) {
+      const tag = enclosingTag(source, match.index + 1)
+      if (/\balignItems\b/u.test(tag)) violations.push(`${at(match)}: alignItems on a Row or Bar; use its align prop ('center', 'top' or 'stretch')`)
+    }
+    for (const match of source.matchAll(flexBoxPattern)) {
+      const { text } = enclosingObject(source, match.index)
+      if (/flexDirection\s*:\s*'column'|alignItems|firstLine|\.\.\.alignTop/u.test(text) || exempted(source, match.index, 'row-exempt')) continue
+      violations.push(`${at(match)}: a flex box that leaves its alignment unsaid; use <Row> for a row, or say alignItems (a lone wrapped mark centres)`)
+    }
   }
   for (const match of source.matchAll(buttonSizePattern)) {
     violations.push(`${at(match)}: ${match[0]} re-sizes a button by hand; use size="dense" or variant="quiet" from the theme, or a theme override`)

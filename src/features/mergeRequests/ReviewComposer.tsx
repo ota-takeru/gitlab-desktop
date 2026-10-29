@@ -25,6 +25,7 @@ import { TemplateMenu } from './TemplateMenu'
 import { useMentionSuggestions } from './useMentionSuggestions'
 import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
+import { Row } from '../../components/Row'
 
 interface ReviewComposerProps {
   attachmentTargetKey?: string
@@ -195,10 +196,10 @@ export function ReviewComposer({
     // A reply opens in place of the thread's reply field, so it has no frame or heading of its own.
     <Paper component="section" ref={mentionContainerRef} aria-label={t('review.composer.label')} data-composer="" sx={replyDiscussionId ? { bgcolor: 'transparent', p: 0, '&::after': { content: 'none' } } : { p: 1.5 }} variant="outlined">
       <Stack spacing={1}>
-        {replyDiscussionId ? null : <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
+        {replyDiscussionId ? null : <Row spacing={0.5} sx={{ flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
           <Typography sx={{ fontWeight: 600 }} variant="body2">{inlineTarget ? t('review.composer.commentOn', { target: targetLabel }) : t('review.composer.addComment')}</Typography>
           {targetPosition && !inlineTarget ? <Chip disabled={targetControlsDisabled} label={targetLabel} onDelete={() => { if (!uploadingRef.current) onClearPosition() }} size="small" sx={composerChipSx} variant="outlined" /> : null}
-        </Stack>}
+        </Row>}
         <MarkdownEditor
           {...mentionEditorProps}
           autoFocus={Boolean(replyDiscussionId) || inlineTarget}
@@ -245,21 +246,21 @@ export function ReviewComposer({
         {attachmentError ? <Alert onClose={() => setAttachmentError(null)} severity="error">{attachmentError}</Alert> : null}
         {suggestionError ? <Alert onClose={() => setSuggestionError(null)} severity="warning">{suggestionError}</Alert> : null}
         {mentionPopup}
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 1 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
+        <Row spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 1 }}>
+          <Row spacing={1} sx={{ flex: '1 1 auto', flexWrap: 'wrap', minWidth: 0, rowGap: 0.5 }}>
             {/* Line comments always start a resolvable thread. */}
             {!replyDiscussionId && !targetPosition ? <FormControlLabel control={<Checkbox checked={thread} disabled={controlsDisabled} onChange={(event) => setThread(event.target.checked)} size="small" />} label={t('review.composer.thread')} sx={{ mr: 0 }} /> : null}
             {uploading ? null : <Typography color="textSecondary" variant="caption">{t('review.composer.shortcuts')}</Typography>}
-          </Stack>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
+          </Row>
+          <Row spacing={1} sx={{ flexShrink: 0, ml: 'auto' }}>
             {replyDiscussionId || inlineTarget ? <Tooltip title={t('review.composer.closeTooltip')}><span><Button disabled={targetControlsDisabled} onClick={() => { if (!uploadingRef.current) close() }} size="small">{t('review.composer.close')}</Button></span></Tooltip> : null}
             {/* GitLab's two actions: keep it in the pending review, or publish it now. */}
             <Tooltip title={t('review.composer.addToReviewTooltip')}><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('draft')} startIcon={<AddCommentRoundedIcon />} variant="outlined">{t('review.composer.addToReview')}</Button></span></Tooltip>
             <Tooltip title={t('review.composer.postNowTooltip')}><span><Button disabled={targetControlsDisabled || !value.trim()} onClick={() => void submit('comment')} startIcon={<SendRoundedIcon />} variant="outlined">
               {uploading ? t('review.composer.attach.uploading') : pending || submitting ? t('review.composer.sending') : replyDiscussionId ? t('review.composer.reply') : t('review.composer.post')}
             </Button></span></Tooltip>
-          </Stack>
-        </Stack>
+          </Row>
+        </Row>
       </Stack>
     </Paper>
   )

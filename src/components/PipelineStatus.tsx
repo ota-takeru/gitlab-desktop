@@ -5,13 +5,13 @@ import HighlightOffRoundedIcon from '@mui/icons-material/HighlightOffRounded'
 import PauseCircleOutlineRoundedIcon from '@mui/icons-material/PauseCircleOutlineRounded'
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
-import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { ReactElement } from 'react'
 
 import type { MessageKey } from '../i18n/i18n'
 import { useT } from '../i18n/useT'
 import { StateIcon } from './StateIcon'
+import { Row } from './Row'
 
 type Tone = 'success' | 'error' | 'info' | 'warning' | 'neutral'
 
@@ -46,9 +46,9 @@ export function PipelineStatus({ compact = false, prefix = 'CI', status }: { com
   const tone = known?.tone ?? 'neutral'
   if (compact) return <StateIcon icon={icon} label={label} spinning={status === 'running'} tone={tone} />
   return (
-    <Stack aria-label={label} component="span" direction="row" role="img" spacing={0.5} sx={{ alignItems: 'center', color: tone === 'neutral' ? 'text.secondary' : `${tone}.main`, display: 'inline-flex', fontSize: 16, whiteSpace: 'nowrap' }}>
+    <Row aria-label={label} component="span" role="img" spacing={0.5} sx={{ color: tone === 'neutral' ? 'text.secondary' : `${tone}.main`, display: 'inline-flex', fontSize: 16, whiteSpace: 'nowrap' }}>
       {icon}
       <Typography aria-hidden color="inherit" component="span" variant="caption">{label}</Typography>
-    </Stack>
+    </Row>
   )
 }

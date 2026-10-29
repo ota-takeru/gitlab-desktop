@@ -25,7 +25,6 @@ import Typography from '@mui/material/Typography'
 import { memo, useCallback, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
-import { edgeRow } from '../../components/edges'
 import { hairline } from '../../components/hairline'
 import { useConfirm, useNotify } from '../../components/feedbackContext'
 import { KeepAlive } from '../../components/KeepAlive'
@@ -36,7 +35,6 @@ import { PipelineStatus } from '../../components/PipelineStatus'
 import { ReactionBar } from '../../components/ReactionBar'
 import { applyOwnReaction } from '../../lib/awardEmoji'
 import { RelativeTime } from '../../components/RelativeTime'
-import { alignTop } from '../../components/rows'
 import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
 import { translate } from '../../i18n/i18n'
@@ -78,6 +76,7 @@ import { ChangesTab } from './MergeRequestChangesTab'
 import { DraftList, type DraftStatus } from './DraftList'
 import { LoadingPanel } from './LoadingPanel'
 import { DescriptionPanel, OverviewTab } from './MergeRequestOverviewTab'
+import { Bar, Row } from '../../components/Row'
 
 export type ReviewTab = 'discussion' | 'changes' | 'overview' | 'pipelines'
 type CommitsQuery = ReviewResourceQuery & { kind: 'commits' }
@@ -924,13 +923,13 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)} sessionId={session?.id}>
     <Box component="section" ref={sectionRef} sx={{ minHeight: '100%', width: '100%' }}>
       <Box component="header" data-sticky-header="true" ref={headerRef} sx={{ bgcolor: 'background.default', ...hairline('bottom', { position: false }), position: 'sticky', px: 2, pt: 1.5, top: 0, zIndex: 2 }}>
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32, ...edgeRow }}>
+        <Bar spacing={0.5} sx={{ minHeight: 32 }}>
           {onBack ? <Tooltip title={`${backLabel} (Esc)`}><IconButton aria-label={backLabel} onClick={onBack}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
+          <Row spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
             <Tooltip title={mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}><Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, px: 1 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}</Box></Button></Tooltip>
             <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="body2">!{mergeRequest.iid}</Typography>
             {currentResult.stale ? <Tooltip title={t('mergeRequest.detail.staleTooltip')}><Typography color="textSecondary" noWrap sx={{ flexShrink: 0, pl: 0.5 }} variant="caption">{t('mergeRequest.common.savedAt', { time: formatFetchedAt(currentResult.snapshot?.fetchedAt) })}</Typography></Tooltip> : null}
-          </Stack>
+          </Row>
           <Tooltip title={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')}><IconButton aria-label={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid }, tabMeta ?? undefined)}>{pinnedNow ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
           <Tooltip title={refreshing ? t('mergeRequest.common.refreshing') : t('mergeRequest.detail.refreshTooltip')}><span><IconButton aria-label={t('mergeRequest.detail.refresh')} disabled={refreshing} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
           <Tooltip title={t('mergeRequest.common.openInGitLab')}><IconButton aria-label={t('mergeRequest.common.openInGitLab')} onClick={() => void openInGitLab()}><LaunchRoundedIcon /></IconButton></Tooltip>
@@ -941,19 +940,19 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
               : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? t('mergeRequest.approval.approving') : approvalWriting === 'unapprove' ? t('mergeRequest.approval.revoking') : approvalsResult.loading && !approvals ? t('mergeRequest.common.checking') : myApproved ? t('mergeRequest.approval.revoke') : t('mergeRequest.approval.approve')}</Button>}
           </Box>
           <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={refreshCurrent} onRun={runHeaderAction} /></ConfirmScope>
-        </Stack>
+        </Bar>
         <MergeRequestSummary approvedBy={approvedBy} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
         {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open participants={mentionParticipants} /> : null}
-        <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, mt: 0.5, ...edgeRow }}>
+        <Bar sx={{ columnGap: 1, mt: 0.5 }}>
           <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0 }} value={activeTab}>
             <Tab label={t('mergeRequest.detail.tabOverview')} value="overview" />
-            <Tab label={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><span>{t('mergeRequest.detail.tabDiscussion')}</span>{unresolvedCount > 0 ? <Chip aria-label={t('mergeRequest.detail.unresolvedCount', { count: unresolvedCount })} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Stack>} value="discussion" />
+            <Tab label={<Row spacing={1}><span>{t('mergeRequest.detail.tabDiscussion')}</span>{unresolvedCount > 0 ? <Chip aria-label={t('mergeRequest.detail.unresolvedCount', { count: unresolvedCount })} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Row>} value="discussion" />
             <Tab label={t('mergeRequest.detail.tabChanges')} value="changes" />
             <Tab label={t('mergeRequest.detail.tabPipelines')} value="pipelines" />
           </Tabs>
           {activeTab === 'discussion' ? <Tooltip describeChild title={descriptionOpen ? t('mergeRequest.detail.hideDescription') : t('mergeRequest.detail.showDescription')}><Button aria-keyshortcuts="D" aria-pressed={descriptionOpen} color={descriptionOpen ? 'primary' : 'inherit'} onClick={() => setDescriptionOpen((open) => !open)} size="small" startIcon={<DescriptionOutlinedIcon />} sx={{ flexShrink: 0, ml: 'auto' }}>{t('mergeRequest.overview.description')}</Button></Tooltip> : null}
           {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: activeTab === 'discussion' ? 0 : 'auto' }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}
-        </Stack>
+        </Bar>
         {/* Write results stay in view under the header, wherever in a long thread the action was taken. */}
         {positionError || visibleMutationError || verificationError ? <Stack aria-live="polite" spacing={1} sx={{ pb: 1, pt: 1.5 }}>
           {positionError ? <Alert onClose={() => setPositionError(null)} severity="warning">{positionError}</Alert> : null}
@@ -1126,7 +1125,7 @@ export function BufferedReviewComposer({ onAddReviewers, onSetReviewers, ...prop
   const mentionedParticipants = (props.mentionParticipants ?? []).filter((user) => mentionedNames.includes(user.username.toLocaleLowerCase()))
   const onSubmitComment = (nextBody: string, thread: boolean, position?: Position) => flushBeforeSubmit(() => props.onSubmitComment(nextBody, thread, position))
   const onSaveDraft = (nextBody: string, position?: Position) => flushBeforeSubmit(() => props.onSaveDraft(nextBody, position))
-  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>{t('mergeRequest.composer.discard')}</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{onSetReviewers && mentionedNames.length ? <Alert action={<Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>{onAddReviewers && mentionedParticipants.length ? <Button color="inherit" disabled={props.disabled || props.pending} onClick={() => onAddReviewers(mentionedParticipants)} size="small">{t('mergeRequest.composer.addMentionedReviewers', { count: mentionedParticipants.length, name: `@${mentionedParticipants[0].username}` })}</Button> : null}<Button color="inherit" onClick={onSetReviewers} size="small">{mentionedParticipants.length ? t('mergeRequest.composer.chooseReviewers') : t('mergeRequest.composer.setReviewers')}</Button></Stack>} severity="info">{t('mergeRequest.composer.noReviewers')}</Alert> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
+  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>{t('mergeRequest.composer.discard')}</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{onSetReviewers && mentionedNames.length ? <Alert action={<Row spacing={0.5}>{onAddReviewers && mentionedParticipants.length ? <Button color="inherit" disabled={props.disabled || props.pending} onClick={() => onAddReviewers(mentionedParticipants)} size="small">{t('mergeRequest.composer.addMentionedReviewers', { count: mentionedParticipants.length, name: `@${mentionedParticipants[0].username}` })}</Button> : null}<Button color="inherit" onClick={onSetReviewers} size="small">{mentionedParticipants.length ? t('mergeRequest.composer.chooseReviewers') : t('mergeRequest.composer.setReviewers')}</Button></Row>} severity="info">{t('mergeRequest.composer.noReviewers')}</Alert> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
 
@@ -1137,10 +1136,10 @@ const noUsers: GitLabUser[] = []
 const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, mergeRequest, myApproved, onCopyHeadSha, onEditPeople, peopleDisabled }: { approvedBy: GitLabUser[]; mergeRequest: MergeRequest; myApproved: boolean; onCopyHeadSha: (sha: string) => Promise<void>; onEditPeople: (field: 'assignees' | 'reviewers') => void; peopleDisabled: boolean }) {
   const t = useT()
   return <>
-    <Stack direction="row" spacing={1} sx={{ ...alignTop, mt: 1 }}>
+    <Row align="top" spacing={1} sx={{ mt: 1 }}>
       <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
-    </Stack>
-    <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
+    </Row>
+    <Row sx={{ columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
       <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
       {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label={t('mergeRequest.summary.draft')} size="small" variant="outlined" /> : null}
       <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ color: 'text.primary' }}><GitLabUserLink user={mergeRequest.author} /></Box></Typography>
@@ -1150,13 +1149,13 @@ const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, merg
       {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
       {approvedBy.length ? <StateIcon count={approvedBy.length} icon={myApproved ? <ThumbUpRoundedIcon fontSize="inherit" /> : <ThumbUpOutlinedIcon fontSize="inherit" />} label={t('mergeRequest.common.approvedBy', { count: approvedBy.length, names: formatNames(approvedBy.map((user) => user.name)) })} tone="success" /> : null}
       <MergeStatusText mergeRequest={mergeRequest} />
-    </Stack>
-    <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 0.5, rowGap: 0 }}>
+    </Row>
+    <Row sx={{ columnGap: 1.5, flexWrap: 'wrap', mt: 0.5, rowGap: 0 }}>
       {([['assignees', 'mergeRequest.people.assigneesList'], ['reviewers', 'mergeRequest.people.reviewersList']] as const).map(([field, label]) => (
         // The label, the names and the pencil are one quiet button, so the edit action reads as part of the line.
         <Tooltip key={field} title={field === 'assignees' ? t('mergeRequest.summary.changeAssignees') : t('mergeRequest.summary.changeReviewers')}><span><Button aria-label={t(field === 'assignees' ? 'mergeRequest.summary.editAssignees' : 'mergeRequest.summary.editReviewers', { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => onEditPeople(field)} variant="quiet">{t(label, { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })}</Button></span></Tooltip>
       ))}
-    </Stack>
+    </Row>
   </>
 })
 

@@ -21,12 +21,13 @@ import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
-import { alignTop, firstLine } from '../../components/rows'
+import { firstLine } from '../../components/rows'
 import { listGlabConnections, normalizeGitLabError, openTokenCreationPage, type ConnectGitLabInput } from '../../lib/gitlab'
 import { useT } from '../../i18n/useT'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useConnection } from './connectionContext'
 import { normalizeInstanceInput, readLastInstanceUrl, sameInstance } from './lastInstance'
+import { Row } from '../../components/Row'
 
 export function ConnectionView({ compact = false }: { compact?: boolean }) {
   const { connect, connectFromGlab, disconnect, error, reauthRequired, refreshToken, restore, restoreFailed, session, status } = useConnection()
@@ -163,9 +164,9 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
       <Box component="section" aria-labelledby="gitlab-connection-title">
         <Box sx={{ p: compact ? 2 : 0 }}>
           <Stack spacing={2}>
-            <Stack direction="row" spacing={1.5} sx={{ ...alignTop, justifyContent: 'space-between' }}>
-              <Stack direction="row" spacing={1} sx={{ ...alignTop, minWidth: 0 }}>
-                <Box sx={firstLine(6)}><CheckCircleOutlineRoundedIcon color="success" /></Box>
+            <Row align="top" spacing={1.5} sx={{ justifyContent: 'space-between' }}>
+              <Row align="top" spacing={1} sx={{ minWidth: 0 }}>
+                <Box sx={firstLine('body1')}><CheckCircleOutlineRoundedIcon color="success" /></Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography component="h3" id="gitlab-connection-title" sx={{ fontWeight: 600 }} variant="body1">
                     {t('connection.connected.title')}
@@ -174,16 +175,16 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
                     {session.instanceUrl}
                   </Typography>
                 </Box>
-              </Stack>
-              <Stack direction="row" spacing={1} sx={firstLine(6)}>
+              </Row>
+              <Row spacing={1} sx={firstLine('body1')}>
                 <Button disabled={status === 'checking' || tokenFormOpen} onClick={() => { setValidation(null); setTokenFormOpen(true) }} startIcon={<KeyRoundedIcon />} variant="outlined">
                   {t('connection.token.update')}
                 </Button>
                 <Button color="error" disabled={status === 'checking'} onClick={() => void handleDisconnect()} startIcon={<LogoutRoundedIcon />} variant="outlined">
                   {t('connection.disconnect.button')}
                 </Button>
-              </Stack>
-            </Stack>
+              </Row>
+            </Row>
             {tokenFormOpen ? <Stack component="form" noValidate onSubmit={(event) => { event.preventDefault(); void handleTokenRefresh() }} spacing={1.5}>
               <Typography color="textSecondary" variant="body2">{t('connection.token.updateDescription', { username: session.user.username })}</Typography>
               {validation ? <Alert onClose={() => setValidation(null)} severity="warning">{validation}</Alert> : null}
@@ -198,10 +199,10 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
                 value={token}
               />
               {tokenPageLink(session.instanceUrl)}
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
+              <Row spacing={1} sx={{ justifyContent: 'flex-end' }}>
                 <Button disabled={status === 'checking'} onClick={() => { setToken(''); setPatUnsafe(false); setValidation(null); setTokenFormOpen(false) }} variant="text">{t('connection.cancel')}</Button>
                 <Button disabled={status === 'checking'} type="submit" variant="contained">{status === 'checking' ? t('connection.token.updating') : t('connection.token.update')}</Button>
-              </Stack>
+              </Row>
             </Stack> : null}
             <Divider />
             <Stack direction={{ md: 'row', xs: 'column' }} spacing={2}>
@@ -220,8 +221,8 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
     <Box component="section" aria-labelledby="gitlab-connection-title">
       <Box sx={{ p: compact ? 2 : 0 }}>
         <Stack spacing={2}>
-          <Stack direction="row" spacing={1} sx={alignTop}>
-            <Box sx={firstLine(6)}><LoginRoundedIcon color="primary" /></Box>
+          <Row align="top" spacing={1}>
+            <Box sx={firstLine('body1')}><LoginRoundedIcon color="primary" /></Box>
             <Box>
               <Typography component="h3" id="gitlab-connection-title" sx={{ fontWeight: 600 }} variant="body1">
                 {reauthRequired ? t('connection.reauth.title') : t('connection.connect.title')}
@@ -232,7 +233,7 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
                   : t('connection.connect.description')}
               </Typography>
             </Box>
-          </Stack>
+          </Row>
           {status === 'unsupported' ? (
             <Alert severity="warning">{t('connection.connect.unsupported')}</Alert>
           ) : null}

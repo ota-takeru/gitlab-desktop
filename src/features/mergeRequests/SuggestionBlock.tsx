@@ -17,6 +17,7 @@ import { shortSha } from '../../lib/format'
 import type { Note, Suggestion } from '../../types/gitlab'
 import { contentLines, hasSuggestionBlock, splitSuggestions } from './suggestions'
 import { useT } from '../../i18n/useT'
+import { Row } from '../../components/Row'
 
 /** Applying the suggestions shown in comments. */
 export interface SuggestionActions {
@@ -61,20 +62,20 @@ export function SuggestionBlock({ actions, above, below, lines, suggestion, unid
   const removed = suggestion ? contentLines(suggestion.fromContent) : null
   const scope = above || below ? t('review.suggestion.scopeRange', { above, below }) : t('review.suggestion.scope')
   return <Box aria-label={t('review.suggestion.title')} component="figure" sx={{ ...panelFrame(), borderRadius: 1, m: 0, overflow: 'hidden' }}>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'surface.list', ...hairline('bottom'), flexWrap: 'wrap', minHeight: 32, px: 1, rowGap: 0.5 }}>
+    <Row spacing={1} sx={{ bgcolor: 'surface.list', ...hairline('bottom'), flexWrap: 'wrap', minHeight: 32, px: 1, rowGap: 0.5 }}>
       <Typography component="figcaption" sx={{ fontWeight: 600 }} variant="caption">{t('review.suggestion.title')}</Typography>
       <Typography color="textSecondary" sx={{ flex: 1 }} variant="caption">{scope}</Typography>
       {suggestion?.applied ? <Typography color="success" variant="caption">{t('review.suggestion.applied')}</Typography>
         : suggestion && !suggestion.appliable ? <Typography color="textSecondary" variant="caption">{t('review.suggestion.notAppliable')}</Typography>
           : suggestion && actions ? <ApplyButton actions={actions} count={1} suggestionIds={[suggestion.id]} />
             : unidentified && actions?.onOpenInGitLab ? <Button onClick={actions.onOpenInGitLab} size="small">{t('review.suggestion.applyInGitLab')}</Button> : null}
-    </Stack>
+    </Row>
     <Box sx={(theme) => ({
       fontFamily: theme.typography.code?.fontFamily ?? 'monospace',
       fontSize: theme.typography.code?.fontSize ?? '0.8125rem',
       lineHeight: '20px',
       py: 0.5,
-      '& .suggestion-line': { display: 'flex', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
+      '& .suggestion-line': { alignItems: 'stretch', display: 'flex', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
       '& .suggestion-line[data-kind="remove"]': { backgroundColor: theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
       '& .suggestion-line[data-kind="add"]': { backgroundColor: theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
       '& .suggestion-prefix': { flexShrink: 0, textAlign: 'center', userSelect: 'none', width: 24 },

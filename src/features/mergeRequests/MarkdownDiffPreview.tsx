@@ -10,6 +10,7 @@ import { ChangeMarker } from './ChangeMarker'
 import { markdownDiffChanges, type MarkdownChangeSide } from './markdownDiff'
 import type { ParsedLine } from './diffParser'
 import { useT } from '../../i18n/useT'
+import { Row } from '../../components/Row'
 
 interface MarkdownDiffPreviewProps {
   blameEnabled?: boolean
@@ -56,10 +57,10 @@ function ChangedFragment({ blameEnabled, kind, side }: { blameEnabled: boolean; 
     px: 1.5,
     py: 1,
   })}>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mb: 0.5 }}>
+    <Row spacing={1} sx={{ flexWrap: 'wrap', mb: 0.5 }}>
       <ChangeMarker firstLine={side.firstLine} kind={kind} lastLine={side.lastLine} title={t(removed ? 'review.markdownDiff.removeTitle' : 'review.markdownDiff.addTitle', { lines: lineLabel })} />
       {blameEnabled ? <BlameCell line={side.firstLine} side={sideType} /> : null}
-    </Stack>
+    </Row>
     <MockMarkdown body={side.text} size="body1" />
   </Box>
 }

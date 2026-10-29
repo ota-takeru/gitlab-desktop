@@ -1,10 +1,10 @@
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
-import Stack from '@mui/material/Stack'
 import type { ReactNode } from 'react'
 import { hairline } from './hairline'
 import { paneGutter } from './paneSx'
 import { alignTop, firstLine } from './rows'
+import { Row } from './Row'
 
 interface ListRowProps {
   selected?: boolean
@@ -83,15 +83,15 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
           '&.Mui-disabled': { opacity: 0.6 },
         }}
       >
-        {leading ? <Box sx={firstLine(5)}>{leading}</Box> : null}
+        {leading ? <Box sx={firstLine('caption')}>{leading}</Box> : null}
         <Box sx={{ flex: 1, minWidth: 0, pr: reserve ? ACTIONS_SPACE : 0 }}>{children}</Box>
       </ButtonBase>
       {actions || stickyActions ? (
-        <Stack className="list-row-actions" direction="row" sx={{ alignItems: 'center', border: 1, borderColor: 'transparent', borderRadius: 1, bottom: 6, position: 'absolute', right: 8 }}>
+        <Row className="list-row-actions" sx={{ border: 1, borderColor: 'transparent', borderRadius: 1, bottom: 6, position: 'absolute', right: 8 }}>
           {/* Hidden by width rather than display, so keyboard focus can still reach them. */}
-          {actions ? <Stack className="list-row-hover-actions" direction="row" sx={{ alignItems: 'center', maxWidth: 0, opacity: 0, overflow: 'hidden', transition: 'opacity 100ms', '@media (prefers-reduced-motion: reduce)': { transition: 'none' }, '@media (hover: none)': { maxWidth: 240, opacity: 1 } }}>{actions}</Stack> : null}
+          {actions ? <Row className="list-row-hover-actions" sx={{ maxWidth: 0, opacity: 0, overflow: 'hidden', transition: 'opacity 100ms', '@media (prefers-reduced-motion: reduce)': { transition: 'none' }, '@media (hover: none)': { maxWidth: 240, opacity: 1 } }}>{actions}</Row> : null}
           {stickyActions}
-        </Stack>
+        </Row>
       ) : null}
     </Box>
   )

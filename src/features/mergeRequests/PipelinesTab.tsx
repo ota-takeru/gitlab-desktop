@@ -27,6 +27,7 @@ import { useQueryRefreshAllowed } from '../shared/QueryRefreshPolicy'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { JobLog } from './JobLog'
 import { canCancel, canPlayJob, canRetryJob, canRetryPipeline, formatDuration, groupByStage, isActiveStatus, PIPELINE_REFRESH_MS } from './pipelineState'
+import { Bar, Row } from '../../components/Row'
 
 export interface PipelinesTabProps {
   sessionId: string | null
@@ -96,14 +97,14 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
   return (
     // The overview's reading width, so on a wide window a job's duration and actions stay near its name.
     <Stack spacing={1.5} sx={{ maxWidth: 1200 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
+      <Bar spacing={1} sx={{ minHeight: 32 }}>
         <Typography color="textSecondary" component="h2" variant="overline">{t('mergeRequest.pipelines.heading')}</Typography>
         <Typography color="textSecondary" role="status" variant="caption">
           {list.refreshing ? t('mergeRequest.common.refreshing') : list.stale ? t('mergeRequest.common.savedAt', { time: formatFetchedAt(list.snapshot?.fetchedAt) }) : ''}
         </Typography>
         <Box sx={{ flex: 1 }} />
         <Tooltip title={t('mergeRequest.pipelines.refreshTooltip')}><span><IconButton aria-label={t('mergeRequest.pipelines.refresh')} disabled={list.loading} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
-      </Stack>
+      </Bar>
       {list.error && !pipelines.length ? <Alert severity="error">{t('mergeRequest.pipelines.loadFailed', { error: list.error.message })}</Alert> : null}
       {list.error && pipelines.length ? <Alert severity="warning">{t('mergeRequest.pipelines.refreshFailed', { error: list.error.message })}</Alert> : null}
       {list.loading ? <Typography color="textSecondary" role="status" variant="body2">{t('mergeRequest.pipelines.loading')}</Typography> : null}
@@ -116,10 +117,10 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
                 const current = item.id === selected?.id
                 return (
                   <ListItemButton aria-current={current ? 'true' : undefined} key={item.id} onClick={() => setSelectedId(item.id)} selected={current} sx={{ alignItems: 'flex-start', borderRadius: 1, flexDirection: 'column', px: 1, py: 0.5 }}>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', maxWidth: '100%' }}>
+                    <Row spacing={1} sx={{ maxWidth: '100%' }}>
                       <PipelineStatus status={item.status} />
                       <Typography color="textSecondary" variant="caption">#{item.id}</Typography>
-                    </Stack>
+                    </Row>
                     <Typography noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%' }} variant="caption">{item.ref} · {shortSha(item.sha)}</Typography>
                     {item.createdAt ? <RelativeTime prefix={t('mergeRequest.common.created')} value={item.createdAt} /> : null}
                   </ListItemButton>
@@ -130,20 +131,20 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
           </Stack>
           {pipeline ? (
             <Stack component="section" aria-label={t('mergeRequest.pipelines.title', { id: pipeline.id })} spacing={1.5} sx={{ minWidth: 0 }}>
-              <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
+              <Bar sx={{ columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
                 <Typography component="h3" variant="subtitle1">{t('mergeRequest.pipelines.title', { id: pipeline.id })}</Typography>
                 <PipelineStatus status={pipeline.status} />
                 <Box sx={{ flex: 1 }} />
                 {canRetryPipeline(pipeline.status) ? <Button disabled={writesDisabled} onClick={() => void run('retry-pipeline', pipelineAction('retryPipeline', pipeline), { confirmLabel: t('mergeRequest.pipelines.retryConfirm'), message: t('mergeRequest.pipelines.retryMessage'), title: t('mergeRequest.pipelines.retryTitle', { id: pipeline.id }) })} size="small" startIcon={<ReplayRoundedIcon />} variant="outlined">{busy === 'retry-pipeline' ? t('mergeRequest.pipelines.retrying') : t('mergeRequest.pipelines.retry')}</Button> : null}
                 {canCancel(pipeline.status) ? <Button color="error" disabled={writesDisabled} onClick={() => void run('cancel-pipeline', pipelineAction('cancelPipeline', pipeline), { cancelLabel: t('mergeRequest.pipelines.cancelKeepRunning'), confirmLabel: t('mergeRequest.pipelines.cancelConfirm'), destructive: true, message: t('mergeRequest.pipelines.cancelMessage'), title: t('mergeRequest.pipelines.cancelTitle', { id: pipeline.id }) })} size="small" startIcon={<DoNotDisturbAltRoundedIcon />} variant="outlined">{busy === 'cancel-pipeline' ? t('mergeRequest.pipelines.canceling') : t('mergeRequest.pipelines.cancel')}</Button> : null}
                 {pipeline.webUrl ? <Tooltip title={t('mergeRequest.pipelines.openInGitLab')}><IconButton aria-label={t('mergeRequest.pipelines.openInGitLab')} onClick={() => onOpenUrl(pipeline.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
-              </Stack>
-              <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
+              </Bar>
+              <Row sx={{ columnGap: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
                 <Tooltip title={pipeline.ref}><Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily', maxWidth: '100%', minWidth: 0 }} variant="caption">{pipeline.ref}</Typography></Tooltip>
                 <Tooltip title={pipeline.sha}><Typography color="textSecondary" sx={{ fontFamily: 'code.fontFamily' }} variant="caption">{shortSha(pipeline.sha)}</Typography></Tooltip>
                 {pipeline.createdAt ? <RelativeTime prefix={t('mergeRequest.common.created')} value={pipeline.createdAt} /> : null}
                 {formatDuration(pipeline.duration) ? <Typography color="textSecondary" variant="caption">{t('mergeRequest.pipelines.duration', { duration: formatDuration(pipeline.duration) ?? '' })}</Typography> : null}
-              </Stack>
+              </Row>
               {active ? <Typography color="textSecondary" variant="caption">{autoRefresh ? t('mergeRequest.pipelines.autoRefreshOn') : t('mergeRequest.pipelines.autoRefreshOff')}</Typography> : null}
               {detail.error ? <Alert severity="warning">{t('mergeRequest.pipelines.detailFailed', { error: detail.error.message })}</Alert> : null}
               {jobsResult.error && !jobs.length ? <Alert severity="error">{t('mergeRequest.pipelines.jobsFailed', { error: jobsResult.error.message })}</Alert> : null}
@@ -195,11 +196,11 @@ function JobRow({ disabled, job, onCancel, onOpenUrl, onPlay, onRetry, onSelect,
     </>
   )
   return (
-    <Box component="li" sx={{ alignItems: 'center', display: 'flex', gap: 0.5, listStyle: 'none' }}>
+    <Bar component="li" sx={{ gap: 0.5, listStyle: 'none' }}>
       {bridge
-        ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: 1, minHeight: 32, minWidth: 0, px: 1 }}>{summary}</Stack>
+        ? <Row spacing={1} sx={{ flex: 1, minHeight: 32, minWidth: 0, px: 1 }}>{summary}</Row>
         : <ListItemButton aria-label={t('mergeRequest.jobs.showLog', { name: job.name })} aria-pressed={selected} onClick={onSelect} selected={selected} sx={{ borderRadius: 1, flex: 1, gap: 1, minHeight: 32, minWidth: 0, px: 1, py: 0.25 }}>{summary}</ListItemButton>}
-      <Stack direction="row" sx={{ alignItems: 'center', flexShrink: 0 }}>
+      <Row sx={{ flexShrink: 0 }}>
         {bridge && job.downstreamPipeline ? <>
           <PipelineStatus prefix={t('mergeRequest.jobs.downstreamPrefix')} status={job.downstreamPipeline.status} />
           {job.downstreamPipeline.webUrl ? <Tooltip title={t('mergeRequest.jobs.openDownstream')}><IconButton aria-label={t('mergeRequest.jobs.openDownstreamOf', { name: job.name })} onClick={() => onOpenUrl(job.downstreamPipeline!.webUrl)} size="small"><LaunchRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
@@ -207,7 +208,7 @@ function JobRow({ disabled, job, onCancel, onOpenUrl, onPlay, onRetry, onSelect,
         {canPlayJob(job) ? <Tooltip title={t('mergeRequest.jobs.play')}><span><IconButton aria-label={t('mergeRequest.jobs.playJob', { name: job.name })} disabled={disabled} onClick={onPlay} size="small"><PlayArrowRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
         {canRetryJob(job) ? <Tooltip title={t('mergeRequest.jobs.retry')}><span><IconButton aria-label={t('mergeRequest.jobs.retryJob', { name: job.name })} disabled={disabled} onClick={onRetry} size="small"><ReplayRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
         {canCancel(job.status) ? <Tooltip title={t('mergeRequest.jobs.cancel')}><span><IconButton aria-label={t('mergeRequest.jobs.cancelJob', { name: job.name })} disabled={disabled} onClick={onCancel} size="small"><DoNotDisturbAltRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
-      </Stack>
-    </Box>
+      </Row>
+    </Bar>
   )
 }

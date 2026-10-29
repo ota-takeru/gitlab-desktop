@@ -10,13 +10,13 @@ import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import StrikethroughSRoundedIcon from '@mui/icons-material/StrikethroughSRounded'
 import TitleRoundedIcon from '@mui/icons-material/TitleRounded'
 import IconButton from '@mui/material/IconButton'
-import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import type { ReactNode } from 'react'
 
 import type { MessageKey } from '../i18n/i18n'
 import { useT } from '../i18n/useT'
 import type { MarkdownFormat } from '../lib/markdownFormat'
+import { Row } from './Row'
 
 const tools: { format: MarkdownFormat; icon: ReactNode; label: MessageKey; shortcut?: string }[] = [
   { format: 'heading', icon: <TitleRoundedIcon />, label: 'common.markdownToolbar.heading' },
@@ -36,7 +36,7 @@ const tools: { format: MarkdownFormat; icon: ReactNode; label: MessageKey; short
 export function MarkdownToolbar({ disabled = false, onFormat }: { disabled?: boolean; onFormat: (format: MarkdownFormat) => void }) {
   const t = useT()
   return (
-    <Stack aria-label={t('common.markdownToolbar.label')} direction="row" role="toolbar" sx={{ alignItems: 'center', columnGap: 0.25, flexWrap: 'wrap', rowGap: 0.5 }}>
+    <Row aria-label={t('common.markdownToolbar.label')} role="toolbar" sx={{ columnGap: 0.25, flexWrap: 'wrap', rowGap: 0.5 }}>
       {tools.map((tool) => (
         <Tooltip key={tool.format} title={tool.shortcut ? t('common.markdownToolbar.withShortcut', { label: t(tool.label), shortcut: tool.shortcut }) : t(tool.label)}>
           <span>
@@ -51,6 +51,6 @@ export function MarkdownToolbar({ disabled = false, onFormat }: { disabled?: boo
           </span>
         </Tooltip>
       ))}
-    </Stack>
+    </Row>
   )
 }

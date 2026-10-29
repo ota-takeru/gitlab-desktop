@@ -37,6 +37,7 @@ import { NoteBody, type SuggestionActions } from './SuggestionBlock'
 import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
 import { useMentionSuggestions } from './useMentionSuggestions'
 import { useT } from '../../i18n/useT'
+import { Bar, Row } from '../../components/Row'
 
 const NOTES_PER_PAGE = 50
 /** Thread width from which a line comment's code sits beside its comments. */
@@ -252,19 +253,19 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           <ToggleButton value="all">{t('review.discussion.filter.all')}</ToggleButton>
           <ToggleButton value="unresolved">{t('review.discussion.filter.unresolved')}</ToggleButton>
         </ToggleButtonGroup>
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <Row spacing={0.5} sx={{ flexWrap: 'wrap' }}>
           {latestNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(latestNote)} size="small">{t('review.discussion.latest')}</Button> : null}
           {earliestUnreadNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(earliestUnreadNote)} size="small">{t('review.discussion.unread')} <Chip color="primary" label={unreadNotes.length} size="small" sx={{ ml: 0.5 }} /></Button> : null}
           {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">{t('review.discussion.markRead')}</Button> : null}
-        </Stack>
+        </Row>
       </Stack>
       {older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'center', minHeight: 32 }}>
+        <Row spacing={1} sx={{ justifyContent: 'center', minHeight: 32 }}>
           {older.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('review.discussion.older.loading')}</Typography>
             : older.error ? <><Typography color="error" variant="caption">{t('review.discussion.older.error', { message: older.error })}</Typography><Button onClick={older.onRetry}>{t('review.discussion.older.retry')}</Button></>
               : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>{t('review.discussion.older.load')}</Button>
                 : <Typography color="textSecondary" variant="caption">{t('review.discussion.older.limit')}</Typography>}
-        </Stack>
+        </Row>
       ) : null}
       {visibleDiscussions.map(({ discussion, notes }) => {
         const canResolve = notes.some((note) => note.resolvable)
@@ -289,12 +290,12 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         return (
           <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
             {isThreadCollapsible(notes) ? (
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, px: 1.5, py: 0.5, ...edgeRow }}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', minWidth: 0 }}>
+              <Bar spacing={1} sx={{ ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, px: 1.5, py: 0.5 }}>
+                <Row spacing={1} sx={{ flex: '1 1 auto', minWidth: 0 }}>
                   {position ? <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} /> : <ForumOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} />}
                   {/* A long path gives way with an ellipsis (full path in the tooltip) rather than run under the controls. */}
                   {position && positionLabel ? <Tooltip describeChild title={positionLabel}>{onOpenPosition ? (
-                    <Box component="span" sx={{ display: 'flex', flex: '0 1 auto', minWidth: 0 }}>
+                    <Box component="span" sx={{ alignItems: 'center', display: 'flex', flex: '0 1 auto', minWidth: 0 }}>
                       <Button
                         aria-label={t('review.discussion.goToDiff', { place: positionLabel })}
                         disabled={disabled || Boolean(editing || replyDiscussionId)}
@@ -305,16 +306,16 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                   ) : <Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', fontFamily: 'code.fontFamily', minWidth: 0 }} variant="caption">{positionLabel}</Typography>}</Tooltip> : <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{t('review.discussion.overview')}</Typography>}
                   {position && position.headSha !== headSha && headSha && sessionId && projectId ? <CommentChangeStatus headSha={headSha} iid={iid} position={position} projectId={projectId} sessionId={sessionId} /> : null}
                   {isCollapsed && firstNote ? <Tooltip describeChild title={plainExcerpt(firstNote.body, 300)}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 0', minWidth: 0 }} variant="caption">— {firstNote.author.name}: {plainExcerpt(firstNote.body, 80)}</Typography></Tooltip> : null}
-                </Stack>
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
+                </Row>
+                <Row spacing={1} sx={{ flexShrink: 0 }}>
                   {canResolve ? <ResolveToggle disabled={disabled} onToggle={(resolve) => void onResolve(discussion, resolve).then((ok) => { if (ok) setCollapsedThreads((current) => ({ ...current, [discussion.id]: resolve })) })} resolved={resolved} /> : null}
                   <Button
                     aria-expanded={!isCollapsed}
                     disabled={containsEditingNote || replying}
                     onClick={() => updatePreservingScroll(() => setCollapsedThreads((current) => ({ ...current, [discussion.id]: !isCollapsed })))}
                   >{isCollapsed ? t('review.discussion.expand', { count: notes.length }) : t('review.discussion.collapse')}</Button>
-                </Stack>
-              </Stack>
+                </Row>
+              </Bar>
             ) : null}
             {!isCollapsed ? <Box sx={{ containerType: 'inline-size' }}><Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', [THREAD_WITH_CODE_WIDE]: codeContext ? { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } : {} }}>
             {/* Narrow threads put the code above the comments; wide ones keep the comments where
@@ -343,18 +344,18 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
             </Box>
             </Box></Box> : null}
             {/* A folded thread shows only its header; replying starts from the open thread. */}
-            {!isCollapsed ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', ...hairline('top'), flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.5 }}>
+            {!isCollapsed ? <Row spacing={1} sx={{ bgcolor: 'action.hover', ...hairline('top'), flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.5 }}>
               {replying ? <Box sx={{ flex: '1 1 100%', minWidth: 0 }}>{replyComposer}</Box> : (
                 <Button disabled={disabled} onClick={() => onReply(discussion)} size="small" startIcon={<ReplyRoundedIcon />}>{t('review.discussion.reply')}</Button>
               )}
               {notePageCount > 1 ? (
-                <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto' }}>
+                <Row spacing={0.25} sx={{ flexShrink: 0, ml: 'auto' }}>
                   <Button aria-label={t('review.discussion.previousComments', { thread: threadLabel })} disabled={disabled || paginationDisabled || notePage <= 1} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage - 1 })))} size="small">{t('review.diff.page.previous')}</Button>
                   <Typography color="textSecondary" variant="caption">{t('review.discussion.commentRange', { start: noteRangeStart(notePage, NOTES_PER_PAGE), end: noteRangeEnd(notePage, NOTES_PER_PAGE, notes.length), total: notes.length })}</Typography>
                   <Button aria-label={t('review.discussion.nextComments', { thread: threadLabel })} disabled={disabled || paginationDisabled || notePage >= notePageCount} onClick={() => updatePreservingScroll(() => setNotePages((current) => ({ ...current, [discussion.id]: notePage + 1 })))} size="small">{t('review.diff.page.next')}</Button>
-                </Stack>
+                </Row>
               ) : null}
-            </Stack> : null}
+            </Row> : null}
           </Box>
         )
       })}
@@ -432,22 +433,22 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
     >
       <Box sx={firstLine(6)}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
       <Box sx={{ minWidth: 0 }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 24, minWidth: 0, ...edgeRow }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
+        <Bar spacing={1} sx={{ minHeight: 24, minWidth: 0 }}>
+          <Row spacing={1} sx={{ flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2"><GitLabUserLink user={note.author} /></Typography>
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
             {own ? <Typography color="textSecondary" variant="caption">{t('review.note.own')}</Typography> : null}
             <RelativeTime value={note.createdAt} />
             {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">{t('review.note.edited')}</Typography> : null}
             {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('review.note.unread')}</Typography> : null}
-          </Stack>
+          </Row>
           {own && !note.system ? (
-            <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, opacity: editing ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
+            <Row className="note-actions" sx={{ flexShrink: 0, opacity: editing ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
               <Tooltip title={t('review.note.editTooltip')}><IconButton aria-label={t('review.note.edit', { author: note.author.name, excerpt: plainExcerpt(shown.body, 30) })} disabled={disabled} onClick={() => setEditing(note.id)} ref={editButtonRef}><EditOutlinedIcon /></IconButton></Tooltip>
               <Tooltip title={t('review.note.deleteTooltip')}><IconButton aria-label={t('review.note.delete', { author: note.author.name, excerpt: plainExcerpt(note.body, 30) })} disabled={disabled} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: plainExcerpt(note.body, 120), title: t('review.note.delete.title') }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
-            </Stack>
+            </Row>
           ) : null}
-        </Stack>
+        </Bar>
         {editing ? (
           <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={shown} onClose={closeEditor} onSave={saveEdit} sessionId={sessionId ?? null} />
         ) : <Box sx={{ color: 'text.primary', mt: 0.5, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={shown} size="body1" /></Box>}
@@ -518,11 +519,11 @@ function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, o
         value={body}
       />
       {mentionPopup}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
+      <Row spacing={1} sx={{ justifyContent: 'flex-end' }}>
         <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
         <Button disabled={saving} onClick={() => void cancel()}>{t('review.editor.cancel')}</Button>
         <Button disabled={!body.trim() || disabled || saving} onClick={() => void save()} variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
-      </Stack>
+      </Row>
     </Stack>
   )
 }

@@ -11,7 +11,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
-import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
@@ -32,6 +31,7 @@ import type { BranchesQuery, GitLabBranch } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useRememberedListState } from './listState'
+import { Row } from '../../components/Row'
 
 /**
  * Branches of one project, recently updated first. A row shows the MRs whose
@@ -112,14 +112,14 @@ function BranchRow({ branch, onOpenInGitLab, onShowMergeRequests }: { branch: Gi
   const t = useT()
   const actions = branch.webUrl ? <Tooltip title={t('project.branches.openInGitLab')}><IconButton aria-label={t('project.branches.openNamedInGitLab', { branch: branch.name })} onClick={() => void onOpenInGitLab(branch.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : undefined
   return <ListRow actions={actions} ariaLabel={t('project.branches.showMergeRequests', { branch: branch.name })} leading={<AltRouteRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+    <Row spacing={1} sx={{ minWidth: 0 }}>
       {/* The name takes only its own width, so its marks and time follow it instead of the row's far edge. */}
       <Tooltip enterDelay={600} title={branch.name}><Typography noWrap sx={{ flexShrink: 1, fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{branch.name}</Typography></Tooltip>
       {branch.default ? <StateIcon icon={<HomeRoundedIcon fontSize="inherit" />} label={t('project.branches.default')} tone="info" /> : null}
       {branch.protected ? <StateIcon icon={<LockRoundedIcon fontSize="inherit" />} label={t('project.branches.protected')} tone="warning" /> : null}
       {branch.merged ? <StateIcon icon={<CallMergeRoundedIcon fontSize="inherit" />} label={t('project.branches.merged')} tone="secondary" /> : null}
       {branch.commit?.committedDate ? <RelativeTime value={branch.commit.committedDate} /> : null}
-    </Stack>
+    </Row>
     {branch.commit ? <Typography color="textSecondary" component="div" noWrap title={`${branch.commit.shortId} ${branch.commit.title}${branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}`} variant="caption">
       <Box component="span" sx={{ fontFamily: 'code.fontFamily', verticalAlign: 'top' }}>{branch.commit.shortId}</Box> {branch.commit.title}{branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}
     </Typography> : null}

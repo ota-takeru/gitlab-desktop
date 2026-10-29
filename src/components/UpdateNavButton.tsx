@@ -20,7 +20,7 @@ export function UpdateNavButton({ collapsed, disabledReason, onClick, version }:
   const hint = disabledReason ?? t('common.update.installHint')
   return (
     <Tooltip placement="right" title={collapsed ? t('common.update.navTooltip', { label, hint }) : hint}>
-      <Box component="span" sx={{ display: 'flex', flexShrink: 0, mt: 1 }}>
+      <Box component="span" sx={{ alignItems: 'center', display: 'flex', flexShrink: 0, mt: 1 }}>
         <Button
           aria-label={t('common.update.navAriaLabel', { version })}
           disabled={Boolean(disabledReason)}

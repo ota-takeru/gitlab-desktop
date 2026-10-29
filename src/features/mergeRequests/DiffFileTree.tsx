@@ -41,7 +41,7 @@ export function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isRe
       if (node.kind === 'directory') {
         const open = isOpen(node.path)
         rows.push(<ListItemButton aria-expanded={open} aria-label={t('review.fileTree.folder', { path: node.path })} key={`d:${node.path}`} onClick={() => toggle(node.path)} sx={{ gap: 0.5, pl: indent, pr: 1, py: 0.25 }} title={node.path}>
-          <Box component="span" sx={{ color: 'text.secondary', display: 'flex' }}>{open ? <ExpandMoreRoundedIcon fontSize="inherit" /> : <ChevronRightRoundedIcon fontSize="inherit" />}</Box>
+          <Box component="span" sx={{ alignItems: 'center', color: 'text.secondary', display: 'flex' }}>{open ? <ExpandMoreRoundedIcon fontSize="inherit" /> : <ChevronRightRoundedIcon fontSize="inherit" />}</Box>
           <FolderOutlinedIcon fontSize="inherit" sx={{ color: 'text.secondary' }} />
           <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="body2">{node.name}</Typography>
         </ListItemButton>)

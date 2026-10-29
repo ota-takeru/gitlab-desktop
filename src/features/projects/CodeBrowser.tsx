@@ -11,7 +11,6 @@ import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
-import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState, type ReactNode } from 'react'
@@ -31,6 +30,7 @@ import type { BlobQuery, BranchesQuery, TreeEntry, TreeQuery } from '../../types
 import { useConnection } from '../connections/connectionContext'
 import { FullFileView } from '../mergeRequests/DiffViewer'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { Row } from '../../components/Row'
 
 /** Where the code browser is: a branch (none for the default one), a folder, and the file open in it. */
 export interface CodeLocation {
@@ -84,7 +84,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
         navigation={navigation}
         title={t('project.code.title', { project: projectName })}
       >
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+        <Row spacing={1} sx={{ minWidth: 0 }}>
           <Select
             aria-label={t('project.code.branch')}
             displayEmpty
@@ -106,7 +106,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
             })}
             {file ? <Typography color="textPrimary" sx={{ fontFamily: 'code.fontFamily' }} variant="body2">{file.path.split('/').at(-1)}</Typography> : null}
           </Breadcrumbs>
-        </Stack>
+        </Row>
       </PaneHeader>
       <PaneStatus announcement={file ? null : tree.data && !tree.previous ? t('project.code.count', { count: entries.length }) : null}>
         {file
@@ -136,10 +136,10 @@ function TreeRow({ entry, onOpenFile, onOpenFolder }: { entry: TreeEntry; onOpen
   const icon = entry.type === 'tree' ? <FolderOutlinedIcon sx={{ color: 'place.projects', fontSize: 16 }} /> : entry.type === 'commit' ? <LinkRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} /> : <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
   // A submodule points at another repository, so it has nothing to open here.
   return <ListRow disabled={entry.type === 'commit'} leading={icon} onOpen={entry.type === 'tree' ? onOpenFolder : onOpenFile}>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+    <Row spacing={1} sx={{ minWidth: 0 }}>
       <Typography noWrap sx={{ fontFamily: 'code.fontFamily', minWidth: 0 }} variant="body2">{entry.name}</Typography>
       {entry.type === 'commit' ? <Typography color="textSecondary" variant="caption">{t('project.code.submodule')}</Typography> : null}
-    </Stack>
+    </Row>
   </ListRow>
 }
 

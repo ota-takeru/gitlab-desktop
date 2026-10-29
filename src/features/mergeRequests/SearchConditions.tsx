@@ -10,7 +10,7 @@ import { useT } from '../../i18n/useT'
 import type { MergeRequestState } from '../../types/gitlab'
 import { CONDITION_NAMES, STATE_NAMES, type ConditionKind } from './conditionNames'
 import { GroupSearchPicker, ProjectSearchPicker, UserSearchPicker } from './SearchPickers'
-import { alignTop } from '../../components/rows'
+import { Row } from '../../components/Row'
 
 export interface ConditionValues {
   state: MergeRequestState
@@ -111,10 +111,10 @@ function TextEditor({ apply, kind, values }: { apply: (patch: Partial<ConditionV
   const t = useT()
   const { field, helper } = TEXT_FIELDS[kind]
   const [value, setValue] = useState(values[field])
-  return <Stack component="form" direction="row" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); apply({ [field]: value.trim() }) }} spacing={1} sx={{ ...alignTop }}>
+  return <Row component="form" align="top" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); apply({ [field]: value.trim() }) }} spacing={1}>
     <TextField autoFocus fullWidth helperText={t(helper)} label={t(CONDITION_NAMES[kind])} onChange={(event) => setValue(event.target.value)} slotProps={{ htmlInput: { 'aria-label': t('mrList.editor.field', { condition: t(CONDITION_NAMES[kind]) }) } }} value={value} />
     <Button disabled={!value.trim()} type="submit" variant="contained">{t('mrList.editor.apply')}</Button>
-  </Stack>
+  </Row>
 }
 
 function UpdatedEditor({ apply, values }: { apply: (patch: Partial<ConditionValues>) => void; values: ConditionValues }) {
@@ -122,10 +122,10 @@ function UpdatedEditor({ apply, values }: { apply: (patch: Partial<ConditionValu
   const [after, setAfter] = useState(values.updatedAfter.slice(0, 10))
   const [before, setBefore] = useState(values.updatedBefore.slice(0, 10))
   return <Stack component="form" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); apply({ updatedAfter: after, updatedBefore: before }) }} spacing={1}>
-    <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}>
+    <Row spacing={1}>
       <TextField autoFocus label={t('mrList.editor.updatedFrom')} onChange={(event) => setAfter(event.target.value)} slotProps={{ htmlInput: { 'aria-label': t('mrList.editor.updatedFromAria') }, inputLabel: { shrink: true } }} type="date" value={after} />
       <TextField label={t('mrList.editor.updatedTo')} onChange={(event) => setBefore(event.target.value)} slotProps={{ htmlInput: { 'aria-label': t('mrList.editor.updatedToAria') }, inputLabel: { shrink: true } }} type="date" value={before} />
-    </Stack>
+    </Row>
     <Button disabled={!after && !before} sx={{ alignSelf: 'flex-end' }} type="submit" variant="contained">{t('mrList.editor.apply')}</Button>
   </Stack>
 }

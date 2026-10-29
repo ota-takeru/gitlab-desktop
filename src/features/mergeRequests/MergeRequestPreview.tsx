@@ -4,7 +4,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
-import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -20,6 +19,7 @@ import { useT } from '../../i18n/useT'
 import { formatMergeRequestState, mergeRequestStateTone } from '../../lib/format'
 import type { MergeRequest } from '../../types/gitlab'
 import { formatNames } from './mergeActions'
+import { Row } from '../../components/Row'
 
 /**
  * The overview of a list row without opening the MR: what the list already
@@ -62,22 +62,22 @@ export function MergeRequestPreview({ approval, closeAt, mergeRequest, onClose, 
     <Box aria-label={t('mergeRequest.preview.label', { iid: mergeRequest.iid })} component="aside" ref={rootRef} sx={{ bgcolor: 'background.paper', ...hairline('left', { position: false }), display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0, position: 'relative', width: 'min(520px, 50%)' }}>
       {/* Keyboard and screen reader users close with Esc or the header's button; this one only saves pointer travel. */}
       {closeSpot ? <Tooltip title={t('mergeRequest.common.closeEsc')}><IconButton aria-hidden onClick={onClose} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'divider', boxShadow: 2, left: closeSpot.left, position: 'absolute', top: closeSpot.top, zIndex: 1, '&:hover': { bgcolor: 'surface.raised' } }} tabIndex={-1}><CloseRoundedIcon /></IconButton></Tooltip> : null}
-      <Stack direction="row" ref={headerRef} spacing={0.5} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
+      <Row ref={headerRef} spacing={0.5} sx={{ ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
         <Tooltip title={`${mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })} !${mergeRequest.iid}`}><Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })} !{mergeRequest.iid}</Typography></Tooltip>
         <Button onClick={onOpen} size="small" startIcon={<OpenInFullRoundedIcon />} variant="contained">{t('mergeRequest.preview.open')}</Button>
         <Tooltip title={t('mergeRequest.common.closeEsc')}><IconButton aria-label={t('mergeRequest.preview.close')} onClick={onClose}><CloseRoundedIcon /></IconButton></Tooltip>
-      </Stack>
+      </Row>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
         <Typography component="h2" sx={{ overflowWrap: 'anywhere' }} variant="h2">{mergeRequest.title}</Typography>
-        <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
+        <Row sx={{ columnGap: 1, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
           <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} tone={mergeRequestStateTone(mergeRequest.state)} />
           {approval ? <Typography color="textSecondary" variant="caption">{approval}</Typography> : null}
           <Typography sx={{ fontWeight: 500 }} variant="caption">{mergeRequest.author.name}</Typography>
           <RelativeTime prefix={t('mergeRequest.common.updated')} value={mergeRequest.updatedAt} />
-        </Stack>
+        </Row>
         <Typography color="textSecondary" component="div" sx={{ fontFamily: 'code.fontFamily', mt: 1, overflowWrap: 'anywhere' }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
         {people.length ? <Typography color="textSecondary" component="div" variant="caption">{people.join(' · ')}</Typography> : null}
-        {mergeRequest.labels?.length ? <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>{mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" />)}</Stack> : null}
+        {mergeRequest.labels?.length ? <Row sx={{ flexWrap: 'wrap', gap: 0.5, mt: 1 }}>{mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" />)}</Row> : null}
         <Box sx={{ ...hairline('top'), mt: 1.5, pt: 1.5 }}>
           <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)}><MockMarkdown body={mergeRequest.description || t('mergeRequest.common.descriptionEmpty')} /></MarkdownLinkProvider>
         </Box>

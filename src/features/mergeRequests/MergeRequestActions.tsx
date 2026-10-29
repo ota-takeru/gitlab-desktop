@@ -34,6 +34,7 @@ import type { GitLabAction, GitLabLabel, LabelsQuery, MergeRequest, Milestone, M
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { canRebase, mergeReadiness, titleWithDraft } from './mergeActions'
+import { Row } from '../../components/Row'
 
 /** After a rebase is accepted, the MR is read again this often while GitLab works on it. */
 const REBASE_POLL_MS = 5_000
@@ -223,11 +224,11 @@ function MergeDialog({ disabled, mergeRequest, onClose, onMerge }: { disabled: b
       <DialogContent>
         <Stack spacing={1.5} sx={{ pt: 0.5 }}>
           <Alert severity={readiness.tone}>{readiness.summary}</Alert>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Row spacing={1} sx={{ flexWrap: 'wrap' }}>
             <Typography color="textSecondary" sx={{ fontFamily: 'code.fontFamily' }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
             {sha ? <Typography color="textSecondary" variant="caption">{t('mergeRequest.mergeDialog.head', { sha: shortSha(sha) })}</Typography> : null}
             {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
-          </Stack>
+          </Row>
           {headChanged ? <Alert severity="warning">{t('mergeRequest.mergeDialog.headChanged')}</Alert> : null}
           {readiness.canAutoMerge ? (
             <RadioGroup aria-label={t('mergeRequest.mergeDialog.method')} onChange={(event) => setAutoMerge(event.target.value === 'auto')} value={autoMerge ? 'auto' : 'now'}>

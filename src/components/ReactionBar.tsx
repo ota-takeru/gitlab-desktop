@@ -1,7 +1,6 @@
 import AddReactionOutlinedIcon from '@mui/icons-material/AddReactionOutlined'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
-import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import { useState } from 'react'
 
@@ -9,6 +8,7 @@ import { useT } from '../i18n/useT'
 import { applyOwnReaction, emojiForName, groupReactions, useEmojiCatalog } from '../lib/awardEmoji'
 import type { AwardEmoji } from '../types/gitlab'
 import { EmojiPicker } from './EmojiPicker'
+import { Row } from './Row'
 
 interface SendingReaction {
   name: string
@@ -53,7 +53,7 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
     setAnchor(null)
     toggle(name, !mine.has(name))
   }
-  return <Stack direction="row" sx={{ alignItems: 'center', columnGap: 0.5, flexWrap: 'wrap', rowGap: 0.5 }}>
+  return <Row sx={{ columnGap: 0.5, flexWrap: 'wrap', rowGap: 0.5 }}>
     {groups.map((group) => {
       const emoji = emojiForName(group.name, catalog)
       const names = group.users.map((user) => user.name).join(t('common.list.separator'))
@@ -81,5 +81,5 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
       </span>
     </Tooltip>
     <EmojiPicker anchorEl={anchor} label={label} mine={mine} onClose={() => setAnchor(null)} onPick={choose} />
-  </Stack>
+  </Row>
 }

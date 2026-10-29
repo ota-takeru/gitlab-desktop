@@ -62,6 +62,7 @@ import { personalQueueFor, type PersonalQueue } from './personalQueue'
 import { CONDITION_KINDS, CONDITION_NAMES, STATE_NAMES, type ConditionKind } from './conditionNames'
 import { ConditionEditor } from './SearchConditions'
 import { type AppliedSearch, buildQuery, canonicalLabels, cleanOptional, defaultSearchLabel, makeInitialState, type OrderBy, parseLabels, sameSavedSearch, type SearchDraft, serializeSearch, type SortDirection, toDateInputValue, validateDraft, validOrderBy, validSort } from './mergeRequestSearch'
+import { Row } from '../../components/Row'
 
 type StoredSearch = SavedMergeRequestSearch & { orderBy?: OrderBy; sort?: SortDirection }
 
@@ -399,7 +400,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                 startAdornment: <>
                   <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>
                   {/* Each applied condition shows its value as a tag in the field: a tag opens its editor, ✕ removes it. */}
-                  {fieldChips.length ? <Box aria-label={t('mrList.search.applied')} role="group" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%', mr: 0.5, py: 0.5 }}>
+                  {fieldChips.length ? <Box aria-label={t('mrList.search.applied')} role="group" sx={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%', mr: 0.5, py: 0.5 }}>
                     {fieldChips.map((chip) => {
                       const { clear, kind } = chip
                       const open = kind && kind !== 'search' ? (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind }) : undefined
@@ -433,13 +434,13 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
               </MenuList>
             </Paper>
           </Popper>
-          <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            {queueSwitches.length ? <Stack aria-label={t('mrList.queue.group')} direction="row" role="group" sx={{ alignItems: 'center', gap: 0.5, mr: 0.5 }}>
+          <Row sx={{ flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+            {queueSwitches.length ? <Row aria-label={t('mrList.queue.group')} role="group" sx={{ gap: 0.5, mr: 0.5 }}>
               {queueSwitches.map(({ active, label, patch }) => <Chip aria-pressed={active} color={active ? 'primary' : 'default'} key={label} label={label} onClick={() => applyConditions(patch)} size="small" variant={active ? 'filled' : 'outlined'} />)}
-            </Stack> : null}
+            </Row> : null}
             {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>{t('mrList.search.clear')}</Button> : null}
             {/* The order is not a condition, so it stays a pull-down beside the field. */}
-            <Stack direction="row" sx={{ alignItems: 'center', gap: 0.5, ml: 'auto' }}>
+            <Row sx={{ gap: 0.5, ml: 'auto' }}>
               <Select aria-label={t('mrList.order.aria')} displayEmpty onChange={(event) => applyConditions({ orderBy: event.target.value as OrderBy })} sx={pillSelectSx} value={draft.orderBy}>
                 <MenuItem value="updated_at">{t('mrList.order.updated')}</MenuItem>
                 <MenuItem value="created_at">{t('mrList.order.created')}</MenuItem>
@@ -448,8 +449,8 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                 <MenuItem value="desc">{t('mrList.order.desc')}</MenuItem>
                 <MenuItem value="asc">{t('mrList.order.asc')}</MenuItem>
               </Select>
-            </Stack>
-          </Stack>
+            </Row>
+          </Row>
           <ConditionEditor
             anchorEl={editing?.anchor ?? null}
             currentUserId={session.user.id}
@@ -470,10 +471,10 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
           <Stack spacing={2}>
             <Box>
               <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">{t('mrList.saved.saveCurrent')}</Typography>
-              <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}>
+              <Row spacing={1}>
                 <TextField fullWidth label={t('mrList.saved.nameOptional')} onChange={(event) => setSaveLabel(event.target.value)} value={saveLabel} />
                 <Button onClick={() => { if (saveSearch()) setSavedSearchesOpen(false) }} startIcon={<SaveRoundedIcon />} type="button" variant="contained">{t('mrList.saved.save')}</Button>
-              </Stack>
+              </Row>
             </Box>
             <Box>
               <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">{t('mrList.saved.listHeading', { count: savedSearches.length })}</Typography>
@@ -481,16 +482,16 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                 <Stack divider={<Divider flexItem />} sx={{ ...panelFrame(), borderRadius: 1 }}>
                   {savedSearches.map((saved) => (
                     <Stack key={saved.id} spacing={1} sx={{ p: 1 }}>
-                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                      <Row spacing={0.5}>
                         <Button onClick={() => { applySavedSearch(saved); setSavedSearchesOpen(false) }} sx={{ flex: 1, justifyContent: 'flex-start', minWidth: 0, overflowWrap: 'anywhere', textAlign: 'left', whiteSpace: 'normal' }}>
                           {saved.label}
                         </Button>
                         <Tooltip title={t('mrList.saved.delete')}><IconButton aria-label={t('mrList.saved.deleteAria', { name: saved.label })} onClick={() => deleteSavedSearch(saved.id)}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
-                      </Stack>
-                      <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}>
+                      </Row>
+                      <Row spacing={1}>
                         <TextField fullWidth label={t('mrList.saved.name')} onChange={(event) => setRenameLabels((current) => ({ ...current, [saved.id]: event.target.value }))} value={renameLabels[saved.id] ?? saved.label} />
                         <Button disabled={!cleanOptional(renameLabels[saved.id]) || (renameLabels[saved.id] ?? saved.label).trim() === saved.label} onClick={() => renameSavedSearch(saved)} startIcon={<EditOutlinedIcon />} sx={{ flexShrink: 0 }}>{t('mrList.saved.rename')}</Button>
-                      </Stack>
+                      </Row>
                     </Stack>
                   ))}
                 </Stack>
@@ -503,7 +504,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
 
       <PaneStatus announcement={result.data && !result.previous ? page > 1 ? t('mrList.status.announceFromPage', { count: rows.length, page }) : t('mrList.status.announce', { count: rows.length }) : null}>{result.data && !result.previous ? <>{page > 1 ? t('mrList.status.loadedFromPage', { count: rows.length, page }) : t('mrList.status.loaded', { count: rows.length })}{freshness ? ` · ${freshness}` : ''}</> : result.loading || result.previous ? t('mrList.status.loading') : result.error ? t('mrList.status.failed') : null}</PaneStatus>
       {/* The preview sits beside the results, so it hides none of them. */}
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Box sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
       <Box aria-busy={result.previous} ref={resultsRef} sx={paneResultsSx(result.previous)}>
         {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('mrList.results.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
         {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('mrList.results.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('mrList.results.staleError', { error: result.error.message })}</Alert> : null}
@@ -840,13 +841,13 @@ const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, ap
       selected={selected}
     >
       {/* The time follows the MR's name instead of sitting at the far edge of a wide row. */}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+      <Row spacing={1} sx={{ minWidth: 0 }}>
         <Tooltip title={`${showProject ? `${mergeRequest.projectPath || t('mrList.row.project', { id: mergeRequest.projectId })} ` : ''}!${mergeRequest.iid}`}><Typography color="textSecondary" noWrap sx={{ minWidth: 0 }} variant="caption">{showProject ? `${mergeRequest.projectPath || t('mrList.row.project', { id: mergeRequest.projectId })} ` : ''}!{mergeRequest.iid}</Typography></Tooltip>
         <Typography aria-hidden color="textSecondary" variant="caption">·</Typography>
         <RelativeTime prefix={byCreation ? t('mrList.row.created') : t('mrList.row.updated')} value={byCreation && createdAt ? createdAt : mergeRequest.updatedAt} />
-      </Stack>
+      </Row>
       <Typography sx={{ display: '-webkit-box', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{listTitle(mergeRequest)}</Typography>
-      <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, pr: ROW_ACTIONS_SPACE, rowGap: 0.5 }}>
+      <Row sx={{ columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, pr: ROW_ACTIONS_SPACE, rowGap: 0.5 }}>
         {/* States first, as icons with counts; their names are in the tooltips. */}
         {mergeRequest.draft ? <StateIcon icon={<EditNoteRoundedIcon fontSize="inherit" />} label={t('mrList.row.draft')} /> : null}
         {pipeline ? <PipelineStatus compact status={pipeline.status} /> : null}
@@ -855,7 +856,7 @@ const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, ap
         <Typography sx={{ fontWeight: 500 }} variant="caption">{mergeRequest.author.name}</Typography>
         {labels.slice(0, ROW_LABELS).map((label) => <Chip key={label} label={label} size="small" sx={{ maxWidth: '100%' }} variant="outlined" />)}
         {hiddenLabels.length ? <Tooltip title={hiddenLabels.join(', ')}><Chip aria-label={t('mrList.row.moreLabels', { count: hiddenLabels.length, labels: hiddenLabels.join(', ') })} label={`+${hiddenLabels.length}`} size="small" variant="outlined" /></Tooltip> : null}
-      </Stack>
+      </Row>
     </ListRow>
   )
 })

@@ -14,6 +14,7 @@ import { hairline } from '../../components/hairline'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import type { ParsedLine } from './diffParser'
 import { historyStep, isFollowedLine, MAX_HISTORY_LINES, type HistoryCursor, type HistoryFetchers, type HistoryStep, type HistoryStop } from './lineHistory'
+import { Row } from '../../components/Row'
 
 interface HistoryState {
   steps: HistoryStep[]
@@ -96,18 +97,18 @@ export function LineHistoryView({ iid, onClose, onRestart, projectId, sessionId,
   }
 
   return <Box aria-label={t('review.history.label', { path: start.path })} role="region" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-    <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', ...hairline('bottom'), flexWrap: 'wrap', px: 1.5, py: 1 }}>
+    <Row spacing={1} useFlexGap sx={{ ...hairline('bottom'), flexWrap: 'wrap', px: 1.5, py: 1 }}>
       <Typography sx={{ fontWeight: 600, mr: 'auto' }} variant="body2">{t('review.history.title', { start: String(start.range.start), end: String(start.range.end) })}</Typography>
-      <Stack component="form" direction="row" spacing={1} sx={{ alignItems: 'center' }} onSubmit={(event) => {
+      <Row component="form" spacing={1} onSubmit={(event) => {
         event.preventDefault()
         if (draftValid) onRestart({ ...start, range: { start: draftStart, end: draftEnd } })
       }}>
         <TextField label={t('review.history.rangeStart')} onChange={(event) => setRangeDraft((draft) => ({ ...draft, start: event.target.value }))} size="small" sx={{ width: 96 }} value={rangeDraft.start} slotProps={{ htmlInput: { inputMode: 'numeric' } }} />
         <TextField label={t('review.history.rangeEnd')} onChange={(event) => setRangeDraft((draft) => ({ ...draft, end: event.target.value }))} size="small" sx={{ width: 96 }} value={rangeDraft.end} slotProps={{ htmlInput: { inputMode: 'numeric' } }} />
         <Button disabled={!draftValid} size="small" type="submit" variant="outlined">{t('review.history.restart')}</Button>
-      </Stack>
+      </Row>
       <Button onClick={onClose} size="small" variant="outlined">{t('review.history.close')}</Button>
-    </Stack>
+    </Row>
     <Stack direction={{ xs: 'column', md: 'row' }} sx={{ minHeight: 0 }}>
       <Box ref={listRef} aria-label={t('review.history.steps')} role="list" sx={{ ...hairline('right'), flexShrink: 0, width: { xs: '100%', md: 280 } }}>
         {history.steps.map((item, index) => {

@@ -15,8 +15,9 @@ import { translate } from '../i18n/i18n'
 import { useT } from '../i18n/useT'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { RuntimeHealthState } from '../types/runtime'
-import { alignTop, firstLine } from './rows'
+import { firstLine } from './rows'
 import { StatusPill, type StatusTone } from './StatusPill'
+import { Row } from './Row'
 
 function statusCopy(state: RuntimeHealthState, inTauri: boolean) {
   if (state.status === 'pending') {
@@ -86,8 +87,8 @@ export function HealthPanel() {
               justifyContent: 'space-between',
             }}
           >
-            <Stack direction="row" spacing={1.5} sx={alignTop}>
-              <Box sx={firstLine(5)}><MemoryOutlinedIcon sx={{ color: 'primary.main' }} /></Box>
+            <Row align="top" spacing={1.5}>
+              <Box sx={firstLine('h2')}><MemoryOutlinedIcon sx={{ color: 'primary.main' }} /></Box>
               <Stack spacing={0.5}>
                 <Typography component="h2" id="runtime-health-title" variant="h2">
                   {t('common.health.title')}
@@ -96,7 +97,7 @@ export function HealthPanel() {
                   {t('common.health.description')}
                 </Typography>
               </Stack>
-            </Stack>
+            </Row>
             <StatusPill label={inTauri ? t('common.health.tauriDesktop') : t('common.health.browserPreview')} tone={inTauri ? 'info' : 'warning'} />
           </Stack>
 
@@ -110,12 +111,12 @@ export function HealthPanel() {
               justifyContent: 'space-between',
             }}
           >
-            <Stack
+            <Row
               aria-atomic="true"
               aria-live="polite"
-              direction="row"
+             
               spacing={1}
-              sx={{ alignItems: 'center' }}
+             
             >
               {state.status === 'success' ? (
                 <CheckCircleOutlineRoundedIcon color="success" fontSize="small" />
@@ -125,17 +126,17 @@ export function HealthPanel() {
                 <ScheduleRoundedIcon color={state.status === 'pending' ? 'info' : 'disabled'} fontSize="small" />
               )}
               <Stack>
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Row spacing={1}>
                   <Typography sx={{ fontWeight: 700 }} variant="body2">
                     Rust runtime
                   </Typography>
                   <StatusPill label={copy.label} tone={copy.tone} />
-                </Stack>
+                </Row>
                 <Typography color="textSecondary" variant="caption">
                   {copy.message}
                 </Typography>
               </Stack>
-            </Stack>
+            </Row>
             <Button
               disabled={state.status === 'pending'}
               onClick={() => void handleCheck()}

@@ -21,6 +21,7 @@ import { plainExcerpt } from './discussionText'
 import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
 import { useMentionSuggestions } from './useMentionSuggestions'
 import { useT } from '../../i18n/useT'
+import { Row } from '../../components/Row'
 
 export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, mentionParticipants, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; mentionParticipants?: GitLabUser[]; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
   const t = useT()
@@ -42,7 +43,7 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
   return (
     <Paper component="section" aria-labelledby="draft-list-title" sx={{ bgcolor: 'surface.raised', p: 1.5 }} variant="outlined">
       <Stack spacing={1}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><PublishRoundedIcon color="primary" fontSize="small" /><Typography color="textSecondary" component="h2" id="draft-list-title" variant="overline">{t('review.drafts.title')}</Typography><Chip label={paged ? t('review.drafts.countOnPage', { count: drafts.length }) : t('review.drafts.count', { count: drafts.length })} size="small" variant="outlined" /><Tooltip title={t('review.drafts.publishAllHint')}><Box component="span" sx={{ ml: 'auto' }}><Button disabled={disabled || publishingAll} onClick={() => void onPublishAll()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{publishingAll ? t('review.drafts.publishing') : t('review.drafts.publishAll')}</Button></Box></Tooltip></Stack>
+        <Row spacing={1}><PublishRoundedIcon color="primary" fontSize="small" /><Typography color="textSecondary" component="h2" id="draft-list-title" variant="overline">{t('review.drafts.title')}</Typography><Chip label={paged ? t('review.drafts.countOnPage', { count: drafts.length }) : t('review.drafts.count', { count: drafts.length })} size="small" variant="outlined" /><Tooltip title={t('review.drafts.publishAllHint')}><Box component="span" sx={{ ml: 'auto' }}><Button disabled={disabled || publishingAll} onClick={() => void onPublishAll()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{publishingAll ? t('review.drafts.publishing') : t('review.drafts.publishAll')}</Button></Box></Tooltip></Row>
         <List disablePadding>
           {drafts.map((fetched) => {
             const savedEdit = savedEdits[fetched.id]
@@ -57,15 +58,15 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
               : position && place ? <Tooltip title={place}><Button aria-label={t('review.drafts.goToDiff', { place })} disabled={disabled} onClick={() => onOpenPosition(position)} size="small" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', fontWeight: 400, justifyContent: 'flex-start', maxWidth: '100%', minHeight: 24, minWidth: 0, px: 0.5 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('review.drafts.lineComment', { place })}</Box></Button></Tooltip>
                 : draft.discussionId ? t('review.drafts.reply') : t('review.drafts.newComment')
             return <ListItem key={draft.id} disableGutters sx={{ alignItems: 'stretch', flexDirection: 'column' }}>
-              <Stack direction="row" sx={{ alignItems: 'center', minWidth: 0 }}>
+              <Row sx={{ minWidth: 0 }}>
                 <Checkbox checked={selected.includes(draft.id)} disabled={disabled} slotProps={{ input: { 'aria-label': t('review.drafts.select', { name }) } }} onChange={() => onSelect(draft.id)} size="small" />
                 <ListItemText primary={<Tooltip title={draft.body}><Typography noWrap variant="body2">{excerpt || t('review.drafts.noBody')}</Typography></Tooltip>} secondary={secondary} slotProps={{ secondary: { component: 'div', noWrap: true } }} sx={{ minWidth: 0, my: 0 }} />
-                <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
+                <Row spacing={0.25} sx={{ flexShrink: 0 }}>
                   <Tooltip title={t('review.drafts.editTooltip')}><span><IconButton aria-label={t('review.drafts.edit', { name })} disabled={disabled || editing || status === 'pending' || status === 'unknown' || status === 'success'} onClick={() => onSetEdit(draft.id)} ref={(element) => { if (element) editButtons.current.set(draft.id, element); else editButtons.current.delete(draft.id) }} size="small"><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
                   <Tooltip title={t('review.drafts.publishTooltip')}><span><IconButton aria-label={t('review.drafts.publish', { name })} disabled={disabled || status === 'pending' || status === 'unknown'} onClick={() => void onPublish(draft)} size="small"><PublishRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
                   <Tooltip title={t('review.drafts.deleteTooltip')}><span><IconButton aria-label={t('review.drafts.delete', { name })} disabled={disabled || status === 'pending'} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: excerpt, title: t('review.drafts.delete.title') }).then((ok) => { if (ok) void onDelete(draft) })} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
-                </Stack>
-              </Stack>
+                </Row>
+              </Row>
               {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} mentionParticipants={mentionParticipants} onClose={(editorHadFocus) => { if (editorHadFocus) returnFocusRef.current = draft.id; onSetEdit(null) }} onSave={async (body) => {
                 const saved = await onEdit(draft, body)
                 if (saved) setSavedEdits((current) => ({ ...current, [draft.id]: { base: fetched.body, body } }))
@@ -74,8 +75,8 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
             </ListItem>
           })}
         </List>
-        {selectedDrafts.length > 0 ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.drafts.selected', { count: selectedDrafts.length })}</Typography><Button disabled={disabled} onClick={() => void onPublishSelected()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{t('review.drafts.publishSelected')}</Button></Stack> : null}
-        {paged ? <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}><Button aria-label={t('review.drafts.page.previous')} disabled={page <= 1} onClick={onPrevPage} size="small">{t('review.diff.page.previous')}</Button><Typography color="textSecondary" variant="caption">{t('review.drafts.page.current', { page })}</Typography><Button aria-label={t('review.drafts.page.next')} disabled={nextPage === null} onClick={onNextPage} size="small">{t('review.diff.page.next')}</Button></Stack> : null}
+        {selectedDrafts.length > 0 ? <Row spacing={1}><Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.drafts.selected', { count: selectedDrafts.length })}</Typography><Button disabled={disabled} onClick={() => void onPublishSelected()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{t('review.drafts.publishSelected')}</Button></Row> : null}
+        {paged ? <Row spacing={0.5} sx={{ justifyContent: 'flex-end' }}><Button aria-label={t('review.drafts.page.previous')} disabled={page <= 1} onClick={onPrevPage} size="small">{t('review.diff.page.previous')}</Button><Typography color="textSecondary" variant="caption">{t('review.drafts.page.current', { page })}</Typography><Button aria-label={t('review.drafts.page.next')} disabled={nextPage === null} onClick={onNextPage} size="small">{t('review.diff.page.next')}</Button></Row> : null}
       </Stack>
     </Paper>
   )
@@ -136,11 +137,11 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
   return <Stack data-composer="" ref={(element: HTMLDivElement | null) => { containerRef.current = element; mentionContainerRef(element) }} spacing={1} sx={{ pb: 1, pt: 0.5 }}>
     <MarkdownEditor {...mentionEditorProps} autoFocus disabled={disabled || saving} label={t('review.drafts.editTooltip')} onChange={change} onKeyDown={handleKeyDown} ref={editorRef} value={body} />
     {mentionPopup}
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
+    <Row spacing={1} sx={{ justifyContent: 'flex-end' }}>
       <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
       <Button disabled={saving} onClick={() => void cancel()} size="small">{t('review.editor.cancel')}</Button>
       <Button disabled={disabled || saving || !changed || !body.trim()} onClick={() => void save()} size="small" variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
-    </Stack>
+    </Row>
   </Stack>
 }
 

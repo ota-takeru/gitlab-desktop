@@ -150,6 +150,9 @@ export const grid = 4
 /** A line height of whole grid steps, in px: a unitless ratio such as 1.45 × 12px leaves a 17.4px line. */
 export const gridLine = (steps: number) => `${steps * grid}px`
 
+/** The line height of each text variant, in grid steps, so a mark can be sized to a variant's first line (components/rows). */
+export const typeLines = { body1: 6, body2: 5, caption: 5, code: 5, h1: 6, h2: 5, h3: 5, iconCount: 4, overline: 4, subtitle1: 6, subtitle2: 5 } as const
+
 const forcedColors = '@media (forced-colors: active)'
 const selectedOutline = { outline: '2px solid Highlight', outlineOffset: -2 }
 
@@ -261,33 +264,33 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       code: {
         fontFamily: '"Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas, monospace',
         fontSize: '0.8125rem',
-        lineHeight: gridLine(5),
+        lineHeight: gridLine(typeLines.code),
       },
       h1: {
         fontSize: '1.125rem',
         fontWeight: 700,
         letterSpacing: '-0.01em',
-        lineHeight: gridLine(6),
+        lineHeight: gridLine(typeLines.h1),
       },
       h2: {
         fontSize: '0.9375rem',
         fontWeight: 600,
         letterSpacing: 0,
-        lineHeight: gridLine(5),
+        lineHeight: gridLine(typeLines.h2),
       },
       h3: {
         fontSize: '0.8125rem',
         fontWeight: 600,
-        lineHeight: gridLine(5),
+        lineHeight: gridLine(typeLines.h3),
       },
-      body1: { fontSize: '0.875rem', lineHeight: gridLine(6) },
-      body2: { fontSize: '0.8125rem', lineHeight: gridLine(5) },
+      body1: { fontSize: '0.875rem', lineHeight: gridLine(typeLines.body1) },
+      body2: { fontSize: '0.8125rem', lineHeight: gridLine(typeLines.body2) },
       // Titles of list rows, so they stand out from the metadata around them.
-      subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: gridLine(6) },
-      subtitle2: { lineHeight: gridLine(5) },
-      caption: { fontSize: '0.75rem', lineHeight: gridLine(5), letterSpacing: 0 },
-      overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: gridLine(4) },
-      iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: gridLine(4) },
+      subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: gridLine(typeLines.subtitle1) },
+      subtitle2: { lineHeight: gridLine(typeLines.subtitle2) },
+      caption: { fontSize: '0.75rem', lineHeight: gridLine(typeLines.caption), letterSpacing: 0 },
+      overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: gridLine(typeLines.overline) },
+      iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: gridLine(typeLines.iconCount) },
     },
     // Radii are 4 (small) or 8 (standard): `borderRadius: 1` or `2` in sx.
     shape: {

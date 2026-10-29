@@ -25,9 +25,10 @@ import { normalizeGitLabError } from '../lib/gitlab'
 import { isGitLabErrorShape } from '../types/gitlab'
 import { flushComposerBuffers } from '../features/mergeRequests/useComposerBuffer'
 import { RelativeTime } from './RelativeTime'
-import { alignTop, firstLine } from './rows'
+import { firstLine } from './rows'
 import { StatusPill, type StatusTone } from './StatusPill'
 import { UpdateNavButton } from './UpdateNavButton'
+import { Row } from './Row'
 
 export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
 /** Returning to the window checks again once the last check is this old. */
@@ -268,7 +269,7 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
     // The footer keeps its height whatever shows here, so the page never shifts.
     const hiddenError = state.status === 'error' && (state === dismissedError || (state.source === 'check' && checkErrorDismissedRecently()))
     const errorNotice = (message: string, onClose: () => void) => <>
-      <Stack aria-label={t('common.update.label')} component="section" direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+      <Row aria-label={t('common.update.label')} component="section" spacing={0.5} sx={{ minWidth: 0 }}>
         <WarningAmberRoundedIcon color="warning" fontSize="inherit" />
         <Typography color="warning" noWrap role="status" sx={{ minWidth: 0 }} title={message} variant="caption">{message}</Typography>
         <Tooltip title={t('common.update.close')}>
@@ -276,7 +277,7 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
             <CloseRoundedIcon fontSize="inherit" />
           </IconButton>
         </Tooltip>
-      </Stack>
+      </Row>
       {installingDialog}
     </>
     if (state.status === 'available') {
@@ -284,10 +285,10 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
       if (state.download === 'failed' && state !== dismissedError) return errorNotice(state.downloadError ?? t('common.update.downloadFailed'), () => setDismissedError(state))
       const availableNotice = state.download === 'ready' ? t('common.update.noticeDownloaded', { version: String(availableVersion) }) : t('common.update.noticeAvailable', { version: String(availableVersion) })
       return <>
-        <Stack aria-label={t('common.update.label')} component="section" direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+        <Row aria-label={t('common.update.label')} component="section" spacing={0.5} sx={{ minWidth: 0 }}>
           <Typography color="textSecondary" noWrap sx={{ minWidth: 0 }} title={availableNotice} variant="caption">{availableNotice}</Typography>
           {installButton('small')}
-        </Stack>
+        </Row>
         {installingDialog}
       </>
     }
@@ -301,12 +302,12 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
     return <>
       <Card component="section" aria-label={t('common.update.label')}><CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
         <Stack spacing={0.5}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+          <Row spacing={1} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
             <StatusPill label={copy.label} tone={copy.tone} />
             <Typography aria-live="polite" sx={{ flex: 1 }} variant="caption">{copy.title}{availableVersion ? ` · v${availableVersion}` : ''}</Typography>
             {inTauri ? <Button disabled={isBusy} onClick={check} size="small">{t('common.update.check')}</Button> : null}
             {state.status === 'available' ? installButton('small') : null}
-          </Stack>
+          </Row>
           {state.status === 'error' || state.status === 'installing' ? <Typography color="textSecondary" variant="caption">{copy.message}</Typography> : null}
           {state.status === 'available' ? <Typography color={state.download === 'failed' ? 'warning' : 'textSecondary'} variant="caption">{downloadStatus(state)}</Typography> : null}
           {state.status === 'available' && !autoInstallAllowed ? <Typography color="textSecondary" variant="caption">{t('common.update.waitingForSafeState')}</Typography> : null}
@@ -319,26 +320,26 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
   // The settings page: its section already carries the heading.
   return <>
     <Stack spacing={1.5}>
-      <Stack aria-atomic="true" aria-live="polite" direction="row" spacing={1} sx={alignTop}>
-        <Box sx={firstLine(5)}>{copy.icon}</Box>
+      <Row aria-atomic="true" aria-live="polite" align="top" spacing={1}>
+        <Box sx={firstLine('body2')}>{copy.icon}</Box>
         <Stack sx={{ minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+          <Row spacing={1} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
             <Typography sx={{ fontWeight: 600 }} variant="body2">{copy.title}</Typography>
             <StatusPill label={copy.label} tone={copy.tone} />
-          </Stack>
+          </Row>
           {state.status === 'available' ? <Typography sx={{ fontWeight: 600 }} variant="body2">v{state.update.version}</Typography> : null}
           {state.status === 'available' ? <Typography color={state.download === 'failed' ? 'warning' : 'textSecondary'} variant="caption">{downloadStatus(state)}</Typography> : null}
           <Typography color="textSecondary" variant="caption">{copy.message}</Typography>
         </Stack>
-      </Stack>
-      {inTauri ? <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+      </Row>
+      {inTauri ? <Row spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
         <Typography color="textSecondary" variant="caption">{t('common.update.currentVersion', { version: currentVersion ? `v${currentVersion}` : '—' })}</Typography>
         {lastCheckedAt ? <RelativeTime prefix={t('common.update.lastChecked')} value={new Date(lastCheckedAt).toISOString()} /> : <Typography color="textSecondary" variant="caption">{t('common.update.lastCheckedNever')}</Typography>}
-      </Stack> : null}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
+      </Row> : null}
+      <Row spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
         {inTauri ? <Button disabled={isBusy} onClick={check} variant="outlined">{t('common.update.check')}</Button> : null}
         {state.status === 'available' ? installButton('medium') : null}
-      </Stack>
+      </Row>
       {state.status === 'available' && !autoInstallAllowed ? <Typography color="textSecondary" variant="caption">{t('common.update.waitingForSafeState')}</Typography> : null}
     </Stack>
     {installingDialog}

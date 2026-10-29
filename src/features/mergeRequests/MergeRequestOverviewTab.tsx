@@ -22,6 +22,7 @@ import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { formatNames } from './mergeActions'
 import { TemplateMenu } from './TemplateMenu'
+import { Row } from '../../components/Row'
 
 export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; reactions?: React.ReactNode }) {
   const t = useT()
@@ -35,10 +36,10 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
     [t('mergeRequest.overview.branch'), <Box component="span" key="branch" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', verticalAlign: 'top' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Box>],
     [t('mergeRequest.overview.assignees'), mergeRequest.assignees?.length ? formatNames(mergeRequest.assignees.map((user) => user.name)) : t('mergeRequest.common.none')],
     [t('mergeRequest.overview.reviewers'), mergeRequest.reviewers?.length ? <Stack component="span" key="reviewers" sx={{ alignItems: 'flex-start' }}>{mergeRequest.reviewers.map((user) => (
-      <Stack component="span" direction="row" key={user.id} sx={{ alignItems: 'center' }}>
+      <Row component="span" key={user.id}>
         <span>{user.name}</span>
         {canRerequest && user.id !== session?.user.id ? <Tooltip title={t('mergeRequest.overview.rerequestReview')}><span><IconButton aria-label={t('mergeRequest.overview.rerequestReviewFrom', { name: user.name })} disabled={editDisabled} onClick={() => onRerequestReview(user)} size="small" sx={{ my: -0.5 }}><ReplayRoundedIcon fontSize="small" /></IconButton></span></Tooltip> : null}
-      </Stack>
+      </Row>
     ))}</Stack> : t('mergeRequest.common.none')],
     [t('mergeRequest.overview.approvals'), approvalsLoading ? t('mergeRequest.overview.approvalsLoading') : approvalsError ? t('mergeRequest.overview.approvalsUnavailable', { error: approvalsError.message }) : approvedBy.length ? t('mergeRequest.common.approvedBy', { count: approvedBy.length, names: formatNames(approvedBy.map((user) => user.name)) }) : t('mergeRequest.overview.notApproved')],
     [t('mergeRequest.overview.labels'), labels],
@@ -46,17 +47,17 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
   ]
   return <Box sx={{ display: 'grid', gap: 4, gridTemplateColumns: { lg: 'minmax(0, 1fr) 280px', xs: '1fr' }, maxWidth: 1200 }}>
     <Box sx={{ minWidth: 0 }}>
-      <Stack direction="row" sx={{ alignItems: 'center', mb: 1 }}>
+      <Row sx={{ mb: 1 }}>
         <Typography color="textSecondary" sx={{ flex: 1 }} variant="overline">{t('mergeRequest.overview.description')}</Typography>
         {descriptionEdit ? null : <Button disabled={editDisabled} onClick={onStartEdit} size="small" startIcon={<EditOutlinedIcon />}>{t('mergeRequest.overview.editDescription')}</Button>}
-      </Stack>
+      </Row>
       {descriptionEdit ? <Stack spacing={1}>
         <MarkdownEditor autoFocus disabled={editDisabled} label={t('mergeRequest.overview.editDescription')} onChange={onChangeEdit} ref={editorRef} toolbarEnd={<TemplateMenu disabled={editDisabled} onInsert={(content) => editorRef.current?.insertBlock(content)} query={{ kind: 'descriptionTemplates', projectId: mergeRequest.projectId }} />} value={descriptionEdit.body} />
         {descriptionEdit.expected !== (description ?? '') ? <Alert severity="warning">{t('mergeRequest.overview.descriptionChanged')}</Alert> : null}
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
+        <Row spacing={1} sx={{ justifyContent: 'flex-end' }}>
           <Button onClick={() => void (async () => { if (descriptionEdit.body === descriptionEdit.expected || await confirm({ cancelLabel: t('mergeRequest.overview.discardKeepEditing'), confirmLabel: t('mergeRequest.overview.discardConfirm'), destructive: true, title: t('mergeRequest.overview.discardTitle') })) onCancelEdit() })()}>{t('mergeRequest.common.cancel')}</Button>
           <Button disabled={editDisabled || descriptionEdit.body === descriptionEdit.expected} onClick={onSaveEdit} variant="contained">{t('mergeRequest.common.save')}</Button>
-        </Stack>
+        </Row>
       </Stack> : <MockMarkdown body={description || t('mergeRequest.common.descriptionEmpty')} />}
       {reactions ? <Box sx={{ mt: 1.5 }}>{reactions}</Box> : null}
     </Box>
@@ -74,7 +75,7 @@ function useLabelChips(mergeRequest: MergeRequest): React.ReactNode {
   // Label colours come from the project's first page of labels; a label not on it shows without one.
   const labelsQuery = useMemo<LabelsQuery | null>(() => mergeRequest.labels?.length ? { kind: 'labels', page: 1, projectId: mergeRequest.projectId, search: '' } : null, [mergeRequest.labels?.length, mergeRequest.projectId])
   const labelColors = useGitLabQuery<LabelsQuery>(session?.id ?? null, labelsQuery)
-  return mergeRequest.labels?.length ? <Stack direction="row" key="labels" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>{mergeRequest.labels.map((label) => <LabelChip color={labelColors.data?.find((item) => item.name === label)?.color} key={label} name={label} />)}</Stack> : t('mergeRequest.common.none')
+  return mergeRequest.labels?.length ? <Row key="labels" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>{mergeRequest.labels.map((label) => <LabelChip color={labelColors.data?.find((item) => item.name === label)?.color} key={label} name={label} />)}</Row> : t('mergeRequest.common.none')
 }
 
 function milestoneText(mergeRequest: MergeRequest): string {
@@ -101,11 +102,11 @@ export function DescriptionPanel({ description, mergeRequest, onClose, onEdit }:
   }, [onClose])
   return (
     <Box aria-label={t('mergeRequest.overview.descriptionPanel')} component="aside" sx={{ bgcolor: 'background.paper', ...hairline('left', { position: false }), bottom: statusBarHeight, boxShadow: 8, display: 'flex', flexDirection: 'column', position: 'fixed', right: 0, top: 'var(--detail-header-height, 0px)', width: 'min(520px, 50vw)', zIndex: 'drawer' }}>
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 2, pr: 0.5, py: 0.5 }}>
+      <Row spacing={0.5} sx={{ ...hairline('bottom'), flexShrink: 0, pl: 2, pr: 0.5, py: 0.5 }}>
         <Typography color="textSecondary" sx={{ flex: 1 }} variant="overline">{t('mergeRequest.overview.description')}</Typography>
         <Button onClick={onEdit} size="small" startIcon={<EditOutlinedIcon />}>{t('mergeRequest.overview.editInOverview')}</Button>
         <Tooltip title={t('mergeRequest.common.closeEsc')}><IconButton aria-label={t('mergeRequest.overview.closeDescription')} onClick={onClose}><CloseRoundedIcon /></IconButton></Tooltip>
-      </Stack>
+      </Row>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
         <MockMarkdown body={description || t('mergeRequest.common.descriptionEmpty')} />
         <Box component="dl" sx={{ display: 'grid', gap: 1.5, mb: 0, mt: 3 }}>

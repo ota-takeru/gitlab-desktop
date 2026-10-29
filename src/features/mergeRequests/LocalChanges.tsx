@@ -12,12 +12,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { RelativeTime } from '../../components/RelativeTime'
 import { delayedRevealSx } from '../../components/paneSx'
-import { alignTop } from '../../components/rows'
 import { shortSha } from '../../lib/format'
 import { findLocalRepository, findOwnLocalRepositories, getLocalChanges, getLocalFile, getLocalRepository, getLocalScanFolders, getLocalStatus, linkLocalRepository, pickLocalRepositoryFolder, setLocalScanFolders, summarizeLocalStatus, unlinkLocalRepository, type LocalRepository, type OwnProjectSearch } from '../../lib/localRepository'
 import { normalizeGitLabError } from '../../lib/gitlab'
 import { DiffViewer } from './DiffViewer'
 import { useT } from '../../i18n/useT'
+import { Row } from '../../components/Row'
 
 const NO_COMMENT = () => undefined
 const codeSx = { color: 'text.primary', fontFamily: 'code.fontFamily', verticalAlign: 'top' } as const
@@ -152,13 +152,13 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   ].filter(Boolean).join(' · ') : ''
   return (
     <Stack spacing={1}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+      <Row spacing={1} sx={{ minWidth: 0 }}>
         <Tooltip title={linked.path}><Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', minWidth: 48 }} variant="caption"><Box component="span" sx={codeSx}>{linked.path}</Box></Typography></Tooltip>
         <Tooltip title={factsText}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 auto', minWidth: 0 }} variant="caption">{facts.map((fact, index) => <span key={index}>{index ? ' · ' : ''}{fact}</span>)}</Typography></Tooltip>
         {changes.isFetching && data ? <Typography color="textSecondary" role="status" sx={{ flexShrink: 0 }} variant="caption">{t('review.local.reloading')}</Typography> : changes.dataUpdatedAt && data ? <Box sx={{ flexShrink: 0 }}><RelativeTime prefix={t('review.local.readAt')} value={new Date(changes.dataUpdatedAt).toISOString()} /></Box> : null}
         <Tooltip title={t('review.local.reloadTooltip')}><span><IconButton aria-disabled={changes.isFetching} aria-label={t('review.local.reload')} onClick={reload} ref={focusOnMount('linked')}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         <Button disabled={unlinking} onClick={() => void unlink()} size="small" sx={{ flexShrink: 0 }}>{t('review.local.unlink')}</Button>
-      </Stack>
+      </Row>
       {unlinkError ? <Alert severity="error">{t('review.local.unlinkError', { message: unlinkError })}</Alert> : null}
       {error && !data ? <Alert severity="error">{t('review.local.readError', { message: error.message })}</Alert> : null}
       {error && data ? <Alert severity="warning">{t('review.local.staleError', { message: error.message })}</Alert> : null}
@@ -207,11 +207,11 @@ function LinkRepository({ fieldRef, onLinked, projectId, projectPath, search, se
       <Typography variant="body2">{t('review.local.link.description')}</Typography>
       <Typography color="textSecondary" variant="caption">{t('review.local.link.readOnly', { project: projectPath ?? t('review.local.link.thisProject') })}</Typography>
       {projectPath ? null : <Alert severity="warning">{t('review.local.link.noProjectPath')}</Alert>}
-      <Stack direction="row" spacing={1} sx={alignTop}>
+      <Row align="top" spacing={1}>
         <TextField disabled={linking || !projectPath} fullWidth onChange={(event) => setPath(event.target.value)} inputRef={fieldRef} placeholder={'C:\\path\\to\\repository'} size="small" slotProps={{ htmlInput: { 'aria-label': t('review.local.link.folder'), spellCheck: false } }} value={path} />
         <Button disabled={linking || !projectPath} onClick={() => void pick()} sx={{ flexShrink: 0 }} variant="outlined">{t('review.local.link.pick')}</Button>
         <Button disabled={linking || !projectPath || !path.trim()} sx={{ flexShrink: 0 }} type="submit" variant="contained">{linking ? t('review.local.link.checking') : t('review.local.link.submit')}</Button>
-      </Stack>
+      </Row>
       {error ? <Alert severity="error">{error}</Alert> : null}
       <ScanFolders project={projectPath ? { path: projectPath, search } : undefined} sessionId={sessionId} userId={userId} />
     </Stack>
@@ -290,15 +290,15 @@ export function ScanFolders({ project, sessionId, userId }: { project?: { path: 
     <Stack aria-label={t('review.local.scan.label')} component="section" spacing={0.5} sx={{ pt: 1 }}>
       <Typography variant="body2">{t('review.local.scan.description')}</Typography>
       <Typography color="textSecondary" variant="caption">{t('review.local.scan.readOnly')}</Typography>
-      {saved.map((folder) => <Stack direction="row" key={folder} spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+      {saved.map((folder) => <Row key={folder} spacing={1} sx={{ minWidth: 0 }}>
         <Tooltip title={folder}><Typography noWrap sx={{ ...codeSx, flex: '0 1 auto', minWidth: 0 }} variant="caption">{folder}</Typography></Tooltip>
         <Button aria-label={t('review.local.scan.removeLabel', { folder })} disabled={saving} onClick={() => void save(saved.filter((known) => known !== folder))} size="small" sx={{ flexShrink: 0 }}>{t('review.local.scan.remove')}</Button>
-      </Stack>)}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+      </Row>)}
+      <Row spacing={1} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
         <Button disabled={saving || folders.isPending} onClick={() => void add()} size="small" sx={{ flexShrink: 0 }} variant="outlined">{t('review.local.scan.add')}</Button>
         {project && search ? <Button disabled={busy || !saved.length} onClick={search.onSearch} size="small" sx={{ flexShrink: 0 }}>{t('review.local.scan.searchProject')}</Button> : null}
         <Button disabled={busy || !saved.length} onClick={() => void searchOwn()} size="small" sx={{ flexShrink: 0 }}>{t('review.local.scan.searchOwn')}</Button>
-      </Stack>
+      </Row>
       {projectStatus ? <Typography color="textSecondary" role="status" variant="caption">{projectStatus}{!search?.searching && search?.searchedAt ? <> <RelativeTime prefix={t('review.local.scan.searchedAt')} value={new Date(search.searchedAt).toISOString()} /></> : null}</Typography> : null}
       {search?.error ? <Alert severity="error">{t('review.local.scan.searchError', { message: search.error })}</Alert> : null}
       {ownSearching ? <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.searchingOwn')}</Typography> : ownResults ? <OwnSearchResults results={ownResults} /> : null}
