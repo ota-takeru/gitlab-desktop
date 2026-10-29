@@ -1,10 +1,12 @@
 import AddReactionOutlinedIcon from '@mui/icons-material/AddReactionOutlined'
+import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import { useState } from 'react'
 
 import { useT } from '../i18n/useT'
+import { gridLine } from '../theme'
 import { applyOwnReaction, emojiForName, groupReactions, useEmojiCatalog } from '../lib/awardEmoji'
 import type { AwardEmoji } from '../types/gitlab'
 import { EmojiPicker } from './EmojiPicker'
@@ -66,9 +68,14 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
           clickable
           color={group.mine ? 'primary' : 'default'}
           disabled={disabled}
-          label={`${emoji} ${group.users.length}`}
+          label={<>
+            {/* A custom emoji without a glyph stays as its `:name:` text, at text size. */}
+            <Box aria-hidden component="span" sx={emoji.startsWith(':') ? { fontSize: 'body2.fontSize' } : { fontSize: 18, lineHeight: 1 }}>{emoji}</Box>
+            <Box aria-hidden component="span" sx={{ fontSize: 'body2.fontSize', fontVariantNumeric: 'tabular-nums' }}>{group.users.length}</Box>
+          </>}
           onClick={() => toggle(group.name, !group.mine)}
           size="small"
+          sx={reactionChipSx}
           variant="outlined"
         />
       </Tooltip>
@@ -83,3 +90,9 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
     <EmojiPicker anchorEl={anchor} label={label} mine={mine} onClose={() => setAnchor(null)} onPick={choose} />
   </Row>
 }
+
+/** As GitLab's reaction buttons: the emoji at control size, not the chip's 11px text, with the count beside it. */
+const reactionChipSx = {
+  height: 28,
+  '& .MuiChip-label': { alignItems: 'center', columnGap: 0.5, display: 'inline-flex', lineHeight: gridLine(5) },
+} as const
