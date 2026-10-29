@@ -7,18 +7,25 @@ html { background: #ffffff; color-scheme: light dark; }
 @media (prefers-color-scheme: dark) { html { background: #232529; } }
 
 /*
- * Latin text in the middle of its line box. Segoe UI (what Windows draws for Inter when Inter is not
- * installed) and Inter keep a tall ascent for accents, so a line box centred on their metrics leaves
- * capitals 1px and lowercase 2px below the middle, while Japanese glyphs and the code font sit in it.
- * These faces are the same local fonts with part of the ascent moved to the descent, which lifts Latin
- * text by 1px at every size from 11 to 15px without changing any line box; Japanese then sits within
- * half a pixel above the middle. A face whose local font is missing is skipped, and the theme's font
- * stack falls through to the next family.
+ * Text in the middle of its line box, Latin and Japanese alike. Latin text is Segoe UI, which looks centred
+ * 0.300em above the baseline (half way between its cap height and x-height); its own metrics keep a tall
+ * ascent for accents, which left that centre 1 to 1.5px below the middle. These faces are the same local
+ * fonts with the ascent and descent rebalanced (their sum, and so line-height: normal, unchanged), which
+ * puts the centre as near the middle as a baseline can be: Chrome places baselines on whole pixels, so at
+ * the theme's sizes and line heights the centre is 0.3px above (11/16), 0.4px below (12/20), 0.1px below
+ * (13/20), 0.2px above (14/24), 0.5px above (15px, whose middle falls on a half pixel) and 0.4px above
+ * (18/24), measured. Japanese, Chinese and Korean text is App Sans JP, SC, TC and KR, Noto Sans CJK with
+ * its outlines moved down to the same centre (scripts/build-fonts.py), so every script shares it, mixed or
+ * not. A face whose font is missing is skipped, and the theme's font stack falls through to the next family.
  */
-@font-face { font-family: 'Inter Balanced'; src: local('Inter'); font-weight: 100 900; ascent-override: 94%; descent-override: 27%; line-gap-override: 0%; }
 /* Windows 11: one variable face covers every weight. */
-@font-face { font-family: 'Segoe UI Variable Balanced'; src: local('Segoe UI Variable Text'); font-weight: 100 900; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
+@font-face { font-family: 'Segoe UI Variable Balanced'; src: local('Segoe UI Variable Text'); font-weight: 100 900; ascent-override: 96.5%; descent-override: 36.5%; line-gap-override: 0%; }
 /* Windows 10: the static faces, so semibold and bold are drawn rather than synthesised. */
-@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI'); font-weight: 400; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
-@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI Semibold'); font-weight: 600; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
-@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI Bold'); font-weight: 700; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
+@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI'); font-weight: 400; ascent-override: 96.5%; descent-override: 36.5%; line-gap-override: 0%; }
+@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI Semibold'); font-weight: 600; ascent-override: 96.5%; descent-override: 36.5%; line-gap-override: 0%; }
+@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI Bold'); font-weight: 700; ascent-override: 96.5%; descent-override: 36.5%; line-gap-override: 0%; }
+/* Noto Sans CJK, licensed under the SIL Open Font License 1.1 (fonts/LICENSE-app-sans.txt). */
+@font-face { font-family: 'App Sans JP'; src: url('/fonts/app-sans-jp.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'App Sans SC'; src: url('/fonts/app-sans-sc.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'App Sans TC'; src: url('/fonts/app-sans-tc.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'App Sans KR'; src: url('/fonts/app-sans-kr.woff2') format('woff2'); font-weight: 100 900; font-display: block; }

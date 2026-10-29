@@ -192,12 +192,14 @@ const tokens: Record<PaletteMode, Tokens> = {
 // Other languages start with the Japanese fonts for Japanese text from GitLab. The rest follow, so a
 // character a font lacks, such as a simplified Chinese one in Japanese fonts, falls back the same way
 // on every machine.
-const japaneseFonts = '"Noto Sans JP", "Yu Gothic UI", Meiryo'
+// App Sans JP, SC, TC and KR are Noto Sans CJK moved to Latin text's centre (public/boot.css,
+// scripts/build-fonts.py); the system fonts after them only draw what those subsets leave out.
+const japaneseFonts = '"App Sans JP", "Noto Sans JP", "Yu Gothic UI", Meiryo'
 const cjkFonts: Partial<Record<Locale, string>> = {
   ja: japaneseFonts,
-  'zh-Hans': '"Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei"',
-  'zh-Hant': '"Noto Sans TC", "Microsoft JhengHei UI", "Microsoft JhengHei"',
-  ko: '"Noto Sans KR", "Malgun Gothic"',
+  'zh-Hans': '"App Sans SC", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei"',
+  'zh-Hant': '"App Sans TC", "Noto Sans TC", "Microsoft JhengHei UI", "Microsoft JhengHei"',
+  ko: '"App Sans KR", "Noto Sans KR", "Malgun Gothic"',
 }
 
 export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
@@ -259,8 +261,8 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
     typography: {
       fontSize: 13,
       fontWeightBold: 600,
-      // The balanced faces (public/boot.css) are Inter and Segoe UI with their ascent evened out, so Latin text sits in the middle of its line box.
-      fontFamily: `"Inter Balanced", "Segoe UI Variable Balanced", "Segoe UI Balanced", Inter, "Segoe UI Variable Text", "Segoe UI", ${languageFonts}, system-ui, sans-serif`,
+      // The balanced faces (public/boot.css) are Segoe UI with metrics that put Latin text in the middle of its line box.
+      fontFamily: `"Segoe UI Variable Balanced", "Segoe UI Balanced", Inter, "Segoe UI Variable Text", "Segoe UI", ${languageFonts}, system-ui, sans-serif`,
       code: {
         fontFamily: '"Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas, monospace',
         fontSize: '0.8125rem',
