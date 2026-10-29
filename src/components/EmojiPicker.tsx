@@ -179,7 +179,7 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
     </Box>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('top'), minHeight: 48, px: 1.5, py: 0.5 }}>
       {preview ? <>
-        <Box aria-hidden sx={{ fontSize: 28, lineHeight: 1 }}>{preview.emoji}</Box>
+        <Box aria-hidden sx={{ fontSize: 32, lineHeight: 1 }}>{preview.emoji}</Box>
         <Box sx={{ minWidth: 0 }}>
           <Typography noWrap variant="body2">{mine.has(preview.name) ? t('common.emoji.previewGiven', { label: preview.label }) : preview.label}</Typography>
           <Typography color="textSecondary" noWrap sx={{ display: 'block', fontFamily: 'code.fontFamily' }} variant="caption">:{preview.name}:</Typography>

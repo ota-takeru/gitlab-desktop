@@ -88,7 +88,7 @@
   "errors.projectId": "プロジェクトIDは1以上の数字で入力してください。",
   "errors.groupId": "グループIDまたはグループパスを確認してください。",
   "errors.authorId": "作者IDは1以上の数字で入力してください。",
-  "errors.reviewerId": "レビュー担当者IDは1以上の数字で入力してください。",
+  "errors.reviewerId": "レビュアーIDは1以上の数字で入力してください。",
   "errors.reviewerSelf": "接続ユーザーIDを確認できないため、レビュー待ちを検索できません。",
   "errors.assigneeId": "担当者IDは1以上の数字で入力してください。",
   "errors.assigneeSelf": "接続ユーザーIDを確認できないため、自分の担当MRを検索できません。",

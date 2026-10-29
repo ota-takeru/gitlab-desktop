@@ -256,7 +256,7 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
   const installButton = (size: 'small' | 'medium') => (
     <Tooltip title={autoInstallAllowed ? t('common.update.installHint') : t('common.update.waitingForSafeState')}>
       <Box component="span" sx={{ flexShrink: 0 }}>
-        <Button disabled={isBusy || !autoInstallAllowed} onClick={install} size={size} startIcon={size === 'medium' ? <DownloadOutlinedIcon /> : undefined} sx={size === 'small' ? { '&.MuiButton-sizeSmall': { minHeight: 24, py: 0 } } : undefined} variant={size === 'small' ? 'text' : 'contained'}>
+        <Button disabled={isBusy || !autoInstallAllowed} onClick={install} size={size === 'small' ? 'dense' : 'medium'} startIcon={size === 'medium' ? <DownloadOutlinedIcon /> : undefined} variant={size === 'small' ? 'text' : 'contained'}>
           {t('common.update.restartAndUpdate')}
         </Button>
       </Box>
@@ -271,7 +271,7 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
         <WarningAmberRoundedIcon color="warning" fontSize="inherit" />
         <Typography color="warning" noWrap role="status" sx={{ minWidth: 0 }} title={message} variant="caption">{message}</Typography>
         <Tooltip title={t('common.update.close')}>
-          <IconButton aria-label={t('common.update.closeNotice')} onClick={onClose} size="small" sx={{ flexShrink: 0, fontSize: 16, p: 0.5 }}>
+          <IconButton aria-label={t('common.update.closeNotice')} onClick={onClose} size="small" sx={{ flexShrink: 0, fontSize: 16, p: 0.5, '--edge-inset': '4px' }}>
             <CloseRoundedIcon fontSize="inherit" />
           </IconButton>
         </Tooltip>

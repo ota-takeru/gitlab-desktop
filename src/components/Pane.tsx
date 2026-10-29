@@ -3,6 +3,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { gridLine } from '../theme'
+import { edgeRow } from './edges'
 import { frame, hairline } from './hairline'
 import { paneGutter } from './paneSx'
 
@@ -15,11 +16,10 @@ import { paneGutter } from './paneSx'
  */
 export function PaneHeader({ title, subtitle, actions, children, navigation }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode; navigation?: ReactNode }) {
   const titleRef = useFullTextTitle<HTMLHeadingElement>()
-  // The last icon meets the pane's edge line, as the fields under it do: a small icon button pads its 18px icon by 7px.
-  const actionsGroup = actions ? <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, minHeight: 32, mr: '-7px' }}>{actions}</Stack> : null
+  const actionsGroup = actions ? <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, minHeight: 32 }}>{actions}</Stack> : null
   if (navigation) return <>
     <Box sx={{ ...hairline('bottom'), flexShrink: 0, px: paneGutter, pt: 1.5 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0, ...edgeRow }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component="h1" sx={visuallyHiddenSx}>{title}</Typography>
           {navigation}
@@ -34,7 +34,7 @@ export function PaneHeader({ title, subtitle, actions, children, navigation }: {
   </>
   return (
     <Box sx={{ ...hairline('bottom'), flexShrink: 0, px: paneGutter, pb: 1, pt: 1.5 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32, minWidth: 0 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32, minWidth: 0, ...edgeRow }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component="h1" noWrap ref={titleRef} variant="h1">{title}</Typography>
         </Box>
@@ -54,7 +54,7 @@ export function PaneHeader({ title, subtitle, actions, children, navigation }: {
 export function PaneNavigation({ heading, tabs }: { heading: ReactNode; tabs: ReactNode }) {
   return <Box sx={{ minWidth: 0 }}>
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minHeight: 32, minWidth: 0 }}>{heading}</Stack>
-    <Box sx={{ ml: -1.5, mt: 0.5 }}>{tabs}</Box>
+    <Box sx={{ mt: 0.5, ...edgeRow }}>{tabs}</Box>
   </Box>
 }
 

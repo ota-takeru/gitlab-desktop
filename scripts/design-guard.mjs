@@ -29,6 +29,18 @@ const heightPattern = /\b(?:height|minHeight|maxHeight)\s*:\s*(?:(\d+(?:\.\d+)?)
 // A border adds its width to the box, so the rows after it start off the grid; hairline(), frame() and
 // panelFrame() draw over the edge instead. A box taken out of the flow (absolute, fixed, a pseudo-element)
 // may keep a border, and a line marked `grid-exempt` with its reason is left alone.
+// A frameless control at the start or end of a row is pulled out to the edge line by edgeRow() from
+// components/edges, which reads the control's own --edge-inset. A screen writing a negative side margin
+// itself drifts from the others; a line marked `edge-exempt` with its reason is left alone.
+const sideMarginPattern = /\b(?:m|mx|ml|mr|marginLeft|marginRight|marginInline(?:Start|End)?)\s*:\s*(?:-\d|(['"`])-)/gu
+// Icons come in a few sizes: 14 beside caption text and in chips, 16 as a list or row marker, 18 in a control,
+// 20 and 24 as MUI's small and medium, 32 large, 40 for an empty state. Numbers from 14 up size icons (and
+// emoji glyphs); smaller ones are text, which the typography rule covers.
+const iconSizePattern = /\bfontSize\s*:\s*(\d+)\b(?!\.)/gu
+// Button sizes and their quiet look are the theme's (size="dense", variant="quiet"); a screen re-sizing a
+// button by MUI's size classes makes one that matches nothing beside it.
+const buttonSizePattern = /MuiButton-size\w*|MuiIconButton-size\w*/gu
+const iconSizes = new Set([14, 16, 18, 20, 24, 32, 40])
 const borderPattern = /\bborder(?:Top|Bottom|Left|Right)?(?:Width)?\s*:\s*(?:[1-9]|[\w.]+\s*\?\s*[1-9]|(['"`])[1-9][^'"`]*\1|`[1-9])/gu
 
 /** The text of the innermost { … } around an index, and the key it is the value of. */
@@ -109,10 +121,29 @@ function gridChecks(source, relativePath) {
   }
 }
 
-const exempted = (source, index) => {
+/** One way to do a thing: edges, icon sizes and button sizes come from the shared rules, not from each screen. */
+function consistencyChecks(source, relativePath) {
+  const at = (match) => `${relativePath}:${lineOf(source, match.index)}`
+  if (relativePath !== join('src', 'components', 'edges.ts')) {
+    for (const match of source.matchAll(sideMarginPattern)) {
+      if (exempted(source, match.index, 'edge-exempt')) continue
+      violations.push(`${at(match)}: ${match[0]} pulls a control by hand; give its row edgeRow from components/edges (the control declares --edge-inset)`)
+    }
+  }
+  for (const match of source.matchAll(iconSizePattern)) {
+    const value = Number(match[1])
+    if (value < 14 || iconSizes.has(value)) continue
+    violations.push(`${at(match)}: icon size ${value}; use one of the icon sizes ${[...iconSizes].join(', ')}`)
+  }
+  for (const match of source.matchAll(buttonSizePattern)) {
+    violations.push(`${at(match)}: ${match[0]} re-sizes a button by hand; use size="dense" or variant="quiet" from the theme, or a theme override`)
+  }
+}
+
+const exempted = (source, index, mark = 'grid-exempt') => {
   const lineStart = source.lastIndexOf('\n', index - 1)
   const previousLine = lineStart < 0 ? '' : source.slice(source.lastIndexOf('\n', lineStart - 1) + 1, lineStart)
-  return /grid-exempt/u.test(previousLine) || /grid-exempt/u.test(source.slice(lineStart, source.indexOf('\n', index)))
+  return previousLine.includes(mark) || source.slice(lineStart, source.indexOf('\n', index)).includes(mark)
 }
 // Development-only screens, loaded only in development builds; MockMarkdown is also used by the client.
 const typographyExempt = (path) => /\.test\.tsx?$/u.test(path) || path.startsWith(join('src', 'pages')) || (path.startsWith(join('src', 'components', 'mock')) && !path.endsWith('MockMarkdown.tsx'))
@@ -156,6 +187,7 @@ function visit(directory) {
           if (Number.isInteger(value * 2) || value === 0.25) continue
           violations.push(`${relativePath}:${lineOf(source, match.index)}: spacing ${match[0]}; use multiples of 0.5 (4px)`)
         }
+        consistencyChecks(source, relativePath)
       }
     } else if (relativePath === join('src', 'theme.ts')) {
       // The theme keeps its literal colours and type sizes, but its overrides follow the same grid.
@@ -187,5 +219,5 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`)
   process.exitCode = 1
 } else {
-  console.log('Design guard passed: colors and type sizes stay in src/theme.ts, line boxes and rows stay on the 4px grid, interface text is in the message files, and no direct network calls are present.')
+  console.log('Design guard passed: colors and type sizes stay in src/theme.ts, line boxes and rows stay on the 4px grid, edges, icon sizes and button sizes come from the shared rules, interface text is in the message files, and no direct network calls are present.')
 }

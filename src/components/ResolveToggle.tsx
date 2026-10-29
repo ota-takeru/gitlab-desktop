@@ -22,14 +22,12 @@ export function ResolveToggle({ dense = false, disabled = false, onToggle, pendi
         color={resolved ? 'success' : 'inherit'}
         disabled={disabled || pending}
         onClick={() => onToggle(!resolved)}
-        size="small"
+        size={dense ? 'dense' : 'small'}
         startIcon={resolved ? <CheckCircleRoundedIcon /> : <RadioButtonUncheckedRoundedIcon />}
-        sx={{ borderColor: resolved ? undefined : 'surface.borderStrong', color: resolved ? undefined : 'text.secondary', flexShrink: 0, whiteSpace: 'nowrap', ...(dense ? denseSx : {}) }}
+        sx={{ borderColor: resolved ? undefined : 'surface.borderStrong', color: resolved ? undefined : 'text.secondary', flexShrink: 0, whiteSpace: 'nowrap' }}
         variant="outlined"
       >{state}</Button>
     </span>
   </Tooltip>
 }
 
-/** For one-line bars between code lines: a 24px control with a caption-sized label. */
-const denseSx = { '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 1, py: 0 }, '& .MuiButton-startIcon': { mr: 0.5 }, '& .MuiButton-startIcon > *:nth-of-type(1)': { fontSize: 14 } } as const

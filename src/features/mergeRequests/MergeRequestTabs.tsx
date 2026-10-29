@@ -41,6 +41,7 @@ export function MergeRequestTabs({ collapsed, onOpen, selected }: { collapsed: b
     workspace.closeAllTabs()
   }
   const tab = (ref: MrRef, pinned: boolean, reorder: Reorder) => <MergeRequestTab collapsed={collapsed} key={mrRefKey(ref)} meta={workspace.tabs[mrRefKey(ref)]} mrRef={ref} onClose={pinned ? undefined : () => close(ref)} onOpen={() => onOpen(ref)} onTogglePin={() => pinned ? workspace.unpinToOpen(ref) : workspace.togglePinned(ref)} pinned={pinned} reorder={reorder} selected={mrRefKey(ref) === selectedKey} />
+  // edge-exempt: the scroll area reaches 8px past the column and pads it back, so the tabs' focus rings are not clipped.
   return <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, mx: -1, overflowX: 'hidden', overflowY: 'auto', px: 1 }}>
     {workspace.pinned.length ? <TabSection items={workspace.pinned} label={t('mergeRequest.tabs.pinnedLabel')} onMove={workspace.moveTab} subheader={collapsed ? <Divider component="li" sx={{ my: 1 }} /> : <SectionHeading>{t('mergeRequest.tabs.pinnedHeading')}</SectionHeading>}>{(reorder) => workspace.pinned.map((ref) => tab(ref, true, reorder))}</TabSection> : null}
     <TabSection items={workspace.open} label={t('mergeRequest.tabs.open')} onMove={workspace.moveTab} subheader={collapsed ? <Divider component="li" sx={{ my: 1 }} /> : <SectionHeading action={workspace.open.length ? <Button onClick={closeAll} size="small" sx={{ minHeight: 24, minWidth: 0, px: 0.5 }}><Typography color="inherit" component="span" variant="caption">{t('mergeRequest.tabs.closeAll')}</Typography></Button> : undefined}>{t('mergeRequest.tabs.open')}</SectionHeading>}>
@@ -111,4 +112,4 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
 }
 
 /** Pin and close keep a small icon in a 24px target. */
-const tabActionSx = { fontSize: 14, height: 24, width: 24 }
+const tabActionSx = { fontSize: 14, height: 24, width: 24, '--edge-inset': '5px' }

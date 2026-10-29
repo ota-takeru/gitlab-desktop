@@ -25,6 +25,7 @@ import Typography from '@mui/material/Typography'
 import { memo, useCallback, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
+import { edgeRow } from '../../components/edges'
 import { hairline } from '../../components/hairline'
 import { useConfirm, useNotify } from '../../components/feedbackContext'
 import { KeepAlive } from '../../components/KeepAlive'
@@ -922,8 +923,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)} sessionId={session?.id}>
     <Box component="section" ref={sectionRef} sx={{ minHeight: '100%', width: '100%' }}>
       <Box component="header" data-sticky-header="true" ref={headerRef} sx={{ bgcolor: 'background.default', ...hairline('bottom', { position: false }), position: 'sticky', px: 2, pt: 1.5, top: 0, zIndex: 2 }}>
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32 }}>
-          {onBack ? <Tooltip title={`${backLabel} (Esc)`}><IconButton aria-label={backLabel} onClick={onBack} sx={{ ml: -1 }}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minHeight: 32, ...edgeRow }}>
+          {onBack ? <Tooltip title={`${backLabel} (Esc)`}><IconButton aria-label={backLabel} onClick={onBack}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
             <Tooltip title={mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}><Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, px: 1 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}</Box></Button></Tooltip>
             <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="body2">!{mergeRequest.iid}</Typography>
@@ -942,15 +943,15 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         </Stack>
         <MergeRequestSummary approvedBy={approvedBy} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
         {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open participants={mentionParticipants} /> : null}
-        <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, mt: 0.5 }}>
-          <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0, ml: -1.5 }} value={activeTab}>
+        <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, mt: 0.5, ...edgeRow }}>
+          <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0 }} value={activeTab}>
             <Tab label={t('mergeRequest.detail.tabOverview')} value="overview" />
             <Tab label={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><span>{t('mergeRequest.detail.tabDiscussion')}</span>{unresolvedCount > 0 ? <Chip aria-label={t('mergeRequest.detail.unresolvedCount', { count: unresolvedCount })} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Stack>} value="discussion" />
             <Tab label={t('mergeRequest.detail.tabChanges')} value="changes" />
             <Tab label={t('mergeRequest.detail.tabPipelines')} value="pipelines" />
           </Tabs>
-          {activeTab === 'discussion' ? <Tooltip describeChild title={descriptionOpen ? t('mergeRequest.detail.hideDescription') : t('mergeRequest.detail.showDescription')}><Button aria-keyshortcuts="D" aria-pressed={descriptionOpen} color={descriptionOpen ? 'primary' : 'inherit'} onClick={() => setDescriptionOpen((open) => !open)} size="small" startIcon={<DescriptionOutlinedIcon />} sx={{ flexShrink: 0, ml: 'auto', mr: unresolvedCount > 0 ? 0 : -1.5 }}>{t('mergeRequest.overview.description')}</Button></Tooltip> : null}
-          {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: activeTab === 'discussion' ? 0 : 'auto', mr: -0.5 }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}
+          {activeTab === 'discussion' ? <Tooltip describeChild title={descriptionOpen ? t('mergeRequest.detail.hideDescription') : t('mergeRequest.detail.showDescription')}><Button aria-keyshortcuts="D" aria-pressed={descriptionOpen} color={descriptionOpen ? 'primary' : 'inherit'} onClick={() => setDescriptionOpen((open) => !open)} size="small" startIcon={<DescriptionOutlinedIcon />} sx={{ flexShrink: 0, ml: 'auto' }}>{t('mergeRequest.overview.description')}</Button></Tooltip> : null}
+          {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: activeTab === 'discussion' ? 0 : 'auto' }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}
         </Stack>
         {/* Write results stay in view under the header, wherever in a long thread the action was taken. */}
         {positionError || visibleMutationError || verificationError ? <Stack aria-live="polite" spacing={1} sx={{ pb: 1, pt: 1.5 }}>
@@ -1152,8 +1153,7 @@ const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, merg
     <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 0.5, rowGap: 0 }}>
       {([['assignees', 'mergeRequest.people.assigneesList'], ['reviewers', 'mergeRequest.people.reviewersList']] as const).map(([field, label]) => (
         // The label, the names and the pencil are one quiet button, so the edit action reads as part of the line.
-        // Hover darkens the text and the pencil instead of filling a box, so the line keeps the left edge of the title and chips above.
-        <Tooltip key={field} title={field === 'assignees' ? t('mergeRequest.summary.changeAssignees') : t('mergeRequest.summary.changeReviewers')}><span><Button color="inherit" aria-label={t(field === 'assignees' ? 'mergeRequest.summary.editAssignees' : 'mergeRequest.summary.editReviewers', { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => onEditPeople(field)} size="small" sx={{ color: 'text.secondary', fontWeight: 400, minWidth: 0, textAlign: 'left', whiteSpace: 'normal', '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 0, py: 0 }, '& .MuiButton-endIcon': { color: 'text.secondary', ml: 0.5, opacity: 0.6 }, '& .MuiButton-endIcon > *:nth-of-type(1)': { fontSize: 14 }, '&:hover': { bgcolor: 'transparent', color: 'text.primary' }, '&:hover .MuiButton-endIcon': { color: 'text.primary', opacity: 1 } }}>{t(label, { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })}</Button></span></Tooltip>
+        <Tooltip key={field} title={field === 'assignees' ? t('mergeRequest.summary.changeAssignees') : t('mergeRequest.summary.changeReviewers')}><span><Button aria-label={t(field === 'assignees' ? 'mergeRequest.summary.editAssignees' : 'mergeRequest.summary.editReviewers', { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => onEditPeople(field)} variant="quiet">{t(label, { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })}</Button></span></Tooltip>
       ))}
     </Stack>
   </>

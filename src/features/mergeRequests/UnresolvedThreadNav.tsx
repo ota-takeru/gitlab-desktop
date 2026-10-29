@@ -44,7 +44,7 @@ export function UnresolvedThreadNav({ discussions, olderNotLoaded, onSelect }: {
 }
 
 /** The arrows stay as small as the caption beside them, in a 24px target. */
-const stepSx = { fontSize: 16, height: 24, width: 24 }
+const stepSx = { fontSize: 16, height: 24, width: 24, '--edge-inset': '4px' }
 
 /** Compact previous/next unresolved thread control, usable at any width (also with P / N). */
 export function UnresolvedThreadStepper({ count, onStep }: { count: number; onStep: (direction: 1 | -1) => void }) {

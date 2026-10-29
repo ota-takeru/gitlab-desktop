@@ -5,6 +5,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 
+import { edgeRow } from '../../components/edges'
 import { frame, hairline, panelFrame } from '../../components/hairline'
 import { gridLine } from '../../theme'
 import { RelativeTime } from '../../components/RelativeTime'
@@ -98,17 +99,15 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
         </Box>
       </Box>)}
     </Stack> : null}
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', ...(expanded ? hairline('top') : {}), px: 1, py: 0.25 }}>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', ...(expanded ? hairline('top') : {}), px: 1, py: 0.25, ...edgeRow }}>
       {actions && resolvable.length > 0 ? <ResolveToggle dense disabled={actions.disabled} onToggle={(resolve) => { setFolded(resolve); actions.onResolve(discussion, resolve) }} resolved={resolved} /> : null}
       {!expanded ? <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} title={notes[0] ? plainExcerpt(notes[0].body, 200) : undefined} variant="caption">{rangeLabel ? `${rangeLabel} · ` : ''}{notes.length > 1 ? t('review.thread.summaryMore', { author: notes[0]?.author.name ?? '', count: notes.length - 1 }) : t('review.thread.summary', { author: notes[0]?.author.name ?? '' })}</Typography>
         : <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{rangeLabel}</Typography>}
-      {resolved && !replying ? <Button onClick={() => setFolded(expanded)} size="small" sx={barButtonSx}>{expanded ? t('review.discussion.collapse') : t('review.thread.show')}</Button> : null}
-      {actions && !replying ? <Button disabled={actions.disabled} onClick={() => actions.onReply(discussion)} size="small" sx={barButtonSx}>{t('review.discussion.reply')}</Button> : null}
-      {onOpen ? <Button onClick={() => onOpen(discussion.id)} size="small" sx={barButtonSx}>{actions ? t('review.thread.openInDiscussions') : t('review.thread.replyInDiscussions')}</Button> : null}
+      {resolved && !replying ? <Button onClick={() => setFolded(expanded)} size="dense">{expanded ? t('review.discussion.collapse') : t('review.thread.show')}</Button> : null}
+      {actions && !replying ? <Button disabled={actions.disabled} onClick={() => actions.onReply(discussion)} size="dense">{t('review.discussion.reply')}</Button> : null}
+      {onOpen ? <Button onClick={() => onOpen(discussion.id)} size="dense">{actions ? t('review.thread.openInDiscussions') : t('review.thread.replyInDiscussions')}</Button> : null}
     </Stack>
     {replying ? <Box sx={{ ...hairline('top'), px: 1, py: 1 }}>{actions?.replyComposer}</Box> : null}
   </Box>
 }
 
-/** The thread bar between code lines keeps its text buttons as compact as its toggle. */
-const barButtonSx = { '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 1, py: 0 } } as const

@@ -96,6 +96,17 @@ declare module '@mui/material/Typography' {
   }
 }
 
+declare module '@mui/material/Button' {
+  interface ButtonPropsVariantOverrides {
+    /** Secondary text that is also an action (a label, names and a trailing pencil): no box, it darkens on hover. */
+    quiet: true
+  }
+  interface ButtonPropsSizeOverrides {
+    /** 24px, caption-sized, for bars and toggles that sit inside a row of caption text. */
+    dense: true
+  }
+}
+
 // GitHub-like token colours, readable on both the plain and the added/removed diff backgrounds.
 const syntaxTokens: Record<PaletteMode, SyntaxPalette> = {
   light: { keyword: '#cf222e', string: '#0a3069', comment: '#57606a', number: '#0550ae', title: '#7339d0', type: '#953800', attribute: '#0550ae', tag: '#116329', variable: '#953800' },
@@ -346,12 +357,28 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             // MUI's 1.75 line makes a 32.75px button, half a pixel off the 32px icon buttons beside it.
             lineHeight: gridLine(5),
             '&.MuiButton-sizeSmall': { minHeight: 32, padding: '4px 12px', fontSize: '0.8125rem', lineHeight: gridLine(5) },
+            variants: [
+              {
+                props: { size: 'dense' },
+                style: { '&&': { fontSize: '0.75rem', minHeight: 24, padding: '0 8px', '--edge-inset': '8px' }, '& .MuiButton-startIcon': { marginLeft: -2, marginRight: 4, '& > *:nth-of-type(1)': { fontSize: 14 } }, '& .MuiButton-endIcon': { marginLeft: 4, marginRight: -2, '& > *:nth-of-type(1)': { fontSize: 14 } } },
+              },
+              {
+                props: { variant: 'quiet' },
+                style: {
+                  '&&': { color: palette.inkMuted, fontSize: '0.75rem', fontWeight: 400, minHeight: 24, minWidth: 0, padding: 0, textAlign: 'left', whiteSpace: 'normal', '--edge-inset': '0px' },
+                  '&:hover': { backgroundColor: 'transparent', color: palette.ink },
+                  '& .MuiButton-endIcon': { color: palette.inkMuted, marginLeft: 4, marginRight: 0, opacity: 0.6, '& > *:nth-of-type(1)': { fontSize: 14 } },
+                  '&:hover .MuiButton-endIcon': { color: palette.ink, opacity: 1 },
+                },
+              },
+            ],
           },
           // The ring sits apart from the fill in the text colour, so it shows even when the fill is the focus colour.
           // Disabled fills keep MUI's disabled colours, so a primary button never looks pressable while disabled.
           contained: { '&:focus-visible': { outlineColor: palette.ink, outlineOffset: 2 }, [forcedColors]: { '&:focus-visible': { outlineColor: 'Highlight' } }, '&.MuiButton-colorPrimary:not(.Mui-disabled)': { backgroundColor: palette.primaryFill, color: '#ffffff', '&:hover': { backgroundColor: palette.primaryFillHover } } },
           outlined: { '&.MuiButton-colorPrimary': { borderColor: palette.borderStrong, color: palette.ink, '&:hover': { borderColor: palette.borderStrong, backgroundColor: alpha(palette.ink, 0.05) } } },
-          text: { '&.MuiButton-colorPrimary': { color: mode === 'dark' ? palette.primaryStrong : palette.primary } },
+          // A frameless button's padding, which edgeRow() takes back at the start or end of a row (components/edges).
+          text: { '--edge-inset': '12px', '&.MuiButton-colorPrimary': { color: mode === 'dark' ? palette.primaryStrong : palette.primary } },
           startIcon: { marginRight: 8, '& > *:nth-of-type(1)': { fontSize: 16 } },
         },
       },
@@ -361,7 +388,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
           root: { borderRadius: 4, color: palette.inkMuted, '&:hover': { backgroundColor: alpha(palette.ink, 0.07), color: palette.ink } },
           // Default and small icons are set to 18px, so the button stays 32px; an icon with fontSize="inherit" follows the button's own
           // font size, so `<IconButton sx={{ fontSize: 14 }}><Icon fontSize="inherit" /></IconButton>` gives a 14px icon.
-          sizeSmall: { fontSize: 18, padding: 7, '& .MuiSvgIcon-fontSizeMedium, & .MuiSvgIcon-fontSizeSmall': { fontSize: 18 } },
+          sizeSmall: { fontSize: 18, padding: 7, '--edge-inset': '7px', '& .MuiSvgIcon-fontSizeMedium, & .MuiSvgIcon-fontSizeSmall': { fontSize: 18 } },
         },
       },
       // MUI scales icon sizes by the 13px body size (13/14), which makes 18.57, 22.29 and 32.5px icons
@@ -445,7 +472,8 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       },
       MuiTabs: {
         styleOverrides: {
-          root: { minHeight: 40 },
+          // The first tab's label meets the edge line under edgeRow(), as a text button's does.
+          root: { minHeight: 40, '--edge-inset': '12px' },
           indicator: { height: 2, borderRadius: 2, zIndex: 1, [forcedColors]: { forcedColorAdjust: 'none', backgroundColor: 'Highlight' } },
         },
       },
@@ -564,7 +592,8 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         },
       },
       // A small checkbox or radio is a 32px square with an 18px box, and its label pulls it back so the
-      // box sits on the column's edge and the label text starts 24px in (`pl: 3` for text under it).
+      // box sits on the column's edge and the label text starts 24px in (`pl: 3` for text under it). A small
+      // switch pads its track by the same 7px, so it lines up the same way.
       MuiCheckbox: {
         defaultProps: { size: 'small' },
         styleOverrides: { sizeSmall: { padding: 7, '& .MuiSvgIcon-root': { fontSize: 18 } } },

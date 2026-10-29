@@ -109,7 +109,7 @@ test.describe('grid of states at 125%', () => {
 
   test('people editor with an autocomplete', async ({ page }) => {
     await open(page, detail, '説明')
-    await page.getByRole('button', { name: /^担当: /u }).first().click()
+    await page.getByRole('button', { name: /^担当者: /u }).first().click()
     await expect(page.getByRole('combobox').first()).toBeVisible()
     expect(await auditScrolled(page)).toEqual([])
   })
@@ -137,7 +137,7 @@ test.describe('grid of states at 125%', () => {
 
   test('tooltip', async ({ page }) => {
     await open(page, detail, '説明')
-    await page.getByRole('button', { name: /^担当: /u }).first().hover()
+    await page.getByRole('button', { name: /^担当者: /u }).first().hover()
     await expect(page.getByRole('tooltip')).toBeVisible()
     expect(await auditScrolled(page)).toEqual([])
   })

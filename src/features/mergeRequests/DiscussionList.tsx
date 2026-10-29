@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
+import { edgeRow } from '../../components/edges'
 import { hairline, panelFrame } from '../../components/hairline'
 import { MarkdownEditor, type MarkdownEditorHandle } from '../../components/MarkdownEditor'
 import { ReactionBar } from '../../components/ReactionBar'
@@ -235,7 +236,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
 
   return (
     <Stack ref={listRef} spacing={1.5} sx={{ overflowAnchor: 'none' }}>
-      <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5 }}>
+      <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5, ...edgeRow }}>
         <ToggleButtonGroup
           aria-label={t('review.discussion.filter')}
           disabled={paginationDisabled}
@@ -250,8 +251,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           <ToggleButton value="all">{t('review.discussion.filter.all')}</ToggleButton>
           <ToggleButton value="unresolved">{t('review.discussion.filter.unresolved')}</ToggleButton>
         </ToggleButtonGroup>
-        {/* The last button's label meets the edge line of the threads below. */}
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', mr: -1.5 }}>
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           {latestNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(latestNote)} size="small">{t('review.discussion.latest')}</Button> : null}
           {earliestUnreadNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(earliestUnreadNote)} size="small">{t('review.discussion.unread')} <Chip color="primary" label={unreadNotes.length} size="small" sx={{ ml: 0.5 }} /></Button> : null}
           {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">{t('review.discussion.markRead')}</Button> : null}
@@ -288,7 +288,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         return (
           <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
             {isThreadCollapsible(notes) ? (
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, pl: 1.5, pr: 1, py: 0.5 }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, px: 1.5, py: 0.5, ...edgeRow }}>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', minWidth: 0 }}>
                   {position ? <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} /> : <ForumOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} />}
                   {/* A long path gives way with an ellipsis (full path in the tooltip) rather than run under the controls. */}
@@ -431,7 +431,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
     >
       <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
       <Box sx={{ minWidth: 0 }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 24, minWidth: 0 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 24, minWidth: 0, ...edgeRow }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2"><GitLabUserLink user={note.author} /></Typography>
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
@@ -441,7 +441,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
             {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('review.note.unread')}</Typography> : null}
           </Stack>
           {own && !note.system ? (
-            <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, mr: -1, opacity: editing ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
+            <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, opacity: editing ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
               <Tooltip title={t('review.note.editTooltip')}><IconButton aria-label={t('review.note.edit', { author: note.author.name, excerpt: plainExcerpt(shown.body, 30) })} disabled={disabled} onClick={() => setEditing(note.id)} ref={editButtonRef}><EditOutlinedIcon /></IconButton></Tooltip>
               <Tooltip title={t('review.note.deleteTooltip')}><IconButton aria-label={t('review.note.delete', { author: note.author.name, excerpt: plainExcerpt(note.body, 30) })} disabled={disabled} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: plainExcerpt(note.body, 120), title: t('review.note.delete.title') }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
             </Stack>
