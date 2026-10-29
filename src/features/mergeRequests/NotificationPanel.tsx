@@ -47,7 +47,7 @@ import { useConnection } from '../connections/connectionContext'
 import { mrRefKey, usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
 import { runGitLabMutation, useGitLabMutation } from '../shared/useGitLabMutation'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
-import { todoNoteId, type ActivityKind, type MergeRequestActivity } from './activityFeed'
+import { mentionsUser, todoNoteId, type ActivityKind, type MergeRequestActivity } from './activityFeed'
 import { useLoadedActivity } from './activityStore'
 import { forgetDoneTodos, isNotificationTodo } from './todoCache'
 import { Row } from '../../components/Row'
@@ -64,8 +64,9 @@ const activityTones: Partial<Record<ActivityKind, StateIconTone>> = { approved: 
 const activityIcons: Record<ActivityKind, ReactElement> = { comment: <ChatBubbleOutlineRoundedIcon fontSize="inherit" />, pushed: <CommitRoundedIcon fontSize="inherit" />, approved: <CheckCircleOutlineRoundedIcon fontSize="inherit" />, unapproved: <RemoveCircleOutlineRoundedIcon fontSize="inherit" />, merged: <MergeRoundedIcon fontSize="inherit" />, closed: <CancelOutlinedIcon fontSize="inherit" />, reopened: <ReplayRoundedIcon fontSize="inherit" /> }
 
 /**
- * The MR events shown beside the To-Dos: unread ones, or with `read` the read ones. A comment a
- * To-Do is about is left to the To-Do.
+ * The MR events shown beside the To-Dos: unread ones, or with `read` the read ones. A comment
+ * mentioning the user is left to its To-Do, pending or done, so reading it never brings the
+ * comment back; one a pending To-Do is about otherwise (a group mention) is left to it too.
  */
 function useActivityNotifications(session: GitLabSession | null, read: boolean, todos: GitLabTodo[]): MergeRequestActivity[] {
   const workspace = usePersonalWorkspace(session)
@@ -73,9 +74,11 @@ function useActivityNotifications(session: GitLabSession | null, read: boolean, 
   return useMemo(() => {
     if (!workspace.settings.showActivity) return []
     const fromTodos = new Set(todos.map(todoNoteId))
+    const username = session?.user.username ?? ''
     return loaded.filter((item) => !fromTodos.has(item.id)
+      && !(item.kind === 'comment' && username && mentionsUser(item.note.body, username))
       && workspace.isActivityUnread(item, item.createdAt, item.kind === 'comment' ? item.id : null) !== read)
-  }, [loaded, read, todos, workspace])
+  }, [loaded, read, session?.user.username, todos, workspace])
 }
 
 /**

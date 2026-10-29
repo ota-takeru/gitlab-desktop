@@ -61,3 +61,12 @@ export function mergeRequestActivity(mergeRequest: MergeRequest, notes: Note[], 
 export function todoNoteId(todo: GitLabTodo): string | null {
   return /#note_(\d+)$/u.exec(todo.webUrl)?.[1] ?? null
 }
+
+/**
+ * Whether the text mentions `@username`. GitLab makes a To-Do of such a comment, which stands for
+ * it whether pending or done; a trailing full stop is not part of the name.
+ */
+export function mentionsUser(text: string, username: string): boolean {
+  const name = username.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  return new RegExp(`(?:^|[^\\w@.-])@${name}(?![\\w-]|\\.[\\w-])`, 'iu').test(text)
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GitLabTodo, MergeRequest, Note } from '../../types/gitlab'
-import { mergeRequestActivity, todoNoteId } from './activityFeed'
+import { mentionsUser, mergeRequestActivity, todoNoteId } from './activityFeed'
 
 const mergeRequest: MergeRequest = {
   id: 'mr-3',
@@ -75,5 +75,17 @@ describe('todoNoteId', () => {
 
     expect(todoNoteId(todo)).toBe('88')
     expect(todoNoteId({ ...todo, webUrl: mergeRequest.webUrl })).toBeNull()
+  })
+})
+
+describe('mentionsUser', () => {
+  it('finds the user\'s own mention, not a longer name, an address or a group', () => {
+    expect(mentionsUser('@reviewer please check', 'reviewer')).toBe(true)
+    expect(mentionsUser('thanks @Reviewer.', 'reviewer')).toBe(true)
+    expect(mentionsUser('cc (@reviewer)', 'reviewer')).toBe(true)
+    expect(mentionsUser('@reviewer-bot please check', 'reviewer')).toBe(false)
+    expect(mentionsUser('@reviewer.team please check', 'reviewer')).toBe(false)
+    expect(mentionsUser('mail me at a@reviewer.example', 'reviewer')).toBe(false)
+    expect(mentionsUser('@group/reviewer please check', 'reviewer')).toBe(false)
   })
 })

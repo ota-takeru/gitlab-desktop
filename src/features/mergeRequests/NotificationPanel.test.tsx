@@ -244,7 +244,7 @@ it('shows the events of the user\'s MRs beside the To-Dos, leaves a mentioned co
     queryMock.mockReturnValue(result([todo({ body: '@reviewer please check', createdAt: hourAgo(1), id: '1', iid: '5', title: 'Add login', webUrl: 'https://gitlab.example/group/desktop/-/merge_requests/5#note_88' })]))
     const onOpen = vi.fn()
     runDetailedMock.mockResolvedValue({ error: null, ok: true, status: 'success' })
-    renderWithClient(<NotificationNavItem collapsed={false} navigationWidth={52} onOpen={onOpen} />)
+    const { client, rerender } = renderWithClient(<NotificationNavItem collapsed={false} navigationWidth={52} onOpen={onOpen} />)
 
     // The To-Do, the comment and the approval; the push came before events were followed.
     fireEvent.click(screen.getByRole('button', { name: '通知 3件' }))
@@ -255,6 +255,11 @@ it('shows the events of the user\'s MRs beside the To-Dos, leaves a mentioned co
     act(() => fireEvent.click(within(card).getAllByRole('button')[0]))
     expect(onOpen).toHaveBeenCalledWith({ iid: '5', projectId: '77' })
     expect(screen.getByRole('button', { name: '通知 1件' })).toBeInTheDocument()
+
+    // Once the To-Do is done, its comment does not come back as unread.
+    queryMock.mockReturnValue(result([]))
+    rerender(<QueryClientProvider client={client}><NotificationNavItem collapsed={false} navigationWidth={52} onOpen={onOpen} /></QueryClientProvider>)
+    expect(screen.getByRole('button', { name: '通知' })).toBeInTheDocument()
   } finally {
     forgetActivity('session-1', '77:5')
     clearPreferences(scope)
