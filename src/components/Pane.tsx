@@ -99,5 +99,5 @@ export function PaneEmpty({ icon, title, description, children }: { icon?: React
 
 /** Keyboard key rendered inline in help text. */
 export function Kbd({ children }: { children: ReactNode }) {
-  return <Box component="kbd" sx={{ bgcolor: 'surface.raised', border: 1, borderBottomWidth: 2, borderColor: 'surface.borderStrong', borderRadius: 1, color: 'text.primary', display: 'inline-block', fontFamily: 'code.fontFamily', fontSize: 'overline.fontSize', lineHeight: 1.5, minWidth: 18, px: 0.5, textAlign: 'center' }}>{children}</Box>
+  return <Box component="kbd" sx={{ bgcolor: 'surface.raised', border: 1, borderBottomWidth: 2, borderColor: 'surface.borderStrong', borderRadius: 1, color: 'text.primary', display: 'inline-block', fontFamily: 'code.fontFamily', fontSize: 'overline.fontSize', lineHeight: 'overline.lineHeight', minWidth: 18, px: 0.5, textAlign: 'center' }}>{children}</Box>
 }

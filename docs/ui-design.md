@@ -96,6 +96,7 @@ Instead of designing new decoration per screen, the four structures of search, l
 | Control | Normally 32 to 36 high, with an operable area of at least 24 |
 | Text | Body 14, secondary 12, headings 18/22. Diff starts from monospace 13. Chips and small headings (overline) are 11 |
 | Spacing | 4/8/12/16/24/32 in 4px steps |
+| Grid | Line boxes, control heights and row heights are whole 4px steps (`grid` and `gridLine(n)` in the theme), so the text, chips and buttons in one row share pixel edges. Text variants have px line heights (caption 16, body2 20, body1 24, h1 24, code and diff rows 20), and icons use whole sizes (20/24/32, 18 in icon buttons). `npm run design:guard` rejects ratio line heights and heights of 16px and up that are off the grid. In development builds, Ctrl+Alt+G or `?grid` in the URL lays the grid over the window. At 125% display scaling a 1px border is drawn as one device pixel (0.8 CSS px); content after it stays on whole device pixels |
 | Corner radius | Small 4, standard 8. Arbitrary per-screen changes are prohibited |
 | Color | canvas/surface/text/border/action and status colors. No strong colors without meaning are added |
 | Motion | Only necessary state changes, about 100 to 160ms. Follows reduced-motion. Only the completion of approve, merge and publishing a review paints the notification in the success color, and the check bounces while a ring expands (about 0.6 seconds, static under reduced-motion) |

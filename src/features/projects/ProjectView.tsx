@@ -145,7 +145,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
           <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
             {!user ? <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.membershipOnlyLabel') } }} />} label={t('project.list.membershipOnly')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} sx={{ ml: -0.5 }} /> : null}
             <FormControlLabel control={<Switch checked={includeArchived} onChange={(event) => setConditions({ includeArchived: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.includeArchivedLabel') } }} />} label={t('project.list.archived')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
-            {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 26, ml: 'auto !important', px: 1 }}>{t('project.list.clearConditions')}</Button> : null}
+            {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 24, ml: 'auto !important', px: 1 }}>{t('project.list.clearConditions')}</Button> : null}
           </Stack>
         </Box>
       </PaneHeader>

@@ -53,7 +53,7 @@ export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadVi
   const drafts = keys.flatMap((at) => view?.drafts?.get(at) ?? [])
   const composer = key && line && view?.composer?.key === key && (view.composer.position.newPath === line.newPath || view.composer.position.oldPath === line.oldPath) ? view.composer.node : null
   if (!threads.length && !drafts.length && !composer) return null
-  return <Box className="diff-threads" sx={{ bgcolor: 'surface.list', borderBottom: 1, borderTop: 1, borderColor: 'divider', fontFamily: 'fontFamily', lineHeight: 'normal', px: 1.5, py: 1, whiteSpace: 'normal' }}>
+  return <Box className="diff-threads" sx={{ bgcolor: 'surface.list', borderBottom: 1, borderTop: 1, borderColor: 'divider', fontFamily: 'fontFamily', lineHeight: 'body2.lineHeight', px: 1.5, py: 1, whiteSpace: 'normal' }}>
     <Stack spacing={1} sx={{ maxWidth: 900 }}>
       {threads.map((discussion) => <DiffThread actions={view?.actions} discussion={discussion} key={discussion.id} onOpen={view?.onOpen} sessionId={view?.sessionId} suggestionActions={view?.suggestionActions} />)}
       {drafts.map((draft) => <Box aria-label={t('review.thread.draft')} component="article" key={draft.id} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'warning.main', borderRadius: 1, borderStyle: 'dashed', px: 1.5, py: 1 }}>
@@ -86,7 +86,7 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
       {notes.map((note) => <Box key={note.id} sx={{ columnGap: 1.5, display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', px: 1.5, py: 1 }}>
         <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
         <Box sx={{ minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap', minHeight: 26, minWidth: 0, pt: 0.5, rowGap: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap', minHeight: 24, minWidth: 0, pt: 0.5, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
             <RelativeTime value={note.createdAt} />
           </Stack>

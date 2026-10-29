@@ -14,6 +14,12 @@ const typographyPattern = /\bfontSize\s*:\s*(?:(?:\d|1[0-3])(?:\.\d+)?\b|(['"`])
 const radiusPattern = /\bborderRadius\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])\d+(?:\.\d+)?px\2)/gu
 // Spacing follows the 4px grid: multiples of 0.5 in sx, with 0.25 allowed as a 2px optical nudge.
 const spacingPattern = /(?:\b(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|rowGap|columnGap)\s*:\s*-?|\bspacing=\{)(\d+\.\d+)\b/gu
+// Line boxes and row heights stay on the 4px grid, so text, chips and buttons in one row share pixel edges.
+// A line height is a theme key ('caption.lineHeight'), gridLine(n), px on the grid, or 1 for a lone glyph;
+// a ratio such as 1.45 makes a 17.4px line. Heights from 16px up are multiples of 4; smaller ones are marks
+// (dots, bars, icons) centred in a grid-sized box.
+const lineHeightPattern = /\blineHeight\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])(\d+(?:\.\d+)?)px\2|(['"`])normal\4)/gu
+const heightPattern = /\b(?:height|minHeight|maxHeight)\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])(\d+(?:\.\d+)?)px\2)/gu
 // Development-only screens, loaded only in development builds; MockMarkdown is also used by the client.
 const typographyExempt = (path) => /\.test\.tsx?$/u.test(path) || path.startsWith(join('src', 'pages')) || (path.startsWith(join('src', 'components', 'mock')) && !path.endsWith('MockMarkdown.tsx'))
 // Interface text lives in src/i18n/messages; Japanese left in code is text that skipped translation.
@@ -50,6 +56,15 @@ function visit(directory) {
           if (match[1] !== undefined && ['0', '1', '2'].includes(match[1])) continue
           violations.push(`${relativePath}:${lineOf(source, match.index)}: radius ${match[0]}; use borderRadius 1 (4px), 2 (8px) or '50%'`)
         }
+        for (const match of source.matchAll(lineHeightPattern)) {
+          if (match[1] === '1' || (match[3] !== undefined && Number(match[3]) % 4 === 0)) continue
+          violations.push(`${relativePath}:${lineOf(source, match.index)}: line height ${match[0]}; use a theme key such as 'caption.lineHeight', gridLine(n) or px in 4px steps`)
+        }
+        for (const match of source.matchAll(heightPattern)) {
+          const value = Number(match[1] ?? match[3])
+          if (value < 16 || value % 4 === 0) continue
+          violations.push(`${relativePath}:${lineOf(source, match.index)}: height ${match[0]}; use multiples of 4px`)
+        }
         for (const match of source.matchAll(spacingPattern)) {
           const value = Number(match[1])
           if (Number.isInteger(value * 2) || value === 0.25) continue
@@ -83,5 +98,5 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`)
   process.exitCode = 1
 } else {
-  console.log('Design guard passed: colors and type sizes stay in src/theme.ts, interface text is in the message files, and no direct network calls are present.')
+  console.log('Design guard passed: colors and type sizes stay in src/theme.ts, line boxes and rows stay on the 4px grid, interface text is in the message files, and no direct network calls are present.')
 }

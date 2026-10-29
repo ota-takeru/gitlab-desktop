@@ -14,6 +14,7 @@ import { useLocale, useT } from './i18n/useT'
 
 const DevelopmentApp = import.meta.env.DEV ? lazy(() => import('./pages/DevelopmentApp')) : null
 const FixtureApp = import.meta.env.DEV ? lazy(() => import('./pages/FixtureApp')) : null
+const GridOverlay = import.meta.env.DEV ? lazy(() => import('./components/GridOverlay').then((module) => ({ default: module.GridOverlay }))) : null
 
 /** MUI's own texts (pagination, autocomplete and so on) follow the app language. */
 const muiLocales: Record<Locale, typeof enUS> = { en: enUS, ja: jaJP, 'zh-Hans': zhCN, 'zh-Hant': zhTW, ko: koKR, de: deDE, fr: frFR, es: esES, 'pt-BR': ptBR, ru: ruRU }
@@ -66,6 +67,7 @@ export default function App() {
         </Suspense>
       ) : <ClientApp colorPreference={preference} onColorPreferenceChange={onColorPreferenceChange} />}
       </FeedbackProvider>
+      {GridOverlay ? <Suspense fallback={null}><GridOverlay /></Suspense> : null}
     </ThemeProvider>
   )
 }

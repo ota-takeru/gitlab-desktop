@@ -27,12 +27,12 @@ export function DiscussionCode({ current, position, projectId, sessionId }: { cu
   return <FileExcerpt outdated={!current} position={position} projectId={projectId} sessionId={sessionId} />
 }
 
-/** The diff viewer's code: its type, 22px rows and 44px line-number columns. */
+/** The diff viewer's code: its type, 20px rows and 44px line-number columns. */
 const codeSx = {
   color: 'text.primary',
   fontFamily: 'code.fontFamily',
   fontSize: 'code.fontSize',
-  lineHeight: '22px',
+  lineHeight: '20px',
   overflowWrap: 'anywhere',
   whiteSpace: 'pre-wrap',
 } as const

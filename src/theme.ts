@@ -130,6 +130,14 @@ interface Tokens {
   place: PlacePalette
 }
 
+/**
+ * The layout grid. Every line box, control height and gap is a whole number of steps, so rows built
+ * from text, chips and buttons share the same pixel edges instead of drifting by fractions of a pixel.
+ */
+export const grid = 4
+/** A line height of whole grid steps, in px: a unitless ratio such as 1.45 × 12px leaves a 17.4px line. */
+export const gridLine = (steps: number) => `${steps * grid}px`
+
 const forcedColors = '@media (forced-colors: active)'
 const selectedOutline = { outline: '2px solid Highlight', outlineOffset: -2 }
 
@@ -240,37 +248,38 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       code: {
         fontFamily: '"Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas, monospace',
         fontSize: '0.8125rem',
-        lineHeight: 1.65,
+        lineHeight: gridLine(5),
       },
       h1: {
         fontSize: '1.125rem',
         fontWeight: 700,
         letterSpacing: '-0.01em',
-        lineHeight: 1.35,
+        lineHeight: gridLine(6),
       },
       h2: {
         fontSize: '0.9375rem',
         fontWeight: 600,
         letterSpacing: 0,
-        lineHeight: 1.4,
+        lineHeight: gridLine(5),
       },
       h3: {
         fontSize: '0.8125rem',
         fontWeight: 600,
+        lineHeight: gridLine(5),
       },
-      body1: { fontSize: '0.875rem', lineHeight: 1.6 },
-      body2: { fontSize: '0.8125rem', lineHeight: 1.55 },
+      body1: { fontSize: '0.875rem', lineHeight: gridLine(6) },
+      body2: { fontSize: '0.8125rem', lineHeight: gridLine(5) },
       // Titles of list rows, so they stand out from the metadata around them.
-      subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.45 },
-      caption: { fontSize: '0.75rem', lineHeight: 1.45, letterSpacing: 0 },
-      overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: 1.6 },
+      subtitle1: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: gridLine(5) },
+      caption: { fontSize: '0.75rem', lineHeight: gridLine(4), letterSpacing: 0 },
+      overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: gridLine(4) },
       iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: 1 },
     },
     // Radii are 4 (small) or 8 (standard): `borderRadius: 1` or `2` in sx.
     shape: {
       borderRadius: 4,
     },
-    spacing: 8,
+    spacing: 2 * grid,
     // MUI transitions (Dialog, Menu, Collapse, the tab indicator) follow the system's reduced-motion setting.
     motion: { reducedMotion: 'system' },
     // A reaction starts on the frame of the input: hover and press feedback within 80–120ms, and
@@ -298,6 +307,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
           body: {
             minWidth: 360,
             fontSize: '0.8125rem',
+            lineHeight: gridLine(5),
           },
           '*': {
             scrollbarColor: `${palette.borderStrong} transparent`,
@@ -332,8 +342,8 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             padding: '4px 12px',
             fontSize: '0.8125rem',
             // MUI's 1.75 line makes a 32.75px button, half a pixel off the 32px icon buttons beside it.
-            lineHeight: 1.5,
-            '&.MuiButton-sizeSmall': { minHeight: 32, padding: '4px 12px', fontSize: '0.8125rem', lineHeight: 1.5 },
+            lineHeight: gridLine(5),
+            '&.MuiButton-sizeSmall': { minHeight: 32, padding: '4px 12px', fontSize: '0.8125rem', lineHeight: gridLine(5) },
           },
           // The ring sits apart from the fill in the text colour, so it shows even when the fill is the focus colour.
           // Disabled fills keep MUI's disabled colours, so a primary button never looks pressable while disabled.
@@ -347,10 +357,15 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         defaultProps: { size: 'small' },
         styleOverrides: {
           root: { borderRadius: 4, color: palette.inkMuted, '&:hover': { backgroundColor: alpha(palette.ink, 0.07), color: palette.ink } },
-          // Only default-sized icons are set to 18px; an icon with fontSize="inherit" follows the button's own
+          // Default and small icons are set to 18px, so the button stays 32px; an icon with fontSize="inherit" follows the button's own
           // font size, so `<IconButton sx={{ fontSize: 14 }}><Icon fontSize="inherit" /></IconButton>` gives a 14px icon.
-          sizeSmall: { fontSize: 18, padding: 7, '& .MuiSvgIcon-fontSizeMedium': { fontSize: 18 } },
+          sizeSmall: { fontSize: 18, padding: 7, '& .MuiSvgIcon-fontSizeMedium, & .MuiSvgIcon-fontSizeSmall': { fontSize: 18 } },
         },
+      },
+      // MUI scales icon sizes by the 13px body size (13/14), which makes 18.57, 22.29 and 32.5px icons
+      // and lifts the rows that hold them off the grid. These are MUI's own sizes, kept whole.
+      MuiSvgIcon: {
+        styleOverrides: { fontSizeSmall: { fontSize: 20 }, fontSizeMedium: { fontSize: 24 }, fontSizeLarge: { fontSize: 32 } },
       },
       MuiTooltip: {
         defaultProps: { disableInteractive: true, enterDelay: 350 },
@@ -382,8 +397,11 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             fontWeight: 500,
             height: 20,
             fontSize: '0.6875rem',
+            // An icon given fontSize="inherit" (the MR state glyph) would otherwise take the chip's 11px text size.
+            '& .MuiChip-icon': { fontSize: 14 },
           },
           label: {
+            lineHeight: gridLine(4),
             paddingLeft: 8,
             paddingRight: 8,
           },
@@ -427,6 +445,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
           root: {
             fontSize: '0.8125rem',
             fontWeight: 500,
+            lineHeight: gridLine(5),
             minHeight: 40,
             minWidth: 0,
             padding: '8px 12px',
@@ -511,7 +530,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             color: palette.inkMuted,
             fontSize: '0.75rem',
             fontWeight: 500,
-            lineHeight: 1.5,
+            lineHeight: gridLine(5),
             // The same height as the buttons in the toolbars they share.
             minHeight: 32,
             padding: '4px 12px',

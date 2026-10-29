@@ -400,7 +400,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
     >
       <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
       <Box sx={{ minWidth: 0 }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 26, minWidth: 0 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 24, minWidth: 0 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2"><GitLabUserLink user={note.author} /></Typography>
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>

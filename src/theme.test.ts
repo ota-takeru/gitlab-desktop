@@ -1,7 +1,7 @@
 import { alpha, decomposeColor, getContrastRatio, type PaletteMode } from '@mui/material/styles'
 import { describe, expect, it } from 'vitest'
 
-import { createAppTheme } from './theme'
+import { createAppTheme, grid } from './theme'
 
 /** A translucent colour as it appears over an opaque background. */
 function flatten(color: string, background: string) {
@@ -83,5 +83,16 @@ describe('language fonts', () => {
     expect(family('ko').indexOf('Malgun Gothic')).toBeLessThan(family('ko').indexOf('Yu Gothic UI'))
     expect(family('en')).toBe(family('ja'))
     expect(family('ja').indexOf('Yu Gothic UI')).toBeLessThan(family('ja').indexOf('Microsoft YaHei UI'))
+  })
+})
+
+describe('layout grid', () => {
+  it('gives every text variant a line box of whole grid steps', () => {
+    const typography = createAppTheme('light').typography as unknown as Record<string, { fontSize?: string; lineHeight?: number | string }>
+    for (const variant of ['h1', 'h2', 'h3', 'body1', 'body2', 'subtitle1', 'caption', 'overline', 'code']) {
+      const lineHeight = String(typography[variant].lineHeight)
+      expect(lineHeight, variant).toMatch(/^\d+px$/u)
+      expect(Number.parseInt(lineHeight, 10) % grid, variant).toBe(0)
+    }
   })
 })
