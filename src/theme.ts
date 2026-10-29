@@ -256,7 +256,8 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
     typography: {
       fontSize: 13,
       fontWeightBold: 600,
-      fontFamily: `Inter, "Segoe UI Variable Text", "Segoe UI", ${languageFonts}, system-ui, sans-serif`,
+      // The balanced faces (public/boot.css) are Inter and Segoe UI with their ascent evened out, so Latin text sits in the middle of its line box.
+      fontFamily: `"Inter Balanced", "Segoe UI Variable Balanced", "Segoe UI Balanced", Inter, "Segoe UI Variable Text", "Segoe UI", ${languageFonts}, system-ui, sans-serif`,
       code: {
         fontFamily: '"Cascadia Code", "Cascadia Mono", "SFMono-Regular", Consolas, monospace',
         fontSize: '0.8125rem',

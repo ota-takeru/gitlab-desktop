@@ -5,3 +5,20 @@
  */
 html { background: #ffffff; color-scheme: light dark; }
 @media (prefers-color-scheme: dark) { html { background: #232529; } }
+
+/*
+ * Latin text in the middle of its line box. Segoe UI (what Windows draws for Inter when Inter is not
+ * installed) and Inter keep a tall ascent for accents, so a line box centred on their metrics leaves
+ * capitals 1px and lowercase 2px below the middle, while Japanese glyphs and the code font sit in it.
+ * These faces are the same local fonts with part of the ascent moved to the descent, which lifts Latin
+ * text by 1px at every size from 11 to 15px without changing any line box; Japanese then sits within
+ * half a pixel above the middle. A face whose local font is missing is skipped, and the theme's font
+ * stack falls through to the next family.
+ */
+@font-face { font-family: 'Inter Balanced'; src: local('Inter'); font-weight: 100 900; ascent-override: 94%; descent-override: 27%; line-gap-override: 0%; }
+/* Windows 11: one variable face covers every weight. */
+@font-face { font-family: 'Segoe UI Variable Balanced'; src: local('Segoe UI Variable Text'); font-weight: 100 900; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
+/* Windows 10: the static faces, so semibold and bold are drawn rather than synthesised. */
+@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI'); font-weight: 400; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
+@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI Semibold'); font-weight: 600; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
+@font-face { font-family: 'Segoe UI Balanced'; src: local('Segoe UI Bold'); font-weight: 700; ascent-override: 100%; descent-override: 33%; line-gap-override: 0%; }
