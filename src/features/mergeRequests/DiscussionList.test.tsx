@@ -505,4 +505,56 @@ describe('DiscussionList code beside line comments', () => {
     expect(renderCodeContext.mock.calls.map(([position]) => position.newLine)).not.toContain(9)
     expect(screen.queryByText('code at 9')).not.toBeInTheDocument()
   })
+
+  it('shows a linked comment, loading older threads until it is among them', async () => {
+    const onLoad = vi.fn()
+    const onFocusNoteDone = vi.fn()
+    const newer = [createDiscussion([createNote('newer', otherUser)], 'discussion-new')]
+    const linked = createDiscussion([createNote('first', otherUser, { resolvable: true, resolved: true }), createNote('linked', otherUser, { resolvable: true, resolved: true })], 'discussion-old')
+    const older: OlderDiscussions = { error: null, hasOlder: true, limitReached: false, loading: false, onLoad, onRetry: vi.fn() }
+    const list = (discussions: Discussion[], next: OlderDiscussions) => (
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={discussions} focusNoteId="linked" older={next} onDelete={vi.fn()} onEdit={vi.fn()} onFocusNoteDone={onFocusNoteDone} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>
+    )
+    const view = render(list(newer, older))
+    await waitFor(() => expect(onLoad).toHaveBeenCalledTimes(1))
+    expect(onFocusNoteDone).not.toHaveBeenCalled()
+
+    view.rerender(list(newer, { ...older, loading: true }))
+    expect(onLoad).toHaveBeenCalledTimes(1)
+
+    // The resolved thread it is in opens, and the comment takes the focus.
+    view.rerender(list([linked, ...newer], { ...older, hasOlder: false }))
+    await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'linked'))
+  })
+
+  it('stops looking for a linked comment that is not among all the threads', async () => {
+    const onFocusNoteDone = vi.fn()
+    render(
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={[createDiscussion([createNote('other', otherUser)])]} focusNoteId="missing" older={{ error: null, hasOlder: false, limitReached: false, loading: false, onLoad: vi.fn(), onRetry: vi.fn() }} onDelete={vi.fn()} onEdit={vi.fn()} onFocusNoteDone={onFocusNoteDone} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>,
+    )
+    await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
+  })
+
+  it('uploads an image pasted into an edit and puts its Markdown in the text', async () => {
+    const owned = createNote('owned', currentUser, { body: '元の本文' })
+    const file = new File(['image'], 'clipboard.png', { type: 'image/png' })
+    const onUploadAttachment = vi.fn(async () => '![clipboard.png](/uploads/clipboard.png)')
+    render(
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={[createDiscussion([owned])]} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} onUploadAttachment={onUploadAttachment} />
+      </ThemeProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '自分のコメント「元の本文」を編集' }))
+    fireEvent.paste(screen.getByRole('textbox', { name: 'コメントを編集' }), {
+      clipboardData: { getData: () => '', items: [{ getAsFile: () => file, kind: 'file', type: 'image/png' }] },
+    })
+
+    await waitFor(() => expect(onUploadAttachment).toHaveBeenCalledWith(file))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'コメントを編集' })).toHaveValue('元の本文\n![clipboard.png](/uploads/clipboard.png)'))
+  })
 })

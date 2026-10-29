@@ -18,12 +18,13 @@ import { useConfirm } from '../../components/feedbackContext'
 import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import type { Draft, GitLabUser, Position } from '../../types/gitlab'
 import { plainExcerpt } from './discussionText'
-import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
+import { useAttachmentPaste } from './useAttachmentPaste'
+import { appendComposerBuffer, seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
 import { useMentionSuggestions } from './useMentionSuggestions'
 import { useT } from '../../i18n/useT'
 import { Row } from '../../components/Row'
 
-export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, mentionParticipants, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; mentionParticipants?: GitLabUser[]; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
+export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, mentionParticipants, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, onUploadAttachment, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; mentionParticipants?: GitLabUser[]; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; onUploadAttachment?: (file: File) => Promise<string | null>; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
   const t = useT()
   const confirm = useConfirm()
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
@@ -67,7 +68,7 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
                   <Tooltip title={t('review.drafts.deleteTooltip')}><span><IconButton aria-label={t('review.drafts.delete', { name })} disabled={disabled || status === 'pending'} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: excerpt, title: t('review.drafts.delete.title') }).then((ok) => { if (ok) void onDelete(draft) })} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
                 </Row>
               </Row>
-              {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} mentionParticipants={mentionParticipants} onClose={(editorHadFocus) => { if (editorHadFocus) returnFocusRef.current = draft.id; onSetEdit(null) }} onSave={async (body) => {
+              {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} mentionParticipants={mentionParticipants} onUploadAttachment={onUploadAttachment} onClose={(editorHadFocus) => { if (editorHadFocus) returnFocusRef.current = draft.id; onSetEdit(null) }} onSave={async (body) => {
                 const saved = await onEdit(draft, body)
                 if (saved) setSavedEdits((current) => ({ ...current, [draft.id]: { base: fetched.body, body } }))
                 return saved
@@ -86,7 +87,7 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
  * Edits a pending-review comment in place. Its text is kept in the composer
  * buffer, so closing (Esc) or leaving the tab keeps it; 取消 of a changed text asks first.
  */
-function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; mentionParticipants?: GitLabUser[]; onClose: (editorHadFocus: boolean) => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose, onSave, onUploadAttachment, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; mentionParticipants?: GitLabUser[]; onClose: (editorHadFocus: boolean) => void; onSave: (body: string) => Promise<boolean>; onUploadAttachment?: (file: File) => Promise<string | null>; sessionId: string | null }) {
   const t = useT()
   const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -99,6 +100,7 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
   const seededRef = useRef(false)
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
   const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: disabled || saving, editorRef, enabled: Boolean(sessionId), participants: mentionParticipants })
+  const { onPasteImage, status: attachmentStatus, uploading } = useAttachmentPaste(editorRef, onUploadAttachment, (markdown) => { appendComposerBuffer(bufferKey, markdown) })
   useEffect(() => {
     // Start from the draft, or from the text kept when the edit was last closed.
     if (seededRef.current || persistenceStatus === 'hydrating') return
@@ -117,7 +119,7 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
   }
   const save = async () => {
     const trimmed = body.trim()
-    if (disabled || saving || !changed || !trimmed) return
+    if (disabled || saving || uploading || !changed || !trimmed) return
     setSaving(true)
     try {
       if (await onSave(trimmed)) {
@@ -135,12 +137,13 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
     return false
   }
   return <Stack data-composer="" ref={(element: HTMLDivElement | null) => { containerRef.current = element; mentionContainerRef(element) }} spacing={1} sx={{ pb: 1, pt: 0.5 }}>
-    <MarkdownEditor {...mentionEditorProps} autoFocus disabled={disabled || saving} label={t('review.drafts.editTooltip')} onChange={change} onKeyDown={handleKeyDown} ref={editorRef} value={body} />
+    <MarkdownEditor {...mentionEditorProps} autoFocus disabled={disabled || saving} label={t('review.drafts.editTooltip')} onChange={change} onKeyDown={handleKeyDown} onPasteImage={onPasteImage} ref={editorRef} value={body} />
     {mentionPopup}
+    {attachmentStatus}
     <Row spacing={1} sx={{ justifyContent: 'flex-end' }}>
       <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
       <Button disabled={saving} onClick={() => void cancel()} size="small">{t('review.editor.cancel')}</Button>
-      <Button disabled={disabled || saving || !changed || !body.trim()} onClick={() => void save()} size="small" variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
+      <Button disabled={disabled || saving || uploading || !changed || !body.trim()} onClick={() => void save()} size="small" variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
     </Row>
   </Stack>
 }

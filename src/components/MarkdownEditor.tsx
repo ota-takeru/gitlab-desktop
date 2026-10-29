@@ -545,7 +545,10 @@ function setOptionalAttribute(element: Element, name: string, value: string | nu
 /** Office apps put a rendered image next to copied text; that text is pasted, not the image. */
 function imageFromClipboard(data: DataTransfer): File | null {
   if (data.getData('text/plain')) return null
-  return Array.from(data.items).find((item) => item.kind === 'file' && item.type.startsWith('image/'))?.getAsFile() ?? null
+  // Some WebViews list a copied file only in `files`.
+  return Array.from(data.items ?? []).find((item) => item.kind === 'file' && item.type.startsWith('image/'))?.getAsFile()
+    ?? Array.from(data.files ?? []).find((file) => file.type.startsWith('image/'))
+    ?? null
 }
 
 /** The `@query` around the caret; `before`/`after` count its characters on each side of the caret. */

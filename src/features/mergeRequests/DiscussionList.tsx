@@ -34,7 +34,8 @@ import { CommentChangeStatus } from './CommentChangeStatus'
 import { positionLabel as formatPositionLabel } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
 import { NoteBody, type SuggestionActions } from './SuggestionBlock'
-import { seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
+import { useAttachmentPaste } from './useAttachmentPaste'
+import { appendComposerBuffer, seedComposerBuffer, useComposerBuffer } from './useComposerBuffer'
 import { useMentionSuggestions } from './useMentionSuggestions'
 import { useT } from '../../i18n/useT'
 import { Bar, Row } from '../../components/Row'
@@ -78,6 +79,12 @@ interface DiscussionListProps {
   reactions?: NoteReactions
   /** Applying the suggestions in the comments. */
   suggestionActions?: SuggestionActions
+  /** A comment a link named (`#note_<id>`), shown once loaded; older pages load until it is. */
+  focusNoteId?: string
+  /** The named comment was shown, or is not among the comments. */
+  onFocusNoteDone?: () => void
+  /** Uploads a file pasted into an edit and returns its Markdown. */
+  onUploadAttachment?: (file: File) => Promise<string | null>
 }
 
 export interface NoteReactions {
@@ -100,7 +107,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onMarkRead, onOpenPosition, onReply, onResolve, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
@@ -119,6 +126,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const deleteNote = useStableCallback((note: Note) => onDelete(note))
   const editNote = useStableCallback((note: Note, body: string) => onEdit(note, body))
   const toggleReaction = useStableCallback((note: Note, name: string, add: boolean) => reactions?.onToggle(note, name, add))
+  const uploadAttachment = useStableCallback((file: File) => onUploadAttachment?.(file) ?? Promise.resolve(null))
   const applySuggestions = useStableCallback((suggestionIds: string[], commitMessage?: string) => suggestionActions?.onApply(suggestionIds, commitMessage) ?? Promise.resolve(false))
   const openSuggestionInGitLab = useStableCallback(() => suggestionActions?.onOpenInGitLab?.())
   const hasSuggestionActions = Boolean(suggestionActions)
@@ -236,6 +244,24 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     setPendingJumpNoteId(note.id)
   }
 
+  // A linked comment opens its thread at its page; a system note is not shown, so it ends the search too.
+  const focusDone = useStableCallback(() => onFocusNoteDone?.())
+  const focusJump = useStableCallback(jumpToNote)
+  const focusDiscussion = focusNoteId ? discussions.find((discussion) => discussion.notes.some((note) => note.id === focusNoteId)) : undefined
+  const canLoadOlder = Boolean(older?.hasOlder && !older.error)
+  const loadingOlder = Boolean(older?.loading)
+  useEffect(() => {
+    if (!focusNoteId) return
+    if (focusDiscussion) {
+      const note = focusDiscussion.notes.find((item) => item.id === focusNoteId)!
+      if (!note.system) focusJump({ discussion: focusDiscussion, note })
+      focusDone()
+    } else if (loadingOlder) {
+      // Wait for the page being read.
+    } else if (canLoadOlder) olderRef.current?.onLoad()
+    else focusDone()
+  }, [canLoadOlder, focusDiscussion, focusDone, focusJump, focusNoteId, loadingOlder])
+
   return (
     <Stack ref={listRef} spacing={1.5} sx={{ overflowAnchor: 'none' }}>
       <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5, ...edgeRow }}>
@@ -335,6 +361,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                 onDelete={deleteNote}
                 onEdit={editNote}
                 onToggleReaction={reactions ? toggleReaction : undefined}
+                onUploadAttachment={onUploadAttachment ? uploadAttachment : undefined}
                 reactionsDisabled={reactions?.disabled ?? true}
                 sessionId={sessionId}
                 setEditing={setEditing}
@@ -380,6 +407,7 @@ interface NoteItemProps {
   onDelete: (note: Note) => Promise<boolean>
   onEdit: (note: Note, body: string) => Promise<boolean>
   onToggleReaction?: (note: Note, name: string, add: boolean) => Promise<boolean> | void
+  onUploadAttachment?: (file: File) => Promise<string | null>
   reactionsDisabled: boolean
   sessionId?: string | null
   setEditing: (noteId: string | null) => void
@@ -388,7 +416,7 @@ interface NoteItemProps {
 }
 
 /** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
-const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, mentionParticipants, note, onDelete, onEdit, onToggleReaction, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
   const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
@@ -450,7 +478,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
           ) : null}
         </Bar>
         {editing ? (
-          <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={shown} onClose={closeEditor} onSave={saveEdit} sessionId={sessionId ?? null} />
+          <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={shown} onClose={closeEditor} onSave={saveEdit} onUploadAttachment={onUploadAttachment} sessionId={sessionId ?? null} />
         ) : <Box sx={{ color: 'text.primary', mt: 0.5, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={shown} size="body1" /></Box>}
         {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={t('review.note.reactions', { author: note.author.name })} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
       </Box>
@@ -462,7 +490,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
  * Edits an own comment. Its text is kept in the composer buffer, so closing
  * (Esc) or leaving the tab keeps it; cancelling a changed text asks first.
  */
-function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; mentionParticipants?: GitLabUser[]; note: Note; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, onSave, onUploadAttachment, sessionId }: { bufferKey: string; disabled: boolean; mentionParticipants?: GitLabUser[]; note: Note; onClose: () => void; onSave: (body: string) => Promise<boolean>; onUploadAttachment?: (file: File) => Promise<string | null>; sessionId: string | null }) {
   const t = useT()
   const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
   const confirm = useConfirm()
@@ -470,6 +498,7 @@ function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, o
   const seededRef = useRef(false)
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
   const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: disabled || saving, editorRef, enabled: Boolean(sessionId), participants: mentionParticipants })
+  const { onPasteImage, status: attachmentStatus, uploading } = useAttachmentPaste(editorRef, onUploadAttachment, (markdown) => { appendComposerBuffer(bufferKey, markdown) })
   useEffect(() => {
     // Start from the comment, or from the text kept when the edit was last closed.
     if (seededRef.current || persistenceStatus === 'hydrating') return
@@ -488,7 +517,7 @@ function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, o
   }
   const save = async () => {
     const trimmed = body.trim()
-    if (!trimmed || disabled || saving) return
+    if (!trimmed || disabled || saving || uploading) return
     setSaving(true)
     try {
       if (await onSave(trimmed)) {
@@ -509,6 +538,7 @@ function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, o
         disabled={disabled || saving}
         label={t('review.note.editTooltip')}
         onChange={change}
+        onPasteImage={onPasteImage}
         onKeyDown={(event) => {
           if (handleMentionKeyDown(event)) return true
           if (event.key === 'Escape') { event.preventDefault(); close(); return true }
@@ -519,10 +549,11 @@ function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, o
         value={body}
       />
       {mentionPopup}
+      {attachmentStatus}
       <Row spacing={1} sx={{ justifyContent: 'flex-end' }}>
         <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('review.editor.hint')}</Typography>
         <Button disabled={saving} onClick={() => void cancel()}>{t('review.editor.cancel')}</Button>
-        <Button disabled={!body.trim() || disabled || saving} onClick={() => void save()} variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
+        <Button disabled={!body.trim() || disabled || saving || uploading} onClick={() => void save()} variant="contained">{saving ? t('review.editor.saving') : t('review.editor.save')}</Button>
       </Row>
     </Stack>
   )

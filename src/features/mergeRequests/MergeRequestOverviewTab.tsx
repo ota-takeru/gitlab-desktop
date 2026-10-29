@@ -22,14 +22,16 @@ import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { formatNames } from './mergeActions'
 import { TemplateMenu } from './TemplateMenu'
+import { useAttachmentPaste } from './useAttachmentPaste'
 import { Row } from '../../components/Row'
 
-export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; reactions?: React.ReactNode }) {
+export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, onUploadAttachment, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; onUploadAttachment?: (file: File) => Promise<string | null>; reactions?: React.ReactNode }) {
   const t = useT()
   const confirm = useConfirm()
   const { session } = useConnection()
   const labels = useLabelChips(mergeRequest)
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
+  const { onPasteImage, status: attachmentStatus, uploading } = useAttachmentPaste(editorRef, onUploadAttachment)
   const canRerequest = mergeRequest.state === 'opened' && Boolean(mergeRequest.projectPath)
   const rows: Array<[string, React.ReactNode]> = [
     [t('mergeRequest.overview.author'), `${mergeRequest.author.name} @${mergeRequest.author.username}`],
@@ -52,11 +54,12 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
         {descriptionEdit ? null : <Button disabled={editDisabled} onClick={onStartEdit} size="small" startIcon={<EditOutlinedIcon />}>{t('mergeRequest.overview.editDescription')}</Button>}
       </Row>
       {descriptionEdit ? <Stack spacing={1}>
-        <MarkdownEditor autoFocus disabled={editDisabled} label={t('mergeRequest.overview.editDescription')} onChange={onChangeEdit} ref={editorRef} toolbarEnd={<TemplateMenu disabled={editDisabled} onInsert={(content) => editorRef.current?.insertBlock(content)} query={{ kind: 'descriptionTemplates', projectId: mergeRequest.projectId }} />} value={descriptionEdit.body} />
+        <MarkdownEditor autoFocus disabled={editDisabled} label={t('mergeRequest.overview.editDescription')} onChange={onChangeEdit} onPasteImage={onPasteImage} ref={editorRef} toolbarEnd={<TemplateMenu disabled={editDisabled} onInsert={(content) => editorRef.current?.insertBlock(content)} query={{ kind: 'descriptionTemplates', projectId: mergeRequest.projectId }} />} value={descriptionEdit.body} />
+        {attachmentStatus}
         {descriptionEdit.expected !== (description ?? '') ? <Alert severity="warning">{t('mergeRequest.overview.descriptionChanged')}</Alert> : null}
         <Row spacing={1} sx={{ justifyContent: 'flex-end' }}>
           <Button onClick={() => void (async () => { if (descriptionEdit.body === descriptionEdit.expected || await confirm({ cancelLabel: t('mergeRequest.overview.discardKeepEditing'), confirmLabel: t('mergeRequest.overview.discardConfirm'), destructive: true, title: t('mergeRequest.overview.discardTitle') })) onCancelEdit() })()}>{t('mergeRequest.common.cancel')}</Button>
-          <Button disabled={editDisabled || descriptionEdit.body === descriptionEdit.expected} onClick={onSaveEdit} variant="contained">{t('mergeRequest.common.save')}</Button>
+          <Button disabled={editDisabled || uploading || descriptionEdit.body === descriptionEdit.expected} onClick={onSaveEdit} variant="contained">{t('mergeRequest.common.save')}</Button>
         </Row>
       </Stack> : <MockMarkdown body={description || t('mergeRequest.common.descriptionEmpty')} />}
       {reactions ? <Box sx={{ mt: 1.5 }}>{reactions}</Box> : null}

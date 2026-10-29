@@ -72,7 +72,7 @@ import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './sh
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
-import { useOpenMarkdownLink } from './shared/useOpenMarkdownLink'
+import { useOpenMarkdownLink, type MergeRequestTarget } from './shared/useOpenMarkdownLink'
 import { useDeepLinks } from './shared/useDeepLinks'
 import type { GitLabPageLocation } from './shared/gitlabPageLocation'
 import { UserView, type UserTab } from './users/UserView'
@@ -226,6 +226,9 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const closeShortcuts = useCallback(() => setShortcutsOpen(false), [])
   const [openedMergeRequest, setOpenedMergeRequest] = useState<{ sessionKey: string; mergeRequest: MergeRequest } | null>(null)
+  // The comment a link named in the MR it opened, until that MR has shown it.
+  const [noteFocus, setNoteFocus] = useState<{ key: string; noteId: string } | null>(null)
+  const clearNoteFocus = useCallback(() => setNoteFocus(null), [])
   const [openUrlDialog, setOpenUrlDialog] = useState(false)
   const isNarrowNav = useMediaQuery('(max-width:1000px)')
   // The reader's collapse choice is kept; narrow windows start with icons only.
@@ -444,8 +447,13 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     setOpenedMergeRequest(null)
     select(ref, tab)
   }
+  // A link opens the MR on the tab its URL names, and at the comment its `#note_<id>` names.
+  const openMergeRequestTarget = (ref: MrRef, target?: MergeRequestTarget) => {
+    setNoteFocus(target?.noteId ? { key: mrRefKey(ref), noteId: target.noteId } : null)
+    openMergeRequestRef(ref, target?.tab)
+  }
   const openGitLabPage = useCallback((location: GitLabPageLocation) => navigate(location.route, location.params), [navigate])
-  const openMarkdownLink = useOpenMarkdownLink(openMergeRequestRef, (user) => navigate('user', { username: user.username }), openGitLabPage)
+  const openMarkdownLink = useOpenMarkdownLink(openMergeRequestTarget, (user) => navigate('user', { username: user.username }), openGitLabPage)
   useDeepLinks(openMarkdownLink, session?.instanceUrl)
   const changeUserTab = (tab: UserTab) => {
     const current = readClientLocation(true)
@@ -564,7 +572,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             <DialogContent><ConnectionView /></DialogContent>
           </Dialog>
           <KeyboardShortcutsDialog onClose={closeShortcuts} open={shortcutsOpen} />
-          <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestRef} onOpenPage={openGitLabPage} />
+          <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestTarget} onOpenPage={openGitLabPage} />
           <Box key={sessionKey} sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
             {/* The same pane as the restored screen, so nothing moves when it arrives. */}
             {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
@@ -601,7 +609,9 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                   initialMergeRequest={mergeRequest}
                   key={`${selected.projectId}:${selected.iid}`}
                   backLabel={backLabel}
+                  focusNote={noteFocus?.key === mrRefKey(selected) ? noteFocus : null}
                   onBack={returnToList}
+                  onNoteFocused={clearNoteFocus}
                   onOpenProject={openProjectId}
                   onTabChange={changeMergeRequestTab}
                   selected={selected}
@@ -849,7 +859,7 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
 }
 
 /** Memoized with stable props: showing a kept MR again only reconnects it instead of rendering the whole review again. */
-const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMergeRequest, onBack, onOpenProject, onTabChange, selected, tab }: { backLabel: string; initialMergeRequest: MergeRequest | null; onBack: () => void; onOpenProject: (projectId: string, projectPath?: string) => void; onTabChange: (tab: ReviewTab) => void; selected: MrRef; tab: ReviewTab | undefined }) {
+const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, focusNote, initialMergeRequest, onBack, onNoteFocused, onOpenProject, onTabChange, selected, tab }: { backLabel: string; focusNote: { noteId: string } | null; initialMergeRequest: MergeRequest | null; onBack: () => void; onNoteFocused: () => void; onOpenProject: (projectId: string, projectPath?: string) => void; onTabChange: (tab: ReviewTab) => void; selected: MrRef; tab: ReviewTab | undefined }) {
   const { session } = useConnection()
   const t = useT()
   // Without a tab in the location, an MR opens on its overview the first time this
@@ -873,7 +883,7 @@ const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMe
       </Row>
     </PaneEmpty>
   }
-  return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} />
+  return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} focusNote={focusNote} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onNoteFocused={onNoteFocused} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} />
 })
 
 /** A refresh of the MR that returns the same data (as when a kept MR shows again) does not render the review again. */

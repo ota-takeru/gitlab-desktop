@@ -14,9 +14,10 @@ import { parseMergeRequestUrl } from '../../lib/mergeRequestUrl'
 import { useConnection } from '../connections/connectionContext'
 import { resolveGitLabPage, type GitLabPageLocation } from '../shared/gitlabPageLocation'
 import type { MrRef } from '../shared/personalWorkspace'
+import { mergeRequestTarget, type MergeRequestTarget } from '../shared/useOpenMarkdownLink'
 
 /** Opens an MR, or a project's overview, branches, MR list, folder or file, from its GitLab URL. */
-export function OpenMergeRequestDialog({ open, onClose, onOpen, onOpenPage }: { open: boolean; onClose: () => void; onOpen: (ref: MrRef) => void; onOpenPage?: (location: GitLabPageLocation) => void }) {
+export function OpenMergeRequestDialog({ open, onClose, onOpen, onOpenPage }: { open: boolean; onClose: () => void; onOpen: (ref: MrRef, target?: MergeRequestTarget) => void; onOpenPage?: (location: GitLabPageLocation) => void }) {
   const t = useT()
   const { session } = useConnection()
   const [url, setUrl] = useState('')
@@ -45,7 +46,13 @@ export function OpenMergeRequestDialog({ open, onClose, onOpen, onOpenPage }: { 
       const parsed = parseMergeRequestUrl(url, session.instanceUrl)
       const result = await queryGitLab({ sessionId: session.id, mode: 'network', query: { kind: 'project', path: parsed.path } })
       if (!result?.data.id) throw new Error(t('mergeRequest.openDialog.projectFailed'))
-      if (active.current) { onOpen({ projectId: result.data.id, iid: parsed.iid }); onClose(); setUrl('') }
+      if (active.current) {
+        const target = mergeRequestTarget(parsed)
+        const ref = { projectId: result.data.id, iid: parsed.iid }
+        if (target) onOpen(ref, target)
+        else onOpen(ref)
+        onClose(); setUrl('')
+      }
     } catch (caught) { if (active.current) setError(caught instanceof Error ? caught.message : t('mergeRequest.openDialog.openFailed')) }
     finally { if (active.current) setPending(false) }
   }

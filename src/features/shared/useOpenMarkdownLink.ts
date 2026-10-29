@@ -3,9 +3,10 @@ import { useNotify } from '../../components/feedbackContext'
 import { translate } from '../../i18n/i18n'
 import { normalizeGitLabError, openExternalUrl, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { parseGitLabPageUrl } from '../../lib/gitlabPageUrl'
-import { parseMergeRequestUrl } from '../../lib/mergeRequestUrl'
+import { parseMergeRequestUrl, type MergeRequestUrl } from '../../lib/mergeRequestUrl'
 import { isTauri } from '../../lib/runtime'
 import type { GitLabUser } from '../../types/gitlab'
+import type { ReviewTab } from '../mergeRequests/MergeRequestDetail'
 import { useConnection } from '../connections/connectionContext'
 import { resolveGitLabPage, type GitLabPageLocation } from './gitlabPageLocation'
 import type { MrRef } from './personalWorkspace'
@@ -17,6 +18,17 @@ const RESERVED_PROFILE_PATHS = new Set([
   'oauth', 'profile', 'projects', 'public', 'robots.txt', 's', 'search', 'sitemap', 'sitemap.xml',
   'sitemap.xml.gz', 'slash-command-logo.png', 'snippets', 'unsubscribes', 'uploads', 'users', 'v2',
 ])
+
+/** Where in an MR a link points: the tab of its page, and the comment its `#note_<id>` names. */
+export interface MergeRequestTarget { tab?: ReviewTab; noteId?: string }
+
+/** The tab and comment an MR URL names; null for the MR itself. */
+export function mergeRequestTarget(url: MergeRequestUrl): MergeRequestTarget | null {
+  if (url.noteId) return { tab: 'discussion', noteId: url.noteId }
+  if (url.page === 'diffs' || url.page === 'commits') return { tab: 'changes' }
+  if (url.page === 'pipelines') return { tab: 'pipelines' }
+  return null
+}
 
 type ProfileTarget = { kind: 'username'; username: string } | { kind: 'userId'; userId: string }
 
@@ -54,12 +66,12 @@ function profileTarget(url: string, instanceUrl: string): ProfileTarget | null {
 
 /**
  * Opens a link clicked in a comment or description. GitLab users, merge
- * requests, and a project's overview, branches, MR list, folders and files on
+ * requests (on the tab or comment the URL names), and a project's overview, branches, MR list, folders and files on
  * the connected instance open in the app;
  * other GitLab pages and other sites open in the default browser. Outside the
  * desktop app links stay plain anchors.
  */
-export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, onOpenUser: (user: GitLabUser) => void, onOpenPage?: (location: GitLabPageLocation) => void): ((url: string) => void) | undefined {
+export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef, target?: MergeRequestTarget) => void, onOpenUser: (user: GitLabUser) => void, onOpenPage?: (location: GitLabPageLocation) => void): ((url: string) => void) | undefined {
   const { session } = useConnection()
   const notify = useNotify()
   const openMergeRequestRef = useRef(onOpenMergeRequest)
@@ -100,7 +112,7 @@ export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, on
     const isCurrent = () => operationRef.current === operation && currentSessionRef.current === sessionId
     try {
       if (!onInstance(url, instanceUrl)) { await openExternalUrl(url); return }
-      let mergeRequest: { path: string; iid: string } | null = null
+      let mergeRequest: MergeRequestUrl | null = null
       try { mergeRequest = parseMergeRequestUrl(url, instanceUrl) } catch { /* Another GitLab page. */ }
       if (!mergeRequest) {
         const page = openPageRef.current ? parseGitLabPageUrl(url, instanceUrl) : null
@@ -123,7 +135,10 @@ export function useOpenMarkdownLink(onOpenMergeRequest: (ref: MrRef) => void, on
       const project = await queryGitLab({ sessionId, mode: 'network', query: { kind: 'project', path: mergeRequest.path } })
       if (!isCurrent()) return
       if (!project?.data.id) throw new Error(translate('common.link.projectNotFound'))
-      openMergeRequestRef.current({ projectId: project.data.id, iid: mergeRequest.iid })
+      const target = mergeRequestTarget(mergeRequest)
+      const ref = { projectId: project.data.id, iid: mergeRequest.iid }
+      if (target) openMergeRequestRef.current(ref, target)
+      else openMergeRequestRef.current(ref)
     } catch (caught) {
       if (isCurrent()) notify({ message: translate('common.link.openFailed', { message: normalizeGitLabError(caught).message }), severity: 'error' })
     }

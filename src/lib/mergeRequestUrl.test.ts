@@ -7,8 +7,12 @@ describe('parseMergeRequestUrl', () => {
 
   it.each([
     ['regular MR URL', 'https://gitlab.example/GitLab/team/project/-/merge_requests/37', { path: 'team/project', iid: '37' }],
-    ['diff suffix', 'https://gitlab.example/GitLab/team/project/-/merge_requests/37/diffs', { path: 'team/project', iid: '37' }],
-    ['commit suffix', 'https://gitlab.example/GitLab/team/project/-/merge_requests/8/commits/', { path: 'team/project', iid: '8' }],
+    ['diff suffix', 'https://gitlab.example/GitLab/team/project/-/merge_requests/37/diffs', { path: 'team/project', iid: '37', page: 'diffs' }],
+    ['commit suffix', 'https://gitlab.example/GitLab/team/project/-/merge_requests/8/commits/', { path: 'team/project', iid: '8', page: 'commits' }],
+    ['pipeline suffix', 'https://gitlab.example/GitLab/team/project/-/merge_requests/8/pipelines', { path: 'team/project', iid: '8', page: 'pipelines' }],
+    ['comment anchor', 'https://gitlab.example/GitLab/team/project/-/merge_requests/44574#note_910132', { path: 'team/project', iid: '44574', noteId: '910132' }],
+    ['comment anchor on the changes', 'https://gitlab.example/GitLab/team/project/-/merge_requests/5/diffs?commit_id=abc#note_7', { path: 'team/project', iid: '5', page: 'diffs', noteId: '7' }],
+    ['other anchor', 'https://gitlab.example/GitLab/team/project/-/merge_requests/5#top', { path: 'team/project', iid: '5' }],
     ['unicode path', 'https://gitlab.example/GitLab/%E6%97%A5%E6%9C%AC/%E9%96%8B%E7%99%BA/-/merge_requests/12', { path: '日本/開発', iid: '12' }],
   ])('parses %s on the configured origin and base path', (_name, input, expected) => {
     expect(parseMergeRequestUrl(input, instanceUrl)).toEqual(expected)

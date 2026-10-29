@@ -17,13 +17,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { frame } from '../../components/hairline'
 import { MarkdownEditor, type MarkdownEditorHandle, type MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
 import { gridLine } from '../../theme'
-import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
+import { attachmentErrorMessage, MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
 import type { GitLabUser, Position } from '../../types/gitlab'
 import { positionLabel } from './diffLineThreads'
 import { MAX_SUGGESTION_LINES_ABOVE, suggestionBlock } from './suggestions'
 import { TemplateMenu } from './TemplateMenu'
 import { useMentionSuggestions } from './useMentionSuggestions'
-import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
 import { Row } from '../../components/Row'
 
@@ -161,7 +160,7 @@ export function ReviewComposer({
 
       editorRef.current?.insertBlock(snippet)
     } catch (caught) {
-      if (mountedRef.current && targetKeyRef.current === targetKey) setAttachmentError(getAttachmentErrorMessage(caught))
+      if (mountedRef.current && targetKeyRef.current === targetKey) setAttachmentError(attachmentErrorMessage(caught))
     } finally {
       uploadingRef.current = false
       if (mountedRef.current) setUploading(false)
@@ -275,14 +274,4 @@ const composerChipSx = {
   maxWidth: '100%',
   minWidth: 0,
   '& .MuiChip-label': { lineHeight: gridLine(5), overflowWrap: 'anywhere', py: 0, whiteSpace: 'normal' },
-}
-
-function getAttachmentErrorMessage(error: unknown): string {
-  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : ''
-  if (code === 'TOO_LARGE') return translate('review.attachment.tooLarge')
-  if (code === 'FORBIDDEN') return translate('review.attachment.forbidden')
-  if (code === 'AUTH_REQUIRED') return translate('review.attachment.authRequired')
-  if (code === 'STORAGE') return translate('review.attachment.storage')
-  if (code === 'UNKNOWN_OUTCOME') return translate('review.attachment.unknownOutcome')
-  return translate('review.attachment.failed')
 }

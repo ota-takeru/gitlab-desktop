@@ -32,6 +32,17 @@ export async function uploadGitLabAttachment({ file, iid, projectId, sessionId }
   }
 }
 
+/** The message for a failed upload, by its error code. */
+export function attachmentErrorMessage(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : ''
+  if (code === 'TOO_LARGE') return translate('review.attachment.tooLarge')
+  if (code === 'FORBIDDEN') return translate('review.attachment.forbidden')
+  if (code === 'AUTH_REQUIRED') return translate('review.attachment.authRequired')
+  if (code === 'STORAGE') return translate('review.attachment.storage')
+  if (code === 'UNKNOWN_OUTCOME') return translate('review.attachment.unknownOutcome')
+  return translate('review.attachment.failed')
+}
+
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer())
   let binary = ''

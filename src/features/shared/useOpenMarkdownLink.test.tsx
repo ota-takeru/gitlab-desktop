@@ -161,6 +161,22 @@ describe('useOpenMarkdownLink', () => {
     })
   })
 
+  it.each([
+    ['a comment', 'https://gitlab.example/gitlab/team/project/-/merge_requests/42#note_910132', { tab: 'discussion', noteId: '910132' }],
+    ['the changes', 'https://gitlab.example/gitlab/team/project/-/merge_requests/42/diffs', { tab: 'changes' }],
+    ['the commits', 'https://gitlab.example/gitlab/team/project/-/merge_requests/42/commits', { tab: 'changes' }],
+    ['the pipelines', 'https://gitlab.example/gitlab/team/project/-/merge_requests/42/pipelines', { tab: 'pipelines' }],
+  ])('opens a merge request at %s its URL names', async (_name, url, target) => {
+    mocks.queryGitLab.mockResolvedValue({ data: { id: 'project-7' } })
+    const onOpenMergeRequest = vi.fn()
+    render(<LinkProbe onOpenMergeRequest={onOpenMergeRequest} url={url} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'open' }))
+
+    await waitFor(() => expect(onOpenMergeRequest).toHaveBeenCalledWith({ projectId: 'project-7', iid: '42' }, target))
+    expect(mocks.openGitLabUrl).not.toHaveBeenCalled()
+  })
+
   it('notifies when profile lookup fails and does not open the URL elsewhere', async () => {
     mocks.queryGitLab.mockRejectedValue(new Error('offline'))
     render(<LinkProbe url="https://gitlab.example/gitlab/alice" />)
