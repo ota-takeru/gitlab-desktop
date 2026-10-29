@@ -101,7 +101,6 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const workspace = usePersonalWorkspace(session)
   const sectionRef = useRef<HTMLElement | null>(null)
   const headerRef = useRef<HTMLElement | null>(null)
-  const [compactHeader, setCompactHeader] = useState(false)
   useEffect(() => {
     // Sticky content below the sticky header starts at its current height.
     const header = headerRef.current
@@ -110,16 +109,6 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     const observer = new ResizeObserver(() => section.style.setProperty('--detail-header-height', `${header.offsetHeight}px`))
     observer.observe(header)
     return () => observer.disconnect()
-  }, [])
-  useEffect(() => {
-    // Once the reader scrolls into the content the header keeps only the title line and the tabs.
-    // The two thresholds and the scroll-room check keep it from flickering on short pages.
-    const host = sectionRef.current?.closest('main')
-    if (!host) return
-    const update = () => setCompactHeader((compact) => compact ? host.scrollTop > 8 : host.scrollTop > 64 && host.scrollHeight - host.clientHeight > 320)
-    update()
-    host.addEventListener('scroll', update, { passive: true })
-    return () => host.removeEventListener('scroll', update)
   }, [])
   const queryClient = useQueryClient()
   const [localTab, setLocalTab] = useState<ReviewTab>('overview')
@@ -819,6 +808,9 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const myApproved = approvedBy.some((user) => user.id === session?.user.id)
   const approvalDisabled = mutation.isLocked || mutation.isPending || Boolean(approvalWriting) || !mergeRequest.headSha || approvalsResult.loading || !approvals || Boolean(approvalsResult.error)
   const peopleDisabled = mutation.isLocked || mutation.isPending
+  const missingReviewers = Boolean(mergeRequest && !mergeRequest.reviewers?.length)
+  const setReviewers = missingReviewers ? () => setPeopleEditor('reviewers') : undefined
+  const addReviewers = missingReviewers ? (users: GitLabUser[]) => { void setPeople('reviewers', users) } : undefined
   const setPeople = (field: 'assignees' | 'reviewers', users: GitLabUser[]) => runAction({
     expectedUserIds: (mergeRequest[field] ?? []).map((user) => user.id),
     iid,
@@ -872,6 +864,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
       onCancelReply={() => setReplyDiscussion(null)}
       onClearPosition={() => undefined}
       onSaveDraft={(body) => saveReplyDraft(replyDiscussion, body)}
+      onAddReviewers={addReviewers}
+      onSetReviewers={setReviewers}
       onSubmitComment={(body) => submitReply(replyDiscussion, body)}
       pending={mutation.isPending}
       replyAuthor={replyDiscussion.notes.find((note) => !note.system)?.author.name}
@@ -881,7 +875,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const lineComposerKey = commentPosition ? createComposerBufferKey(session, resourceId, iid, 'new', commentPosition) : null
   const lineComposer = commentPosition && lineComposerKey && !readOnlyChanges ? {
     position: commentPosition,
-    node: <BufferedReviewComposer attachmentTargetKey={`${attachmentScope}:${lineComposerKey}`} bufferKey={lineComposerKey} disabled={mutation.isLocked} enableMentions={Boolean(session)} inlineTarget key={lineComposerKey} mentionParticipants={mentionParticipants} templateProjectPath={projectPath ?? undefined} onCancelReply={() => undefined} onClearPosition={() => setPosition(undefined)} onSaveDraft={saveDraft} onSubmitComment={submitComment} onUploadAttachment={uploadAttachment} pending={mutation.isPending} suggestionLines={commentPosition.newLine === undefined ? null : () => suggestionSourceLines(diffs, commentPosition)} targetPosition={commentPosition} />,
+    node: <BufferedReviewComposer attachmentTargetKey={`${attachmentScope}:${lineComposerKey}`} bufferKey={lineComposerKey} disabled={mutation.isLocked} enableMentions={Boolean(session)} inlineTarget key={lineComposerKey} mentionParticipants={mentionParticipants} templateProjectPath={projectPath ?? undefined} onCancelReply={() => undefined} onClearPosition={() => setPosition(undefined)} onAddReviewers={addReviewers} onSaveDraft={saveDraft} onSetReviewers={setReviewers} onSubmitComment={submitComment} onUploadAttachment={uploadAttachment} pending={mutation.isPending} suggestionLines={commentPosition.newLine === undefined ? null : () => suggestionSourceLines(diffs, commentPosition)} targetPosition={commentPosition} />,
   } : undefined
   const commentOnLines = (nextPosition: Position) => {
     const next = normalizePosition(nextPosition, mergeRequest)
@@ -921,8 +915,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
           </Box>
           <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={refreshCurrent} onRun={runHeaderAction} /></ConfirmScope>
         </Stack>
-        <MergeRequestSummary approvedBy={approvedBy} compact={compactHeader} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
-        {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open /> : null}
+        <MergeRequestSummary approvedBy={approvedBy} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
+        {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open participants={mentionParticipants} /> : null}
         <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, mb: '-1px', mt: 0.5 }}>
           <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0, ml: -1.5 }} value={activeTab}>
             <Tab label={t('mergeRequest.detail.tabOverview')} value="overview" />
@@ -946,7 +940,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.reactions.truncated')}</Alert> : null}
         {/* Visited tabs stay mounted, hidden, so switching back shows them at once with their scroll, input and highlighted code. */}
         <Box><KeepAlive activeKey={activeTab} max={4}>
-        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab projectId={resourceId} templateProjectPath={projectPath ?? undefined} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} mentionParticipants={mentionParticipants} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onSaveDraft={saveDraft} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
+        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab projectId={resourceId} templateProjectPath={projectPath ?? undefined} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} mentionParticipants={mentionParticipants} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onAddReviewers={addReviewers} onSaveDraft={saveDraft} onSetReviewers={setReviewers} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {activeTab === 'changes' ? <Stack spacing={1}>
         {drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">{t('mergeRequest.drafts.publishInDiscussion')}</Button>} severity="info">{t('mergeRequest.drafts.pending', { count: drafts.length })}</Alert> : null}
         <ChangesTab fileSource={session && fileSha ? { projectId: resourceId, sessionId: session.id, sha: fileSha, beforeSha: beforeFileSha } : undefined} threadActions={readOnlyChanges ? undefined : {
@@ -972,7 +966,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   )
 }
 
-function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, mentionParticipants, templateProjectPath, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
+function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, mentionParticipants, templateProjectPath, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onAddReviewers, onSetReviewers, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
   const t = useT()
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
@@ -985,7 +979,7 @@ function DiscussionTab({ projectId, iid, headSha, suggestionActions, renderCodeC
   return (
     <DiscussionLayout
       composer={(
-        <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} templateProjectPath={templateProjectPath} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={mutationPending} />
+        <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} templateProjectPath={templateProjectPath} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onAddReviewers={onAddReviewers} onSaveDraft={onSaveDraft} onSetReviewers={onSetReviewers} onSubmitComment={onSubmitComment} pending={mutationPending} />
       )}
       navigator={discussions.length ? <UnresolvedThreadNav discussions={discussions} olderNotLoaded={older.hasOlder} onSelect={openThread} /> : null}
       side={<>
@@ -1020,6 +1014,10 @@ interface DiscussionTabProps {
   replyComposer: React.ReactNode
   currentUserId: string
   mentionParticipants: GitLabUser[]
+  /** Sets these people as the reviewers; set while the MR has no reviewers. */
+  onAddReviewers?: (users: GitLabUser[]) => void
+  /** Opens the reviewer editor; set while the MR has no reviewers. */
+  onSetReviewers?: () => void
   /** The project whose comment templates the composer offers. */
   templateProjectPath?: string
   discussionError: Error | null
@@ -1060,7 +1058,13 @@ interface DiscussionTabProps {
   selectedDrafts: string[]
 }
 
-export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof ReviewComposer>, 'onChange' | 'value'> & { bufferKey: string }) {
+export function BufferedReviewComposer({ onAddReviewers, onSetReviewers, ...props }: Omit<React.ComponentProps<typeof ReviewComposer>, 'onChange' | 'value'> & {
+  bufferKey: string
+  /** Set while the MR has no reviewers: mentioned participants can then be set as reviewers at once. */
+  onAddReviewers?: (users: GitLabUser[]) => void
+  /** Set while the MR has no reviewers: a mention then suggests adding them. */
+  onSetReviewers?: () => void
+}) {
   const t = useT()
   const { session } = useConnection()
   const { body, change, discard, error, persistenceStatus } = useComposerBuffer(props.bufferKey, session?.id ?? null)
@@ -1091,9 +1095,11 @@ export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof R
       setSubmitting(false)
     }
   }
+  const mentionedNames = onSetReviewers ? mentionedUsernames(body) : []
+  const mentionedParticipants = (props.mentionParticipants ?? []).filter((user) => mentionedNames.includes(user.username.toLocaleLowerCase()))
   const onSubmitComment = (nextBody: string, thread: boolean, position?: Position) => flushBeforeSubmit(() => props.onSubmitComment(nextBody, thread, position))
   const onSaveDraft = (nextBody: string, position?: Position) => flushBeforeSubmit(() => props.onSaveDraft(nextBody, position))
-  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>{t('mergeRequest.composer.discard')}</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
+  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>{t('mergeRequest.composer.discard')}</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{onSetReviewers && mentionedNames.length ? <Alert action={<Stack direction="row" spacing={0.5}>{onAddReviewers && mentionedParticipants.length ? <Button color="inherit" disabled={props.disabled || props.pending} onClick={() => onAddReviewers(mentionedParticipants)} size="small">{t('mergeRequest.composer.addMentionedReviewers', { count: mentionedParticipants.length, name: `@${mentionedParticipants[0].username}` })}</Button> : null}<Button color="inherit" onClick={onSetReviewers} size="small">{mentionedParticipants.length ? t('mergeRequest.composer.chooseReviewers') : t('mergeRequest.composer.setReviewers')}</Button></Stack>} severity="info">{t('mergeRequest.composer.noReviewers')}</Alert> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
 
@@ -1101,13 +1107,12 @@ export function BufferedReviewComposer(props: Omit<React.ComponentProps<typeof R
 const noUsers: GitLabUser[] = []
 
 /** The title, state and people lines of the header, memoized: they change with the MR, not with what the reader does below. */
-const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, compact, mergeRequest, myApproved, onCopyHeadSha, onEditPeople, peopleDisabled }: { approvedBy: GitLabUser[]; compact: boolean; mergeRequest: MergeRequest; myApproved: boolean; onCopyHeadSha: (sha: string) => Promise<void>; onEditPeople: (field: 'assignees' | 'reviewers') => void; peopleDisabled: boolean }) {
+const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, mergeRequest, myApproved, onCopyHeadSha, onEditPeople, peopleDisabled }: { approvedBy: GitLabUser[]; mergeRequest: MergeRequest; myApproved: boolean; onCopyHeadSha: (sha: string) => Promise<void>; onEditPeople: (field: 'assignees' | 'reviewers') => void; peopleDisabled: boolean }) {
   const t = useT()
   return <>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: 1 }}>
-      <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: compact ? 1 : 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
+      <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
     </Stack>
-    {compact ? null : <>
     <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
       <StatusPill icon={<MergeRequestStateGlyph state={mergeRequest.state} />} label={formatMergeRequestState(mergeRequest.state)} size="small" subtle tone={mergeRequestStateTone(mergeRequest.state)} />
       {mergeRequest.draft ? <Chip icon={<EditNoteRoundedIcon />} label={t('mergeRequest.summary.draft')} size="small" variant="outlined" /> : null}
@@ -1125,7 +1130,6 @@ const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, comp
         <Tooltip key={field} title={field === 'assignees' ? t('mergeRequest.summary.changeAssignees') : t('mergeRequest.summary.changeReviewers')}><span><Button color="inherit" aria-label={t(field === 'assignees' ? 'mergeRequest.summary.editAssignees' : 'mergeRequest.summary.editReviewers', { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })} disabled={peopleDisabled} endIcon={<EditOutlinedIcon />} onClick={() => onEditPeople(field)} size="small" sx={{ color: 'text.secondary', fontWeight: 400, mx: -0.5, textAlign: 'left', whiteSpace: 'normal', '&.MuiButton-sizeSmall': { fontSize: 'caption.fontSize', minHeight: 24, px: 0.5, py: 0 }, '& .MuiButton-endIcon': { color: 'text.secondary', ml: 0.5, opacity: 0.6 }, '& .MuiButton-endIcon > *:nth-of-type(1)': { fontSize: 14 }, '&:hover': { bgcolor: 'action.hover', color: 'text.primary' }, '&:hover .MuiButton-endIcon': { opacity: 1 } }}>{t(label, { names: mergeRequest[field]?.length ? formatNames(mergeRequest[field].map((user) => user.name)) : t('mergeRequest.common.none') })}</Button></span></Tooltip>
       ))}
     </Stack>
-    </>}
   </>
 })
 
@@ -1149,6 +1153,11 @@ function compareNotesByTime(left: Note, right: Note): number {
   const leftTime = Date.parse(left.createdAt)
   const rightTime = Date.parse(right.createdAt)
   return (Number.isNaN(leftTime) ? Number.NEGATIVE_INFINITY : leftTime) - (Number.isNaN(rightTime) ? Number.NEGATIVE_INFINITY : rightTime) || left.id.localeCompare(right.id)
+}
+
+/** The lowercased `@username`s in the text (not inside a word, as in an email address). */
+function mentionedUsernames(text: string): string[] {
+  return [...text.matchAll(/(?:^|[\s([{])@([A-Za-z0-9_][A-Za-z0-9_.-]*)/gu)].map((match) => match[1].replace(/[.-]+$/u, '').toLocaleLowerCase())
 }
 
 /** The MR's people for mention candidates: author, reviewers, assignees, then the latest commenters; not the current user. */

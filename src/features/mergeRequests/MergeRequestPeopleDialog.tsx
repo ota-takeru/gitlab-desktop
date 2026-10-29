@@ -14,15 +14,18 @@ import { useT } from '../../i18n/useT'
 import type { GitLabUser, UsersQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { matchesMention } from './matchesMention'
 
 /** Picks the full list of assignees or reviewers for a merge request. */
-export function MergeRequestPeopleDialog({ current, disabled, label, onClose, onSave, open }: {
+export function MergeRequestPeopleDialog({ current, disabled, label, onClose, onSave, open, participants = EMPTY_USERS }: {
   current: GitLabUser[]
   disabled: boolean
   label: string
   onClose: () => void
   onSave: (users: GitLabUser[]) => Promise<boolean>
   open: boolean
+  /** People of the MR, offered before typing and matched by any part of their name, ahead of the server search. */
+  participants?: GitLabUser[]
 }) {
   const t = useT()
   const titleId = useId()
@@ -40,7 +43,13 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
 
   const query = useMemo<UsersQuery | null>(() => session && debouncedSearch.length >= 2 ? { kind: 'users', page: 1, search: debouncedSearch } : null, [debouncedSearch, session])
   const result = useGitLabQuery<UsersQuery>(session?.id ?? null, query)
-  const options = result.data ?? []
+  const trimmed = searchText.trim()
+  const serverUsers = trimmed.length >= 2 ? result.data : undefined
+  const options = useMemo(() => {
+    const matches = participants.filter((user) => matchesMention(user, trimmed))
+    const seen = new Set(matches.map((user) => user.id))
+    return [...matches, ...(serverUsers ?? EMPTY_USERS).filter((user) => !seen.has(user.id))]
+  }, [participants, serverUsers, trimmed])
   const self = session?.user
   const unchanged = sameIds(selected, current)
   const busy = disabled || saving
@@ -72,7 +81,7 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
             loading={result.loading || result.refreshing}
             loadingText={t('mergeRequest.common.searching')}
             multiple
-            noOptionsText={result.error ? t('mergeRequest.people.loadFailed') : searchText.trim().length < 2 ? t('mergeRequest.people.minLength') : t('mergeRequest.common.noOptions')}
+            noOptionsText={result.error ? t('mergeRequest.people.loadFailed') : trimmed.length < 2 ? t('mergeRequest.people.minLength') : t('mergeRequest.common.noOptions')}
             onChange={(_, users) => setSelected(users)}
             onInputChange={(_, value, reason) => { if (reason === 'input' || reason === 'clear') setSearchText(value) }}
             options={options}
@@ -95,6 +104,8 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
     </Dialog>
   )
 }
+
+const EMPTY_USERS: GitLabUser[] = []
 
 function sameIds(left: GitLabUser[], right: GitLabUser[]): boolean {
   return left.length === right.length && left.every((user) => right.some((other) => other.id === user.id))

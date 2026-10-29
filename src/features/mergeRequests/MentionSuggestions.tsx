@@ -7,6 +7,7 @@ import type { GitLabUser, UsersQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useT } from '../../i18n/useT'
+import { matchesMention } from './matchesMention'
 
 export function MentionSuggestions({ id, onSelect, onUsersChange, optionId, participants, search, selectedIndex }: { id: string; onSelect: (user: GitLabUser) => void; onUsersChange: (users: GitLabUser[]) => void; optionId: (index: number) => string; participants: GitLabUser[]; search: string; selectedIndex: number }) {
   const t = useT()
@@ -59,13 +60,6 @@ export function MentionSuggestions({ id, onSelect, onUsersChange, optionId, part
       </Box>
     </Paper>
   )
-}
-
-/** Matches the username or the display name, also when the name's spaces are left out. */
-function matchesMention(user: GitLabUser, search: string): boolean {
-  const needle = search.toLocaleLowerCase()
-  const name = user.name.toLocaleLowerCase()
-  return user.username.toLocaleLowerCase().includes(needle) || name.includes(needle) || name.replace(/\s+/gu, '').includes(needle)
 }
 
 const EMPTY_USERS: GitLabUser[] = []

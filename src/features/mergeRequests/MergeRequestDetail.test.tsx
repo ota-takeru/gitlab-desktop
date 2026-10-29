@@ -201,6 +201,37 @@ describe('BufferedReviewComposer', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('入力の保存を確認できないため、投稿を停止しました。')
   })
 
+  it('suggests setting reviewers once someone is mentioned while the MR has none', () => {
+    const onSetReviewers = vi.fn()
+    const { rerender } = render(<BufferedReviewComposer bufferKey="composer-key" onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSetReviewers={onSetReviewers} onSubmitComment={async () => true} />)
+    expect(screen.queryByRole('button', { name: 'レビュアーを設定' })).not.toBeInTheDocument()
+
+    detailMocks.useComposerBufferMock.mockReturnValue({ body: '確認お願いします @ota', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    rerender(<BufferedReviewComposer bufferKey="composer-key" onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSetReviewers={onSetReviewers} onSubmitComment={async () => true} />)
+    expect(screen.getByText(/レビュアーが設定されていません/u)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'レビュアーを設定' }))
+    expect(onSetReviewers).toHaveBeenCalledTimes(1)
+
+    // Someone known from the MR can be set as reviewer right away.
+    const onAddReviewers = vi.fn()
+    const participants = [{ id: 'user-2', name: '太田 健', username: 'ota' }, { id: 'user-3', name: '佐藤 花子', username: 'sato' }]
+    rerender(<BufferedReviewComposer bufferKey="composer-key" mentionParticipants={participants} onAddReviewers={onAddReviewers} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSetReviewers={onSetReviewers} onSubmitComment={async () => true} />)
+    fireEvent.click(screen.getByRole('button', { name: '@ota をレビュアーに設定' }))
+    expect(onAddReviewers).toHaveBeenCalledWith([participants[0]])
+    expect(screen.getByRole('button', { name: '選んで設定' })).toBeInTheDocument()
+    detailMocks.useComposerBufferMock.mockReturnValue({ body: '@OTA @sato. 確認お願いします', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    rerender(<BufferedReviewComposer bufferKey="composer-key" mentionParticipants={participants} onAddReviewers={onAddReviewers} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSetReviewers={onSetReviewers} onSubmitComment={async () => true} />)
+    fireEvent.click(screen.getByRole('button', { name: 'メンションした2人をレビュアーに設定' }))
+    expect(onAddReviewers).toHaveBeenLastCalledWith(participants)
+
+    // With reviewers set, no suggestion; an email address is not a mention.
+    rerender(<BufferedReviewComposer bufferKey="composer-key" onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} />)
+    expect(screen.queryByRole('button', { name: 'レビュアーを設定' })).not.toBeInTheDocument()
+    detailMocks.useComposerBufferMock.mockReturnValue({ body: 'ota@example.com に連絡済み', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
+    rerender(<BufferedReviewComposer bufferKey="composer-key" onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSetReviewers={onSetReviewers} onSubmitComment={async () => true} />)
+    expect(screen.queryByRole('button', { name: 'レビュアーを設定' })).not.toBeInTheDocument()
+  })
+
   it('wires read-only MR discussion, unread marking, position navigation, and mention lookup', async () => {
     detailMocks.useComposerBufferMock.mockImplementation(() => {
       const [body, setBody] = useState('**保持する本文**\n\n@al')
