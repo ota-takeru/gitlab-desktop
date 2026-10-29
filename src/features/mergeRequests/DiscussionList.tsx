@@ -250,7 +250,8 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           <ToggleButton value="all">{t('review.discussion.filter.all')}</ToggleButton>
           <ToggleButton value="unresolved">{t('review.discussion.filter.unresolved')}</ToggleButton>
         </ToggleButtonGroup>
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* The last button's label meets the edge line of the threads below. */}
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', mr: -1.5 }}>
           {latestNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(latestNote)} size="small">{t('review.discussion.latest')}</Button> : null}
           {earliestUnreadNote ? <Button disabled={disabled || paginationDisabled} onClick={() => jumpToNote(earliestUnreadNote)} size="small">{t('review.discussion.unread')} <Chip color="primary" label={unreadNotes.length} size="small" sx={{ ml: 0.5 }} /></Button> : null}
           {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">{t('review.discussion.markRead')}</Button> : null}

@@ -141,7 +141,7 @@ export const MergeRequestActions = memo(function MergeRequestActions({ disabled,
 
   return (
     <>
-      <Tooltip title={t('mergeRequest.menu.more')}><span><IconButton aria-controls={menuAnchor ? menuId : undefined} aria-expanded={menuAnchor ? 'true' : undefined} aria-haspopup="menu" aria-label={t('mergeRequest.menu.more')} disabled={busy} onClick={(event) => setMenuAnchor(event.currentTarget)}><MoreVertRoundedIcon /></IconButton></span></Tooltip>
+      <Tooltip title={t('mergeRequest.menu.more')}><span><IconButton aria-controls={menuAnchor ? menuId : undefined} aria-expanded={menuAnchor ? 'true' : undefined} aria-haspopup="menu" aria-label={t('mergeRequest.menu.more')} disabled={busy} onClick={(event) => setMenuAnchor(event.currentTarget)} sx={{ mr: '-7px' }}><MoreVertRoundedIcon /></IconButton></span></Tooltip>
       <Menu anchorEl={menuAnchor} anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }} id={menuId} onClose={() => setMenuAnchor(null)} open={Boolean(menuAnchor)} transformOrigin={{ horizontal: 'right', vertical: 'top' }}>
         {opened ? [
           <MenuItem key="merge" onClick={() => choose(() => setEditor('merge'))}><ListItemText primary={t('mergeRequest.menu.merge')} secondary={readiness.summary} /></MenuItem>,

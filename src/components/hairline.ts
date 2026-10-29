@@ -22,10 +22,13 @@ interface HairlineOptions extends LineOptions {
  */
 
 const lines = (sides: Side | readonly Side[], { color = 'divider', width = 1 }: LineOptions) => {
-  const on = (side: Side) => (typeof sides === 'string' ? sides === side : sides.includes(side)) ? `${width}px` : '0'
+  const has = (side: Side) => typeof sides === 'string' ? sides === side : sides.includes(side)
+  const on = (side: Side) => has(side) ? `${width}px` : '0'
+  // Lines follow the corner radius only where two of them meet; a lone divider on a rounded box would bend down at its ends.
+  const corner = (has('top') || has('bottom')) && (has('left') || has('right'))
   return {
     borderColor: color,
-    borderRadius: 'inherit',
+    borderRadius: corner ? 'inherit' : 0,
     borderStyle: 'solid',
     borderWidth: `${on('top')} ${on('right')} ${on('bottom')} ${on('left')}`,
     content: '""',
