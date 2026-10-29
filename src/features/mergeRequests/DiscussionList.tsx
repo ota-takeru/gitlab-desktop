@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
+import { hairline, panelFrame } from '../../components/hairline'
 import { MarkdownEditor, type MarkdownEditorHandle } from '../../components/MarkdownEditor'
 import { ReactionBar } from '../../components/ReactionBar'
 import { RelativeTime } from '../../components/RelativeTime'
@@ -273,9 +274,9 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const threadLabel = positionLabel ?? t('review.discussion.threadLabel', { author: firstNote?.author.name ?? '' })
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
         return (
-          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', border: 1, borderColor: resolved ? 'divider' : 'surface.borderStrong', borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
+          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
             {isThreadCollapsible(notes) ? (
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: isCollapsed ? 0 : 1, borderColor: 'divider', justifyContent: 'space-between', minHeight: 36, pl: 1.5, pr: 1, py: 0.5 }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, pl: 1.5, pr: 1, py: 0.5 }}>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 auto', minWidth: 0 }}>
                   {position ? <InsertDriveFileOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} /> : <ForumOutlinedIcon sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 16 }} />}
                   {/* A long path gives way with an ellipsis (full path in the tooltip) rather than run under the controls. */}
@@ -305,7 +306,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
             {!isCollapsed ? <Box sx={{ containerType: 'inline-size' }}><Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', [THREAD_WITH_CODE_WIDE]: codeContext ? { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } : {} }}>
             {/* Narrow threads put the code above the comments; wide ones keep the comments where
                 every thread starts and the code on their right, kept in view while reading. */}
-            {codeContext ? <Box sx={{ borderBottom: 1, borderColor: 'divider', minWidth: 0, [THREAD_WITH_CODE_WIDE]: { alignSelf: 'start', borderBottom: 0, borderLeft: 1, gridColumn: 2, gridRow: 1, position: 'sticky', top: 'calc(var(--detail-header-height, 0px) + 8px)' } }}>{codeContext}</Box> : null}
+            {codeContext ? <Box sx={{ ...hairline('bottom'), minWidth: 0, [THREAD_WITH_CODE_WIDE]: { alignSelf: 'start', '&::after': { borderWidth: '0 0 0 1px' }, gridColumn: 2, gridRow: 1, position: 'sticky', top: 'calc(var(--detail-header-height, 0px) + 8px)' } }}>{codeContext}</Box> : null}
             <Box component="ol" sx={{ listStyle: 'none', m: 0, minWidth: 0, p: 0, [THREAD_WITH_CODE_WIDE]: { gridColumn: 1, gridRow: 1 } }}>
               {visibleNotes.map((note, index) => <NoteItem
                 awards={reactions?.awardsByNote.get(note.id)}
@@ -329,7 +330,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
             </Box>
             </Box></Box> : null}
             {/* A folded thread shows only its header; replying starts from the open thread. */}
-            {!isCollapsed ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', borderTop: 1, borderColor: 'divider', flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.25 }}>
+            {!isCollapsed ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', ...hairline('top'), flexWrap: 'wrap', justifyContent: 'space-between', px: 1, py: 0.5, rowGap: 0.5 }}>
               {replying ? <Box sx={{ flex: '1 1 100%', minWidth: 0 }}>{replyComposer}</Box> : (
                 <Button disabled={disabled} onClick={() => onReply(discussion)} size="small" startIcon={<ReplyRoundedIcon />}>{t('review.discussion.reply')}</Button>
               )}
@@ -383,8 +384,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
       data-note-id={note.id}
       tabIndex={-1}
       sx={{
-        borderTop: divided ? 1 : 0,
-        borderColor: 'divider',
+        ...(divided ? hairline('top', { position: false }) : {}),
         display: 'grid',
         columnGap: 1.5,
         gridTemplateColumns: '28px minmax(0, 1fr)',
@@ -418,7 +418,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
         </Stack>
         {editing ? (
           <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
-        ) : <Box sx={{ color: 'text.primary', mt: 0.25, '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
+        ) : <Box sx={{ color: 'text.primary', '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
         {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={t('review.note.reactions', { author: note.author.name })} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
       </Box>
     </Box>

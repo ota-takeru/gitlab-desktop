@@ -122,7 +122,7 @@ export function HealthPanel() {
               ) : (
                 <ScheduleRoundedIcon color={state.status === 'pending' ? 'info' : 'disabled'} fontSize="small" />
               )}
-              <Stack spacing={0.25}>
+              <Stack>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                   <Typography sx={{ fontWeight: 700 }} variant="body2">
                     Rust runtime
@@ -164,7 +164,7 @@ export function HealthPanel() {
 
 function RuntimeValue({ label, value }: { label: string; value: string }) {
   return (
-    <Stack spacing={0.25} sx={{ minWidth: 120 }}>
+    <Stack sx={{ minWidth: 120 }}>
       <Typography color="textSecondary" variant="caption">
         {label}
       </Typography>

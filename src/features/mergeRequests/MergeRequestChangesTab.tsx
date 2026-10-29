@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useRef, useState } from 'react'
+import { frame } from '../../components/hairline'
 import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import type { Commit, Diff, Discussion, Draft, MrVersion, Position } from '../../types/gitlab'
 import type { ThreadActions } from './DiffThreads'
@@ -60,7 +61,7 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
   const t = useT()
   const showingLocal = Boolean(local?.active)
   const wholeMergeRequest = selected === null && !compareFrom && !showingLocal
-  const item = (active: boolean) => ({ bgcolor: active ? 'surface.selected' : 'transparent', border: 1, borderColor: active ? 'primary.main' : 'divider', borderRadius: 1, color: active ? 'text.primary' : 'text.secondary', flexShrink: 0, fontWeight: active ? 600 : 400, minHeight: 28, px: 1, '&:hover': { bgcolor: active ? 'surface.selected' : 'action.hover', borderColor: active ? 'primary.main' : 'surface.borderStrong' } })
+  const item = (active: boolean) => ({ bgcolor: active ? 'surface.selected' : 'transparent', ...frame({ color: active ? 'primary.main' : 'divider' }), borderRadius: 1, color: active ? 'text.primary' : 'text.secondary', flexShrink: 0, fontWeight: active ? 600 : 400, minHeight: 28, px: 1, '&:hover': { bgcolor: active ? 'surface.selected' : 'action.hover', outlineColor: active ? 'primary.main' : 'surface.borderStrong' } })
   // One tab stop for the whole row (the chosen item); ←/→ Home/End move between items.
   const tabStop = selected !== null && commits.some((commit) => commit.id === selected) ? selected : null
   const moveFocus = (event: React.KeyboardEvent<HTMLElement>) => {
@@ -96,7 +97,7 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
     <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
       {page > 1 ? <Button onClick={onPrevPage} size="small" sx={{ flexShrink: 0 }}>{t('review.changes.previousCommits')}</Button> : null}
       {scrollable ? <Tooltip title={t('review.changes.scrollLeftTooltip')}><span><IconButton aria-label={t('review.changes.scrollLeft')} disabled={!overflow.left} onClick={() => scrollBy(-1)}><ChevronLeftRoundedIcon /></IconButton></span></Tooltip> : null}
-      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', pb: 0.5 }}><Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 'max-content' }}>
+      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, height: 48, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}><Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 'max-content' }}>
         <Button aria-pressed={wholeMergeRequest} color="inherit" data-commit-item onClick={() => onSelect(null)} sx={item(wholeMergeRequest)} tabIndex={tabStop === null ? 0 : -1}>{t('review.changes.wholeMr')}</Button>
         {loading ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">{t('review.changes.loadingCommits')}</Typography> : commits.map((commit) => { const time = commit.committedAt || commit.createdAt; return <Tooltip describeChild key={commit.id} title={`${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={selected === commit.id} color="inherit" data-commit-item onClick={() => onSelect(commit.id)} sx={{ ...item(selected === commit.id), justifyContent: 'flex-start', gap: 1, maxWidth: 420 }} tabIndex={tabStop === commit.id ? 0 : -1}><Box component="span" sx={{ color: 'primary.main', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', flexShrink: 0 }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box>{time ? <Box component="time" dateTime={time} sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 'caption.fontSize' }}>{formatAbsoluteTime(time)}</Box> : null}</Button></Tooltip> })}
       </Stack></Box>
@@ -105,8 +106,8 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
     </Stack>
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
       <Typography color="textSecondary" variant="caption">
-        {t('review.changes.from')} <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily' }}>{showingLocal ? (headSha ? t('review.changes.mrHeadSha', { sha: shortSha(headSha) }) : t('review.changes.mrHead')) : selected ? t('review.changes.parentCommit') : compareFrom ? t('review.changes.pastVersion', { sha: shortSha(compareFrom) }) : baseSha ? shortSha(baseSha) : t('review.changes.targetBranch')}</Box>
-        {' → '}{t('review.changes.to')} <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily' }}>{showingLocal ? t('review.changes.workingTree') : selected ? shortSha(selected) : headSha ? shortSha(headSha) : t('review.changes.mrHead')}</Box>
+        {t('review.changes.from')} <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily', verticalAlign: 'top' }}>{showingLocal ? (headSha ? t('review.changes.mrHeadSha', { sha: shortSha(headSha) }) : t('review.changes.mrHead')) : selected ? t('review.changes.parentCommit') : compareFrom ? t('review.changes.pastVersion', { sha: shortSha(compareFrom) }) : baseSha ? shortSha(baseSha) : t('review.changes.targetBranch')}</Box>
+        {' → '}{t('review.changes.to')} <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily', verticalAlign: 'top' }}>{showingLocal ? t('review.changes.workingTree') : selected ? shortSha(selected) : headSha ? shortSha(headSha) : t('review.changes.mrHead')}</Box>
       </Typography>
       {versionPicker}
       {local ? <Tooltip describeChild title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" onClick={local.onSelect} size="small" sx={item(showingLocal)}>{t('review.changes.local')}{local.badge}</Button></Tooltip> : null}

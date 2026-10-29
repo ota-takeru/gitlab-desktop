@@ -53,6 +53,8 @@ jobs:
       - run: npm ci
       - name: Check accessibility of the client screens
         run: npx playwright test tests/visual/a11y.visual.ts
+      - name: Check the 4px grid of the client screens
+        run: npx playwright test tests/visual/grid.visual.ts
       - name: Compare the catalog and client screens with their baselines
         if: ${{ !inputs.update_snapshots }}
         run: npx playwright test tests/visual/catalog.visual.ts tests/visual/user.visual.ts

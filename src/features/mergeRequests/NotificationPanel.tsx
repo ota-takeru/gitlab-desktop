@@ -23,6 +23,7 @@ import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from 'react'
 import { ClientNavItem } from '../../components/ClientNavItem'
+import { frame, hairline, panelFrame } from '../../components/hairline'
 import { type NotifyOptions } from '../../components/Feedback'
 import { useNotify } from '../../components/feedbackContext'
 import { moveListRowFocus } from '../../components/listRowFocus'
@@ -216,7 +217,7 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
       : { message: t('mrList.notifications.markedAll', { count: read.length }), severity: 'success' })
   }
   return <>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
       <Typography component="h2" variant="h2">{t('mrList.notifications.title')}</Typography>
       <ToggleButtonGroup aria-label={t('mrList.notifications.show')} disabled={marking !== null} exclusive onChange={(_, next: 'unread' | 'read' | null) => { if (next) showRead(next === 'read') }} size="small" value={read ? 'read' : 'unread'}>
         <ToggleButton sx={{ px: 1, py: 0.25 }} value="unread">{t('mrList.notifications.unread')}</ToggleButton>
@@ -289,8 +290,8 @@ function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; grou
   // The cards behind show as edges below this one, at most two, like a stack of paper.
   const behind = Math.min(others.length, 2)
   return <Box component="li" sx={{ listStyle: 'none', pb: behind * 0.5, position: 'relative' }}>
-    {Array.from({ length: behind }, (_, index) => <Box aria-hidden key={index} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'divider', borderRadius: 2, bottom: (behind - 1 - index) * 4, left: (index + 1) * 6, position: 'absolute', right: (index + 1) * 6, top: 8 }} />)}
-    <Box sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
+    {Array.from({ length: behind }, (_, index) => <Box aria-hidden key={index} sx={{ bgcolor: 'surface.raised', ...frame(), borderRadius: 2, bottom: (behind - 1 - index) * 4, left: (index + 1) * 6, position: 'absolute', right: (index + 1) * 6, top: 8 }} />)}
+    <Box sx={{ bgcolor: 'surface.raised', ...panelFrame(), borderRadius: 2, overflow: 'hidden' }}>
       <ButtonBase data-list-row="true" disabled={disabled} onClick={onOpen} sx={{ alignItems: 'stretch', display: 'flex', flexDirection: 'column', pb: 1, px: 1.5, pt: 1, textAlign: 'left', width: '100%', '&:hover': { bgcolor: 'action.hover' }, '&:focus-visible': { outlineOffset: -2 } }}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
           <StateIcon icon={actionIcons[todo.actionName] ?? <NotificationsNoneRoundedIcon fontSize="inherit" />} label={label} tone={actionTones[todo.actionName] ?? 'info'} />
@@ -300,10 +301,10 @@ function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; grou
           {/* When the newest notification arrived, not when the MR changed. */}
           <RelativeTime value={todo.createdAt} />
         </Stack>
-        <Typography sx={{ display: '-webkit-box', fontWeight: 600, mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{todo.title}</Typography>
+        <Typography sx={{ display: '-webkit-box', fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{todo.title}</Typography>
         {quotesComment.has(todo.actionName) && todo.body ? <Typography color="textSecondary" sx={{ display: '-webkit-box', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="caption">{todo.author.name}: {todo.body}</Typography>
           : <Typography color="textSecondary" noWrap variant="caption">{todo.author.name}</Typography>}
-        {others.length ? <Typography color="primary" sx={{ fontWeight: 600, mt: 0.25 }} variant="caption">{t('mrList.notifications.others', { count: others.length })}</Typography> : null}
+        {others.length ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('mrList.notifications.others', { count: others.length })}</Typography> : null}
       </ButtonBase>
     </Box>
   </Box>

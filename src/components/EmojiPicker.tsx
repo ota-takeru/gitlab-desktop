@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import { useT } from '../i18n/useT'
+import { hairline } from './hairline'
 import { EMOJI_CATEGORIES, REACTION_CHOICES, readRecentReactions, rememberRecentReaction, searchEmoji, useEmojiCatalog, type EmojiChoice } from '../lib/awardEmoji'
 
 const COLUMNS = 9
@@ -126,7 +127,7 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
         setQuery('')
         setActive(0)
       }}
-      sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 36, px: 1, '& .MuiTab-root': { fontSize: 18, minHeight: 36, minWidth: 0, px: 0 } }}
+      sx={{ ...hairline('bottom'), minHeight: 36, px: 1, '& .MuiTab-root': { fontSize: 18, minHeight: 36, minWidth: 0, px: 0 } }}
       value={searching ? false : tab}
       variant="fullWidth"
     >
@@ -176,7 +177,7 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
         })}
       </Box>}
     </Box>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderColor: 'divider', borderTop: 1, minHeight: 48, px: 1.5, py: 0.5 }}>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('top'), minHeight: 48, px: 1.5, py: 0.5 }}>
       {preview ? <>
         <Box aria-hidden sx={{ fontSize: 28, lineHeight: 1 }}>{preview.emoji}</Box>
         <Box sx={{ minWidth: 0 }}>

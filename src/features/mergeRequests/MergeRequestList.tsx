@@ -38,6 +38,7 @@ import Typography from '@mui/material/Typography'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FocusEvent, KeyboardEvent, MouseEvent, ReactNode, RefObject } from 'react'
 
+import { hairline, panelFrame } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { moveListRowFocus } from '../../components/listRowFocus'
@@ -406,7 +407,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
             value={draft.search}
           />
           <Popper anchorEl={searchOptions?.anchor} open={Boolean(searchOptions)} placement="bottom-start" sx={{ width: searchOptions?.width, zIndex: 'modal' }}>
-            <Paper ref={searchOptionsRef} sx={{ border: 1, borderColor: 'divider', boxShadow: 8, mt: 0.5, py: 0.5 }}>
+            <Paper ref={searchOptionsRef} sx={{ ...panelFrame(), boxShadow: 8, mt: 0.5, py: 0.5 }}>
               <Typography color="textSecondary" sx={{ display: 'block', px: 1.5 }} variant="overline">{t('mrList.search.addCondition')}</Typography>
               <MenuList
                 aria-label={t('mrList.search.conditionsMenu')}
@@ -469,7 +470,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
             <Box>
               <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">{t('mrList.saved.listHeading', { count: savedSearches.length })}</Typography>
               {savedSearches.length === 0 ? <Typography color="textSecondary" variant="body2">{t('mrList.saved.empty')}</Typography> : (
-                <Stack divider={<Divider flexItem />} sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                <Stack divider={<Divider flexItem />} sx={{ ...panelFrame(), borderRadius: 1 }}>
                   {savedSearches.map((saved) => (
                     <Stack key={saved.id} spacing={1} sx={{ p: 1 }}>
                       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
@@ -502,7 +503,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
         {result.loading && !result.data ? <LoadingRows /> : null}
         {!result.loading && !result.data && !result.error && !filterError ? <PaneEmpty description={t('mrList.empty.description', { target: searchTarget })} title={t('mrList.empty.title')} /> : null}
         {result.data && result.data.length === 0 ? <PaneEmpty description={<>{t('mrList.empty.appliedConditions', { conditions: chips.length ? chips.map((chip) => chip.label).join(' · ') : t('mrList.empty.noConditions') })}<br />{searchTarget}</>} title={t('mrList.empty.noMatchTitle')}>{conditionsChanged ? <Button onClick={resetConditions} variant="outlined">{t('mrList.search.clear')}</Button> : null}</PaneEmpty> : null}
-        {page > 1 && rows.length ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Button onClick={() => updatePage(1)} size="small">{t('mrList.results.fromFirstPage')}</Button></Box> : null}
+        {page > 1 && rows.length ? <Box sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}><Button onClick={() => updatePage(1)} size="small">{t('mrList.results.fromFirstPage')}</Button></Box> : null}
         {rows.length ? <MergeRequestResults currentUserId={session.user.id} grouping={personalQueue === 'waiting' ? 'mine' : personalQueue ? 'any' : null} pages={pages} onFocusRow={(next) => setPreview((current) => current ? next : current)} onOpenMergeRequest={openMergeRequest} onOpenPipeline={openPipeline} onPreview={(next) => setPreview((current) => current?.mergeRequest.id === next.mergeRequest.id ? null : next)} orderBy={applied?.orderBy ?? 'updated_at'} personalWorkspace={personalWorkspace} previewing={preview?.mergeRequest ?? null} recentMrId={recentMrId} selected={selected ?? null} sessionId={session.id} showProject={!projectName} /> : null}
         {rows.length && (morePages > 0 || hasNext) ? <MoreRows
           capped={hasNext && loaded.length >= MAX_LOADED_PAGES}
@@ -739,7 +740,7 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
       {loaders}
       {sections.filter(([label, items]) => items.length > 0 || label === waitingLabel || label === doneLabel).map(([label, items]) => (
         <Box aria-label={label} component="section" key={label}>
-          <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', borderBottom: 1, borderColor: 'divider', display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{t('mrList.sections.heading', { count: items.length, label })}</Typography>
+          <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', ...hairline('bottom'), display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{t('mrList.sections.heading', { count: items.length, label })}</Typography>
           {items.length ? <Box aria-label={label} component="ul" role="list" sx={rowListSx}>{items.map(row)}</Box> : null}
         </Box>
       ))}
@@ -836,8 +837,8 @@ const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, ap
         <Typography aria-hidden color="textSecondary" variant="caption">·</Typography>
         <RelativeTime prefix={byCreation ? t('mrList.row.created') : t('mrList.row.updated')} value={byCreation && createdAt ? createdAt : mergeRequest.updatedAt} />
       </Stack>
-      <Typography sx={{ display: '-webkit-box', mt: 0.25, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{listTitle(mergeRequest)}</Typography>
-      <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, pr: ROW_ACTIONS_SPACE, rowGap: 0.25 }}>
+      <Typography sx={{ display: '-webkit-box', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="subtitle1">{listTitle(mergeRequest)}</Typography>
+      <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', minWidth: 0, mt: 0.5, pr: ROW_ACTIONS_SPACE, rowGap: 0.5 }}>
         {/* States first, as icons with counts; their names are in the tooltips. */}
         {mergeRequest.draft ? <StateIcon icon={<EditNoteRoundedIcon fontSize="inherit" />} label={t('mrList.row.draft')} /> : null}
         {pipeline ? <PipelineStatus compact status={pipeline.status} /> : null}

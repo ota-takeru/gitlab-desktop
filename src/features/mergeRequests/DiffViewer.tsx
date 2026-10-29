@@ -25,6 +25,7 @@ import InputAdornment from '@mui/material/InputAdornment'
 import { type Theme } from '@mui/material/styles'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { hairline, panelFrame } from '../../components/hairline'
 import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/gitlab'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { DiffFileTree, FileThreadMark } from './DiffFileTree'
@@ -470,8 +471,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   return (
     <Box ref={rootRef}>
       <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'flex-start', minHeight: 420 }}>
-        <Box component="nav" aria-label={t('review.fileTree.title')} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, display: treeShown ? 'flex' : 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 40px)`, minWidth: 0, position: 'sticky', top: 'var(--detail-header-height, 0px)' }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
+        <Box component="nav" aria-label={t('review.fileTree.title')} sx={{ ...panelFrame({ position: false }), borderRadius: 1, display: treeShown ? 'flex' : 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 40px)`, minWidth: 0, position: 'sticky', top: 'var(--detail-header-height, 0px)' }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
             <Typography color="textSecondary" variant="overline">{t('review.fileTree.title')}</Typography>
             <Typography color="textSecondary" sx={{ flex: 1 }} variant="caption">{fileSearchMatches.length}/{diffs.length}</Typography>
             <ToggleButtonGroup aria-label={t('review.fileTree.mode')} exclusive onChange={(_, next: FileListMode | null) => { if (next) changeFileListMode(next) }} size="small" value={fileListMode}>
@@ -479,9 +480,9 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               <Tooltip title={t('review.fileTree.listTooltip')}><ToggleButton aria-label={t('review.fileTree.list')} sx={{ px: 1, py: 0.25 }} value="list"><ViewListOutlinedIcon fontSize="small" /></ToggleButton></Tooltip>
             </ToggleButtonGroup>
           </Stack>
-          {reviewState.enabled ? <Typography color="textSecondary" component="div" sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: 1.5, py: 0.25 }} variant="caption">{t('review.fileTree.reviewedCount', { reviewed: reviewedCount, total: diffs.length })}</Typography> : null}
+          {reviewState.enabled ? <Typography color="textSecondary" component="div" sx={{ ...hairline('bottom'), flexShrink: 0, px: 1.5, py: 0.25 }} variant="caption">{t('review.fileTree.reviewedCount', { reviewed: reviewedCount, total: diffs.length })}</Typography> : null}
           {/* The file-name search filters the tree, so it sits on top of it. */}
-          {treeShown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, p: 0.5 }}>{fileSearchField(true)}</Box> : null}
+          {treeShown ? <Box sx={{ ...hairline('bottom'), flexShrink: 0, p: 0.5 }}>{fileSearchField(true)}</Box> : null}
           {/* The rows are buttons, not list items. */}
           <List component="div" disablePadding sx={{ overflowY: 'auto', p: 0.5 }}>
             {fileListMode === 'tree' ? <DiffFileTree displayedPath={displayedPath} entries={fileSearchMatches} expandAll={Boolean(fileSearch.trim())} fileMark={(diff) => <FileKindMark diff={diff} />} isReviewed={reviewState.isReviewed} onSelect={onSelectFile} threadCount={(path) => threadCounts.get(path)} /> : fileSearchMatches.map(({ diff, path }) => {
@@ -492,9 +493,9 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             {fileSearchMatches.length === 0 ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="caption">{diffs.length === 0 ? t('review.fileTree.empty') : t('review.fileTree.noMatch')}</Typography></Box> : null}
           </List>
         </Box>
-        <Box ref={fileTopRef} sx={{ '--composer-sticky-top': 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px))', border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, overflow: 'clip', scrollMarginTop: BELOW_DETAIL_HEADER }}>
+        <Box ref={fileTopRef} sx={{ '--composer-sticky-top': 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px))', ...panelFrame(), borderRadius: 1, display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, overflow: 'clip', scrollMarginTop: BELOW_DETAIL_HEADER }}>
           {/* The controls wrap below the path rather than squeezing it. */}
-          <Stack ref={fileHeaderRef} direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', flexWrap: 'wrap', minHeight: 40, position: 'sticky', px: 1, py: 0.5, rowGap: 0.5, top: 'var(--detail-header-height, 0px)', zIndex: 2 }}>
+          <Stack ref={fileHeaderRef} direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', bgcolor: 'surface.list', ...hairline('bottom', { position: false }), flexWrap: 'wrap', minHeight: 40, position: 'sticky', px: 1, py: 0.5, rowGap: 0.5, top: 'var(--detail-header-height, 0px)', zIndex: 2 }}>
             {treeFits ? <Tooltip title={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')}><IconButton aria-label={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')} aria-pressed={treeShown} onClick={toggleTree}><ViewSidebarOutlinedIcon /></IconButton></Tooltip> : null}
             <Tooltip title={t('review.diff.previousFileTooltip')}><span><IconButton aria-keyshortcuts="[" aria-label={t('review.diff.previousFile')} disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowLeftRoundedIcon /></IconButton></span></Tooltip>
             <Tooltip title={t('review.diff.nextFileTooltip')}><span><IconButton aria-keyshortcuts="]" aria-label={t('review.diff.nextFile')} disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowRightRoundedIcon /></IconButton></span></Tooltip>
@@ -518,7 +519,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             </ToggleButtonGroup> : null}
           </Stack>
            {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}>
             <Tooltip describeChild placement="bottom-start" title={t('review.diff.search.hint')}><TextField
               fullWidth
               onChange={(event) => { setDiffSearch(event.target.value); setActiveSearch(null) }}
@@ -624,7 +625,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
       // Long code lines wrap, so the page stays the only scroll.
       '& .diff-rows': { minWidth: 0 },
-      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
+      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', ...hairline('right'), color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
       '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
       '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
       '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
@@ -803,7 +804,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
       '& .split-row': { display: 'grid', gridTemplateColumns: blameEnabled ? '106px 72px minmax(0, 1fr) 106px 72px minmax(0, 1fr)' : '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 20 },
-      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
+      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', ...hairline('right'), color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
       '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
       '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
       '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
@@ -814,7 +815,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
       '& mark': { backgroundColor: theme.palette.diff?.searchMatchBackground, color: theme.palette.diff?.searchMatchText },
       // As in the unified view: room for a 5-digit number, then the 26px of the comment button.
       '& .split-number': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.secondary, padding: '0 26px 0 6px', position: 'relative', textAlign: 'right', userSelect: 'none' },
-      '& .split-number[data-side="new"]': { borderLeft: `1px solid ${theme.palette.divider}` },
+      '& .split-number[data-side="new"]': hairline('left', { color: theme.palette.divider, position: false }),
       '& .split-code': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, overflowWrap: 'anywhere', padding: '0 10px 0 6px', whiteSpace: 'pre-wrap' },
       '& [data-kind="remove"]': { backgroundColor: theme.palette.diff?.deletedBackground },
       '& .split-number[data-kind="remove"]': { color: theme.palette.diff?.deletedText },
@@ -912,14 +913,14 @@ function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: b
   const t = useT()
   const label = item.oldStart === item.oldEnd ? String(item.oldStart) : t('review.lineRange', { start: String(item.oldStart), end: String(item.oldEnd) })
   const deletion = <Box aria-label={t('review.fullFile.removedLines', { lines: label })} data-file-anchor={item.anchorLine} data-testid="file-deletion" sx={(theme) => ({
-    bgcolor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', flex: 1, minWidth: 0, my: 0.5, px: 1.5, py: 0.5,
+    bgcolor: theme.palette.diff?.deletedBackground, ...hairline('left', { color: 'error.main', width: 3 }), flex: 1, minWidth: 0, my: 0.5, px: 1.5, py: 0.5,
   })}>
     <ChangeMarker firstLine={item.oldStart} kind="remove" lastLine={item.oldEnd} title={t('review.fullFile.removedTitle', { lines: label })} />
     <Typography component="pre" sx={{ fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', m: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{item.text}</Typography>
   </Box>
   // Keep the blame and line-number gutters continuous so removed code lines up with the file's code column.
   return blameEnabled
-    ? <Stack direction="row"><span className="blame-cell" /><Box sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px' }} />{deletion}</Stack>
+    ? <Stack direction="row"><span className="blame-cell" /><Box sx={{ ...hairline('right'), flex: '0 0 52px' }} />{deletion}</Stack>
     : deletion
 }
 
@@ -972,12 +973,12 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.notLoaded')}</Typography>
 
   return <Box ref={rootRef} sx={blameEnabled ? (theme: Theme) => ({
-    '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', borderRight: 1, borderColor: 'divider', color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
+    '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', ...hairline('right'), color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
     '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
     '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
     '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   }) : undefined}>
-    {markdown ? <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1, py: 0.5 }}>
+    {markdown ? <Box sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}>
       <Button aria-label={showSource ? t('review.fullFile.renderMarkdown') : t('review.fullFile.showMarkdownSource')} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? t('review.fullFile.markdown') : t('review.fullFile.source')}</Button>
     </Box> : null}
     {annotations && !annotations.consistent ? <Typography color="warning.main" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">{t('review.fullFile.inconsistent')}</Typography> : null}
@@ -985,7 +986,7 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
       : markdown && !showSource ? <Box aria-label={t('review.fullFile.markdownPreview')} sx={(theme) => ({
           minWidth: 0, px: 2, py: 1.5,
           '& [data-review-change="add"]': { backgroundColor: theme.palette.diff?.addedBackground, boxShadow: `inset 3px 0 0 ${theme.palette.success.main}`, borderRadius: 1, px: 0.5 },
-          '& [data-review-deleted="true"]': { backgroundColor: theme.palette.diff?.deletedBackground, borderLeft: 3, borderColor: 'error.main', my: 1, px: 1.5, py: 1 },
+          '& [data-review-deleted="true"]': { backgroundColor: theme.palette.diff?.deletedBackground, ...hairline('left', { color: 'error.main', width: 3 }), my: 1, px: 1.5, py: 1 },
           '& [data-review-marker="remove"]': changeMarkerStyles(theme, 'remove'),
           '& [data-review-deleted="true"] pre': { fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', mb: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' },
         })}><MockMarkdown body={content} renderBlame={blameEnabled ? (line) => <BlameCell line={line} side="new" /> : undefined} review={changeMarkers ?? undefined} size="body1" /></Box>
@@ -999,7 +1000,7 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
               <Stack data-change={additions ? 'add' : undefined} data-file-line={fileLine} data-testid="file-line" direction="row" sx={(theme) => ({
                 backgroundColor: additions ? theme.palette.diff?.addedBackground : undefined,
                 boxShadow: additions ? `inset 3px 0 0 ${theme.palette.success.main}` : undefined, minHeight: 20,
-              })}>{blameEnabled ? <BlameCell line={fileLine} side="new" /> : null}<Typography color="textSecondary" sx={{ borderRight: 1, borderColor: 'divider', flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>
+              })}>{blameEnabled ? <BlameCell line={fileLine} side="new" /> : null}<Typography color="textSecondary" sx={{ ...hairline('right'), flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>
             </Fragment>
           })}
           {offset + visibleLines.length >= lines.length ? (changeMarkers?.removedByAnchor.get(lines.length + 1) ?? []).map((item, index) => <RemovedFullFileLines blameEnabled={blameEnabled} item={item} key={`last:${item.oldStart}:${index}`} />) : null}

@@ -3,6 +3,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useMemo } from 'react'
 
+import { hairline, panelFrame } from '../../components/hairline'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { BlameCell } from './BlamePanel'
 import { ChangeMarker } from './ChangeMarker'
@@ -30,8 +31,8 @@ export function MarkdownDiffPreview({ blameEnabled = false, layout, lines }: Mar
     <Typography color="textSecondary" sx={{ mb: 1.5 }} variant="caption">{t('review.markdownDiff.hint')}</Typography>
     {changes.length === 0 ? <Typography color="textSecondary" role="status" variant="body2">{t('review.markdownDiff.empty')}</Typography> : null}
     <Stack spacing={1.5}>
-      {changes.map((change, index) => <Box aria-label={t('review.markdownDiff.block', { number: index + 1 })} data-file-anchor={change.new?.firstLine ?? lines.find((line) => line.kind !== 'remove' && line.oldLine !== undefined && change.old && line.oldLine >= change.old.lastLine)?.newLine ?? change.old?.firstLine ?? 1} component="section" key={change.id} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, minWidth: 0, overflow: 'hidden' }}>
-        <Box sx={{ bgcolor: 'surface.list', borderBottom: 1, borderColor: 'divider', px: 1.5, py: 0.5 }}>
+      {changes.map((change, index) => <Box aria-label={t('review.markdownDiff.block', { number: index + 1 })} data-file-anchor={change.new?.firstLine ?? lines.find((line) => line.kind !== 'remove' && line.oldLine !== undefined && change.old && line.oldLine >= change.old.lastLine)?.newLine ?? change.old?.firstLine ?? 1} component="section" key={change.id} sx={{ ...panelFrame(), borderRadius: 1, minWidth: 0, overflow: 'hidden' }}>
+        <Box sx={{ bgcolor: 'surface.list', ...hairline('bottom'), px: 1.5, py: 0.5 }}>
           <Typography color="textSecondary" variant="caption">{t('review.markdownDiff.position', { number: index + 1, total: changes.length })}</Typography>
         </Box>
         <Box sx={{ display: 'grid', gap: 0.5, gridTemplateColumns: layout === 'split' ? { xs: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' } : 'minmax(0, 1fr)', p: 0.5 }}>
@@ -50,8 +51,7 @@ function ChangedFragment({ blameEnabled, kind, side }: { blameEnabled: boolean; 
   const lineLabel = side.firstLine === side.lastLine ? String(side.firstLine) : t('review.lineRange', { start: String(side.firstLine), end: String(side.lastLine) })
   return <Box aria-label={t(removed ? 'review.markdownDiff.removedLines' : 'review.markdownDiff.addedLines', { lines: lineLabel })} data-kind={kind} component="section" sx={(theme) => ({
     bgcolor: removed ? theme.palette.diff?.deletedBackground : theme.palette.diff?.addedBackground,
-    borderLeft: 3,
-    borderColor: removed ? 'error.main' : 'success.main',
+    ...hairline('left', { color: removed ? 'error.main' : 'success.main', width: 3 }),
     minWidth: 0,
     px: 1.5,
     py: 1,

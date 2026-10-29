@@ -28,6 +28,7 @@ import { QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@t
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
+import { hairline } from '../components/hairline'
 import { ClientNavItem } from '../components/ClientNavItem'
 import { useConfirm } from '../components/feedbackContext'
 import { PaneEmpty, PaneNavigation } from '../components/Pane'
@@ -546,7 +547,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>
-            <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ borderTop: 1, borderColor: 'divider', color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
+            <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ ...hairline('top'), color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
               <Box component="span" sx={{ display: 'flex', flexShrink: 0 }}>{session ? <GitLabUserAvatar sessionId={session.id} size={24} user={session.user} /> : <SettingsOutlinedIcon sx={{ fontSize: 20, m: 0.25 }} />}</Box>
               {navCollapsed ? null : <Typography color="inherit" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{session ? `@${session.user.username}` : t('app.nav.disconnected')}</Typography>}
               {navCollapsed || !session ? null : <SettingsOutlinedIcon sx={{ fontSize: 18 }} />}
@@ -670,7 +671,7 @@ function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizi
   const lies = peeking || overlays
   return (
     <Box onMouseLeave={leave} onMouseOver={follow} sx={{ flexShrink: 0, position: 'relative', transition: resizing ? 'none' : 'width 120ms', width: slotWidth, zIndex: lies ? 'drawer' : 'auto', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
-      <Box component="aside" sx={{ bgcolor: 'surface.nav', borderRight: 1, borderColor: 'divider', bottom: 0, boxShadow: lies ? 8 : 'none', display: 'flex', flexDirection: 'column', left: 0, overflow: 'hidden', position: 'absolute', px: 1, py: 1, top: 0, transition: resizing ? 'none' : 'width 120ms', width: navCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+      <Box component="aside" sx={{ bgcolor: 'surface.nav', ...hairline('right', { position: false }), bottom: 0, boxShadow: lies ? 8 : 'none', display: 'flex', flexDirection: 'column', left: 0, overflow: 'hidden', position: 'absolute', px: 1, py: 1, top: 0, transition: resizing ? 'none' : 'width 120ms', width: navCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
         {children({ collapsed: navCollapsed, foldForNotifications, stopPeek })}
       </Box>
       {resizeHandle}
@@ -894,7 +895,7 @@ function describeMergeRequestFailure(error: GitLabCommandError | null): { title:
 function MergeRequestSkeleton() {
   const t = useT()
   const bar = (width: number | string, height = 12) => <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height, width }} />
-  return <Box aria-live="polite" role="status" sx={{ ...delayedRevealSx, borderBottom: 1, borderColor: 'divider', px: { md: 3, xs: 2 }, pb: 1.5, pt: 1.5 }}>
+  return <Box aria-live="polite" role="status" sx={{ ...delayedRevealSx, ...hairline('bottom'), px: { md: 3, xs: 2 }, pb: 1.5, pt: 1.5 }}>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 32 }}>
       <Typography color="textSecondary" variant="caption">{t('app.mergeRequest.loading')}</Typography>
     </Stack>

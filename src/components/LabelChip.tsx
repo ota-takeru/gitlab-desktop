@@ -1,6 +1,8 @@
 import Box from '@mui/material/Box'
 import Chip, { type ChipProps } from '@mui/material/Chip'
 
+import { frame } from './hairline'
+
 const labelColorPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu
 
 /**
@@ -13,7 +15,7 @@ export function LabelChip({ color, name, ...chipProps }: { color?: string | null
   return (
     <Chip
       {...chipProps}
-      icon={swatch ? <Box aria-hidden component="span" sx={{ bgcolor: swatch, border: 1, borderColor: 'divider', borderRadius: '50%', flexShrink: 0, height: 10, width: 10 }} /> : undefined}
+      icon={swatch ? <Box aria-hidden component="span" sx={{ bgcolor: swatch, ...frame(), borderRadius: '50%', flexShrink: 0, height: 10, width: 10 }} /> : undefined}
       label={name}
       size="small"
       variant="outlined"

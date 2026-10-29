@@ -321,7 +321,7 @@ export function ConnectionView({ compact = false }: { compact?: boolean }) {
 
 function ConnectionValue({ label, value }: { label: string; value: string }) {
   return (
-    <Stack spacing={0.25} sx={{ minWidth: 140 }}>
+    <Stack sx={{ minWidth: 140 }}>
       <Typography color="textSecondary" variant="caption">{label}</Typography>
       <Typography noWrap title={value} variant="body2">{value}</Typography>
     </Stack>

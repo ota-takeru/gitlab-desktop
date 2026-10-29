@@ -36,7 +36,7 @@ const tools: { format: MarkdownFormat; icon: ReactNode; label: MessageKey; short
 export function MarkdownToolbar({ disabled = false, onFormat }: { disabled?: boolean; onFormat: (format: MarkdownFormat) => void }) {
   const t = useT()
   return (
-    <Stack aria-label={t('common.markdownToolbar.label')} direction="row" role="toolbar" sx={{ flexWrap: 'wrap', gap: 0.25 }}>
+    <Stack aria-label={t('common.markdownToolbar.label')} direction="row" role="toolbar" sx={{ columnGap: 0.25, flexWrap: 'wrap', rowGap: 0.5 }}>
       {tools.map((tool) => (
         <Tooltip key={tool.format} title={tool.shortcut ? t('common.markdownToolbar.withShortcut', { label: t(tool.label), shortcut: tool.shortcut }) : t(tool.label)}>
           <span>

@@ -9,6 +9,8 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState } from 'react'
 
+import { frame } from '../../components/hairline'
+import { gridLine } from '../../theme'
 import { PipelineStatus } from '../../components/PipelineStatus'
 import { useT } from '../../i18n/useT'
 import type { JobTraceQuery, PipelineJob, TraceColor, TraceSpan } from '../../types/gitlab'
@@ -33,7 +35,7 @@ const traceColors: Record<TraceColor, string> = {
 /** Log lines with the colours and bold kept from the job's output; also shown in the UI catalog. */
 export function JobLogLines({ label, lines }: { label: string; lines: TraceSpan[][] }) {
   return (
-    <Box aria-label={label} component="pre" tabIndex={0} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'divider', borderRadius: 1, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', lineHeight: 'code.lineHeight', m: 0, overflowWrap: 'anywhere', px: 1.5, py: 1, whiteSpace: 'pre-wrap' }}>
+    <Box aria-label={label} component="pre" tabIndex={0} sx={{ bgcolor: 'surface.raised', ...frame(), borderRadius: 1, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', lineHeight: gridLine(5), m: 0, overflowWrap: 'anywhere', px: 1.5, py: 1, whiteSpace: 'pre-wrap' }}>
       {lines.map((spans, index) => (
         <Box component="span" key={index} sx={{ display: 'block', minHeight: '1.6em' }}>
           {spans.map((span, at) => span.fg || span.bold

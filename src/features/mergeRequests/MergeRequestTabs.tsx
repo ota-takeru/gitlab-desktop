@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography'
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { useReorder } from '../../components/useReorder'
 import { useT } from '../../i18n/useT'
+import { gridLine } from '../../theme'
 import { useConnection } from '../connections/connectionContext'
 import { mrRefKey, usePersonalWorkspace, type MrRef, type TabMeta } from '../shared/personalWorkspace'
 
@@ -81,12 +82,12 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
   const selectedSx = { '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }
   if (collapsed) {
     return <Tooltip placement="right" title={fullName}>
-      <ListItemButton aria-current={selected ? 'page' : undefined} aria-label={pinned ? t('mergeRequest.tabs.pinnedName', { name: fullName }) : fullName} onClick={onOpen} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', flexDirection: 'column', minHeight: 36, position: 'relative', px: 0, py: 0.25, ...selectedSx }}>
+      <ListItemButton aria-current={selected ? 'page' : undefined} aria-label={pinned ? t('mergeRequest.tabs.pinnedName', { name: fullName }) : fullName} onClick={onOpen} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', flexDirection: 'column', minHeight: 36, position: 'relative', px: 0, py: 0, ...selectedSx }}>
         {/* Pinned tabs keep a pin mark, so they read apart from open ones when only the number fits. */}
         {pinned ? <PushPinIcon aria-hidden sx={{ color: 'primary.main', fontSize: 14, position: 'absolute', right: 0, top: 0 }} /> : null}
         {/* The state tells merged and open MRs apart even when only the number fits. */}
         {meta ? <MergeRequestStateIcon state={meta.state} /> : null}
-        <Typography sx={{ fontFamily: 'code.fontFamily', fontWeight: selected ? 600 : 500, letterSpacing: 0, lineHeight: 'body2.lineHeight', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }} variant="overline">{mrRef.iid}</Typography>
+        <Typography sx={{ fontFamily: 'code.fontFamily', fontWeight: selected ? 600 : 500, letterSpacing: 0, lineHeight: gridLine(5), maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }} variant="overline">{mrRef.iid}</Typography>
       </ListItemButton>
     </Tooltip>
   }
@@ -99,7 +100,7 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
       <ListItemButton aria-current={selected ? 'page' : undefined} aria-description={t('mergeRequest.tabs.reorderHint')} aria-label={expandedName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ alignItems: 'flex-start', cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 32, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
         <Box sx={{ display: 'flex', flexShrink: 0, pt: 0.25 }}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', fontWeight: selected ? 600 : 500, lineHeight: 'body2.lineHeight', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{name}</Typography>
+          <Typography sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', fontWeight: selected ? 600 : 500, lineHeight: gridLine(5), overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{name}</Typography>
           {project ? <Typography color="textSecondary" noWrap sx={{ pr: onClose ? 6 : 3 }} variant="caption">{project} !{mrRef.iid}</Typography> : null}
         </Box>
       </ListItemButton>

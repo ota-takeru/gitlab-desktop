@@ -1,5 +1,6 @@
 import { alpha, createTheme, type PaletteMode } from '@mui/material/styles'
 
+import { frame, panelFrame } from './components/hairline'
 import type { Locale } from './i18n/locales'
 
 interface SyntaxPalette {
@@ -367,6 +368,13 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       MuiSvgIcon: {
         styleOverrides: { fontSizeSmall: { fontSize: 20 }, fontSizeMedium: { fontSize: 24 }, fontSizeLarge: { fontSize: 32 } },
       },
+      // A divider takes no room: its line is drawn over the edge, so the rows after it stay on the grid.
+      MuiDivider: {
+        styleOverrides: {
+          root: { border: 0, height: 0, position: 'relative', '&::after': { borderColor: palette.border, borderStyle: 'solid', borderWidth: '1px 0 0', content: '""', left: 0, pointerEvents: 'none', position: 'absolute', right: 0, top: 0 } },
+          vertical: { height: 'auto', width: 0, '&::after': { borderWidth: '0 0 0 1px', bottom: 0, right: 'auto' } },
+        },
+      },
       MuiTooltip: {
         defaultProps: { disableInteractive: true, enterDelay: 350 },
         styleOverrides: {
@@ -377,8 +385,9 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         styleOverrides: {
           root: {
             backgroundImage: 'none',
-            border: `1px solid ${palette.border}`,
             boxShadow: 'none',
+            // Frames are drawn over the edge (see hairline.ts), so a framed box keeps the grid inside and after it.
+            ...panelFrame({ color: palette.border }),
           },
         },
       },
@@ -387,7 +396,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
           root: {
             backgroundImage: 'none',
           },
-          outlined: { borderColor: palette.border },
+          outlined: { border: 0, ...panelFrame({ color: palette.border }) },
         },
       },
       MuiChip: {
@@ -415,7 +424,6 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         styleOverrides: {
           root: {
             borderRadius: 4,
-            marginBottom: 1,
             minHeight: 32,
             padding: '4px 8px',
             '&.Mui-selected': {
@@ -437,7 +445,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       MuiTabs: {
         styleOverrides: {
           root: { minHeight: 40 },
-          indicator: { height: 2, borderRadius: 2, [forcedColors]: { forcedColorAdjust: 'none', backgroundColor: 'Highlight' } },
+          indicator: { height: 2, borderRadius: 2, zIndex: 1, [forcedColors]: { forcedColorAdjust: 'none', backgroundColor: 'Highlight' } },
         },
       },
       MuiTab: {
@@ -474,6 +482,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
           root: {
             backgroundColor: palette.raised,
             fontSize: '0.8125rem',
+            lineHeight: gridLine(5),
             '& .MuiOutlinedInput-notchedOutline': { borderColor: palette.inputBorder },
             '&:hover:not(.Mui-focused, .Mui-error, .Mui-disabled) .MuiOutlinedInput-notchedOutline': { borderColor: palette.inkMuted },
             '&.MuiInputBase-sizeSmall .MuiSelect-select': { height: 20, lineHeight: '20px', minHeight: 0 },
@@ -492,13 +501,13 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       },
       MuiMenu: {
         defaultProps: { transitionDuration: { enter: 160, exit: 100 } },
-        styleOverrides: { paper: { border: `1px solid ${palette.border}`, boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.12)}` } },
+        styleOverrides: { paper: { ...frame({ color: palette.border }), boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.12)}` } },
       },
       MuiMenuItem: {
         styleOverrides: { root: { fontSize: '0.8125rem', minHeight: 32, [forcedColors]: { '&.Mui-selected': selectedOutline } } },
       },
       MuiDialog: {
-        styleOverrides: { paper: { backgroundColor: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 8 } },
+        styleOverrides: { paper: { backgroundColor: palette.surface, borderRadius: 8, ...frame({ color: palette.border }) } },
       },
       MuiDialogTitle: {
         styleOverrides: { root: { fontSize: '0.9375rem', fontWeight: 600, padding: '16px 24px 8px' } },
@@ -507,18 +516,17 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         styleOverrides: {
           root: {
             alignItems: 'center',
-            border: '1px solid',
-            borderColor: 'transparent',
+            ...frame({ color: 'transparent' }),
             fontSize: '0.8125rem',
             padding: '0 12px',
-            '&.MuiAlert-colorError': { borderColor: alpha(palette.error, 0.35) },
-            '&.MuiAlert-colorWarning': { borderColor: alpha(palette.warning, 0.35) },
-            '&.MuiAlert-colorInfo': { borderColor: alpha(palette.info, 0.35) },
-            '&.MuiAlert-colorSuccess': { borderColor: alpha(palette.success, 0.35) },
+            '&.MuiAlert-colorError': { outlineColor: alpha(palette.error, 0.35) },
+            '&.MuiAlert-colorWarning': { outlineColor: alpha(palette.warning, 0.35) },
+            '&.MuiAlert-colorInfo': { outlineColor: alpha(palette.info, 0.35) },
+            '&.MuiAlert-colorSuccess': { outlineColor: alpha(palette.success, 0.35) },
             // A toast floats over lists and diffs, so it needs its own opaque surface.
             '.MuiSnackbar-root &': { backgroundColor: palette.raised, boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.16)}` },
             // A milestone notice is filled with the success colour instead.
-            '.MuiSnackbar-root &.MuiAlert-filled.MuiAlert-colorSuccess': { backgroundColor: palette.success, borderColor: palette.success, color: mode === 'dark' ? palette.nav : '#ffffff' },
+            '.MuiSnackbar-root &.MuiAlert-filled.MuiAlert-colorSuccess': { backgroundColor: palette.success, color: mode === 'dark' ? palette.nav : '#ffffff', outlineColor: palette.success },
           },
           icon: { fontSize: 18, padding: '8px 0' },
         },

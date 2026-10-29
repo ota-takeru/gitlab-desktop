@@ -20,6 +20,7 @@ import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { hairline } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
@@ -177,13 +178,13 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
                   {project.lastActivityAt ? <RelativeTime prefix={t('project.list.activity')} value={project.lastActivityAt} /> : null}
                 </Stack>
                 <Tooltip enterDelay={600} title={project.pathWithNamespace}><Typography color="textSecondary" component="div" noWrap variant="caption">{project.pathWithNamespace}</Typography></Tooltip>
-                {project.description ? <Typography color="textSecondary" component="div" noWrap sx={{ mt: 0.25 }} title={project.description} variant="caption">{project.description}</Typography> : null}
+                {project.description ? <Typography color="textSecondary" component="div" noWrap title={project.description} variant="caption">{project.description}</Typography> : null}
               </ListRow>
             )
           })}
         </Box> : null}
       </Box>
-      {result.data && (page > 1 || result.snapshot?.nextPage) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager hasNext={(result.snapshot?.nextPage ?? null) !== null} hasPrevious={page > 1} onNext={() => setConditions({ page: page + 1 })} onPrevious={() => setConditions({ page: Math.max(1, page - 1) })} page={page} /></Box> : null}
+      {result.data && (page > 1 || result.snapshot?.nextPage) ? <Box sx={{ ...hairline('top'), px: 1, py: 0.5 }}><Pager hasNext={(result.snapshot?.nextPage ?? null) !== null} hasPrevious={page > 1} onNext={() => setConditions({ page: page + 1 })} onPrevious={() => setConditions({ page: Math.max(1, page - 1) })} page={page} /></Box> : null}
     </Box>
   )
 }
@@ -191,7 +192,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
 /** Favourite and recent projects as chips above the project list. */
 export function ProjectShortcuts({ ids, label, labelOf, onOpen, secondaryIds, secondaryLabel }: { ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void; secondaryIds: string[]; secondaryLabel: string }) {
   const t = useT()
-  return <Stack aria-label={t('project.shortcuts.label')} component="section" spacing={1} sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, px: paneGutter, py: 1 }}><ShortcutGroup icon={<StarRoundedIcon color="primary" fontSize="inherit" />} ids={ids} label={label} labelOf={labelOf} onOpen={onOpen} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} labelOf={labelOf} onOpen={onOpen} /></Stack>
+  return <Stack aria-label={t('project.shortcuts.label')} component="section" spacing={1} sx={{ ...hairline('bottom'), flexShrink: 0, px: paneGutter, py: 1 }}><ShortcutGroup icon={<StarRoundedIcon color="primary" fontSize="inherit" />} ids={ids} label={label} labelOf={labelOf} onOpen={onOpen} /><ShortcutGroup ids={secondaryIds} label={secondaryLabel} labelOf={labelOf} onOpen={onOpen} /></Stack>
 }
 
 function ShortcutGroup({ icon, ids, label, labelOf, onOpen }: { icon?: React.ReactNode; ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void }) {

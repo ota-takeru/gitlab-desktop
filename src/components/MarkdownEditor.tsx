@@ -9,6 +9,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 
 import { applyRichFormat, canEditAsRichText, createRichMarkdownExtensions, getEditorMarkdown } from '../lib/richMarkdown'
+import { hairline, panelFrame } from './hairline'
 import { useT } from '../i18n/useT'
 import { useMarkdownFormatting } from '../features/shared/useMarkdownFormatting'
 import { MarkdownToolbar } from './MarkdownToolbar'
@@ -81,9 +82,9 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
   }
 
   return (
-    <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'surface.inputBorder', borderRadius: 1, minWidth: 0, '&:focus-within': { borderColor: 'primary.main', outline: (theme) => `2px solid ${theme.palette.primary.main}`, outlineOffset: -1 } }}>
+    <Box sx={{ bgcolor: 'background.paper', ...panelFrame({ color: 'surface.inputBorder' }), borderRadius: 1, minWidth: 0, '&:focus-within::after': { borderColor: 'primary.main', borderWidth: '2px' } }}>
       {/* The editor grows with its text, so its toolbar stays in view below the MR header. */}
-      <Stack direction="row" sx={{ alignItems: 'center', bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider', borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.25, top: 'var(--composer-sticky-top, var(--detail-header-height, 0px))', zIndex: 1 }}>
+      <Stack direction="row" sx={{ alignItems: 'center', bgcolor: 'background.paper', ...hairline('bottom', { position: false }), borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit', columnGap: 0.5, flexWrap: 'wrap', position: 'sticky', px: 0.5, py: 0.25, top: 'var(--composer-sticky-top, var(--detail-header-height, 0px))', zIndex: 1 }}>
         <MarkdownToolbar
           disabled={disabled}
           onFormat={(format) => {
@@ -109,7 +110,7 @@ export function MarkdownEditor({ ref, toolbarEnd, ...inputProps }: MarkdownEdito
         ? <RichInput {...inputProps} editorRef={richRef} handleRef={ref} onUnsupported={() => setRichBlocked(true)} />
         : <SourceInput {...inputProps} handleRef={ref} inputHandleRef={sourceRef} />}
       {richBlocked && preferredMode === 'rich' ? (
-        <Typography color="textSecondary" component="p" sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }} variant="caption">
+        <Typography color="textSecondary" component="p" sx={{ ...hairline('top'), px: 1, py: 0.5 }} variant="caption">
           {t('common.markdownEditor.richBlocked', { label })}
         </Typography>
       ) : null}
@@ -400,6 +401,7 @@ const richEditorSx = {
     '& ul[data-type="taskList"] li > div': { flex: 1, minWidth: 0 },
     '& ul[data-type="taskList"] li > label': { lineHeight: 1, pt: 0.5 },
     '& ul[data-type="taskList"] li p, & td p, & th p': { my: 0 },
+    // grid-exempt: table cells share collapsed borders, as in the rendered Markdown.
     '& td, & th': { border: 1, borderColor: 'divider', minWidth: 48, px: 1, py: 0.5 },
     '& [data-markdown-image]': { color: 'text.secondary', fontSize: 'caption.fontSize' },
     '& a': { color: 'primary.main' },

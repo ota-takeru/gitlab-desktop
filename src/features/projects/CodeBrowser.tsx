@@ -16,6 +16,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState, type ReactNode } from 'react'
 
+import { hairline } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { moveListRowFocus } from '../../components/listRowFocus'
@@ -125,7 +126,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
             </Box> : null}
           </>}
       </Box>
-      {!file && tree.data && (page > 1 || tree.snapshot?.nextPage != null) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager disabled={tree.refreshing} hasNext={tree.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setPaging({ folderKey, page: tree.snapshot!.nextPage! })} onPrevious={() => setPaging({ folderKey, page: Math.max(1, page - 1) })} page={page} /></Box> : null}
+      {!file && tree.data && (page > 1 || tree.snapshot?.nextPage != null) ? <Box sx={{ ...hairline('top'), px: 1, py: 0.5 }}><Pager disabled={tree.refreshing} hasNext={tree.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setPaging({ folderKey, page: tree.snapshot!.nextPage! })} onPrevious={() => setPaging({ folderKey, page: Math.max(1, page - 1) })} page={page} /></Box> : null}
     </Box>
   )
 }

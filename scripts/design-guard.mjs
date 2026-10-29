@@ -12,14 +12,49 @@ const networkPattern = /\b(?:fetch|XMLHttpRequest|WebSocket)\s*\(/gu
 const typographyPattern = /\bfontSize\s*:\s*(?:(?:\d|1[0-3])(?:\.\d+)?\b|(['"`])\d+(?:\.\d+)?(?:px|r?em)\1)|\bfontFamily\s*:\s*(['"`])(?!(?:[a-z0-9]+\.)?fontFamily\2)[^'"`]*\2|\bfontWeight\s*:\s*[89]00\b|\bletterSpacing\s*:\s*(['"`])-?[\d.]+(?:px|r?em)\3/giu
 // Radii are 4 or 8: `borderRadius: 1` or `2` in sx (the theme's shape is 4), or '50%' for circles.
 const radiusPattern = /\bborderRadius\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])\d+(?:\.\d+)?px\2)/gu
-// Spacing follows the 4px grid: multiples of 0.5 in sx, with 0.25 allowed as a 2px optical nudge.
+// Spacing follows the 4px grid: multiples of 0.5 in sx, with 0.25 allowed as a 2px optical nudge inside a row.
 const spacingPattern = /(?:\b(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|rowGap|columnGap)\s*:\s*-?|\bspacing=\{)(\d+\.\d+)\b/gu
+// Between stacked rows a 2px margin starts every row after it off the grid; an icon may still be nudged.
+const rowNudgePattern = /\b(?:m|my|mt|mb|rowGap)\s*:\s*-?0\.25\b|\bspacing=\{0\.25\}/gu
 // Line boxes and row heights stay on the 4px grid, so text, chips and buttons in one row share pixel edges.
-// A line height is a theme key ('caption.lineHeight'), gridLine(n), px on the grid, or 1 for a lone glyph;
-// a ratio such as 1.45 makes a 17.4px line. Heights from 16px up are multiples of 4; smaller ones are marks
-// (dots, bars, icons) centred in a grid-sized box.
-const lineHeightPattern = /\blineHeight\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])(\d+(?:\.\d+)?)px\2|(['"`])normal\4)/gu
+// A line height is gridLine(n), px on the grid, or 1 for a lone glyph; a ratio such as 1.45 makes a 17.4px
+// line, and sx drops a theme key such as 'caption.lineHeight' as an invalid value. Heights from 16px up are
+// multiples of 4; smaller ones are marks (dots, bars, icons) centred in a grid-sized box.
+const lineHeightPattern = /\blineHeight\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])(\d+(?:\.\d+)?)px\2|(['"`])normal\4|(['"`])[\w$.{}]+\.lineHeight\5)/gu
 const heightPattern = /\b(?:height|minHeight|maxHeight)\s*:\s*(?:(\d+(?:\.\d+)?)\b|(['"`])(\d+(?:\.\d+)?)px\2)/gu
+// A border adds its width to the box, so the rows after it start off the grid; hairline(), frame() and
+// panelFrame() draw over the edge instead. A box taken out of the flow (absolute, fixed, a pseudo-element)
+// may keep a border, and a line marked `grid-exempt` (Markdown table cells) is left alone.
+const borderPattern = /\bborder(?:Top|Bottom|Left|Right)?(?:Width)?\s*:\s*(?:[1-9]|[\w.]+\s*\?\s*[1-9]|(['"`])[1-9][^'"`]*\1|`[1-9])/gu
+
+/** The text of the innermost { … } around an index, and the key it is the value of. */
+function enclosingObject(source, index) {
+  let start = index
+  for (let depth = 0; start > 0; start -= 1) {
+    const char = source[start - 1]
+    if (char === '}') depth += 1
+    else if (char === '{') {
+      if (depth === 0) break
+      depth -= 1
+    }
+  }
+  let end = index
+  for (let depth = 0; end < source.length; end += 1) {
+    const char = source[end]
+    if (char === '{') depth += 1
+    else if (char === '}') {
+      if (depth === 0) break
+      depth -= 1
+    }
+  }
+  return { key: source.slice(Math.max(0, start - 80), start - 1), text: source.slice(start, end) }
+}
+
+const exempted = (source, index) => {
+  const lineStart = source.lastIndexOf('\n', index - 1)
+  const previousLine = lineStart < 0 ? '' : source.slice(source.lastIndexOf('\n', lineStart - 1) + 1, lineStart)
+  return /grid-exempt/u.test(previousLine) || /grid-exempt/u.test(source.slice(lineStart, source.indexOf('\n', index)))
+}
 // Development-only screens, loaded only in development builds; MockMarkdown is also used by the client.
 const typographyExempt = (path) => /\.test\.tsx?$/u.test(path) || path.startsWith(join('src', 'pages')) || (path.startsWith(join('src', 'components', 'mock')) && !path.endsWith('MockMarkdown.tsx'))
 // Interface text lives in src/i18n/messages; Japanese left in code is text that skipped translation.
@@ -58,7 +93,17 @@ function visit(directory) {
         }
         for (const match of source.matchAll(lineHeightPattern)) {
           if (match[1] === '1' || (match[3] !== undefined && Number(match[3]) % 4 === 0)) continue
-          violations.push(`${relativePath}:${lineOf(source, match.index)}: line height ${match[0]}; use a theme key such as 'caption.lineHeight', gridLine(n) or px in 4px steps`)
+          violations.push(`${relativePath}:${lineOf(source, match.index)}: line height ${match[0]}; use gridLine(n) from the theme or px in 4px steps`)
+        }
+        for (const match of source.matchAll(borderPattern)) {
+          const { key, text } = enclosingObject(source, match.index)
+          if (/position\s*:\s*'(?:absolute|fixed)'/u.test(text) || /::(?:after|before)['"`]?\s*\]?\s*:\s*(?:[\w.]+\s*\?\s*)?$/u.test(key) || exempted(source, match.index)) continue
+          violations.push(`${relativePath}:${lineOf(source, match.index)}: border ${match[0]}; it adds to the box and moves the rows after it off the grid, so use hairline(), frame() or panelFrame() from components/hairline`)
+        }
+        for (const match of source.matchAll(rowNudgePattern)) {
+          const tag = source.slice(source.lastIndexOf('<', match.index), source.indexOf('>', match.index))
+          if (/^<\w+Icon\b/u.test(tag) || (match[0].startsWith('spacing') && /direction=(?:"row"|\{\{[^}]*'row')/u.test(tag))) continue
+          violations.push(`${relativePath}:${lineOf(source, match.index)}: ${match[0]} between stacked rows; use 0 or multiples of 0.5 so the rows after it stay on the 4px grid`)
         }
         for (const match of source.matchAll(heightPattern)) {
           const value = Number(match[1] ?? match[3])

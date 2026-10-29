@@ -115,7 +115,7 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
               {pipelines.map((item) => {
                 const current = item.id === selected?.id
                 return (
-                  <ListItemButton aria-current={current ? 'true' : undefined} key={item.id} onClick={() => setSelectedId(item.id)} selected={current} sx={{ alignItems: 'flex-start', borderRadius: 1, flexDirection: 'column', gap: 0.25, px: 1, py: 0.5 }}>
+                  <ListItemButton aria-current={current ? 'true' : undefined} key={item.id} onClick={() => setSelectedId(item.id)} selected={current} sx={{ alignItems: 'flex-start', borderRadius: 1, flexDirection: 'column', px: 1, py: 0.5 }}>
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', maxWidth: '100%' }}>
                       <PipelineStatus status={item.status} />
                       <Typography color="textSecondary" variant="caption">#{item.id}</Typography>

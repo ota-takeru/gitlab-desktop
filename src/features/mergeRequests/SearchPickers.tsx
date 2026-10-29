@@ -161,7 +161,7 @@ function CandidatePicker({ ariaLabel, autoFocus, fallback, label, loading, noOpt
       renderInput={(params) => <TextField {...params} autoFocus={autoFocus} error={Boolean(queryError)} helperText={queryError ?? undefined} label={label} size="small" slotProps={{ ...params.slotProps, htmlInput: { ...params.slotProps.htmlInput, 'aria-label': ariaLabel } }} />}
       renderOption={(optionProps, option) => (
         <li {...optionProps}>
-          <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+          <Stack sx={{ minWidth: 0 }}>
             <Typography variant="body2">{option.name}</Typography>
             <Typography color="textSecondary" variant="caption" sx={{ overflowWrap: 'anywhere' }}>{option.detail}</Typography>
           </Stack>

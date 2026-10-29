@@ -2,6 +2,7 @@ import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
 import Stack from '@mui/material/Stack'
 import type { ReactNode } from 'react'
+import { hairline } from './hairline'
 import { paneGutter } from './paneSx'
 
 interface ListRowProps {
@@ -41,8 +42,6 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
     <Box
       component="li"
       sx={{
-        borderBottom: 1,
-        borderColor: 'divider',
         listStyle: 'none',
         position: 'relative',
         '&:hover .list-row-actions, &:focus-within .list-row-actions': { bgcolor: 'surface.raised', borderColor: 'divider' },
@@ -70,6 +69,7 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
         sx={{
           alignItems: 'flex-start',
           bgcolor: selected ? 'surface.selected' : previewing ? 'action.hover' : 'transparent',
+          ...hairline('bottom', { position: false }),
           display: 'flex',
           gap: 1,
           justifyContent: 'flex-start',

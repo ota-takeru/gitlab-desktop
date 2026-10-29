@@ -17,6 +17,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { hairline } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
@@ -102,7 +103,7 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
         {result.data && result.data.length === 0 ? <PaneEmpty description={search ? t('project.branches.appliedSearch', { search }) : t('project.branches.empty.description')} icon={<AltRouteRoundedIcon fontSize="inherit" />} title={search ? t('project.branches.noMatch.title') : t('project.branches.empty.title')}>{search ? <Button onClick={clearSearch} variant="outlined">{t('project.branches.clearSearch')}</Button> : null}</PaneEmpty> : null}
         {result.data?.length ? <Box aria-label={t('project.branches.label')} component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((branch) => <BranchRow branch={branch} key={branch.name} onOpenInGitLab={openInGitLab} onShowMergeRequests={onShowMergeRequests} />)}</Box> : null}
       </Box>
-      {result.data && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ borderTop: 1, borderColor: 'divider', px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setConditions({ page: result.snapshot!.nextPage! })} onPrevious={() => setConditions({ page: Math.max(1, page - 1) })} page={page} /></Box> : null}
+      {result.data && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ ...hairline('top'), px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setConditions({ page: result.snapshot!.nextPage! })} onPrevious={() => setConditions({ page: Math.max(1, page - 1) })} page={page} /></Box> : null}
     </Box>
   )
 }
@@ -119,8 +120,8 @@ function BranchRow({ branch, onOpenInGitLab, onShowMergeRequests }: { branch: Gi
       {branch.merged ? <StateIcon icon={<CallMergeRoundedIcon fontSize="inherit" />} label={t('project.branches.merged')} tone="secondary" /> : null}
       {branch.commit?.committedDate ? <RelativeTime value={branch.commit.committedDate} /> : null}
     </Stack>
-    {branch.commit ? <Typography color="textSecondary" component="div" noWrap sx={{ mt: 0.25 }} title={`${branch.commit.shortId} ${branch.commit.title}${branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}`} variant="caption">
-      <Box component="span" sx={{ fontFamily: 'code.fontFamily' }}>{branch.commit.shortId}</Box> {branch.commit.title}{branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}
+    {branch.commit ? <Typography color="textSecondary" component="div" noWrap title={`${branch.commit.shortId} ${branch.commit.title}${branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}`} variant="caption">
+      <Box component="span" sx={{ fontFamily: 'code.fontFamily', verticalAlign: 'top' }}>{branch.commit.shortId}</Box> {branch.commit.title}{branch.commit.authorName ? ` · ${branch.commit.authorName}` : ''}
     </Typography> : null}
   </ListRow>
 }

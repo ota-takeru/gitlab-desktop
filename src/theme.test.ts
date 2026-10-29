@@ -95,4 +95,10 @@ describe('layout grid', () => {
       expect(Number.parseInt(lineHeight, 10) % grid, variant).toBe(0)
     }
   })
+
+  it('draws the frames of content-sized surfaces over their edge, so they add no height', () => {
+    const { components } = createAppTheme('light')
+    const overrides = [components?.MuiCard?.styleOverrides?.root, components?.MuiPaper?.styleOverrides?.outlined, components?.MuiMenu?.styleOverrides?.paper, components?.MuiDialog?.styleOverrides?.paper, components?.MuiAlert?.styleOverrides?.root, components?.MuiDivider?.styleOverrides?.root] as Record<string, unknown>[]
+    for (const style of overrides) expect(style.border ?? 0).toBe(0)
+  })
 })

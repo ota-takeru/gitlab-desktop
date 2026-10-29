@@ -241,8 +241,6 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
       open
       sx={{
         '& .MuiDialog-paper': {
-          border: 1,
-          borderColor: 'divider',
           boxShadow: 8,
         },
       }}
@@ -322,7 +320,7 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
     <Stack spacing={1.5}>
       <Stack aria-atomic="true" aria-live="polite" direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
         {copy.icon}
-        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+        <Stack sx={{ minWidth: 0 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
             <Typography sx={{ fontWeight: 600 }} variant="body2">{copy.title}</Typography>
             <StatusPill label={copy.label} tone={copy.tone} />

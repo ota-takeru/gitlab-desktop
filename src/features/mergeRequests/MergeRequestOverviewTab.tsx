@@ -10,6 +10,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef } from 'react'
 import { useConfirm } from '../../components/feedbackContext'
+import { hairline } from '../../components/hairline'
 import { MarkdownEditor, type MarkdownEditorHandle } from '../../components/MarkdownEditor'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { LabelChip } from '../../components/LabelChip'
@@ -31,7 +32,7 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
   const canRerequest = mergeRequest.state === 'opened' && Boolean(mergeRequest.projectPath)
   const rows: Array<[string, React.ReactNode]> = [
     [t('mergeRequest.overview.author'), `${mergeRequest.author.name} @${mergeRequest.author.username}`],
-    [t('mergeRequest.overview.branch'), <Box component="span" key="branch" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Box>],
+    [t('mergeRequest.overview.branch'), <Box component="span" key="branch" sx={{ fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', verticalAlign: 'top' }}>{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Box>],
     [t('mergeRequest.overview.assignees'), mergeRequest.assignees?.length ? formatNames(mergeRequest.assignees.map((user) => user.name)) : t('mergeRequest.common.none')],
     [t('mergeRequest.overview.reviewers'), mergeRequest.reviewers?.length ? <Stack component="span" key="reviewers" sx={{ alignItems: 'flex-start' }}>{mergeRequest.reviewers.map((user) => (
       <Stack component="span" direction="row" key={user.id} sx={{ alignItems: 'center' }}>
@@ -99,8 +100,8 @@ export function DescriptionPanel({ description, mergeRequest, onClose, onEdit }:
     return () => window.removeEventListener('keydown', close, true)
   }, [onClose])
   return (
-    <Box aria-label={t('mergeRequest.overview.descriptionPanel')} component="aside" sx={{ bgcolor: 'background.paper', borderColor: 'divider', borderLeft: 1, bottom: statusBarHeight, boxShadow: 8, display: 'flex', flexDirection: 'column', position: 'fixed', right: 0, top: 'var(--detail-header-height, 0px)', width: 'min(520px, 50vw)', zIndex: 'drawer' }}>
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 2, pr: 0.5, py: 0.5 }}>
+    <Box aria-label={t('mergeRequest.overview.descriptionPanel')} component="aside" sx={{ bgcolor: 'background.paper', ...hairline('left', { position: false }), bottom: statusBarHeight, boxShadow: 8, display: 'flex', flexDirection: 'column', position: 'fixed', right: 0, top: 'var(--detail-header-height, 0px)', width: 'min(520px, 50vw)', zIndex: 'drawer' }}>
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 2, pr: 0.5, py: 0.5 }}>
         <Typography color="textSecondary" sx={{ flex: 1 }} variant="overline">{t('mergeRequest.overview.description')}</Typography>
         <Button onClick={onEdit} size="small" startIcon={<EditOutlinedIcon />}>{t('mergeRequest.overview.editInOverview')}</Button>
         <Tooltip title={t('mergeRequest.common.closeEsc')}><IconButton aria-label={t('mergeRequest.overview.closeDescription')} onClick={onClose}><CloseRoundedIcon /></IconButton></Tooltip>

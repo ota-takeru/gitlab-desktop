@@ -7,6 +7,7 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 
+import { hairline, panelFrame } from '../../components/hairline'
 import type { Discussion } from '../../types/gitlab'
 import { isUnresolvedDiscussion } from './discussionStatus'
 import { plainExcerpt } from './discussionText'
@@ -17,8 +18,8 @@ export function UnresolvedThreadNav({ discussions, olderNotLoaded, onSelect }: {
   const t = useT()
   const threads = discussions.filter(isUnresolvedDiscussion)
   return (
-    <Stack aria-label={t('review.unresolved.title')} component="nav" sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'divider', borderRadius: 1, minWidth: 0 }}>
-      <Stack direction="row" sx={{ alignItems: 'baseline', borderBottom: 1, borderColor: 'divider', px: 1.5, py: 0.5 }}>
+    <Stack aria-label={t('review.unresolved.title')} component="nav" sx={{ bgcolor: 'surface.raised', ...panelFrame(), borderRadius: 1, minWidth: 0 }}>
+      <Stack direction="row" sx={{ alignItems: 'baseline', ...hairline('bottom'), px: 1.5, py: 0.5 }}>
         <Typography color="textSecondary" variant="overline">{t('review.unresolved.title')}</Typography>
         <Typography color="textSecondary" sx={{ ml: 'auto' }} variant="caption">{t('review.unresolved.count', { count: threads.length })}</Typography>
       </Stack>
@@ -37,7 +38,7 @@ export function UnresolvedThreadNav({ discussions, olderNotLoaded, onSelect }: {
           })}
         </List>
       )}
-      {olderNotLoaded ? <Typography color="textSecondary" sx={{ borderTop: 1, borderColor: 'divider', px: 1.5, py: 0.5 }} variant="caption">{t('review.unresolved.olderNotLoaded')}</Typography> : null}
+      {olderNotLoaded ? <Typography color="textSecondary" sx={{ ...hairline('top'), px: 1.5, py: 0.5 }} variant="caption">{t('review.unresolved.olderNotLoaded')}</Typography> : null}
     </Stack>
   )
 }

@@ -236,7 +236,7 @@ function MergeDialog({ disabled, mergeRequest, onClose, onMerge }: { disabled: b
             </RadioGroup>
           ) : null}
           <FormControlLabel control={<Checkbox checked={removeSourceBranch} disabled={busy} onChange={(event) => setRemoveSourceBranch(event.target.checked)} size="small" />} label={t('mergeRequest.mergeDialog.removeSourceBranch')} />
-          <Stack spacing={0.25}>
+          <Stack>
             <FormControlLabel control={<Checkbox checked={squash} disabled={busy || squashFixed || squashPending} onChange={(event) => setSquashChoice(event.target.checked)} size="small" />} label={t('mergeRequest.mergeDialog.squash')} />
             <Typography color="textSecondary" sx={{ pl: 4 }} variant="caption">{squashPending ? t('mergeRequest.mergeDialog.squashChecking')
               : squashOption === 'always' ? t('mergeRequest.mergeDialog.squashAlways')
@@ -349,7 +349,7 @@ function LabelsDialog({ disabled, mergeRequest, onClose, onSave }: { disabled: b
             renderOption={(optionProps, name) => {
               const { key, ...rest } = optionProps
               const label = known.get(name)
-              return <li key={key} {...rest}><Stack spacing={0.25} sx={{ minWidth: 0 }}><LabelChip color={label?.color} name={name} />{label?.description ? <Typography color="textSecondary" variant="caption">{label.description}</Typography> : null}</Stack></li>
+              return <li key={key} {...rest}><Stack sx={{ minWidth: 0 }}><LabelChip color={label?.color} name={name} />{label?.description ? <Typography color="textSecondary" variant="caption">{label.description}</Typography> : null}</Stack></li>
             }}
             renderValue={(values, getItemProps) => values.map((name, index) => {
               const { key, ...itemProps } = getItemProps({ index })
@@ -413,7 +413,7 @@ function MilestoneDialog({ disabled, mergeRequest, onClose, onSave }: { disabled
             renderInput={(params) => <TextField {...params} autoFocus label={t('mergeRequest.milestoneDialog.label')} placeholder={t('mergeRequest.common.none')} size="small" />}
             renderOption={(optionProps, milestone) => {
               const { key, ...rest } = optionProps
-              return <li key={key} {...rest}><Stack spacing={0.25} sx={{ minWidth: 0 }}><Typography variant="body2">{milestone.title}</Typography>{milestone.dueDate ? <Typography color="textSecondary" variant="caption">{t('mergeRequest.milestoneDialog.due', { date: milestone.dueDate })}</Typography> : null}</Stack></li>
+              return <li key={key} {...rest}><Stack sx={{ minWidth: 0 }}><Typography variant="body2">{milestone.title}</Typography>{milestone.dueDate ? <Typography color="textSecondary" variant="caption">{t('mergeRequest.milestoneDialog.due', { date: milestone.dueDate })}</Typography> : null}</Stack></li>
             }}
             value={selected}
           />

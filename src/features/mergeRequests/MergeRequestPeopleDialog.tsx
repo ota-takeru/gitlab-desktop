@@ -88,7 +88,7 @@ export function MergeRequestPeopleDialog({ current, disabled, label, onClose, on
             renderInput={(params) => <TextField {...params} autoFocus label={label} placeholder={t('mergeRequest.people.placeholder')} size="small" />}
             renderOption={(optionProps, user) => {
               const { key, ...rest } = optionProps
-              return <li key={key} {...rest}><Stack spacing={0.25} sx={{ minWidth: 0 }}><Typography variant="body2">{user.name}</Typography><Typography color="textSecondary" variant="caption">@{user.username}</Typography></Stack></li>
+              return <li key={key} {...rest}><Stack sx={{ minWidth: 0 }}><Typography variant="body2">{user.name}</Typography><Typography color="textSecondary" variant="caption">@{user.username}</Typography></Stack></li>
             }}
             value={selected}
           />

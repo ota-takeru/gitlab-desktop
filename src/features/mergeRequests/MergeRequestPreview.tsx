@@ -9,6 +9,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+import { hairline } from '../../components/hairline'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { projectUrlOf } from '../../lib/markdownLinks'
@@ -58,10 +59,10 @@ export function MergeRequestPreview({ approval, closeAt, mergeRequest, onClose, 
   ].filter(Boolean)
 
   return (
-    <Box aria-label={t('mergeRequest.preview.label', { iid: mergeRequest.iid })} component="aside" ref={rootRef} sx={{ bgcolor: 'background.paper', borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0, position: 'relative', width: 'min(520px, 50%)' }}>
+    <Box aria-label={t('mergeRequest.preview.label', { iid: mergeRequest.iid })} component="aside" ref={rootRef} sx={{ bgcolor: 'background.paper', ...hairline('left', { position: false }), display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0, position: 'relative', width: 'min(520px, 50%)' }}>
       {/* Keyboard and screen reader users close with Esc or the header's button; this one only saves pointer travel. */}
       {closeSpot ? <Tooltip title={t('mergeRequest.common.closeEsc')}><IconButton aria-hidden onClick={onClose} sx={{ bgcolor: 'surface.raised', border: 1, borderColor: 'divider', boxShadow: 2, left: closeSpot.left, position: 'absolute', top: closeSpot.top, zIndex: 1, '&:hover': { bgcolor: 'surface.raised' } }} tabIndex={-1}><CloseRoundedIcon /></IconButton></Tooltip> : null}
-      <Stack direction="row" ref={headerRef} spacing={0.5} sx={{ alignItems: 'center', borderBottom: 1, borderColor: 'divider', flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
+      <Stack direction="row" ref={headerRef} spacing={0.5} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
         <Tooltip title={`${mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })} !${mergeRequest.iid}`}><Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })} !{mergeRequest.iid}</Typography></Tooltip>
         <Button onClick={onOpen} size="small" startIcon={<OpenInFullRoundedIcon />} variant="contained">{t('mergeRequest.preview.open')}</Button>
         <Tooltip title={t('mergeRequest.common.closeEsc')}><IconButton aria-label={t('mergeRequest.preview.close')} onClick={onClose}><CloseRoundedIcon /></IconButton></Tooltip>
@@ -75,9 +76,9 @@ export function MergeRequestPreview({ approval, closeAt, mergeRequest, onClose, 
           <RelativeTime prefix={t('mergeRequest.common.updated')} value={mergeRequest.updatedAt} />
         </Stack>
         <Typography color="textSecondary" component="div" sx={{ fontFamily: 'code.fontFamily', mt: 1, overflowWrap: 'anywhere' }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
-        {people.length ? <Typography color="textSecondary" component="div" sx={{ mt: 0.25 }} variant="caption">{people.join(' · ')}</Typography> : null}
+        {people.length ? <Typography color="textSecondary" component="div" variant="caption">{people.join(' · ')}</Typography> : null}
         {mergeRequest.labels?.length ? <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5, mt: 1 }}>{mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" />)}</Stack> : null}
-        <Box sx={{ borderTop: 1, borderColor: 'divider', mt: 1.5, pt: 1.5 }}>
+        <Box sx={{ ...hairline('top'), mt: 1.5, pt: 1.5 }}>
           <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)}><MockMarkdown body={mergeRequest.description || t('mergeRequest.common.descriptionEmpty')} /></MarkdownLinkProvider>
         </Box>
       </Box>

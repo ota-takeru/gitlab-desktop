@@ -307,7 +307,7 @@ function OwnSearchResults({ results }: { results: OwnProjectSearch[] }) {
   if (!results.length) return <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.ownNone')}</Typography>
   const linked = results.filter((item) => item.result?.repository).length
   return (
-    <Stack aria-label={t('review.local.scan.ownResults')} component="section" spacing={0.25}>
+    <Stack aria-label={t('review.local.scan.ownResults')} component="section" spacing={0.5}>
       <Typography color="textSecondary" role="status" variant="caption">{t('review.local.scan.ownSummary', { count: results.length, linked })}</Typography>
       {results.map((item) => <Typography key={item.projectId} noWrap variant="caption">
         <Box component="span" sx={codeSx}>{item.projectPath}</Box>{' — '}
