@@ -12,6 +12,7 @@ import { openGitLabUrl } from '../../lib/gitlab'
 import type { BlameBlock, BlameQuery, CommitMergeRequestsQuery } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { blameAttributions, blameWindowStart, BLAME_WINDOW, type BlameAttribution } from './blameLines'
+import type { HistoryCursor } from './lineHistory'
 import type { ParsedLine } from './diffParser'
 import { useT } from '../../i18n/useT'
 
@@ -35,7 +36,7 @@ const BlameContext = createContext<BlameContextValue | null>(null)
 
 /** Fetch only when the user enables Blame. Each side uses the correct Git SHA
  * and file path; the code itself is rendered exclusively by the diff viewer. */
-export function BlameProvider({ beforeSha, children, enabled = true, initialNewLine, lines, newPath, oldPath, projectId, sessionId, sha }: {
+export function BlameProvider({ beforeSha, children, enabled = true, initialNewLine, lines, newPath, oldPath, onHistory, projectId, sessionId, sha }: {
   beforeSha?: string
   children: ReactNode
   /** Keeps the file subtree mounted when the Blame toggle changes. */
@@ -45,6 +46,8 @@ export function BlameProvider({ beforeSha, children, enabled = true, initialNewL
   lines: ParsedLine[]
   newPath: string
   oldPath: string
+  /** Opens the history of the selected block's lines; without it the popover does not offer it. */
+  onHistory?: (start: HistoryCursor) => void
   projectId: string
   sessionId: string
   sha: string
@@ -94,6 +97,19 @@ export function BlameProvider({ beforeSha, children, enabled = true, initialNewL
           <Typography sx={{ fontWeight: 700 }} variant="subtitle2">{shortSha(selection.block.commitId)} · {selection.block.authorName || t('review.blame.unknownAuthor')}</Typography>
           <Typography color="textSecondary" variant="caption">{t(selection.side === 'old' ? 'review.blame.oldLine' : 'review.blame.newLine', { line: String(selection.line), time: selection.block.committedAt ? formatAbsoluteTime(selection.block.committedAt) : t('review.blame.unknownTime') })}</Typography>
           <Typography sx={{ overflowWrap: 'anywhere' }} variant="body2">{selection.block.title || t('review.blame.noMessage')}</Typography>
+          {onHistory ? <Button onClick={() => {
+            const map = selection.side === 'old' ? oldMap : newMap
+            // The lines this commit wrote around the selected one, as far as the loaded blame shows them.
+            let start = selection.line
+            let end = selection.line
+            while (map.get(start - 1)?.block.commitId === selection.block.commitId) start -= 1
+            while (map.get(end + 1)?.block.commitId === selection.block.commitId) end += 1
+            const old = selection.side === 'old'
+            const revision = old ? beforeSha : sha
+            if (!revision) return
+            setSelection(null)
+            onHistory({ path: old ? oldPath : newPath, range: { start, end }, sha: revision })
+          }} size="small" sx={{ alignSelf: 'flex-start' }} variant="outlined">{t('review.blame.history')}</Button> : null}
           <Divider />
           <Typography color="textSecondary" variant="caption">{t('review.blame.relatedMrs')}</Typography>
           {related.loading && !related.data ? <Typography variant="caption">{t('review.blame.loading')}</Typography> : null}

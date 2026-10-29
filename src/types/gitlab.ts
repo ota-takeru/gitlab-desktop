@@ -177,7 +177,8 @@ export interface FileQuery {
 export interface BlameQuery { kind: 'blame'; projectId: string; path: string; sha: string; startLine: number; endLine: number }
 export interface CommitMergeRequestsQuery { kind: 'commitMergeRequests'; projectId: string; sha: string }
 
-export interface BlameBlock { commitId: string; title: string; authorName: string; committedAt: string; lines: string[] }
+/** `parentIds` is missing in blame stored before the app kept it. */
+export interface BlameBlock { commitId: string; title: string; authorName: string; committedAt: string; lines: string[]; parentIds?: string[] }
 export interface AssociatedMergeRequest { projectId: string; iid: string; title: string; state: string; webUrl: string }
 
 /** One folder of a repository; without `ref`, the default branch. `path` is '' for the top. */

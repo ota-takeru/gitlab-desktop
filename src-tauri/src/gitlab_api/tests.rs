@@ -1617,11 +1617,12 @@ fn gitlab_com_public_merge_request_review() {
 #[test]
 fn normalizes_blame_and_associated_merge_requests() {
     let block = normalize_blame_block(&json!({
-        "commit": { "id": "abc", "author_name": "Alice", "committed_date": "2026-09-01", "title": "Fix" },
+        "commit": { "id": "abc", "author_name": "Alice", "committed_date": "2026-09-01", "title": "Fix", "parent_ids": ["b".repeat(40), "short"] },
         "lines": ["before", "after"]
     })).unwrap();
     assert_eq!(block["lines"], json!(["before", "after"]));
     assert_eq!(block["commitId"], "abc");
+    assert_eq!(block["parentIds"], json!(["b".repeat(40)]));
     let mr = normalize_associated_merge_request(&json!({
         "project_id": 7, "iid": 12, "title": "Introduce fix",
         "web_url": "https://gitlab.example/group/repo/-/merge_requests/12", "state": "merged"

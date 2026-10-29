@@ -130,3 +130,13 @@ it('keeps full-file source mode mounted while Blame is toggled on and off', () =
   expect(screen.queryByRole('button', { name: /行のBlame/u })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Markdownをレンダリング' })).toBeInTheDocument()
 })
+
+it('opens the history of the lines the selected commit wrote, at the revision of their side', () => {
+  const onHistory = vi.fn()
+  render(<BlameProvider beforeSha={oldSha} lines={[{ kind: 'remove', oldLine: 2, oldPath: 'old.ts', newPath: 'new.ts', text: 'two', prefix: '-', commentable: true }]} newPath="new.ts" oldPath="old.ts" onHistory={onHistory} projectId="7" sessionId="session1" sha={newSha}>
+    <BlameCell line={2} side="old" />
+  </BlameProvider>)
+  fireEvent.click(screen.getByRole('button', { name: /2行のBlame: bbbbbbbb/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'この範囲の履歴' }))
+  expect(onHistory).toHaveBeenCalledWith({ path: 'old.ts', range: { start: 1, end: 3 }, sha: oldSha })
+})

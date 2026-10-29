@@ -33,6 +33,8 @@ import { DiffFileTree, FileThreadMark } from './DiffFileTree'
 import { FILE_LIST_MODE_KEY, readFileListMode, type FileListMode } from './diffFileOrder'
 import { DiffGap, type GapExpansion } from './DiffGap'
 import { BlameCell, BlameProvider } from './BlamePanel'
+import type { HistoryCursor } from './lineHistory'
+import { LineHistoryView } from './LineHistoryView'
 import { ChangeMarker } from './ChangeMarker'
 import { changeMarkerStyles } from './changeMarkerStyles'
 import { MarkdownDiffPreview } from './MarkdownDiffPreview'
@@ -89,7 +91,7 @@ interface DiffViewerProps {
    * commit), to open unchanged lines between hunks. Without it they open only
    * from `fileContent`.
    */
-  fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string }
+  fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; /** The MR's; line history reads commit diffs through it. */ iid?: string }
   /** Applying the suggestions in the threads shown under the lines. */
   suggestionActions?: SuggestionActions
 }
@@ -106,6 +108,10 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const restoreDiffAnchor = useRef<{ path: string; line: number; top?: number } | null>(null)
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
   const [blameOpen, setBlameOpen] = useState(false)
+  /** The lines whose history replaces the diff, for the file it was opened from. */
+  const [history, setHistory] = useState<{ path: string; start: HistoryCursor } | null>(null)
+  const historyStart = history && history.path === displayedPath ? history.start : null
+  const openHistory = fileSource?.iid && displayedPath ? (start: HistoryCursor) => setHistory({ path: displayedPath, start }) : undefined
   // Diff-only controls keep their place in the whole-file view, so the header does not rewrap and move the content and the view switch under the pointer.
   const diffOnlySx = view === 'diff' ? undefined : { visibility: 'hidden' } as const
   const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && (!selectedDiff.deletedFile || fileSource?.beforeSha))
@@ -542,8 +548,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.fileTree.noMatch')}</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">{t('review.diff.tooLarge')}</Typography></Stack></Box> : null}
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">{t('review.diff.collapsed')}</Typography></Box> : null}
-          {view === 'file' ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{canBlame && fileSource && selectedDiff
-            ? <BlameProvider enabled={blameOpen} initialNewLine={fileAnchor?.path === displayedPath ? fileAnchor.line : 1} key={`${fileSource.sha}:${displayedPath}:full`} lines={[]} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>
+          {historyStart && fileSource?.iid ? <LineHistoryView key={JSON.stringify(historyStart)} iid={fileSource.iid} onClose={() => setHistory(null)} onRestart={(start) => setHistory({ path: displayedPath ?? '', start })} projectId={fileSource.projectId} sessionId={fileSource.sessionId} start={historyStart} /> : view === 'file' ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{canBlame && fileSource && selectedDiff
+            ? <BlameProvider enabled={blameOpen} onHistory={openHistory} initialNewLine={fileAnchor?.path === displayedPath ? fileAnchor.line : 1} key={`${fileSource.sha}:${displayedPath}:full`} lines={[]} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>
                 <FullFileView blameEnabled={blameOpen} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} targetTop={fileAnchor?.path === displayedPath ? fileAnchor.top : undefined} />
               </BlameProvider>
             : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} targetTop={fileAnchor?.path === displayedPath ? fileAnchor.top : undefined} />}</MarkdownLinkProvider> : <>
@@ -557,7 +563,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={displayLines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, displayLines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {/* Always wrapped while Blame can be shown, so toggling it does not remount the diff and an open comment editor in it. */}
             {canBlame && fileSource && selectedDiff
-              ? <BlameProvider beforeSha={fileSource.beforeSha} enabled={blameOpen} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} lines={rows} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
+              ? <BlameProvider beforeSha={fileSource.beforeSha} enabled={blameOpen} onHistory={openHistory} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} lines={rows} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
               : diffContent}
           </>}
         </Box>

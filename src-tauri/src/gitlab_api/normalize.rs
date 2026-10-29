@@ -611,6 +611,7 @@ pub(super) fn normalize_blame_block(value: &Value) -> Result<Value, AppError> {
         "title": string_field(commit, "title"),
         "authorName": string_field(commit, "author_name"),
         "committedAt": string_field(commit, "committed_date"),
+        "parentIds": commit.get("parent_ids").and_then(Value::as_array).map(|parents| parents.iter().filter_map(Value::as_str).filter(|sha| validate_sha(sha, "parentId").is_ok()).collect::<Vec<_>>()).unwrap_or_default(),
         "lines": text,
     }))
 }
