@@ -150,13 +150,18 @@ describe('DiffViewer', () => {
     renderViewer(diff, { fileContent: content, view: 'file' })
 
     expect(screen.getAllByTestId('file-line')).toHaveLength(FILE_PAGE_SIZE)
-    expect(screen.getByText(/表示 1.*1000.*2001行（残り1001行）/u)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: `次の${FILE_PAGE_SIZE}行` }))
+    expect(screen.getAllByText(/表示 1.*1000.*2001行（残り1001行）/u)).toHaveLength(2)
+    fireEvent.click(screen.getAllByRole('button', { name: `次の${FILE_PAGE_SIZE}行` })[0])
     expect(screen.getAllByTestId('file-line')).toHaveLength(FILE_PAGE_SIZE)
-    expect(screen.getByText(/表示 1001.*2000.*2001行（残り1行）/u)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: `次の${FILE_PAGE_SIZE}行` }))
+    expect(screen.getAllByText(/表示 1001.*2000.*2001行（残り1行）/u)).toHaveLength(2)
+    // The same controls follow the last line, where reading the page ends.
+    const view = screen.getByTestId('file-lines').parentElement!
+    const scrollIntoView = vi.fn()
+    view.scrollIntoView = scrollIntoView
+    fireEvent.click(screen.getAllByRole('button', { name: `次の${FILE_PAGE_SIZE}行` }).at(-1)!)
     expect(screen.getAllByTestId('file-line')).toHaveLength(1)
-    expect(screen.getByText(/表示 2001.*2001.*2001行/u)).toBeInTheDocument()
+    expect(screen.getAllByText(/表示 2001.*2001.*2001行/u)).toHaveLength(2)
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' })
     expect(screen.getAllByTestId('file-line').at(-1)).toHaveTextContent('内容 2001')
   })
 

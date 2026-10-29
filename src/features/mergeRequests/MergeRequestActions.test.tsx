@@ -185,6 +185,15 @@ describe('MergeRequestActions', () => {
     await waitFor(() => expect(onRun).toHaveBeenCalledWith({ expectedTitle: 'Add search', iid: '3', kind: 'setTitle', projectId: '7', title: 'Add fast search' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
+    // Enter that confirms an IME conversion does not save.
+    openMenuItem('タイトルを編集…')
+    const field = within(screen.getByRole('dialog', { name: 'タイトルを編集' })).getByRole('textbox', { name: 'タイトル' })
+    fireEvent.change(field, { target: { value: 'Add search 変換' } })
+    fireEvent.keyDown(field, { isComposing: true, key: 'Enter' })
+    expect(onRun).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'タイトルを編集' })).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
     globalThis.confirm = vi.fn(() => false)
     openMenuItem('Draftにする')
     await waitFor(() => expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('!3 をDraftにしますか？')))

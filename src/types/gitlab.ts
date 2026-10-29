@@ -333,6 +333,8 @@ export interface JobTrace {
   lines: TraceSpan[][]
   /** The start of a longer log was left out. */
   headOmitted: boolean
+  /** Lines of the whole log before the first one here; null when GitLab did not send the start, so it cannot be counted. */
+  omittedLines?: number | null
 }
 
 export type GitLabQuery =

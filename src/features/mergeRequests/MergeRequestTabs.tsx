@@ -80,35 +80,33 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
   const shownName = project ? `${name} ${project} !${mrRef.iid}` : name
   const expandedName = meta?.projectPath && meta.projectPath !== project ? t('mergeRequest.tabs.nameWithPath', { name: shownName, path: meta.projectPath }) : shownName
   const selectedSx = { '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }
-  if (collapsed) {
-    return <Tooltip placement="right" title={fullName}>
-      <ListItemButton aria-current={selected ? 'page' : undefined} aria-label={pinned ? t('mergeRequest.tabs.pinnedName', { name: fullName }) : fullName} onClick={onOpen} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', flexDirection: 'column', minHeight: 36, position: 'relative', px: 0, py: 0, ...selectedSx }}>
-        {/* Pinned tabs keep a pin mark, so they read apart from open ones when only the number fits. */}
-        {pinned ? <PushPinIcon aria-hidden sx={{ color: 'primary.main', fontSize: 14, position: 'absolute', right: 0, top: 0 }} /> : null}
-        {/* The state tells merged and open MRs apart even when only the number fits. */}
-        {meta ? <MergeRequestStateIcon state={meta.state} /> : null}
-        <Typography sx={{ fontFamily: 'code.fontFamily', fontWeight: selected ? 600 : 500, letterSpacing: 0, lineHeight: gridLine(5), maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }} variant="overline">{mrRef.iid}</Typography>
-      </ListItemButton>
-    </Tooltip>
-  }
   const key = mrRefKey(mrRef)
   // The whole row, with its buttons, moves while dragged.
   const { style, ...item } = reorder.itemProps(key)
-  const dragging = reorder.draggingKey === key
-  return <Box component="li" style={style} sx={{ bgcolor: dragging ? 'surface.raised' : undefined, borderRadius: 1, boxShadow: dragging ? 4 : 'none', listStyle: 'none', position: 'relative', '&:hover .tab-actions, &:focus-within .tab-actions': { opacity: 1 } }}>
-    <Tooltip enterDelay={600} placement="right" title={fullName}>
-      <ListItemButton aria-current={selected ? 'page' : undefined} aria-description={t('mergeRequest.tabs.reorderHint')} aria-label={expandedName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ alignItems: 'flex-start', cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 32, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
-        <Box sx={{ display: 'flex', flexShrink: 0, pt: 0.25 }}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', fontWeight: selected ? 600 : 500, lineHeight: gridLine(5), overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{name}</Typography>
-          {project ? <Typography color="textSecondary" noWrap sx={{ pr: onClose ? 6 : 3 }} variant="caption">{project} !{mrRef.iid}</Typography> : null}
-        </Box>
-      </ListItemButton>
+  const dragging = !collapsed && reorder.draggingKey === key
+  // Collapsed and expanded (and so a peek at the folded sidebar) keep one element tree, so the focused tab stays focused.
+  return <Box component="li" style={collapsed ? undefined : style} sx={{ bgcolor: dragging ? 'surface.raised' : undefined, borderRadius: 1, boxShadow: dragging ? 4 : 'none', listStyle: 'none', position: 'relative', '&:hover .tab-actions, &:focus-within .tab-actions': { opacity: 1 } }}>
+    <Tooltip enterDelay={collapsed ? undefined : 600} placement="right" title={fullName}>
+      {collapsed
+        ? <ListItemButton aria-current={selected ? 'page' : undefined} aria-label={pinned ? t('mergeRequest.tabs.pinnedName', { name: fullName }) : fullName} component="div" onClick={onOpen} selected={selected} sx={{ color: selected ? 'text.primary' : 'text.secondary', flexDirection: 'column', minHeight: 36, position: 'relative', px: 0, py: 0, ...selectedSx }}>
+          {/* Pinned tabs keep a pin mark, so they read apart from open ones when only the number fits. */}
+          {pinned ? <PushPinIcon aria-hidden sx={{ color: 'primary.main', fontSize: 14, position: 'absolute', right: 0, top: 0 }} /> : null}
+          {/* The state tells merged and open MRs apart even when only the number fits. */}
+          {meta ? <MergeRequestStateIcon state={meta.state} /> : null}
+          <Typography sx={{ fontFamily: 'code.fontFamily', fontWeight: selected ? 600 : 500, letterSpacing: 0, lineHeight: gridLine(5), maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }} variant="overline">{mrRef.iid}</Typography>
+        </ListItemButton>
+        : <ListItemButton aria-current={selected ? 'page' : undefined} aria-description={t('mergeRequest.tabs.reorderHint')} aria-label={expandedName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ alignItems: 'flex-start', cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 32, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
+          <Box sx={{ display: 'flex', flexShrink: 0, pt: 0.25 }}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', fontWeight: selected ? 600 : 500, lineHeight: gridLine(5), overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{name}</Typography>
+            {project ? <Typography color="textSecondary" noWrap sx={{ pr: onClose ? 6 : 3 }} variant="caption">{project} !{mrRef.iid}</Typography> : null}
+          </Box>
+        </ListItemButton>}
     </Tooltip>
-    <Stack className="tab-actions" data-no-reorder direction="row" sx={{ alignItems: 'center', bottom: 1, opacity: selected || pinned ? 1 : 0, position: 'absolute', right: 2, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 }, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+    {collapsed ? null : <Stack className="tab-actions" data-no-reorder direction="row" sx={{ alignItems: 'center', bottom: 1, opacity: selected || pinned ? 1 : 0, position: 'absolute', right: 2, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 }, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
       <Tooltip title={pinned ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')}><IconButton aria-label={pinned ? t('mergeRequest.tabs.unpinTab', { iid: mrRef.iid }) : t('mergeRequest.tabs.pinTab', { iid: mrRef.iid })} color={pinned ? 'primary' : 'default'} onClick={onTogglePin} size="small" sx={tabActionSx}>{pinned ? <PushPinIcon fontSize="inherit" /> : <PushPinOutlinedIcon fontSize="inherit" />}</IconButton></Tooltip>
       {onClose ? <Tooltip title={t('mergeRequest.common.close')}><IconButton aria-label={t('mergeRequest.tabs.closeTab', { iid: mrRef.iid })} onClick={onClose} size="small" sx={tabActionSx}><CloseRoundedIcon fontSize="inherit" /></IconButton></Tooltip> : null}
-    </Stack>
+    </Stack>}
   </Box>
 }
 

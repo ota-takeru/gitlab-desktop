@@ -74,3 +74,15 @@ it('reorders tabs within their section with Alt and the arrow keys', () => {
   // Pinned tabs stay where they are.
   expect(readWorkspace(scope).pinned.map((ref) => ref.iid)).toEqual(['1'])
 })
+
+it('keeps the focused tab focused when the sidebar folds or unfolds', () => {
+  const view = render(<MergeRequestTabs collapsed={false} onOpen={vi.fn()} selected={null} />)
+  const tab = within(screen.getByRole('list', { name: '開いているMR' })).getByRole('button', { name: /開いているMRの題名/u })
+  tab.focus()
+
+  view.rerender(<MergeRequestTabs collapsed onOpen={vi.fn()} selected={null} />)
+  expect(within(screen.getByRole('list', { name: '開いているMR' })).getByRole('button', { name: /開いているMRの題名/u })).toBe(tab)
+  expect(tab).toHaveFocus()
+  view.rerender(<MergeRequestTabs collapsed={false} onOpen={vi.fn()} selected={null} />)
+  expect(tab).toHaveFocus()
+})

@@ -2,10 +2,13 @@
 
 use super::*;
 
+/// The kept end of a log, whether its start was left out, and how many display
+/// lines came before the first kept one when that is known (the start was read
+/// and dropped, or nothing was left out).
 pub(super) async fn get_trace_tail(
     client: &Client,
     url: &Url,
-) -> Result<(Vec<u8>, bool), AppError> {
+) -> Result<(Vec<u8>, bool, Option<u64>), AppError> {
     let mut retries = 0;
     loop {
         let response = match client
@@ -32,7 +35,7 @@ pub(super) async fn get_trace_tail(
         }
         // A suffix range of an empty log cannot be satisfied.
         if status == StatusCode::RANGE_NOT_SATISFIABLE {
-            return Ok((Vec::new(), false));
+            return Ok((Vec::new(), false, Some(0)));
         }
         if !status.is_success() {
             return Err(status_error(status, response.headers(), false));
@@ -48,13 +51,18 @@ pub(super) async fn get_trace_tail(
             .flatten();
         match read_tail(response).await {
             Ok((bytes, dropped)) => {
-                let head_omitted = dropped
+                let head_omitted = dropped.is_some()
                     || match (status, range_start) {
                         (StatusCode::PARTIAL_CONTENT, Some(start)) => start > 0,
                         (StatusCode::PARTIAL_CONTENT, None) => bytes.len() >= MAX_TRACE_BYTES,
                         _ => false,
                     };
-                return Ok((bytes, head_omitted));
+                // A start GitLab did not send cannot be counted.
+                let omitted_lines = match dropped {
+                    Some(dropped) => Some(dropped.finish(&bytes)),
+                    None => (!head_omitted).then_some(0),
+                };
+                return Ok((bytes, head_omitted, omitted_lines));
             }
             Err(error)
                 if matches!(error.code.as_str(), "NETWORK" | "TIMEOUT")
@@ -83,8 +91,47 @@ pub(super) fn content_range_start(headers: &HeaderMap) -> Option<u64> {
         .ok()
 }
 
-/// Keeps the last `MAX_TRACE_BYTES` of the body; reports whether any were dropped.
-pub(super) async fn read_tail(mut response: Response) -> Result<(Vec<u8>, bool), AppError> {
+/// Display lines in the dropped start of a log, counted as `render_trace` would
+/// count them, so the kept lines can be placed in the whole log.
+#[derive(Debug, Default)]
+pub(super) struct DroppedLines {
+    lines: u64,
+    partial: Vec<u8>,
+}
+
+impl DroppedLines {
+    pub(super) fn feed(&mut self, bytes: &[u8]) {
+        let mut rest = bytes;
+        while let Some(at) = rest.iter().position(|byte| *byte == b'\n') {
+            self.partial.extend_from_slice(&rest[..at]);
+            self.lines += u64::from(is_display_line(&self.partial));
+            self.partial.clear();
+            rest = &rest[at + 1..];
+        }
+        self.partial.extend_from_slice(rest);
+    }
+
+    /// Adds the line split by the cut, which `render_trace` leaves out of the kept bytes.
+    pub(super) fn finish(mut self, kept: &[u8]) -> u64 {
+        if let Some(at) = kept.iter().position(|byte| *byte == b'\n') {
+            self.partial.extend_from_slice(&kept[..at]);
+            self.lines += u64::from(is_display_line(&self.partial));
+        }
+        self.lines
+    }
+}
+
+/// Whether `render_trace` shows a raw line: only lines left empty by removing section markers are dropped.
+fn is_display_line(raw: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(raw);
+    let (line, had_marker) = remove_section_markers(&text);
+    !had_marker || !trace_line_spans(&line, &mut TraceStyle::default()).is_empty()
+}
+
+/// Keeps the last `MAX_TRACE_BYTES` of the body; counts the lines of what was dropped, if anything.
+pub(super) async fn read_tail(
+    mut response: Response,
+) -> Result<(Vec<u8>, Option<DroppedLines>), AppError> {
     let too_large = || {
         AppError::new(
             "TOO_LARGE",
@@ -100,6 +147,7 @@ pub(super) async fn read_tail(mut response: Response) -> Result<(Vec<u8>, bool),
     }
     let mut output = Vec::new();
     let mut total = 0_usize;
+    let mut dropped = DroppedLines::default();
     while let Some(chunk) = response
         .chunk()
         .await
@@ -111,13 +159,17 @@ pub(super) async fn read_tail(mut response: Response) -> Result<(Vec<u8>, bool),
         }
         output.extend_from_slice(&chunk);
         if output.len() > 2 * MAX_TRACE_BYTES {
-            output.drain(..output.len() - MAX_TRACE_BYTES);
+            let cut = output.len() - MAX_TRACE_BYTES;
+            dropped.feed(&output[..cut]);
+            output.drain(..cut);
         }
     }
     if output.len() > MAX_TRACE_BYTES {
-        output.drain(..output.len() - MAX_TRACE_BYTES);
+        let cut = output.len() - MAX_TRACE_BYTES;
+        dropped.feed(&output[..cut]);
+        output.drain(..cut);
     }
-    Ok((output, total > MAX_TRACE_BYTES))
+    Ok((output, (total > MAX_TRACE_BYTES).then_some(dropped)))
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -130,7 +182,8 @@ pub(super) struct TraceStyle {
 /// colour and bold survive, as names the UI maps to theme colours; other
 /// escape sequences, control characters and GitLab's section markers are
 /// removed, and a carriage return starts the line over as a terminal would.
-pub(super) fn render_trace(bytes: &[u8], head_omitted: bool) -> (Vec<Value>, bool) {
+/// Also returns how many rendered lines were left out to stay within `MAX_TRACE_LINES`.
+pub(super) fn render_trace(bytes: &[u8], head_omitted: bool) -> (Vec<Value>, bool, usize) {
     let bytes = if head_omitted {
         // The kept part starts mid-line (and maybe mid-character).
         bytes
@@ -156,11 +209,12 @@ pub(super) fn render_trace(bytes: &[u8], head_omitted: bool) -> (Vec<Value>, boo
         lines.push(Value::Array(spans));
     }
     let mut head_omitted = head_omitted;
-    if lines.len() > MAX_TRACE_LINES {
-        lines.drain(..lines.len() - MAX_TRACE_LINES);
+    let trimmed = lines.len().saturating_sub(MAX_TRACE_LINES);
+    if trimmed > 0 {
+        lines.drain(..trimmed);
         head_omitted = true;
     }
-    (lines, head_omitted)
+    (lines, head_omitted, trimmed)
 }
 
 /// Removes `section_start:<time>:<name>[options]` and `section_end:<time>:<name>`.

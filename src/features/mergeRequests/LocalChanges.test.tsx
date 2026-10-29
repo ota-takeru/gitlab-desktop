@@ -140,6 +140,26 @@ describe('LocalChanges', () => {
     expect(mocks.getLocalFile).toHaveBeenCalledWith('s1', '7', 'memo.txt')
   })
 
+  it('keeps showing the whole file while it is read again with the changes', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue(changes)
+    mocks.getLocalFile.mockResolvedValue({ content: 'one\nfirst body\n' })
+    renderLocal()
+    fireEvent.click(await screen.findByRole('button', { name: 'ファイル全体' }))
+    expect(await screen.findByText('first body')).toBeInTheDocument()
+
+    let finish: (value: { content: string }) => void = () => undefined
+    mocks.getLocalFile.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    fireEvent.focus(window)
+    await waitFor(() => expect(mocks.getLocalFile).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('first body')).toBeInTheDocument()
+    expect(screen.queryByText('ファイル全体を読み込み中…')).not.toBeInTheDocument()
+
+    finish({ content: 'one\nsecond body\n' })
+    expect(await screen.findByText('second body')).toBeInTheDocument()
+    expect(mocks.getLocalFile).toHaveBeenCalledTimes(2)
+  })
+
   it('says when the whole file cannot be read', async () => {
     mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
     mocks.getLocalChanges.mockResolvedValue(changes)

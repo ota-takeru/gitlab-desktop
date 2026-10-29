@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { useState } from 'react'
+import type { Editor } from '@tiptap/core'
+import { Activity, useState } from 'react'
 
 import { MARKDOWN_EDITOR_MODE_KEY } from '../../components/MarkdownEditor'
 import { MAX_GITLAB_ATTACHMENT_BYTES } from '../../lib/attachments'
@@ -91,6 +92,33 @@ describe('ReviewComposer', () => {
     view.rerender(<ReviewComposer {...props} replyAuthor="Colleague" replyDiscussionId="discussion-1" />)
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveFocus())
+  })
+
+  it('does not take the focus again when its hidden screen shows', async () => {
+    const props = { onCancelReply: () => undefined, onChange: () => undefined, onClearPosition: () => undefined, onSaveDraft: async () => true, onSubmitComment: async () => true, replyDiscussionId: 'discussion-1', value: '本文' }
+    const view = render(<Activity mode="visible"><ReviewComposer {...props} /></Activity>)
+    const textbox = screen.getByRole('textbox', { name: 'コメント本文' })
+    await waitFor(() => expect(textbox).toHaveFocus())
+    act(() => { textbox.blur() })
+
+    view.rerender(<Activity mode="hidden"><ReviewComposer {...props} /></Activity>)
+    view.rerender(<Activity mode="visible"><ReviewComposer {...props} /></Activity>)
+    await act(() => new Promise((resolve) => { setTimeout(resolve, 20) }))
+    expect(textbox).not.toHaveFocus()
+  })
+
+  it('keeps the caret of a line comment whose diff is laid out anew', async () => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
+    const props = { attachmentTargetKey: 'mr:line-1', inlineTarget: true, onCancelReply: () => undefined, onChange: () => undefined, onClearPosition: () => undefined, onSaveDraft: async () => true, onSubmitComment: async () => true, value: 'abcdefghij' }
+    const editorDom = () => screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLElement & { editor: Editor }
+    const view = render(<ReviewComposer key="split" {...props} />)
+    await waitFor(() => expect(editorDom().editor.view.hasFocus()).toBe(true))
+    act(() => { editorDom().editor.commands.setTextSelection(4) })
+
+    view.rerender(<ReviewComposer key="unified" {...props} />)
+    await waitFor(() => expect(editorDom().editor.view.hasFocus()).toBe(true))
+    await act(() => new Promise((resolve) => { setTimeout(resolve, 20) }))
+    expect(editorDom().editor.state.selection.head).toBe(4)
   })
 
   it('names the submit button of a reply 「返信」', () => {

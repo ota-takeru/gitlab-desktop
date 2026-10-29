@@ -1104,6 +1104,30 @@ fn markdown_images_only_allow_same_instance_uploads() {
 }
 
 #[test]
+fn project_uploads_are_read_through_the_api() {
+    let base = "https://gitlab.example/GitLab/";
+    let api = |input: &str| {
+        project_upload_api_url(base, &Url::parse(input).unwrap()).map(|url| url.to_string())
+    };
+    assert_eq!(
+        api("https://gitlab.example/GitLab/group/sub/repo/uploads/0123abcd/photo%20a.png").as_deref(),
+        Some("https://gitlab.example/GitLab/api/v4/projects/group%2Fsub%2Frepo/uploads/0123abcd/photo%20a.png")
+    );
+    assert_eq!(
+        api("https://gitlab.example/GitLab/-/project/42/uploads/0123abcd/photo.png").as_deref(),
+        Some("https://gitlab.example/GitLab/api/v4/projects/42/uploads/0123abcd/photo.png")
+    );
+    for kept in [
+        "https://gitlab.example/GitLab/uploads/-/system/user/avatar/1/a.png",
+        "https://gitlab.example/GitLab/repo/uploads/0123abcd/photo.png",
+        "https://gitlab.example/GitLab/group/repo/uploads/0123abcd/photo.png?x=1",
+        "https://gitlab.example/GitLab/-/project/x/uploads/0123abcd/photo.png",
+    ] {
+        assert_eq!(api(kept), None, "{kept}");
+    }
+}
+
+#[test]
 fn gravatar_urls_are_accepted_only_over_https_from_gravatar() {
     assert!(gravatar_url("https://secure.gravatar.com/avatar/abc?s=80&d=identicon").is_some());
     assert!(gravatar_url("https://www.gravatar.com/avatar/abc?s=80&d=identicon").is_some());

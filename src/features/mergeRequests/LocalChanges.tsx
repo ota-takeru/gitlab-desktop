@@ -88,7 +88,6 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   // The working tree changes outside the app, so it is read again each time the view opens
   // and when the window regains focus.
   const changes = useQuery({ enabled: Boolean(linked), gcTime: 0, queryFn: () => getLocalChanges(sessionId, projectId, headSha), queryKey: ['localChanges', sessionId, projectId, headSha, linked?.path], staleTime: 0 })
-  useWindowFocus(() => { if (linked && !changes.isFetching) void changes.refetch() })
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [viewChoice, setViewChoice] = useState<{ path: string; view: 'diff' | 'file' } | null>(null)
@@ -106,7 +105,14 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   const readable = Boolean(shown && !shown.deletedFile && !shown.tooLarge)
   const shownPath = shown ? (shown.newPath || shown.oldPath) : ''
   const view = viewChoice?.path === shownPath ? viewChoice.view : 'diff'
-  const file = useQuery({ enabled: readable, gcTime: 0, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? ''), queryKey: ['localFile', sessionId, projectId, shown?.newPath, changes.dataUpdatedAt], staleTime: 0 })
+  // One query per file, read again with the changes, so a refresh keeps showing the current body until the new one arrives.
+  const file = useQuery({ enabled: readable, gcTime: 0, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? ''), queryKey: ['localFile', sessionId, projectId, shown?.newPath], staleTime: 0 })
+  const reload = () => {
+    if (changes.isFetching) return
+    void changes.refetch()
+    if (readable) void file.refetch()
+  }
+  useWindowFocus(() => { if (linked) reload() })
 
   if (repository.isPending) return <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">{t('review.local.checkingLink')}</Typography>
   if (repository.error) return <Alert severity="error">{t('review.local.linkReadError', { message: normalizeGitLabError(repository.error).message })}</Alert>
@@ -149,7 +155,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
         <Tooltip title={linked.path}><Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', minWidth: 48 }} variant="caption"><Box component="span" sx={codeSx}>{linked.path}</Box></Typography></Tooltip>
         <Tooltip title={factsText}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 auto', minWidth: 0 }} variant="caption">{facts.map((fact, index) => <span key={index}>{index ? ' · ' : ''}{fact}</span>)}</Typography></Tooltip>
         {changes.isFetching && data ? <Typography color="textSecondary" role="status" sx={{ flexShrink: 0 }} variant="caption">{t('review.local.reloading')}</Typography> : changes.dataUpdatedAt && data ? <Box sx={{ flexShrink: 0 }}><RelativeTime prefix={t('review.local.readAt')} value={new Date(changes.dataUpdatedAt).toISOString()} /></Box> : null}
-        <Tooltip title={t('review.local.reloadTooltip')}><span><IconButton aria-disabled={changes.isFetching} aria-label={t('review.local.reload')} onClick={() => { if (!changes.isFetching) void changes.refetch() }} ref={focusOnMount('linked')}><RefreshRoundedIcon /></IconButton></span></Tooltip>
+        <Tooltip title={t('review.local.reloadTooltip')}><span><IconButton aria-disabled={changes.isFetching} aria-label={t('review.local.reload')} onClick={reload} ref={focusOnMount('linked')}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         <Button disabled={unlinking} onClick={() => void unlink()} size="small" sx={{ flexShrink: 0 }}>{t('review.local.unlink')}</Button>
       </Stack>
       {unlinkError ? <Alert severity="error">{t('review.local.unlinkError', { message: unlinkError })}</Alert> : null}
@@ -160,7 +166,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
       {data?.truncated ? <Alert severity="warning">{t('review.local.truncated')}</Alert> : null}
       {data && (data.untrackedCount > data.untrackedIncluded || data.untrackedMore) ? <Alert severity="warning">{t(data.untrackedMore ? 'review.local.untrackedOmittedMore' : 'review.local.untrackedOmitted', { count: data.untrackedCount - data.untrackedIncluded })}</Alert> : null}
       {data && !data.diffs.length && !data.truncated ? <Typography color="textSecondary" role="status" variant="body2">{t('review.local.noDiff')}</Typography> : null}
-      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isFetching} key={`local:${headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={(next) => setViewChoice({ path: shownPath, view: next })} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
+      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isLoading} key={`local:${headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={(next) => setViewChoice({ path: shownPath, view: next })} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
       {view === 'file' && shown?.deletedFile ? <Typography color="textSecondary" role="status" variant="body2">{t('review.local.fileDeleted')}</Typography> : null}
       {view === 'file' && file.error ? <Alert severity="error">{t('review.local.fileReadError', { message: normalizeGitLabError(file.error).message })}</Alert> : null}
     </Stack>

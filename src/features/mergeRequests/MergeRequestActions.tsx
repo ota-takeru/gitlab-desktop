@@ -278,7 +278,7 @@ function TitleDialog({ disabled, mergeRequest, onClose, onSave }: { disabled: bo
       <DialogTitle id={titleId}>{t('mergeRequest.titleDialog.title')}</DialogTitle>
       <DialogContent>
         <Stack spacing={1} sx={{ pt: 0.5 }}>
-          <TextField autoFocus disabled={busy} label={t('mergeRequest.titleDialog.label')} onChange={(event) => setTitle(event.target.value.replace(/[\r\n]+/gu, ' '))} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void save() } }} size="small" slotProps={{ htmlInput: { maxLength: 255 } }} value={title} />
+          <TextField autoFocus disabled={busy} label={t('mergeRequest.titleDialog.label')} onChange={(event) => setTitle(event.target.value.replace(/[\r\n]+/gu, ' '))} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void save() } }} size="small" slotProps={{ htmlInput: { maxLength: 255 } }} value={title} />
           <Typography color="textSecondary" variant="caption">{t('mergeRequest.titleDialog.draftHint')}</Typography>
           {mergeRequest.title !== expected ? <Alert severity="warning">{t('mergeRequest.titleDialog.changed')}</Alert> : null}
         </Stack>

@@ -276,6 +276,8 @@ describe('BufferedReviewComposer', () => {
     expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'diffs', iid: '120', projectId: '7' }))
 
     // The line comment editor opens right under the line, staying on the changes tab.
+    diffComment.focus()
+    const focusLineButton = vi.spyOn(diffComment, 'focus')
     fireEvent.click(diffComment)
     const editor = await screen.findByRole('region', { name: 'レビューコメント入力' })
     expect(within(editor).getByText('src/example.ts:2 にコメント')).toBeInTheDocument()
@@ -283,6 +285,9 @@ describe('BufferedReviewComposer', () => {
     expect(screen.getByRole('tab', { name: '変更' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(within(editor).getByRole('button', { name: '閉じる' }))
     expect(screen.queryByRole('region', { name: 'レビューコメント入力' })).not.toBeInTheDocument()
+    // Focus goes back to the line button that opened the editor, without scrolling to it.
+    await waitFor(() => expect(diffComment).toHaveFocus())
+    expect(focusLineButton).toHaveBeenCalledWith({ preventScroll: true })
     expect(detailMocks.mutationRunMock).not.toHaveBeenCalled()
     expect(detailMocks.notifyWorkspaceMock).not.toHaveBeenCalled()
   })
@@ -494,6 +499,10 @@ describe('MergeRequestDetail tabs and description', () => {
 
     await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ description: '## 変更点\n\n説明を追加', expectedDescription: '', iid: '120', kind: 'setDescription', projectId: '7' }, undefined))
     await waitFor(() => expect(screen.queryByRole('textbox', { name: '説明を編集' })).not.toBeInTheDocument())
+    // The saved text is written into the shown MR at once, not after GitLab is read again.
+    const [, , mrQuery, change] = detailMocks.applyConfirmedMock.mock.calls.at(-1) as [unknown, string, { kind: string }, (mergeRequest: { description: string; title: string }) => { description: string; title: string }]
+    expect(mrQuery).toEqual({ iid: '120', kind: 'mr', projectId: '7' })
+    expect(change({ description: '', title: 'MR' })).toEqual({ description: '## 変更点\n\n説明を追加', title: 'MR' })
   })
 
   it('asks a reviewer for a new review from the overview and shows the merge state in the header', async () => {
@@ -868,8 +877,9 @@ describe('MergeRequestDetail header, results and pending review', () => {
       await waitFor(() => expect(detailMocks.mutationRunMock).toHaveBeenCalledWith({ body: '直した下書き', draftId: 'draft-1', iid: '120', kind: 'editDraft', projectId: '7' }, undefined))
       await waitFor(() => expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument())
       expect(actual.listUnsafeComposerTargets()).toEqual([])
-      fireEvent.click(screen.getByRole('button', { name: '下書き「下書きの本文」を編集' }))
-      expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('下書きの本文')
+      // The saved text shows at once, before a refetch brings it from GitLab.
+      fireEvent.click(screen.getByRole('button', { name: '下書き「直した下書き」を編集' }))
+      expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('直した下書き')
     } finally {
       actual.clearComposerBufferStore()
     }

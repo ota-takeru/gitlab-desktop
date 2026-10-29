@@ -38,7 +38,7 @@ import { changeMarkerStyles } from './changeMarkerStyles'
 import { MarkdownDiffPreview } from './MarkdownDiffPreview'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
-import { annotateFullFile, filePageStart, firstChangedFileLine, type RemovedFileLines } from './fullFileAnnotations'
+import { annotateFullFile, filePageStart, firstChangedFileLine, type FullFileDiffAnnotations, type RemovedFileLines } from './fullFileAnnotations'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
@@ -100,8 +100,10 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
   const selectedDiff = displayedIndex >= 0 ? diffs[displayedIndex] : undefined
   const displayedPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
-  const [fileAnchor, setFileAnchor] = useState<{ path: string; line: number } | null>(null)
-  const restoreDiffAnchor = useRef<{ path: string; line: number } | null>(null)
+  /** The line the whole file opens on, and where the diff showed it on screen when it was measured there. */
+  const [fileAnchor, setFileAnchor] = useState<{ path: string; line: number; top?: number } | null>(null)
+  /** The line to show after returning to the diff, and where it was on screen when measured. */
+  const restoreDiffAnchor = useRef<{ path: string; line: number; top?: number } | null>(null)
   const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
   const [blameOpen, setBlameOpen] = useState(false)
   // Diff-only controls keep their place in the whole-file view, so the header does not rewrap and move the content and the view switch under the pointer.
@@ -402,11 +404,11 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     if (next) onSelectFile(next.newPath || next.oldPath)
   }
 
-  // ] and [ step through the files, as the header buttons do, unless typing or in a dialog.
+  // ] and [ step through the files, as the header buttons do, unless typing, in an open menu or in a dialog.
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key !== ']' && event.key !== '[') return
-      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || isEditableTarget(event.target) || document.querySelector('[role="dialog"]')) return
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || isEditableTarget(event.target) || isInsideMenu(event.target) || document.querySelector('[role="dialog"]')) return
       const next = diffs[displayedIndex + (event.key === ']' ? 1 : -1)]
       if (!next) return
       event.preventDefault()
@@ -441,12 +443,16 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
         return rect.bottom > top + 2 && rect.top < bottom - 2
       })
       const visibleLine = visible ? Number(visible.dataset.fileAnchor) : NaN
-      const line = Number.isSafeInteger(visibleLine) && visibleLine > 0
-        ? visibleLine
-        : selectedPosition?.newLine ?? firstChangedFileLine(rows.length ? rows : displayLines)
-      setFileAnchor({ path: displayedPath, line })
+      const measured = Number.isSafeInteger(visibleLine) && visibleLine > 0
+      const line = measured ? visibleLine : selectedPosition?.newLine ?? firstChangedFileLine(rows.length ? rows : displayLines)
+      setFileAnchor({ path: displayedPath, line, top: measured ? visible?.getBoundingClientRect().top : undefined })
     }
-    if (next === 'diff' && view === 'file' && fileAnchor?.path === displayedPath) restoreDiffAnchor.current = fileAnchor
+    if (next === 'diff' && view === 'file' && displayedPath) {
+      // The whole file may have been scrolled since it opened, so the line shown at the top now is kept, not the line it opened on.
+      const top = Math.max(0, fileHeaderRef.current?.getBoundingClientRect().bottom ?? 0)
+      const visible = fileTopRef.current ? firstVisibleFileLine(fileTopRef.current, top) : null
+      restoreDiffAnchor.current = visible ? { path: displayedPath, ...visible } : fileAnchor?.path === displayedPath ? { path: displayedPath, line: fileAnchor.line } : null
+    }
     onViewChange(next)
   }
 
@@ -459,7 +465,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
       const bestDistance = best ? Math.abs(Number(best.dataset.fileAnchor) - wanted.line) : Number.POSITIVE_INFINITY
       return distance < bestDistance ? node : best
     }, null)
-    target?.scrollIntoView?.({ behavior: 'auto', block: 'center' })
+    if (target && wanted.top !== undefined) scrollNearestBy(target, target.getBoundingClientRect().top - wanted.top)
+    else target?.scrollIntoView?.({ behavior: 'auto', block: 'center' })
     restoreDiffAnchor.current = null
   }, [diffOffset, displayedPath, layout, renderedMarkdownDiff, view])
 
@@ -537,9 +544,9 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">{t('review.diff.collapsed')}</Typography></Box> : null}
           {view === 'file' ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{canBlame && fileSource && selectedDiff
             ? <BlameProvider enabled={blameOpen} initialNewLine={fileAnchor?.path === displayedPath ? fileAnchor.line : 1} key={`${fileSource.sha}:${displayedPath}:full`} lines={[]} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>
-                <FullFileView blameEnabled={blameOpen} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />
+                <FullFileView blameEnabled={blameOpen} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} targetTop={fileAnchor?.path === displayedPath ? fileAnchor.top : undefined} />
               </BlameProvider>
-            : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} />}</MarkdownLinkProvider> : <>
+            : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} targetTop={fileAnchor?.path === displayedPath ? fileAnchor.top : undefined} />}</MarkdownLinkProvider> : <>
             {parsed.status !== 'valid' ? <Typography color="warning" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.invalid')}</Typography> : null}
             {whitespaceOnlyFile ? <Typography role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.whitespaceOnly')}</Typography> : null}
             {whitespaceIgnored && commentable ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.whitespace.ignoredNotice')}</Typography> : null}
@@ -548,8 +555,9 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.discussionsIncomplete')}</Typography> : null}
             {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.search.noMatch')}</Typography> : null}
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={displayLines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, displayLines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
-            {blameOpen && canBlame && fileSource && selectedDiff
-              ? <BlameProvider beforeSha={fileSource.beforeSha} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} lines={rows} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
+            {/* Always wrapped while Blame can be shown, so toggling it does not remount the diff and an open comment editor in it. */}
+            {canBlame && fileSource && selectedDiff
+              ? <BlameProvider beforeSha={fileSource.beforeSha} enabled={blameOpen} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} lines={rows} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
               : diffContent}
           </>}
         </Box>
@@ -562,9 +570,15 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
 const denseFieldSx = { '& .MuiInputBase-input': { py: 0.5 } }
 const NO_SHOWN_GAPS: ReadonlyMap<string, number> = new Map()
 const NO_HUNKS: DiffHunk[] = []
+// Rendered Markdown without diff marks still labels its blocks with their source lines, so switching views keeps the place.
+const NO_FILE_ANNOTATIONS: FullFileDiffAnnotations = { addedLines: new Set(), consistent: true, removedByAnchor: new Map() }
 
 function isEditableTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
+}
+
+function isInsideMenu(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null
 }
 
 function FileKindMark({ diff }: { diff: Diff }) {
@@ -925,7 +939,7 @@ function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: b
     : deletion
 }
 
-export function FullFileView({ blameEnabled = false, content, diffLines, language, loading, path, targetLine }: { blameEnabled?: boolean; content?: string | null; diffLines?: ParsedLine[]; language: string | null; loading: boolean; path?: string | null; targetLine?: number }) {
+export function FullFileView({ blameEnabled = false, content, diffLines, language, loading, path, targetLine, targetTop }: { blameEnabled?: boolean; content?: string | null; diffLines?: ParsedLine[]; language: string | null; loading: boolean; path?: string | null; targetLine?: number; /** Where on screen `targetLine` is put, as it was in the view switched from; centred without it. */ targetTop?: number }) {
   const t = useT()
   const lines = useMemo(() => content === null || content === undefined ? [] : splitFileLines(content), [content])
   const contentKey = content ?? '__missing__'
@@ -938,6 +952,8 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
   const [showSource, setShowSource] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const lastPositioned = useRef<{ content: string | null | undefined; line: number; source: boolean } | null>(null)
+  // The line shown at the top when the Markdown source/render toggle was used, kept at that place after the switch.
+  const keepVisible = useRef<{ line: number; top: number } | null>(null)
   const offset = filePaging.contentKey === contentKey && filePaging.focus === focus ? filePaging.offset : firstOffset
   const updateOffset = (update: (current: number) => number): void => {
     setFilePaging((current) => {
@@ -945,8 +961,25 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
       return { contentKey, focus, offset: update(currentOffset) }
     })
   }
+  const nextPage = () => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))
+  const previousPage = () => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))
+  // Turning the page from below its last line starts reading the new page at its top.
+  const turnPageFromBottom = (turn: () => void) => {
+    turn()
+    rootRef.current?.scrollIntoView?.({ behavior: 'auto', block: 'start' })
+  }
   const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
   const visibleTokens = useMemo(() => markdown && !showSource ? [] : highlightLines(visibleLines, language), [language, markdown, showSource, visibleLines])
+
+  useLayoutEffect(() => {
+    const kept = keepVisible.current
+    if (!kept || !rootRef.current) return
+    keepVisible.current = null
+    // Takes the place of the move to `targetLine` below, which would undo it.
+    if (targetLine) lastPositioned.current = { content, line: targetLine, source: showSource }
+    const target = nearestFileLine(rootRef.current, kept.line)
+    if (target) scrollNearestBy(target, target.getBoundingClientRect().top - kept.top)
+  }, [content, offset, showSource, targetLine])
 
   useLayoutEffect(() => {
     if (!content || !targetLine || !rootRef.current) return
@@ -966,9 +999,19 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
     const target = candidates.reduce<HTMLElement | null>((best, element) => !best || rank(element) < rank(best) ? element : best, null)
     if (target) {
       lastPositioned.current = { content, line: targetLine, source: showSource }
-      target.scrollIntoView?.({ behavior: 'auto', block: 'center' })
+      if (targetTop !== undefined) scrollNearestBy(target, target.getBoundingClientRect().top - targetTop)
+      else target.scrollIntoView?.({ behavior: 'auto', block: 'center' })
     }
-  }, [content, markdown, offset, showSource, targetLine])
+  }, [content, markdown, offset, showSource, targetLine, targetTop])
+
+  const toggleSource = () => {
+    const root = rootRef.current
+    const visible = root ? firstVisibleFileLine(root, Math.max(0, root.getBoundingClientRect().top)) : null
+    keepVisible.current = visible
+    // A rendered line past the shown page of source lines opens that page.
+    if (visible && !showSource && (visible.line <= offset || visible.line > offset + FILE_PAGE_SIZE)) updateOffset(() => filePageStart(visible.line, lines.length, FILE_PAGE_SIZE))
+    setShowSource(!showSource)
+  }
 
   if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.loading')}</Typography>
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.notLoaded')}</Typography>
@@ -980,7 +1023,7 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
     '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   }) : undefined}>
     {markdown ? <Box sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}>
-      <Button aria-label={showSource ? t('review.fullFile.renderMarkdown') : t('review.fullFile.showMarkdownSource')} onClick={() => setShowSource((value) => !value)} size="small" variant="outlined">{showSource ? t('review.fullFile.markdown') : t('review.fullFile.source')}</Button>
+      <Button aria-label={showSource ? t('review.fullFile.renderMarkdown') : t('review.fullFile.showMarkdownSource')} onClick={toggleSource} size="small" variant="outlined">{showSource ? t('review.fullFile.markdown') : t('review.fullFile.source')}</Button>
     </Box> : null}
     {annotations && !annotations.consistent ? <Typography color="warning.main" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">{t('review.fullFile.inconsistent')}</Typography> : null}
     {!content ? <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.empty')}</Typography>
@@ -990,9 +1033,9 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
           '& [data-review-deleted="true"]': { backgroundColor: theme.palette.diff?.deletedBackground, ...hairline('left', { color: 'error.main', width: 3 }), my: 1, px: 1.5, py: 1 },
           '& [data-review-marker="remove"]': changeMarkerStyles(theme, 'remove'),
           '& [data-review-deleted="true"] pre': { fontFamily: 'code.fontFamily', fontSize: 'code.fontSize', mb: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' },
-        })}><MockMarkdown body={content} renderBlame={blameEnabled ? (line) => <BlameCell line={line} side="new" /> : undefined} review={changeMarkers ?? undefined} size="body1" /></Box>
+        })}><MockMarkdown body={content} renderBlame={blameEnabled ? (line) => <BlameCell line={line} side="new" /> : undefined} review={changeMarkers ?? NO_FILE_ANNOTATIONS} size="body1" /></Box>
         : <>
-          <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => updateOffset((current) => Math.min(current + FILE_PAGE_SIZE, Math.max(0, lines.length - 1)))} onPrevious={() => updateOffset((current) => Math.max(0, current - FILE_PAGE_SIZE))} />
+          <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={nextPage} onPrevious={previousPage} />
           <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => {
             const fileLine = offset + index + 1
             const additions = changeMarkers?.addedLines.has(fileLine)
@@ -1006,8 +1049,52 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
           })}
           {offset + visibleLines.length >= lines.length ? (changeMarkers?.removedByAnchor.get(lines.length + 1) ?? []).map((item, index) => <RemovedFullFileLines blameEnabled={blameEnabled} item={item} key={`last:${item.oldStart}:${index}`} />) : null}
           </Box>
+          <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={() => turnPageFromBottom(nextPage)} onPrevious={() => turnPageFromBottom(previousPage)} />
         </>}
   </Box>
+}
+
+/**
+ * The first whole-file line or rendered Markdown block on screen below `top`, with where it is.
+ * One starting on screen is preferred to a block that starts above it, such as a list around it.
+ */
+function firstVisibleFileLine(root: HTMLElement, top: number): { line: number; top: number } | null {
+  const bottom = globalThis.innerHeight || 1000
+  let partly: { line: number; top: number } | null = null
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-file-line], [data-source-start]'))) {
+    const rect = node.getBoundingClientRect()
+    const line = Number(node.dataset.fileLine ?? node.dataset.sourceStart)
+    if (rect.bottom <= top + 2 || rect.top >= bottom - 2 || !Number.isSafeInteger(line) || line <= 0) continue
+    if (rect.top >= top - 2) return { line, top: rect.top }
+    partly ??= { line, top: rect.top }
+  }
+  return partly
+}
+
+/** The whole-file line, or the rendered block holding it, closest to `line`. */
+function nearestFileLine(root: HTMLElement, line: number): HTMLElement | null {
+  let best: HTMLElement | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+  let bestSpan = Number.POSITIVE_INFINITY
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-file-line], [data-source-start]'))) {
+    const start = Number(node.dataset.fileLine ?? node.dataset.sourceStart)
+    const end = Number(node.dataset.fileLine ?? node.dataset.sourceEnd) || start
+    const distance = line < start ? start - line : line > end ? line - end : 0
+    // The innermost rendered block holding the line, not the list or quote around it.
+    if (distance < bestDistance || (distance === bestDistance && end - start < bestSpan)) { best = node; bestDistance = distance; bestSpan = end - start }
+  }
+  return best
+}
+
+/** Scrolls the nearest scrolling ancestor of `node`, or the page, by `delta` pixels. */
+function scrollNearestBy(node: HTMLElement, delta: number) {
+  if (!delta) return
+  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+    const overflow = getComputedStyle(parent).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && parent.scrollHeight > parent.clientHeight) { parent.scrollTop += delta; return }
+  }
+  const page = document.scrollingElement ?? document.documentElement
+  page.scrollTop += delta
 }
 
 function matchesPosition(line: ParsedLine, position: Position | undefined): boolean {

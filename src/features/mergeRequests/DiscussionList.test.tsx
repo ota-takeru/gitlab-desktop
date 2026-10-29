@@ -253,6 +253,33 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.getByText('resolved-note の本文')).toBeInTheDocument()
   })
 
+  it('keeps an open thread open when a refetch shows that someone else resolved it', () => {
+    const open = createDiscussion([createNote('open-root', otherUser, { resolvable: true })], 'open')
+    const view = renderList([open])
+    expect(screen.getByText('open-root の本文')).toBeInTheDocument()
+
+    const resolvedElsewhere = createDiscussion([createNote('open-root', otherUser, { resolvable: true, resolved: true })], 'open')
+    view.rerender(<ThemeProvider theme={createAppTheme('dark')}><DiscussionList currentUserId={currentUser.id} discussions={[resolvedElsewhere]} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} /></ThemeProvider>)
+    expect(screen.getByText('open-root の本文')).toBeInTheDocument()
+  })
+
+  it('shows a saved edit at once and returns focus to the edit button after closing', async () => {
+    const owned = createNote('owned', currentUser, { body: '元の本文' })
+    renderList([createDiscussion([owned])])
+
+    fireEvent.click(screen.getByRole('button', { name: '自分のコメント「元の本文」を編集' }))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'コメントを編集' }), { key: 'Escape' })
+    expect(screen.getByRole('button', { name: '自分のコメント「元の本文」を編集' })).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: '自分のコメント「元の本文」を編集' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'コメントを編集' }), { target: { value: '直した本文' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'コメントを編集' }), { ctrlKey: true, key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'コメントを編集' })).not.toBeInTheDocument())
+    // GitLab's copy has not been refetched yet; the saved text shows meanwhile.
+    expect(screen.getByText('直した本文')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '自分のコメント「直した本文」を編集' })).toHaveFocus()
+  })
+
   it('folds and reopens any thread, but not a single plain comment', () => {
     const thread = createDiscussion([createNote('thread-root', otherUser, { resolvable: true }), createNote('thread-reply', currentUser, { resolvable: true })], 'thread')
     const plain = createDiscussion([createNote('plain-note', otherUser)], 'plain')

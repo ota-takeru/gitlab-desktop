@@ -94,6 +94,37 @@ describe('DiffViewer review flow', () => {
     expect(shownPath(container)).toBe('src/a.ts')
   })
 
+  it('does not step through files while an open menu or list has the keyboard', () => {
+    const { container } = render(<Harness diffs={[makeDiff(change, 'src/a.ts'), makeDiff(change, 'src/b.ts')]} />)
+    for (const role of ['menu', 'menubar', 'listbox']) {
+      const menu = document.body.appendChild(document.createElement('div'))
+      menu.setAttribute('role', role)
+      const item = menu.appendChild(document.createElement('div'))
+      item.tabIndex = -1
+      fireEvent.keyDown(item, { key: ']' })
+      expect(shownPath(container)).toBe('src/a.ts')
+      menu.remove()
+    }
+    fireEvent.keyDown(document.body, { key: ']' })
+    expect(shownPath(container)).toBe('src/b.ts')
+  })
+
+  it('keeps the diff and an open line comment editor mounted when Blame is toggled', () => {
+    queryMock.mockReturnValue({ data: undefined, error: null, loading: false, refreshing: false, refresh: vi.fn(), snapshot: null, stale: false })
+    const diff = makeDiff(change)
+    const position: Position = { baseSha: 'base', headSha: 'head', newLine: 1, newPath: diff.newPath, oldPath: diff.oldPath, positionType: 'text', startSha: 'base' }
+    render(<ThemeProvider theme={createAppTheme('light')}><DiffViewer diffs={[diff]} fileSource={{ projectId: '15', sessionId: 's1', sha: 'head-sha' }} lineComposer={{ node: <textarea aria-label="composer" />, position }} onComment={vi.fn()} onSelectFile={vi.fn()} onViewChange={vi.fn()} selectedFile={diff.newPath} selectedPosition={undefined} view="diff" /></ThemeProvider>)
+    const editor = screen.getByRole('textbox', { name: 'composer' }) as HTMLTextAreaElement
+    fireEvent.change(editor, { target: { value: 'half-written' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Blame' }))
+    expect(screen.getByRole('button', { name: 'Blame' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('textbox', { name: 'composer' })).toBe(editor)
+    fireEvent.click(screen.getByRole('button', { name: 'Blame' }))
+    expect(screen.getByRole('textbox', { name: 'composer' })).toBe(editor)
+    expect(editor.value).toBe('half-written')
+  })
+
   it('keeps a path starting with a symbol in order while its start is cut', () => {
     const { container } = render(<Harness diffs={[makeDiff(change, '.gitlab-ci.yml')]} />)
     const isolate = container.querySelector('bdi')
@@ -156,9 +187,12 @@ describe('DiffViewer unchanged lines', () => {
   it('reads the file on demand with the whole-file query and keeps the row when that fails', () => {
     const refresh = vi.fn()
     const state = (data: unknown, error: unknown) => ({ data, error, loading: false, refreshing: false, refresh, snapshot: null, stale: false })
-    queryMock.mockReturnValue(state(null, { message: 'offline' }))
+    // A disabled (null) query, as the closed Blame's, has no data.
+    const answer = (data: unknown, error: unknown) => queryMock.mockImplementation((_session: string, query: unknown) => query ? state(data, error) : state(undefined, null))
+    answer(null, { message: 'offline' })
     const view = render(<Harness diffs={[diff]} fileSource={{ projectId: '15', sessionId: 's1', sha: 'head-sha' }} />)
-    expect(queryMock).not.toHaveBeenCalled()
+    // Only the closed Blame's disabled queries are asked for before the row is opened.
+    expect(queryMock.mock.calls.every(([, query]) => query === null)).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: '変更のない15行を表示' }))
     expect(queryMock).toHaveBeenLastCalledWith('s1', { kind: 'file', path: 'src/example.ts', projectId: '15', sha: 'head-sha' })
@@ -168,7 +202,7 @@ describe('DiffViewer unchanged lines', () => {
     fireEvent.click(screen.getByRole('button', { name: '変更のない15行を表示' }))
     expect(refresh).toHaveBeenCalled()
 
-    queryMock.mockReturnValue(state({ content: file }, null))
+    answer({ content: file }, null)
     view.rerender(<Harness diffs={[diff]} fileSource={{ projectId: '15', sessionId: 's1', sha: 'head-sha' }} />)
     expect(screen.getAllByTestId('diff-opened-line')).toHaveLength(15)
   })

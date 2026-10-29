@@ -269,6 +269,16 @@ it('moves the focus through the list with J and K without opening an MR', async 
   fireEvent.keyDown(window, { key: 'k' })
   expect(document.activeElement).toHaveTextContent('Add searchable list')
   expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened')
+
+  // An open menu keeps its letter keys.
+  const menu = document.body.appendChild(document.createElement('div'))
+  menu.setAttribute('role', 'menu')
+  const item = menu.appendChild(document.createElement('button'))
+  item.setAttribute('role', 'menuitem')
+  item.focus()
+  fireEvent.keyDown(item, { key: 'j' })
+  expect(item).toHaveFocus()
+  menu.remove()
 })
 
 it('keeps the list mounted and only toggles the selection parameter when opening an MR', async () => {

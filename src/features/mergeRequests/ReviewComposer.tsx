@@ -109,8 +109,13 @@ export function ReviewComposer({
     return () => { mountedRef.current = false }
   }, [])
 
+  // Showing a screen KeepAlive hid runs this again; only a newly chosen target takes the focus (and the caret to the end).
+  const focusedTargetRef = useRef<string | null>(null)
   useEffect(() => {
-    if (replyDiscussionId || inlineTarget) editorRef.current?.focus()
+    const target = replyDiscussionId ?? (inlineTarget ? '' : null)
+    // A remount of this composer (the diff laid out anew) gets its caret and focus back from the editor instead.
+    if (target !== null && target !== focusedTargetRef.current && !editorRef.current?.restoredCaret()) editorRef.current?.focus()
+    focusedTargetRef.current = target
   }, [inlineTarget, replyDiscussionId])
 
   const submit = async (submitKind: 'comment' | 'draft') => {
@@ -204,6 +209,7 @@ export function ReviewComposer({
           onPasteImage={onUploadAttachment ? (file) => { void uploadAttachment(file) } : undefined}
           placeholder={replyAuthor ? t('review.composer.replyTo', { author: replyAuthor }) : t('review.composer.placeholder')}
           ref={editorRef}
+          restoreKey={attachmentTargetKey ?? fallbackTargetKey}
           toolbarEnd={onUploadAttachment || suggestionLines !== undefined || templateProjectPath ? <>
             {templateProjectPath ? <TemplateMenu disabled={controlsDisabled} onInsert={(content) => editorRef.current?.insertBlock(content)} query={{ kind: 'commentTemplates', projectPath: templateProjectPath }} /> : null}
             {suggestionLines !== undefined ? (

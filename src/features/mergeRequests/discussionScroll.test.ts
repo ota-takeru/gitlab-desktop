@@ -58,4 +58,25 @@ describe('discussion scroll positions', () => {
     restoreAnchor(host, host, anchor!)
     expect(host.scrollTop).toBe(1150)
   })
+
+  it('keeps the first visible comment still when its thread grows above it', () => {
+    const host = setup([{ id: 'a', top: 100, height: 1000 }])
+    const thread = host.querySelector<HTMLElement>('[data-discussion-id="a"]')!
+    const notes = [{ id: 'n1', top: 100, height: 400 }, { id: 'n2', top: 500, height: 400 }]
+    for (const item of notes) {
+      const note = document.createElement('li')
+      note.dataset.noteId = item.id
+      note.getBoundingClientRect = () => ({ bottom: item.top + item.height - host.scrollTop, height: item.height, left: 0, right: 0, top: item.top - host.scrollTop, width: 0, x: 0, y: item.top - host.scrollTop, toJSON: () => null }) as DOMRect
+      thread.append(note)
+    }
+    host.scrollTop = 450
+    const anchor = captureAnchor(host, host)
+    expect(anchor).toEqual({ id: 'a', noteId: 'n2', offset: -50 })
+
+    // An image in the first comment loads and pushes the second one down by 300px.
+    notes[0].height += 300
+    notes[1].top += 300
+    restoreAnchor(host, host, anchor!)
+    expect(host.scrollTop).toBe(750)
+  })
 })

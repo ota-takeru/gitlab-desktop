@@ -95,6 +95,33 @@ describe('MergeRequestList search filters', () => {
     queryMock.mockReturnValue(emptyResult)
   })
 
+  it('keeps the conditions menu as wide as the search field, within the window', () => {
+    const observers: Array<{ callback: () => void; observed: Element[] }> = []
+    vi.stubGlobal('ResizeObserver', class {
+      observed: Element[] = []
+      constructor(public callback: () => void) { observers.push(this) }
+      observe(target: Element) { this.observed.push(target) }
+      disconnect() {}
+    })
+    try {
+      render(<MergeRequestList initialParams={{ state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
+      const anchor = screen.getByRole('combobox', { name: /で検索$/u }).closest<HTMLElement>('.MuiTextField-root')!
+      let width = 320
+      Object.defineProperty(anchor, 'clientWidth', { configurable: true, get: () => width })
+      openSearchOptions()
+      const popper = screen.getByRole('menu').closest<HTMLElement>('.MuiPopper-root')!
+      expect(getComputedStyle(popper).width).toBe('320px')
+      expect(getComputedStyle(popper).maxWidth).toBe(`${window.innerWidth - 16}px`)
+
+      width = 480
+      const observer = observers.find((item) => item.observed.includes(anchor))!
+      act(() => observer.callback())
+      expect(getComputedStyle(popper).width).toBe('480px')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('keeps the status line in place while loading so results do not move when they arrive', () => {
     queryMock.mockReturnValue({ ...emptyResult, loading: true })
     const view = render(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
@@ -731,11 +758,10 @@ describe('MergeRequestList search filters', () => {
     render(<MergeRequestList initialParams={{ reviewer: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
 
     expect(approvalQueries.at(-1)).toEqual({ items: [{ iid: '3', projectPath: 'team/desktop' }, { iid: '4', projectPath: 'team/desktop' }, { iid: '5', projectPath: 'team/desktop' }], kind: 'mrApprovals' })
-    const waiting = screen.getByRole('list', { name: '自分の承認待ち' })
-    expect(waiting).toHaveTextContent('Approved by others')
-    expect(waiting).toHaveTextContent('Not approved')
-    const approved = screen.getByRole('list', { name: '自分が承認済み' })
-    expect(approved).toHaveTextContent('Approved by me')
+    // One list with the section headings among the rows.
+    const list = screen.getByRole('list', { name: 'MR検索結果' })
+    expect(Array.from(list.querySelectorAll('h2'), (heading) => heading.textContent)).toEqual(['自分の承認待ち · 2件', '自分が承認済み · 1件'])
+    expect(list.textContent?.replace(/\s+/gu, ' ')).toMatch(/自分の承認待ち · 2件.*Approved by others.*Not approved.*自分が承認済み · 1件.*Approved by me/u)
     expect(screen.getByLabelText('自分が承認済み', { selector: '[role="img"]' })).toBeInTheDocument()
     expect(screen.getByLabelText('1人が承認済み')).toBeInTheDocument()
     expect(screen.getByLabelText('未承認')).toBeInTheDocument()
@@ -751,10 +777,16 @@ describe('MergeRequestList search filters', () => {
 
     expect(within(screen.getByRole('list', { name: 'MR検索結果' })).getByText('Metadata preview')).toBeInTheDocument()
     expect(screen.getByLabelText('承認状態を確認中')).toBeInTheDocument()
+    const row = screen.getByRole('list', { name: 'MR検索結果' }).querySelector<HTMLElement>('[data-list-row="true"]')
+    row?.focus()
 
     approvals = { ...emptyResult, data: [{ approvedBy: [], iid: '3', projectPath: 'team/desktop' }] }
     view.rerender(<MergeRequestList initialParams={{ assignee: 'self', state: 'opened' }} onOpenMergeRequest={vi.fn()} />)
-    expect(screen.getByRole('list', { name: '承認待ち' })).toHaveTextContent('Metadata preview')
+    const list = screen.getByRole('list', { name: 'MR検索結果' })
+    expect(list.textContent).toMatch(/承認待ち · 1件.*Metadata preview/u)
+    // Grouping keeps the row's element, so focus stays on it.
+    expect(list.querySelector('[data-list-row="true"]')).toBe(row)
+    expect(row).toHaveFocus()
     expect(screen.queryByLabelText('承認状態を確認中')).not.toBeInTheDocument()
 
     approvals = { ...emptyResult, error: new Error('graphql disabled') }

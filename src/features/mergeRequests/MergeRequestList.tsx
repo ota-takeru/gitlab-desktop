@@ -103,6 +103,14 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
   const searchFieldRef = useRef<HTMLDivElement>(null)
   const searchOptionsRef = useRef<HTMLDivElement>(null)
   const [searchOptions, setSearchOptions] = useState<{ anchor: HTMLElement; keyboard: boolean; width: number } | null>(null)
+  const searchOptionsAnchor = searchOptions?.anchor
+  useEffect(() => {
+    // The options stay as wide as the search field when the pane is resized while they are open.
+    if (!searchOptionsAnchor || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setSearchOptions((current) => current && current.width !== searchOptionsAnchor.clientWidth ? { ...current, width: searchOptionsAnchor.clientWidth } : current))
+    observer.observe(searchOptionsAnchor)
+    return () => observer.disconnect()
+  }, [searchOptionsAnchor])
   const [editing, setEditing] = useState<{ anchor: HTMLElement; kind: ConditionKind } | null>(null)
   // Names of people and projects chosen in the editor, keyed by `<kind>:<id>`; the condition keeps the ID.
   const [conditionNames, setConditionNames] = useState<Record<string, string>>({})
@@ -406,7 +414,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
             inputRef={searchInputRef}
             value={draft.search}
           />
-          <Popper anchorEl={searchOptions?.anchor} open={Boolean(searchOptions)} placement="bottom-start" sx={{ width: searchOptions?.width, zIndex: 'modal' }}>
+          <Popper anchorEl={searchOptions?.anchor} open={Boolean(searchOptions)} placement="bottom-start" sx={{ maxWidth: 'calc(100vw - 16px)', width: searchOptions?.width, zIndex: 'modal' }}>
             <Paper ref={searchOptionsRef} sx={{ ...panelFrame(), boxShadow: 8, mt: 0.5, py: 0.5 }}>
               <Typography color="textSecondary" sx={{ display: 'block', px: 1.5 }} variant="overline">{t('mrList.search.addCondition')}</Typography>
               <MenuList
@@ -674,7 +682,8 @@ interface RowPreview { approval: string | null; closeAt?: PointerSpot; mergeRequ
 function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, orderBy, pages, personalWorkspace, previewing, recentMrId, selected, sessionId, showProject }: { currentUserId: string; grouping: 'mine' | 'any' | null; onFocusRow: (preview: RowPreview) => void; onOpenMergeRequest: (mergeRequest: MergeRequest) => void; onOpenPipeline: (url: string) => Promise<void>; onPreview: (preview: RowPreview) => void; orderBy: OrderBy; pages: MergeRequest[][]; personalWorkspace: ReturnType<typeof usePersonalWorkspace>; previewing: MergeRequest | null; recentMrId: string | null; selected: MrRef | null; sessionId: string; showProject: boolean }) {
   const t = useT()
   // Approvals come in one request per loaded page, as GitLab is asked for at most a page at once.
-  const pageKeys = pages.map((items) => items.filter((mergeRequest) => mergeRequest.projectPath).map((mergeRequest) => `${mergeRequest.projectPath}!${mergeRequest.iid}`).join(' '))
+  // Sorted, so a page whose rows only change order keeps its approvals.
+  const pageKeys = pages.map((items) => items.filter((mergeRequest) => mergeRequest.projectPath).map((mergeRequest) => `${mergeRequest.projectPath}!${mergeRequest.iid}`).sort().join(' '))
   const [approvalPages, setApprovalPages] = useState<Record<string, ApprovalsResult>>({})
   const reportApprovals = useCallback((itemsKey: string, next: ApprovalsResult | null) => setApprovalPages((current) => withEntry(current, itemsKey, next)), [])
   const approvedBy = new Map<string, string[] | null>()
@@ -721,31 +730,30 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
   const mergeRequests = pages.flat()
   const loaders = pageKeys.map((itemsKey) => itemsKey ? <MergeRequestApprovalsLoader itemsKey={itemsKey} key={itemsKey} onChange={reportApprovals} sessionId={sessionId} /> : null)
   // The queues group once the first page's approvals are known; until then, or when they fail, the list stays flat.
-  if (!grouping || !approvalPages[pageKeys[0]]?.data) {
-    return <>
-      {loaders}
-      {approvalsError ? <Typography color="textSecondary" component="div" sx={{ px: paneGutter, py: 1 }} variant="caption">{t('mrList.results.approvalsError', { error: approvalsError.message })}</Typography> : null}
-      <Box aria-label={t('mrList.results.aria')} component="ul" onKeyDown={moveListRowFocus} role="list" sx={rowListSx}>{mergeRequests.map(row)}</Box>
-    </>
+  // Both are one list with the section headings among the rows, so rows keep their elements (and focus) when grouping starts or they move.
+  const grouped = Boolean(grouping && approvalPages[pageKeys[0]]?.data)
+  let items: ReactNode[]
+  if (!grouped) items = mergeRequests.map(row)
+  else {
+    const [waitingLabel, doneLabel] = grouping === 'mine' ? [t('mrList.sections.waitingMine'), t('mrList.sections.doneMine')] : [t('mrList.sections.waitingAny'), t('mrList.sections.doneAny')]
+    const sections: Array<[string, MergeRequest[]]> = [[waitingLabel, []], [doneLabel, []], [t('mrList.sections.pending'), []], [t('mrList.sections.unknown'), []]]
+    for (const mergeRequest of mergeRequests) {
+      const approval = approvalOf(mergeRequest)
+      const done = approval && (grouping === 'mine' ? approval.byMe : approval.count > 0)
+      sections[approval ? done ? 1 : 0 : approvalPending(mergeRequest) ? 2 : 3][1].push(mergeRequest)
+    }
+    items = sections.filter(([label, rows]) => rows.length > 0 || label === waitingLabel || label === doneLabel).flatMap(([label, rows]) => [
+      <Box component="li" key={`section:${label}`} role="presentation" sx={{ contentVisibility: 'visible' }}>
+        <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', ...hairline('bottom'), display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{t('mrList.sections.heading', { count: rows.length, label })}</Typography>
+      </Box>,
+      ...rows.map(row),
+    ])
   }
-  const [waitingLabel, doneLabel] = grouping === 'mine' ? [t('mrList.sections.waitingMine'), t('mrList.sections.doneMine')] : [t('mrList.sections.waitingAny'), t('mrList.sections.doneAny')]
-  const sections: Array<[string, MergeRequest[]]> = [[waitingLabel, []], [doneLabel, []], [t('mrList.sections.pending'), []], [t('mrList.sections.unknown'), []]]
-  for (const mergeRequest of mergeRequests) {
-    const approval = approvalOf(mergeRequest)
-    const done = approval && (grouping === 'mine' ? approval.byMe : approval.count > 0)
-    sections[approval ? done ? 1 : 0 : approvalPending(mergeRequest) ? 2 : 3][1].push(mergeRequest)
-  }
-  return (
-    <Box aria-label={t('mrList.results.aria')} onKeyDown={moveListRowFocus} role="group">
-      {loaders}
-      {sections.filter(([label, items]) => items.length > 0 || label === waitingLabel || label === doneLabel).map(([label, items]) => (
-        <Box aria-label={label} component="section" key={label}>
-          <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', ...hairline('bottom'), display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{t('mrList.sections.heading', { count: items.length, label })}</Typography>
-          {items.length ? <Box aria-label={label} component="ul" role="list" sx={rowListSx}>{items.map(row)}</Box> : null}
-        </Box>
-      ))}
-    </Box>
-  )
+  return <>
+    {loaders}
+    {approvalsError && !grouped ? <Typography color="textSecondary" component="div" sx={{ px: paneGutter, py: 1 }} variant="caption">{t('mrList.results.approvalsError', { error: approvalsError.message })}</Typography> : null}
+    <Box aria-label={t('mrList.results.aria')} component="ul" onKeyDown={moveListRowFocus} role="list" sx={rowListSx}>{items}</Box>
+  </>
 }
 
 const rowApprovals = new Map<string, RowApproval>()

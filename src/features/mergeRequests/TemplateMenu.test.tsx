@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -22,7 +22,7 @@ vi.mock('../shared/useGitLabQuery', () => ({
 }))
 
 describe('TemplateMenu', () => {
-  it('reads templates only once opened and groups comment templates by owner', () => {
+  it('reads templates only once opened and groups comment templates by owner', async () => {
     fixtures.queries = []
     const onInsert = vi.fn()
     render(<TemplateMenu onInsert={onInsert} query={{ kind: 'commentTemplates', projectPath: 'group/app' }} />)
@@ -35,10 +35,10 @@ describe('TemplateMenu', () => {
     expect(within(menu).getByText('個人')).toBeInTheDocument()
 
     fireEvent.click(within(menu).getByText('承認'))
-    expect(onInsert).toHaveBeenCalledWith('LGTM')
+    await waitFor(() => expect(onInsert).toHaveBeenCalledWith('LGTM'))
   })
 
-  it('inserts the chosen comment template at the caret of the composer', () => {
+  it('inserts the chosen comment template at the caret of the composer and leaves the focus there', async () => {
     function Harness() {
       const [value, setValue] = useState('前置き')
       return <ReviewComposer onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} templateProjectPath="group/app" value={value} />
@@ -49,6 +49,7 @@ describe('TemplateMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'テンプレート' }))
     fireEvent.click(within(screen.getByRole('menu')).getByText('テスト依頼'))
-    expect(textbox.value).toBe('前置き\nテストを追加してください。')
+    await waitFor(() => expect(textbox.value).toBe('前置き\nテストを追加してください。'))
+    expect(textbox).toHaveFocus()
   })
 })

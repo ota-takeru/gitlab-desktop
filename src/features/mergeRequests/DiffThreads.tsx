@@ -78,10 +78,11 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
   const rangeLabel = position?.lineRange ? t('review.thread.rangeLabel', { lines: positionLines(position) }) : null
   const resolvable = notes.filter((note) => note.resolvable)
   const resolved = resolvable.length > 0 && resolvable.every((note) => note.resolved)
-  // Only resolved threads fold; one being replied to stays open.
-  const [openedResolved, setExpanded] = useState(false)
+  // Only resolved threads fold, and only when shown resolved or resolved here: one already open stays
+  // open when someone else resolves it. One being replied to stays open.
+  const [folded, setFolded] = useState(resolved)
   const replying = actions?.replyDiscussionId === discussion.id
-  const expanded = !resolved || openedResolved || replying
+  const expanded = !resolved || !folded || replying
   // `clip` rather than `hidden`, so the reply editor's toolbar can stick while it scrolls.
   return <Box aria-label={t('review.discussion.threadLabel', { author: notes[0]?.author.name ?? '' })} component="article" data-diff-thread={discussion.id} tabIndex={-1} sx={{ bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, overflow: 'clip', scrollMarginTop: 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px) + 8px)', '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` } }}>
     {expanded ? <Stack divider={<Box sx={hairline('top')} />}>
@@ -98,10 +99,10 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
       </Box>)}
     </Stack> : null}
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', bgcolor: 'action.hover', ...(expanded ? hairline('top') : {}), px: 1, py: 0.25 }}>
-      {actions && resolvable.length > 0 ? <ResolveToggle dense disabled={actions.disabled} onToggle={(resolve) => actions.onResolve(discussion, resolve)} resolved={resolved} /> : null}
+      {actions && resolvable.length > 0 ? <ResolveToggle dense disabled={actions.disabled} onToggle={(resolve) => { setFolded(resolve); actions.onResolve(discussion, resolve) }} resolved={resolved} /> : null}
       {!expanded ? <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} title={notes[0] ? plainExcerpt(notes[0].body, 200) : undefined} variant="caption">{rangeLabel ? `${rangeLabel} · ` : ''}{notes.length > 1 ? t('review.thread.summaryMore', { author: notes[0]?.author.name ?? '', count: notes.length - 1 }) : t('review.thread.summary', { author: notes[0]?.author.name ?? '' })}</Typography>
         : <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{rangeLabel}</Typography>}
-      {resolved && !replying ? <Button onClick={() => setExpanded(!expanded)} size="small" sx={barButtonSx}>{expanded ? t('review.discussion.collapse') : t('review.thread.show')}</Button> : null}
+      {resolved && !replying ? <Button onClick={() => setFolded(expanded)} size="small" sx={barButtonSx}>{expanded ? t('review.discussion.collapse') : t('review.thread.show')}</Button> : null}
       {actions && !replying ? <Button disabled={actions.disabled} onClick={() => actions.onReply(discussion)} size="small" sx={barButtonSx}>{t('review.discussion.reply')}</Button> : null}
       {onOpen ? <Button onClick={() => onOpen(discussion.id)} size="small" sx={barButtonSx}>{actions ? t('review.thread.openInDiscussions') : t('review.thread.replyInDiscussions')}</Button> : null}
     </Stack>

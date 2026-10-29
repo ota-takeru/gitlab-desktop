@@ -372,7 +372,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
         globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0)
         return
       }
-      if (event.defaultPrevented || modifier || event.altKey || editing || document.querySelector('[role="dialog"]')) return
+      if (event.defaultPrevented || modifier || event.altKey || editing || isInsideMenu(event.target) || document.querySelector('[role="dialog"]')) return
       if (event.key === '?') {
         event.preventDefault()
         setShortcutsOpen(true)
@@ -1010,6 +1010,11 @@ function parseTab(value: string | undefined): ReviewTab | undefined {
 /** Composers, toolbars, menus and forms handle Esc themselves. `data-composer` marks a composer's whole region. */
 function isInsideControlGroup(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-composer], [role="toolbar"], [role="menu"], [role="menubar"], [role="listbox"], form') !== null
+}
+
+/** An open menu or listbox owns letter keys (MUI only consumes letters that match an item). */
+function isInsideMenu(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

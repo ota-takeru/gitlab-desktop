@@ -1219,9 +1219,17 @@ impl NativeState {
         if check_cooldown(&session).is_err() {
             return Ok(None);
         }
+        let api_url = project_upload_api_url(&session.public.instance_url, &url);
         let fetched = tokio::select! {
             fetched = async {
                 let _slot = session.slots.clone().acquire_owned().await.ok()?;
+                // The web route of a project upload signs in through the browser and
+                // ignores the token; GitLab 17.4+ serves the same file through the API.
+                if let Some(api_url) = api_url {
+                    if let Some(Some(image)) = fetch_image_data(&session.client, api_url, MARKDOWN_IMAGE_MAX_BYTES).await {
+                        return Some(Some(image));
+                    }
+                }
                 fetch_image_data(&session.client, url, MARKDOWN_IMAGE_MAX_BYTES).await
             } => fetched,
             _ = session.cancelled.cancelled() => return Err(cancelled()),
@@ -1763,6 +1771,40 @@ fn instance_markdown_image_url(instance_url: &str, input: &str) -> Option<Url> {
         && ((path.contains("/uploads/") && !path.contains("%2f"))
             || is_repository_raw_file(&path[base_path.len()..], url.query())))
     .then_some(url)
+}
+
+/// `<project path>/uploads/<secret>/<file>` or `-/project/<id>/uploads/<secret>/<file>`
+/// as `api/v4/projects/<id or encoded path>/uploads/<secret>/<file>`.
+fn project_upload_api_url(instance_url: &str, url: &Url) -> Option<Url> {
+    let base = normalize_instance(instance_url).ok()?;
+    let rest = url.path().get(base.path().len()..)?;
+    let segments: Vec<&str> = rest.split('/').collect();
+    let [project @ .., "uploads", secret, file] = segments.as_slice() else {
+        return None;
+    };
+    let project = match project {
+        ["-", "project", id] if id.bytes().all(|byte| byte.is_ascii_digit()) => (*id).to_owned(),
+        [first, _, ..]
+            if *first != "-"
+                && project
+                    .iter()
+                    .all(|segment| !segment.is_empty() && *segment != "-") =>
+        {
+            project.join("%2F")
+        }
+        _ => return None,
+    };
+    if secret.is_empty()
+        || !secret.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        || file.is_empty()
+        || url.query().is_some()
+    {
+        return None;
+    }
+    base.join(&format!(
+        "api/v4/projects/{project}/uploads/{secret}/{file}"
+    ))
+    .ok()
 }
 
 /// `api/v4/projects/<id>/repository/files/<encoded path>/raw?ref=<ref>`: the

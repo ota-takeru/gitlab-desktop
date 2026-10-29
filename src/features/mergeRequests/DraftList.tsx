@@ -25,6 +25,17 @@ import { useT } from '../../i18n/useT'
 export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, mentionParticipants, nextPage, onDelete, onEdit, onNextPage, onOpenPosition, onPrevPage, onPublish, onPublishAll, onPublishSelected, onSelect, onSetEdit, page, publishingAll, selected, sessionId, statuses }: { disabled: boolean; drafts: Draft[]; draftEditBufferKey: (draft: Draft) => string; draftEditId: string | null; mentionParticipants?: GitLabUser[]; nextPage: number | null; onDelete: (draft: Draft) => Promise<boolean>; onEdit: (draft: Draft, body: string) => Promise<boolean>; onNextPage: () => void; onOpenPosition: (position: Position) => void; onPrevPage: () => void; onPublish: (draft: Draft) => Promise<boolean>; onPublishAll: () => Promise<void>; onPublishSelected: () => Promise<void>; onSelect: (id: string) => void; onSetEdit: (draftId: string | null) => void; page: number; publishingAll: boolean; selected: string[]; sessionId: string | null; statuses: Record<string, DraftStatus> }) {
   const t = useT()
   const confirm = useConfirm()
+  const editButtons = useRef(new Map<string, HTMLButtonElement>())
+  const returnFocusRef = useRef<string | null>(null)
+  // A saved edit shows at once; GitLab's copy takes over when a refetch brings a changed body.
+  const [savedEdits, setSavedEdits] = useState<Record<string, { base: string; body: string }>>({})
+  useEffect(() => {
+    // The edit button is enabled again only once the editor has closed; focus returns to it then, unless it went elsewhere.
+    const id = returnFocusRef.current
+    if (!id || draftEditId === id) return
+    returnFocusRef.current = null
+    if (!document.activeElement || document.activeElement === document.body) editButtons.current.get(id)?.focus({ preventScroll: true })
+  }, [draftEditId])
   if (!drafts.length && page === 1) return null
   const selectedDrafts = drafts.filter((draft) => selected.includes(draft.id))
   const paged = nextPage !== null || page > 1
@@ -33,7 +44,9 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><PublishRoundedIcon color="primary" fontSize="small" /><Typography color="textSecondary" component="h2" id="draft-list-title" variant="overline">{t('review.drafts.title')}</Typography><Chip label={paged ? t('review.drafts.countOnPage', { count: drafts.length }) : t('review.drafts.count', { count: drafts.length })} size="small" variant="outlined" /><Tooltip title={t('review.drafts.publishAllHint')}><Box component="span" sx={{ ml: 'auto' }}><Button disabled={disabled || publishingAll} onClick={() => void onPublishAll()} size="small" startIcon={<PublishRoundedIcon />} variant="outlined">{publishingAll ? t('review.drafts.publishing') : t('review.drafts.publishAll')}</Button></Box></Tooltip></Stack>
         <List disablePadding>
-          {drafts.map((draft) => {
+          {drafts.map((fetched) => {
+            const savedEdit = savedEdits[fetched.id]
+            const draft = savedEdit?.base === fetched.body ? { ...fetched, body: savedEdit.body } : fetched
             const status = statuses[draft.id] ?? 'idle'
             const excerpt = plainExcerpt(draft.body, 80)
             const name = t('review.drafts.name', { excerpt: plainExcerpt(draft.body, 20) })
@@ -48,12 +61,16 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
                 <Checkbox checked={selected.includes(draft.id)} disabled={disabled} slotProps={{ input: { 'aria-label': t('review.drafts.select', { name }) } }} onChange={() => onSelect(draft.id)} size="small" />
                 <ListItemText primary={<Tooltip title={draft.body}><Typography noWrap variant="body2">{excerpt || t('review.drafts.noBody')}</Typography></Tooltip>} secondary={secondary} slotProps={{ secondary: { component: 'div', noWrap: true } }} sx={{ minWidth: 0, my: 0 }} />
                 <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
-                  <Tooltip title={t('review.drafts.editTooltip')}><span><IconButton aria-label={t('review.drafts.edit', { name })} disabled={disabled || editing || status === 'pending' || status === 'unknown' || status === 'success'} onClick={() => onSetEdit(draft.id)} size="small"><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
+                  <Tooltip title={t('review.drafts.editTooltip')}><span><IconButton aria-label={t('review.drafts.edit', { name })} disabled={disabled || editing || status === 'pending' || status === 'unknown' || status === 'success'} onClick={() => onSetEdit(draft.id)} ref={(element) => { if (element) editButtons.current.set(draft.id, element); else editButtons.current.delete(draft.id) }} size="small"><EditOutlinedIcon fontSize="small" /></IconButton></span></Tooltip>
                   <Tooltip title={t('review.drafts.publishTooltip')}><span><IconButton aria-label={t('review.drafts.publish', { name })} disabled={disabled || status === 'pending' || status === 'unknown'} onClick={() => void onPublish(draft)} size="small"><PublishRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
                   <Tooltip title={t('review.drafts.deleteTooltip')}><span><IconButton aria-label={t('review.drafts.delete', { name })} disabled={disabled || status === 'pending'} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: excerpt, title: t('review.drafts.delete.title') }).then((ok) => { if (ok) void onDelete(draft) })} size="small"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
                 </Stack>
               </Stack>
-              {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} mentionParticipants={mentionParticipants} onClose={() => onSetEdit(null)} onSave={(body) => onEdit(draft, body)} sessionId={sessionId} /> : null}
+              {editing ? <DraftEditor bufferKey={draftEditBufferKey(draft)} disabled={disabled} draft={draft} mentionParticipants={mentionParticipants} onClose={(editorHadFocus) => { if (editorHadFocus) returnFocusRef.current = draft.id; onSetEdit(null) }} onSave={async (body) => {
+                const saved = await onEdit(draft, body)
+                if (saved) setSavedEdits((current) => ({ ...current, [draft.id]: { base: fetched.body, body } }))
+                return saved
+              }} sessionId={sessionId} /> : null}
             </ListItem>
           })}
         </List>
@@ -68,9 +85,14 @@ export function DraftList({ disabled, drafts, draftEditBufferKey, draftEditId, m
  * Edits a pending-review comment in place. Its text is kept in the composer
  * buffer, so closing (Esc) or leaving the tab keeps it; 取消 of a changed text asks first.
  */
-function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; mentionParticipants?: GitLabUser[]; onClose: () => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
+function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose, onSave, sessionId }: { bufferKey: string; disabled: boolean; draft: Draft; mentionParticipants?: GitLabUser[]; onClose: (editorHadFocus: boolean) => void; onSave: (body: string) => Promise<boolean>; sessionId: string | null }) {
   const t = useT()
   const { body, change, persistenceStatus } = useComposerBuffer(bufferKey, sessionId)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const closeEditor = () => {
+    const active = document.activeElement
+    onClose(!active || active === document.body || Boolean(containerRef.current?.contains(active)))
+  }
   const confirm = useConfirm()
   const [saving, setSaving] = useState(false)
   const seededRef = useRef(false)
@@ -79,19 +101,18 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
   useEffect(() => {
     // Start from the draft, or from the text kept when the edit was last closed.
     if (seededRef.current || persistenceStatus === 'hydrating') return
-    seededRef.current = true
-    seedComposerBuffer(bufferKey, draft.body)
+    seededRef.current = seedComposerBuffer(bufferKey, draft.body)
   }, [bufferKey, draft.body, persistenceStatus])
   const changed = body !== draft.body
   const close = () => {
     // An unchanged copy of the draft is not worth keeping.
     if (!changed) change('')
-    onClose()
+    closeEditor()
   }
   const cancel = async () => {
     if (changed && !await confirm({ cancelLabel: t('review.editor.discard.cancel'), confirmLabel: t('review.editor.discard.confirm'), destructive: true, title: t('review.drafts.discard.title') })) return
     change('')
-    onClose()
+    closeEditor()
   }
   const save = async () => {
     const trimmed = body.trim()
@@ -100,7 +121,7 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
     try {
       if (await onSave(trimmed)) {
         change('')
-        onClose()
+        closeEditor()
       }
     } finally {
       setSaving(false)
@@ -112,7 +133,7 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void save(); return true }
     return false
   }
-  return <Stack data-composer="" ref={mentionContainerRef} spacing={1} sx={{ pb: 1, pt: 0.5 }}>
+  return <Stack data-composer="" ref={(element: HTMLDivElement | null) => { containerRef.current = element; mentionContainerRef(element) }} spacing={1} sx={{ pb: 1, pt: 0.5 }}>
     <MarkdownEditor {...mentionEditorProps} autoFocus disabled={disabled || saving} label={t('review.drafts.editTooltip')} onChange={change} onKeyDown={handleKeyDown} ref={editorRef} value={body} />
     {mentionPopup}
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>

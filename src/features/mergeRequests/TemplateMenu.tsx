@@ -4,7 +4,7 @@ import ListItemText from '@mui/material/ListItemText'
 import ListSubheader from '@mui/material/ListSubheader'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 
 import { useT } from '../../i18n/useT'
 import type { CommentTemplatesQuery, DescriptionTemplatesQuery, TextTemplate } from '../../types/gitlab'
@@ -24,13 +24,20 @@ export function TemplateMenu({ disabled = false, onInsert, query }: {
   const menuId = useId()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [opened, setOpened] = useState(false)
+  const chosenRef = useRef<string | null>(null)
   const templates = useGitLabQuery(session?.id ?? null, opened ? query : null)
   const items = templates.data ?? []
   const grouped = query.kind === 'commentTemplates'
 
+  // Inserted once the menu has closed: its focus trap gives the focus back to this button as it closes, taking it from a Markdown input.
   const choose = (template: TextTemplate) => {
+    chosenRef.current = template.content
     setAnchor(null)
-    onInsert(template.content)
+  }
+  const insertChosen = () => {
+    const content = chosenRef.current
+    chosenRef.current = null
+    if (content !== null) onInsert(content)
   }
   const status = templates.error
     ? t('review.template.failed', { error: templates.error.message })
@@ -48,7 +55,7 @@ export function TemplateMenu({ disabled = false, onInsert, query }: {
     >
       {t('review.template.button')}
     </Button>
-    <Menu anchorEl={anchor} id={menuId} onClose={() => setAnchor(null)} open={Boolean(anchor)} slotProps={{ paper: { sx: { maxHeight: 360, maxWidth: 360 } } }}>
+    <Menu anchorEl={anchor} id={menuId} onClose={() => setAnchor(null)} open={Boolean(anchor)} slotProps={{ paper: { sx: { maxHeight: 360, maxWidth: 360 } }, transition: { onExited: insertChosen } }}>
       {status ? <MenuItem disabled>{status}</MenuItem> : null}
       {grouped
         ? SCOPES.flatMap((scope) => {

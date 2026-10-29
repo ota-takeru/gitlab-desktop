@@ -3071,10 +3071,12 @@ async fn fetch_job_trace(
     validate_id(project_id, "projectId")?;
     validate_id(job_id, "jobId")?;
     let url = endpoint(api_base, &["projects", project_id, "jobs", job_id, "trace"])?;
-    let (bytes, head_omitted) = get_trace_tail(client, &url).await?;
-    let (lines, head_omitted) = render_trace(&bytes, head_omitted);
+    let (bytes, head_omitted, omitted_lines) = get_trace_tail(client, &url).await?;
+    let (lines, head_omitted, trimmed) = render_trace(&bytes, head_omitted);
+    // Where the first line sits in the whole log, so a page of older lines stays put as the log grows.
+    let omitted_lines = omitted_lines.map(|count| count + trimmed as u64);
     Ok(ApiResult {
-        data: json!({ "lines": lines, "headOmitted": head_omitted }),
+        data: json!({ "lines": lines, "headOmitted": head_omitted, "omittedLines": omitted_lines }),
         next_page: None,
         total_pages: None,
         truncated: head_omitted,

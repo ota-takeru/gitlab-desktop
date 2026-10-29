@@ -57,12 +57,14 @@ export function JobLog({ job, onOpenUrl, projectId, sessionId }: { job: Pipeline
   const active = isActiveStatus(job.status)
   const query = useMemo<JobTraceQuery>(() => ({ jobId: job.id, kind: 'jobTrace', projectId }), [job.id, projectId])
   const result = useGitLabQuery<JobTraceQuery>(sessionId, query, { refreshIntervalMs: active ? PIPELINE_REFRESH_MS : false })
-  // Counted from the end, so the newest lines stay in view as a running log grows.
-  const [pageFromEnd, setPageFromEnd] = useState(0)
+  // null follows the end, so the newest lines stay in view as a running log grows; an older page keeps the same lines while lines are added.
+  // It counts lines of the whole log: when its start is left out, `omittedLines` places the kept lines in it.
+  const [pinnedEnd, setPinnedEnd] = useState<number | null>(null)
   const lines = useMemo(() => result.data?.lines ?? [], [result.data])
-  const pages = Math.max(1, Math.ceil(lines.length / LOG_PAGE_LINES))
-  const page = Math.min(pageFromEnd, pages - 1)
-  const end = lines.length - page * LOG_PAGE_LINES
+  const offset = result.data?.omittedLines ?? 0
+  const latest = pinnedEnd === null || pinnedEnd - offset >= lines.length
+  // A page whose lines were all since left out of the kept end gives way to the earliest kept lines.
+  const end = latest ? lines.length : pinnedEnd - offset > 0 ? pinnedEnd - offset : Math.min(lines.length, LOG_PAGE_LINES)
   const start = Math.max(0, end - LOG_PAGE_LINES)
   const shown = useMemo(() => lines.slice(start, end), [end, lines, start])
   const openButton = job.webUrl ? <Button color="inherit" onClick={() => onOpenUrl(job.webUrl)} size="small">{t('mergeRequest.common.openInGitLab')}</Button> : undefined
@@ -85,10 +87,10 @@ export function JobLog({ job, onOpenUrl, projectId, sessionId }: { job: Pipeline
       {result.data && lines.length === 0 ? <Typography color="textSecondary" variant="body2">{active ? t('mergeRequest.jobLog.emptyActive') : t('mergeRequest.jobLog.empty')}</Typography> : null}
       {lines.length > LOG_PAGE_LINES ? (
         <Stack aria-label={t('mergeRequest.jobLog.pages')} direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('mergeRequest.jobLog.range', { end: String(end), start: String(start + 1), total: String(lines.length) })}</Typography>
-          <Button aria-label={t('mergeRequest.jobLog.previousLines', { count: LOG_PAGE_LINES })} disabled={start === 0} onClick={() => setPageFromEnd(page + 1)} size="small">{t('mergeRequest.jobLog.previous')}</Button>
-          <Button aria-label={t('mergeRequest.jobLog.nextLines', { count: LOG_PAGE_LINES })} disabled={page === 0} onClick={() => setPageFromEnd(page - 1)} size="small">{t('mergeRequest.jobLog.next')}</Button>
-          <Button disabled={page === 0} onClick={() => setPageFromEnd(0)} size="small">{t('mergeRequest.jobLog.last')}</Button>
+          <Typography color="textSecondary" sx={{ mr: 'auto' }} variant="caption">{t('mergeRequest.jobLog.range', { end: String(offset + end), start: String(offset + start + 1), total: String(offset + lines.length) })}</Typography>
+          <Button aria-label={t('mergeRequest.jobLog.previousLines', { count: LOG_PAGE_LINES })} disabled={start === 0} onClick={() => setPinnedEnd(offset + start)} size="small">{t('mergeRequest.jobLog.previous')}</Button>
+          <Button aria-label={t('mergeRequest.jobLog.nextLines', { count: LOG_PAGE_LINES })} disabled={latest} onClick={() => setPinnedEnd(end + LOG_PAGE_LINES >= lines.length ? null : offset + end + LOG_PAGE_LINES)} size="small">{t('mergeRequest.jobLog.next')}</Button>
+          <Button disabled={latest} onClick={() => setPinnedEnd(null)} size="small">{t('mergeRequest.jobLog.last')}</Button>
         </Stack>
       ) : null}
       {shown.length ? <JobLogLines label={t('mergeRequest.jobLog.body', { name: job.name })} lines={shown} /> : null}

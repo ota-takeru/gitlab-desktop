@@ -289,9 +289,16 @@ export function moveComposerBuffer(fromKey: string, toKey: string): boolean {
   return restoreComposerBuffer(toKey, text) && setComposerBody(fromKey, '')
 }
 
-/** Sets the initial text of an input that starts from existing content, unless it already holds text. */
+/**
+ * Sets the initial text of an input that starts from existing content, unless it already holds text.
+ * Returns false while the kept text is still being read (checked on the store, not a render's
+ * snapshot), so the caller seeds again once hydration has finished instead of overwriting it.
+ */
 export function seedComposerBuffer(bufferKey: string, text: string): boolean {
-  return composerBuffers.get(bufferKey)?.body ? true : setComposerBody(bufferKey, text)
+  const entry = composerBuffers.get(bufferKey)
+  if (entry?.body) return true
+  if (entry?.status === 'hydrating') return false
+  return setComposerBody(bufferKey, text)
 }
 
 function setComposerBody(bufferKey: string, nextBody: string): boolean {

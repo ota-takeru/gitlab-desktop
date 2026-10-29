@@ -31,7 +31,13 @@ export function formatMarkdown(value: string, selectionStart: number, selectionE
     case 'bold': return wrap(value, start, end, '**')
     case 'italic': return wrap(value, start, end, '_')
     case 'strikethrough': return wrap(value, start, end, '~~')
-    case 'code': return value.slice(start, end).includes('\n') ? block(value, start, end, `\`\`\`\n${value.slice(start, end)}\n\`\`\``, 4, value.slice(start, end).length) : wrap(value, start, end, '`')
+    case 'code': {
+      const selected = value.slice(start, end)
+      if (!selected.includes('\n')) return selected.includes('`') ? inlineCode(value, start, end) : wrap(value, start, end, '`')
+      // A fence longer than any backtick run inside, so a fence in the selection does not close it.
+      const fence = '`'.repeat(Math.max(3, longestBacktickRun(selected) + 1))
+      return block(value, start, end, `${fence}\n${selected}\n${fence}`, fence.length + 1, selected.length)
+    }
     case 'link': return link(value, start, end)
     case 'heading': return prefixLines(value, start, end, () => '### ', /^#{1,6} /)
     case 'quote': return prefixLines(value, start, end, () => '> ', /^> ?/)
@@ -61,6 +67,30 @@ function wrap(value: string, rawStart: number, rawEnd: number, marker: string): 
   return { end, selectionEnd: inner + selected.length, selectionStart: inner, start, text: `${marker}${selected}${marker}` }
 }
 
+function longestBacktickRun(text: string): number {
+  return Math.max(0, ...Array.from(text.matchAll(/`+/gu), (match) => match[0].length))
+}
+
+/**
+ * Inline code around a selection holding backticks: the delimiter is one backtick longer than the longest run
+ * inside, with a space on a side that starts or ends with a backtick. Selected inline code is unwrapped.
+ */
+function inlineCode(value: string, rawStart: number, rawEnd: number): MarkdownEdit {
+  let start = rawStart
+  let end = rawEnd
+  while (start < end && /\s/.test(value[start])) start += 1
+  while (end > start && /\s/.test(value[end - 1])) end -= 1
+  const selected = value.slice(start, end)
+  const wrapped = /^(`+)( ?)([\s\S]*?)\2\1$/u.exec(selected)
+  if (wrapped && wrapped[3] && longestBacktickRun(wrapped[3]) < wrapped[1].length) {
+    return { end, selectionEnd: start + wrapped[3].length, selectionStart: start, start, text: wrapped[3] }
+  }
+  const marker = '`'.repeat(longestBacktickRun(selected) + 1)
+  const padding = selected.startsWith('`') || selected.endsWith('`') ? ' ' : ''
+  const inner = start + marker.length + padding.length
+  return { end, selectionEnd: inner + selected.length, selectionStart: inner, start, text: `${marker}${padding}${selected}${padding}${marker}` }
+}
+
 function link(value: string, start: number, end: number): MarkdownEdit {
   const selected = value.slice(start, end)
   if (/^https?:\/\/\S+$/i.test(selected)) {
@@ -82,7 +112,8 @@ function block(value: string, start: number, end: number, body: string, selectFr
 }
 
 function prefixLines(value: string, start: number, end: number, prefix: (index: number) => string, pattern: RegExp, list = false): MarkdownEdit {
-  const lineStart = value.lastIndexOf('\n', start - 1) + 1
+  // lastIndexOf would read -1 as 0 and find a newline the text starts with.
+  const lineStart = start === 0 ? 0 : value.lastIndexOf('\n', start - 1) + 1
   const lastChar = end > start && value[end - 1] === '\n' ? end - 1 : end
   const newline = value.indexOf('\n', lastChar)
   const lineEnd = newline === -1 ? value.length : newline

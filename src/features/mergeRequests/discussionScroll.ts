@@ -61,19 +61,33 @@ export function positionAtLatest(host: HTMLElement, root: ParentNode, unreadNote
   host.scrollTop += rect.height + GAP * 2 > bottom - top ? rect.top - top - GAP : rect.bottom - bottom + GAP * 2
 }
 
-/** The first thread whose bottom is below the header, with its current offset; used to keep it still. */
-export function captureAnchor(host: HTMLElement, root: ParentNode): { id: string; offset: number } | null {
+export interface ScrollAnchor { id: string; offset: number; noteId?: string }
+
+/**
+ * The first thread whose bottom is below the header, with its current offset; used to keep it still.
+ * Within an open thread the first such comment is kept instead, so growth above it in the same
+ * thread (a late image, an expanded comment) does not move what is being read.
+ */
+export function captureAnchor(host: HTMLElement, root: ParentNode): ScrollAnchor | null {
   const top = contentTop(host)
   for (const element of root.querySelectorAll<HTMLElement>('[data-discussion-id]')) {
     const rect = element.getBoundingClientRect()
-    if (rect.bottom > top) return { id: element.dataset.discussionId ?? '', offset: rect.top - top }
+    if (rect.bottom <= top) continue
+    const id = element.dataset.discussionId ?? ''
+    for (const note of element.querySelectorAll<HTMLElement>('[data-note-id]')) {
+      const noteRect = note.getBoundingClientRect()
+      if (noteRect.bottom > top) return { id, noteId: note.dataset.noteId, offset: noteRect.top - top }
+    }
+    return { id, offset: rect.top - top }
   }
   return null
 }
 
-export function restoreAnchor(host: HTMLElement, root: ParentNode, anchor: { id: string; offset: number }): void {
-  const element = Array.from(root.querySelectorAll<HTMLElement>('[data-discussion-id]')).find((item) => item.dataset.discussionId === anchor.id)
-  if (!element) return
+export function restoreAnchor(host: HTMLElement, root: ParentNode, anchor: ScrollAnchor): void {
+  const thread = Array.from(root.querySelectorAll<HTMLElement>('[data-discussion-id]')).find((item) => item.dataset.discussionId === anchor.id)
+  if (!thread) return
+  // A comment folded away since leaves its thread as the anchor (not exact, but close).
+  const element = (anchor.noteId ? findNote(thread, anchor.noteId) : null) ?? thread
   const delta = element.getBoundingClientRect().top - contentTop(host) - anchor.offset
   if (Math.abs(delta) >= 1) host.scrollTop += delta
 }

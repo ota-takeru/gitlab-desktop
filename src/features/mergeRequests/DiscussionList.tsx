@@ -27,7 +27,7 @@ import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useStableCallback } from '../shared/useStableCallback'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { GitLabUserLink } from '../../components/GitLabUserLink'
-import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest } from './discussionScroll'
+import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest, type ScrollAnchor } from './discussionScroll'
 import { CommentChangeStatus } from './CommentChangeStatus'
 import { positionLabel as formatPositionLabel } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
@@ -109,7 +109,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const [pendingJumpNoteId, setPendingJumpNoteId] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const restoreScrollRef = useRef<{ element: HTMLElement; top: number; left: number } | null>(null)
-  const anchorRef = useRef<{ id: string; offset: number } | null>(null)
+  const anchorRef = useRef<ScrollAnchor | null>(null)
   const olderRef = useRef(older)
   const { setUnsafe } = useAutoUpdateSafety('note-edit')
   // The comments are memoized; the callbacks they get keep one identity and run the caller's latest ones.
@@ -140,6 +140,10 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const latestNote = useMemo(() => [...loadedCommentNotes].sort((left, right) => compareNotesChronologically(left.note, right.note)).at(-1), [loadedCommentNotes])
   const unreadNotes = useMemo(() => loadedCommentNotes.filter(({ note }) => unreadIds.has(note.id)), [loadedCommentNotes, unreadIds])
   const earliestUnreadNote = useMemo(() => [...unreadNotes].sort((left, right) => compareNotesChronologically(left.note, right.note))[0], [unreadNotes])
+
+  // A thread is folded when first shown resolved; one already open stays open when someone else resolves it.
+  const unseenThreads = commentDiscussions.filter(({ discussion }) => !(discussion.id in collapsedThreads))
+  if (unseenThreads.length) setCollapsedThreads((current) => ({ ...Object.fromEntries(unseenThreads.map(({ discussion, notes }) => [discussion.id, isResolved(notes)])), ...current }))
 
   useEffect(() => {
     setUnsafe(Boolean(editing))
@@ -172,7 +176,11 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     host.addEventListener('touchstart', markIntent, { passive: true })
     host.addEventListener('pointerdown', markIntent)
     host.addEventListener('keydown', markIntent)
+    // Content that changes size by itself (an image loading, a code context arriving) is kept from moving the reading position too.
+    const resizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { if (anchorRef.current) restoreAnchor(host, root, anchorRef.current) })
+    resizes?.observe(root)
     return () => {
+      resizes?.disconnect()
       cancelAnimationFrame(frame)
       host.removeEventListener('scroll', onScroll)
       host.removeEventListener('wheel', markIntent)
@@ -190,6 +198,8 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         target.focus({ preventScroll: true })
         if (host) scrollToNearest(host, target)
         else target.scrollIntoView?.({ behavior: 'auto', block: 'nearest' })
+        // The view moved without a scroll event yet; the next run must keep this position, not the one before the jump.
+        if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current)
         setPendingJumpNoteId(null)
         restoreScrollRef.current = null
         return
@@ -200,6 +210,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
       restore.element.scrollTop = restore.top
       restore.element.scrollLeft = restore.left
       restoreScrollRef.current = null
+      if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current)
       return
     }
     const anchor = anchorRef.current
@@ -265,7 +276,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const noteStart = (notePage - 1) * NOTES_PER_PAGE
         const visibleNotes = notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
         const containsEditingNote = editingNoteIndex >= 0
-        // Resolved threads start collapsed; any thread can be folded or opened.
+        // Resolved threads start collapsed (see unseenThreads); any thread can be folded or opened.
         const replying = discussion.id === replyDiscussionId && Boolean(replyComposer)
         const isCollapsed = isThreadCollapsible(notes) && (collapsedThreads[discussion.id] ?? resolved) && !containsEditingNote && !replying
         const position = notes.find((note) => note.position)?.position ?? null
@@ -294,7 +305,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                   {isCollapsed && firstNote ? <Tooltip describeChild title={plainExcerpt(firstNote.body, 300)}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 0', minWidth: 0 }} variant="caption">— {firstNote.author.name}: {plainExcerpt(firstNote.body, 80)}</Typography></Tooltip> : null}
                 </Stack>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
-                  {canResolve ? <ResolveToggle disabled={disabled} onToggle={(resolve) => void onResolve(discussion, resolve)} resolved={resolved} /> : null}
+                  {canResolve ? <ResolveToggle disabled={disabled} onToggle={(resolve) => void onResolve(discussion, resolve).then((ok) => { if (ok) setCollapsedThreads((current) => ({ ...current, [discussion.id]: resolve })) })} resolved={resolved} /> : null}
                   <Button
                     aria-expanded={!isCollapsed}
                     disabled={containsEditingNote || replying}
@@ -378,10 +389,29 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
   const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
+  const itemRef = useRef<HTMLElement | null>(null)
+  const editButtonRef = useRef<HTMLButtonElement | null>(null)
+  // A saved edit shows at once; GitLab's copy takes over when a refetch brings a changed body.
+  const [savedEdit, setSavedEdit] = useState<{ base: string; body: string } | null>(null)
+  if (savedEdit && savedEdit.base !== note.body) setSavedEdit(null)
+  const shown = useMemo(() => savedEdit ? { ...note, body: savedEdit.body } : note, [note, savedEdit])
+  const saveEdit = async (body: string) => {
+    const saved = await onEdit(note, body)
+    if (saved && body !== note.body) setSavedEdit({ base: note.body, body })
+    return saved
+  }
+  const closeEditor = () => {
+    // Focus goes back to the edit button (or the comment), unless the reader already moved it elsewhere.
+    const active = document.activeElement
+    const returnFocus = !active || active === document.body || Boolean(itemRef.current?.contains(active))
+    setEditing(null)
+    if (returnFocus) (editButtonRef.current && !editButtonRef.current.disabled ? editButtonRef.current : itemRef.current)?.focus({ preventScroll: true })
+  }
   return (
     <Box
       component="li"
       data-note-id={note.id}
+      ref={itemRef}
       tabIndex={-1}
       sx={{
         ...(divided ? hairline('top', { position: false }) : {}),
@@ -411,14 +441,14 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
           </Stack>
           {own && !note.system ? (
             <Stack className="note-actions" direction="row" sx={{ alignItems: 'center', flexShrink: 0, mr: -1, opacity: editing ? 1 : 0, transition: 'opacity 100ms', '@media (hover: none)': { opacity: 1 } }}>
-              <Tooltip title={t('review.note.editTooltip')}><IconButton aria-label={t('review.note.edit', { author: note.author.name, excerpt: plainExcerpt(note.body, 30) })} disabled={disabled} onClick={() => setEditing(note.id)}><EditOutlinedIcon /></IconButton></Tooltip>
+              <Tooltip title={t('review.note.editTooltip')}><IconButton aria-label={t('review.note.edit', { author: note.author.name, excerpt: plainExcerpt(shown.body, 30) })} disabled={disabled} onClick={() => setEditing(note.id)} ref={editButtonRef}><EditOutlinedIcon /></IconButton></Tooltip>
               <Tooltip title={t('review.note.deleteTooltip')}><IconButton aria-label={t('review.note.delete', { author: note.author.name, excerpt: plainExcerpt(note.body, 30) })} disabled={disabled} onClick={() => void confirm({ cancelLabel: t('review.drafts.delete.cancel'), confirmLabel: t('review.drafts.delete.confirm'), destructive: true, message: plainExcerpt(note.body, 120), title: t('review.note.delete.title') }).then((ok) => { if (ok) void onDelete(note) })}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
             </Stack>
           ) : null}
         </Stack>
         {editing ? (
-          <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={note} onClose={() => setEditing(null)} onSave={(body) => onEdit(note, body)} sessionId={sessionId ?? null} />
-        ) : <Box sx={{ color: 'text.primary', '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={note} size="body1" /></Box>}
+          <NoteEditor bufferKey={editBufferKey} disabled={disabled} mentionParticipants={mentionParticipants} note={shown} onClose={closeEditor} onSave={saveEdit} sessionId={sessionId ?? null} />
+        ) : <Box sx={{ color: 'text.primary', '& :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6)': { maxWidth: 760 } }}><NoteBody actions={suggestionActions} note={shown} size="body1" /></Box>}
         {!editing && onToggleReaction ? <Box sx={{ mt: 1 }}><ReactionBar awards={awards ?? noAwards} currentUserId={currentUserId} disabled={reactionsDisabled} label={t('review.note.reactions', { author: note.author.name })} onToggle={(name, add) => onToggleReaction(note, name, add)} /></Box> : null}
       </Box>
     </Box>
@@ -440,8 +470,7 @@ function NoteEditor({ bufferKey, disabled, mentionParticipants, note, onClose, o
   useEffect(() => {
     // Start from the comment, or from the text kept when the edit was last closed.
     if (seededRef.current || persistenceStatus === 'hydrating') return
-    seededRef.current = true
-    seedComposerBuffer(bufferKey, note.body)
+    seededRef.current = seedComposerBuffer(bufferKey, note.body)
   }, [bufferKey, note.body, persistenceStatus])
   const changed = body !== note.body
   const close = () => {

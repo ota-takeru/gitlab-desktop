@@ -102,12 +102,15 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const workspace = usePersonalWorkspace(session)
   const sectionRef = useRef<HTMLElement | null>(null)
   const headerRef = useRef<HTMLElement | null>(null)
-  useEffect(() => {
-    // Sticky content below the sticky header starts at its current height.
+  useLayoutEffect(() => {
+    // Sticky content below the sticky header starts at its current height, set before the first paint.
     const header = headerRef.current
     const section = sectionRef.current
-    if (!header || !section || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => section.style.setProperty('--detail-header-height', `${header.offsetHeight}px`))
+    if (!header || !section) return
+    const update = () => section.style.setProperty('--detail-header-height', `${header.offsetHeight}px`)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
     observer.observe(header)
     return () => observer.disconnect()
   }, [])
@@ -117,6 +120,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const setActiveTab = (next: ReviewTab) => { if (onTabChange) onTabChange(next); else setLocalTab(next) }
   // A thread opened from the diff, shown once the discussion tab has settled.
   const pendingThread = useRef<string | null>(null)
+  // The diff line button that opened the line comment editor.
+  const lineOpenerRef = useRef<HTMLElement | null>(null)
   // A diff thread in another file reached with N / P, focused once its file is shown.
   const pendingDiffThread = useRef<{ id: string; path: string } | null>(null)
   const [descriptionEdit, setDescriptionEdit] = useState<{ body: string; expected: string } | null>(null)
@@ -446,7 +451,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     if (activeTab === 'overview' || activeTab === 'pipelines') return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || (event.key !== 'n' && event.key !== 'p')) return
-      if (isEditableTarget(event.target) || document.querySelector('[role="dialog"]')) return
+      if (isEditableTarget(event.target) || isInsideMenu(event.target) || document.querySelector('[role="dialog"]')) return
       event.preventDefault()
       stepUnresolvedRef.current(event.key === 'n' ? 1 : -1)
     }
@@ -457,7 +462,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     if (activeTab !== 'discussion') return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.key !== 'd') return
-      if (isEditableTarget(event.target) || document.querySelector('[role="dialog"]')) return
+      if (isEditableTarget(event.target) || isInsideMenu(event.target) || document.querySelector('[role="dialog"]')) return
       event.preventDefault()
       setDescriptionOpen((open) => !open)
     }
@@ -878,16 +883,25 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
       replyDiscussionId={replyDiscussion.id}
     />
   ) : null
+  const closeLineComposer = () => {
+    const opener = lineOpenerRef.current
+    lineOpenerRef.current = null
+    setPosition(undefined)
+    // Focus left with the closed editor goes back to the line button that opened it, without scrolling to it.
+    requestAnimationFrame(() => { if (opener?.isConnected && (!document.activeElement || document.activeElement === document.body)) opener.focus({ preventScroll: true }) })
+  }
   const lineComposerKey = commentPosition ? createComposerBufferKey(session, resourceId, iid, 'new', commentPosition) : null
   const lineComposer = commentPosition && lineComposerKey && !readOnlyChanges ? {
     position: commentPosition,
-    node: <BufferedReviewComposer attachmentTargetKey={`${attachmentScope}:${lineComposerKey}`} bufferKey={lineComposerKey} disabled={mutation.isLocked} enableMentions={Boolean(session)} inlineTarget key={lineComposerKey} mentionParticipants={mentionParticipants} templateProjectPath={projectPath ?? undefined} onCancelReply={() => undefined} onClearPosition={() => setPosition(undefined)} onAddReviewers={addReviewers} onSaveDraft={saveDraft} onSetReviewers={setReviewers} onSubmitComment={submitComment} onUploadAttachment={uploadAttachment} pending={mutation.isPending} suggestionLines={commentPosition.newLine === undefined ? null : () => suggestionSourceLines(diffs, commentPosition)} targetPosition={commentPosition} />,
+    node: <BufferedReviewComposer attachmentTargetKey={`${attachmentScope}:${lineComposerKey}`} bufferKey={lineComposerKey} disabled={mutation.isLocked} enableMentions={Boolean(session)} inlineTarget key={lineComposerKey} mentionParticipants={mentionParticipants} templateProjectPath={projectPath ?? undefined} onCancelReply={() => undefined} onClearPosition={closeLineComposer} onAddReviewers={addReviewers} onSaveDraft={saveDraft} onSetReviewers={setReviewers} onSubmitComment={submitComment} onUploadAttachment={uploadAttachment} pending={mutation.isPending} suggestionLines={commentPosition.newLine === undefined ? null : () => suggestionSourceLines(diffs, commentPosition)} targetPosition={commentPosition} />,
   } : undefined
   const commentOnLines = (nextPosition: Position) => {
     const next = normalizePosition(nextPosition, mergeRequest)
     // Choosing more lines can move the comment's last line; what was written moves with it.
     const nextKey = createComposerBufferKey(session, resourceId, iid, 'new', next)
     if (lineComposerKey && commentPosition && next.lineRange && nextKey !== lineComposerKey && commentPosition.newPath === next.newPath) moveComposerBuffer(lineComposerKey, nextKey)
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>('[data-line-action]') : null
+    lineOpenerRef.current = opener
     // The editor opens under the line; the tab stays on the changes.
     setViewPosition(undefined)
     setPosition(next)
@@ -895,7 +909,12 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   }
   const saveDescription = async () => {
     if (!descriptionEdit) return
-    const success = await runAction({ description: descriptionEdit.body, expectedDescription: descriptionEdit.expected, iid, kind: 'setDescription', projectId: resourceId }, currentResult.refresh)
+    const { body } = descriptionEdit
+    const success = await runAction({ description: body, expectedDescription: descriptionEdit.expected, iid, kind: 'setDescription', projectId: resourceId }, () => {
+      // The closed editor shows the saved text at once instead of the old one until GitLab is read again.
+      if (session) applyConfirmedGitLabChange(queryClient, session.id, currentQuery, (current) => ({ ...current, description: body }))
+      currentResult.refresh()
+    })
     if (success) setDescriptionEdit(null)
   }
 
@@ -1222,6 +1241,11 @@ function isInvolved(mergeRequest: MergeRequest, userId: string): boolean {
 /** Threads placed by line (`n:12`, `o:4`), in the order of their line numbers. */
 function sortByLine(byLine: Map<string, Discussion[]>): Discussion[] {
   return [...byLine.entries()].sort(([left], [right]) => Number(left.slice(2)) - Number(right.slice(2))).flatMap(([, threads]) => threads)
+}
+
+/** An open menu or listbox owns letter keys (MUI only consumes letters that match an item). */
+function isInsideMenu(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

@@ -3,6 +3,23 @@ import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from 'rea
 import { formatMarkdown, type MarkdownFormat } from '../../lib/markdownFormat'
 
 /**
+ * Replaces `textarea.value[start, end)` with `text` through the browser's text insertion, so Ctrl+Z undoes it.
+ * False when the browser did not make that edit; the caller then sets the value itself.
+ */
+export function insertTextareaText(textarea: HTMLTextAreaElement, start: number, end: number, text: string): boolean {
+  const nextValue = `${textarea.value.slice(0, start)}${text}${textarea.value.slice(end)}`
+  textarea.focus()
+  textarea.setSelectionRange(start, end)
+  let inserted: boolean
+  try {
+    inserted = typeof document.execCommand === 'function' && document.execCommand('insertText', false, text)
+  } catch {
+    inserted = false
+  }
+  return inserted && textarea.value === nextValue
+}
+
+/**
  * Applies Markdown toolbar formats to a controlled textarea. Edits go through
  * the browser's text insertion when available so Ctrl+Z still undoes them.
  */
@@ -21,15 +38,7 @@ export function useMarkdownFormatting(inputRef: RefObject<HTMLTextAreaElement | 
     if (!textarea || textarea.disabled) return
     const edit = formatMarkdown(textarea.value, textarea.selectionStart, textarea.selectionEnd, format)
     const nextValue = `${textarea.value.slice(0, edit.start)}${edit.text}${textarea.value.slice(edit.end)}`
-    textarea.focus()
-    textarea.setSelectionRange(edit.start, edit.end)
-    let inserted: boolean
-    try {
-      inserted = typeof document.execCommand === 'function' && document.execCommand('insertText', false, edit.text)
-    } catch {
-      inserted = false
-    }
-    if (!inserted || textarea.value !== nextValue) {
+    if (!insertTextareaText(textarea, edit.start, edit.end, edit.text)) {
       pendingSelectionRef.current = [edit.selectionStart, edit.selectionEnd]
       onChange(nextValue)
     }

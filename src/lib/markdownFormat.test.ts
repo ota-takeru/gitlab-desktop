@@ -57,4 +57,15 @@ describe('formatMarkdown', () => {
     expect(apply('text«»', 'table')).toBe(`text\n\n${table}`)
     expect(apply('«»', 'table')).toBe(table)
   })
+
+  it('wraps code holding backticks in a longer delimiter, and unwraps it again', () => {
+    expect(apply('«a`b»', 'code')).toBe('``«a`b»``')
+    expect(apply('«`a»', 'code')).toBe('`` «`a» ``')
+    expect(apply('«`` `a ``»', 'code')).toBe('«`a»')
+    expect(apply('«```\nx\n```»', 'code')).toBe('````\n«```\nx\n```»\n````')
+  })
+
+  it('formats the blank first line the caret is on', () => {
+    expect(apply('«»\nbody', 'heading')).toBe('### «»\nbody')
+  })
 })

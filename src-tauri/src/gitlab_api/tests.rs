@@ -2272,6 +2272,7 @@ fn job_trace_keeps_the_end_and_requests_only_the_tail() {
     assert!(request.starts_with("get /api/v4/projects/7/jobs/900/trace "));
     assert!(request.contains(&format!("range: bytes=-{MAX_TRACE_BYTES}")));
     assert_eq!(result.data["headOmitted"], false);
+    assert_eq!(result.data["omittedLines"], 0);
     assert_eq!(
         result.data["lines"],
         json!([
@@ -2298,6 +2299,8 @@ fn job_trace_keeps_the_end_and_requests_only_the_tail() {
         ))
         .unwrap();
     assert_eq!(result.data["headOmitted"], true);
+    // The start was not sent, so where the kept lines sit is unknown.
+    assert_eq!(result.data["omittedLines"], Value::Null);
     assert!(result.truncated);
     // The partial first line is dropped.
     assert_eq!(result.data["lines"], json!([[{"text": "last line"}]]));
@@ -2305,12 +2308,14 @@ fn job_trace_keeps_the_end_and_requests_only_the_tail() {
 
 #[test]
 fn job_trace_from_a_server_without_ranges_keeps_only_the_bounded_end() {
-    let mut log = String::from("first line\n");
-    while log.len() < MAX_TRACE_BYTES + 1024 {
+    // A line left empty by its section marker is not a display line.
+    let mut log = String::from("first line\nsection_start:1700000000:build\r\u{1b}[0K\n");
+    // Over twice the kept size, so the start is also dropped while reading.
+    while log.len() < 3 * MAX_TRACE_BYTES {
         log.push_str("filler line of the job log\n");
     }
     log.push_str("the end\n");
-    let (bytes, dropped) = {
+    let (bytes, dropped, omitted_lines) = {
         let fixture = Fixture::new(vec![format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{log}",
             log.len()
@@ -2324,22 +2329,29 @@ fn job_trace_from_a_server_without_ranges_keeps_only_the_bounded_end() {
     };
     assert!(dropped);
     assert_eq!(bytes.len(), MAX_TRACE_BYTES);
-    let (lines, head_omitted) = render_trace(&bytes, dropped);
+    let (lines, head_omitted, trimmed) = render_trace(&bytes, dropped);
     assert!(head_omitted);
+    assert_eq!(trimmed, 0);
+    // The dropped display lines and the kept ones make up the whole log.
+    assert_eq!(
+        omitted_lines.unwrap() + lines.len() as u64,
+        log.lines().count() as u64 - 1
+    );
     assert_eq!(lines.last().unwrap(), &json!([{"text": "the end"}]));
     assert_ne!(lines.first().unwrap(), &json!([{"text": "first line"}]));
 
     // An empty log cannot satisfy a suffix range.
     let fixture = Fixture::new(vec![response("416 Range Not Satisfiable", "", "")]);
-    let (bytes, dropped) = runtime()
+    let (bytes, dropped, omitted_lines) = runtime()
         .block_on(get_trace_tail(&Client::new(), &fixture.url()))
         .unwrap();
     assert!(bytes.is_empty() && !dropped);
+    assert_eq!(omitted_lines, Some(0));
 }
 
 #[test]
 fn trace_rendering_drops_controls_and_keeps_colour_across_lines() {
-    let (lines, _) = render_trace(
+    let (lines, _, _) = render_trace(
         "\u{1b}[1;33mwarn\nstill\u{1b}[22m plain\u{1b}[0m\n\u{1b}[38;5;196mred?\u{1b}[0m\ttab\u{0}\u{8}\u{9b}x\n".as_bytes(),
         false,
     );

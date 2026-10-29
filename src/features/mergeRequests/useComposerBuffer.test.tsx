@@ -220,6 +220,23 @@ afterEach(() => {
     expect(screen.getByRole('textbox', { name: 'body' })).toHaveValue('ユーザーが入力した本文')
   })
 
+  it('seeds an edit only after hydration found no kept text, so a kept edit is not overwritten', async () => {
+    isDesktopRuntimeMock.mockReturnValue(true)
+    let resolveHydration: (draft: { body: string; updatedAt: number } | null) => void = () => undefined
+    getLocalDraftMock.mockReturnValue(new Promise((resolve) => { resolveHydration = resolve }))
+    const key = createComposerBufferKey(sessionA, 'project-1', '7', 'note-edit:1')
+    render(<AutoUpdateSafetyProvider><Composer bufferKey={key} sessionId={sessionA.id} /></AutoUpdateSafetyProvider>)
+
+    await waitFor(() => expect(getLocalDraftMock).toHaveBeenCalled())
+    // The editor's first render still saw 'memory'; the store knows the read is in flight.
+    expect(seedComposerBuffer(key, 'GitLab の本文')).toBe(false)
+    await act(async () => resolveHydration({ body: '前回の編集', updatedAt: 1791072000000 }))
+    expect(screen.getByRole('textbox', { name: 'body' })).toHaveValue('前回の編集')
+    expect(seedComposerBuffer(key, 'GitLab の本文')).toBe(true)
+    expect(screen.getByRole('textbox', { name: 'body' })).toHaveValue('前回の編集')
+    expect(setLocalDraftMock).not.toHaveBeenCalled()
+  })
+
   it('serializes a pending save before the subsequent empty-body deletion', async () => {
     vi.useFakeTimers()
     isDesktopRuntimeMock.mockReturnValue(true)
