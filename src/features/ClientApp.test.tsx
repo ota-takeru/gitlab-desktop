@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import type { ReactNode } from 'react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 
 import { setLocalePreference } from '../i18n/i18n'
 import { createAppTheme } from '../theme'
@@ -57,6 +57,9 @@ const mergeRequestFixture: MergeRequest = {
   webUrl: 'https://gitlab.com/group/project/-/merge_requests/7',
 }
 
+// The screens ClientApp loads on demand are loaded first, as the app preloads them while idle.
+beforeAll(() => Promise.all([import('./mergeRequests/MergeRequestDetail'), import('./mergeRequests/LocalChanges'), import('./projects/CodeBrowser')]))
+
 beforeEach(() => {
   window.history.replaceState(null, '', '#client/settings')
   invokeMock.mockReset()
@@ -102,7 +105,8 @@ it('keeps a user MR list and its filters when switching profile tabs and returni
   fireEvent.click(screen.getByRole('tab', { name: '作成したMR' }))
   expect(await screen.findByRole('combobox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveValue('searchable list')
   fireEvent.click(document.querySelector('[data-screen-active="true"] [data-list-row="true"][data-mr-id="42-7"]')!)
-  expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
+  // The first MR screen of the file renders after its lazily loaded module resolves.
+  expect(await screen.findByRole('heading', { name: 'Add searchable list' }, { timeout: 3_000 })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '@oneに戻る' }))
   await waitFor(() => expect(window.location.hash).not.toContain('mr='))
   expect(screen.getByRole('tab', { name: '作成したMR' })).toBeVisible()

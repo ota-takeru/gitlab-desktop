@@ -25,7 +25,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { hairline } from '../components/hairline'
@@ -50,15 +50,14 @@ import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog'
 import { ConnectionProvider } from './connections/ConnectionProvider'
 import { useConnection } from './connections/connectionContext'
 import { ConnectionView } from './connections/ConnectionView'
-import { ScanFolders } from './mergeRequests/LocalChanges'
-import { MergeRequestDetail, type ReviewTab } from './mergeRequests/MergeRequestDetail'
+import type { ReviewTab } from './mergeRequests/MergeRequestDetail'
 import { clearComposerBuffers } from './mergeRequests/composerBuffers'
 import { clearGitLabCache } from '../lib/gitlab'
 import { clearComposerBufferStore, flushComposerBuffers } from './mergeRequests/useComposerBuffer'
 import { WindowCloseProtection } from '../components/WindowCloseProtection'
 import { MergeRequestList } from './mergeRequests/MergeRequestList'
 import { BranchList } from './projects/BranchList'
-import { CodeBrowser, type CodeLocation } from './projects/CodeBrowser'
+import type { CodeLocation } from './projects/CodeBrowser'
 import { ProjectView } from './projects/ProjectView'
 import { ProjectOverview } from './projects/ProjectOverview'
 import { WorkspaceSettings } from './connections/WorkspaceSettings'
@@ -163,11 +162,25 @@ function trackConnectivity() {
 /** The development fixtures still pass a fixed light/dark mode with a toggle. */
 type ClientAppProps = ColorPreferenceProps | { mode: ColorMode; onModeChange: () => void }
 
+// The review and code screens carry the editor and syntax highlighting, the largest
+// part of the code; the list opens without them and they load while the app is idle.
+const loadMergeRequestDetail = () => import('./mergeRequests/MergeRequestDetail')
+const loadCodeBrowser = () => import('./projects/CodeBrowser')
+const CodeBrowser = lazy(() => loadCodeBrowser().then(({ CodeBrowser }) => ({ default: CodeBrowser })))
+// Local clones are set up in the settings; their module carries the diff view.
+const ScanFolders = lazy(() => import('./mergeRequests/LocalChanges').then(({ ScanFolders }) => ({ default: ScanFolders })))
+
+function preloadScreens() {
+  const idle = globalThis.requestIdleCallback ?? ((callback: () => void) => globalThis.setTimeout(callback, 1))
+  idle(() => { void loadMergeRequestDetail().then(() => idle(() => { void loadCodeBrowser() })).catch(() => undefined) })
+}
+
 export function ClientApp(props: ClientAppProps) {
   const { colorPreference, onColorPreferenceChange }: ColorPreferenceProps = 'colorPreference' in props
     ? props
     : { colorPreference: props.mode, onColorPreferenceChange: (next) => { if (next !== props.mode && next !== 'system') props.onModeChange() } }
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { gcTime: 15 * 60_000, refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } }, queryCache: trackConnectivity() }))
+  useEffect(preloadScreens, [])
   useEffect(() => {
     const handleWorkspaceReset = () => clearComposerBuffers()
     globalThis.addEventListener('gitlab-explicit-logout', handleWorkspaceReset)
@@ -597,7 +610,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 {route === 'user' ? <UserView initialParams={listParams} onOpenMergeRequest={openMergeRequest} onOpenProject={openProject} onOpenProjectId={openProjectId} onSearchStateChange={updateMergeRequestLocation} onTabChange={changeUserTab} recentMrId={recentMrId} selected={selected} username={params.username} /> : null}
                 {route === 'mrs' ? <MergeRequestList actions={hubActions} key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
                 {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
-                {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
+                {route === 'code' ? <Suspense fallback={<Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, p: 2 }} variant="body2">{t('app.loading')}</Typography>}><CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /></Suspense> : null}
                 </AppErrorBoundary>
                 </QueryRefreshPolicy>
                 </KeepAlive>
@@ -797,7 +810,7 @@ function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceCh
     </SettingsSection>
     <SettingsSection description={t('settings.language.description')} id="settings-language" title={t('settings.language.title')}><LanguageSettings /></SettingsSection>
     <SettingsSection description={t('settings.workspace.description')} id="settings-workspace" title={t('settings.workspace.title')}><WorkspaceSettings /></SettingsSection>
-    {session ? <SettingsSection description={t('settings.local.description')} id="settings-local" title={t('settings.local.title')}><ScanFolders sessionId={session.id} userId={session.user.id} /></SettingsSection> : null}
+    {session ? <SettingsSection description={t('settings.local.description')} id="settings-local" title={t('settings.local.title')}><Suspense fallback={<Typography color="textSecondary" role="status" sx={delayedRevealSx} variant="body2">{t('app.loading')}</Typography>}><ScanFolders sessionId={session.id} userId={session.user.id} /></Suspense></SettingsSection> : null}
     <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} /></SettingsSection>
     <SettingsSection description={t('settings.shortcuts.description')} id="settings-shortcuts" title={t('settings.shortcuts.title')}>
       <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
@@ -883,11 +896,11 @@ const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, focusNote
       </Row>
     </PaneEmpty>
   }
-  return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} focusNote={focusNote} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onNoteFocused={onNoteFocused} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} />
+  return <Suspense fallback={<MergeRequestSkeleton />}><MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} focusNote={focusNote} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onNoteFocused={onNoteFocused} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} /></Suspense>
 })
 
 /** A refresh of the MR that returns the same data (as when a kept MR shows again) does not render the review again. */
-const MemoizedMergeRequestDetail = memo(MergeRequestDetail)
+const MemoizedMergeRequestDetail = memo(lazy(() => loadMergeRequestDetail().then(({ MergeRequestDetail }) => ({ default: MergeRequestDetail }))))
 
 /** Why an MR could not be shown, in the reader's terms; GitLab's own message is kept for anything else. */
 function describeMergeRequestFailure(error: GitLabCommandError | null): { title: string; description: string; retry: boolean } {

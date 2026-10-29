@@ -1,16 +1,18 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { useT } from '../../i18n/useT'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
-import { FullFileView } from '../mergeRequests/DiffViewer'
 import type { BlobQuery, Project, TreeQuery } from '../../types/gitlab'
 import { chooseReadmeFile } from './readmeFiles'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+
+// A README that is not Markdown is rare; the file view (and its highlighting) loads only for one.
+const FullFileView = lazy(() => import('../mergeRequests/DiffViewer').then(({ FullFileView }) => ({ default: FullFileView })))
 
 export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { project: Pick<Project, 'id' | 'name'> & Partial<Pick<Project, 'webUrl'>>; sessionId: string; instanceUrl: string }) {
   const t = useT()
@@ -32,6 +34,6 @@ export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { proj
     {readme && blob.error ? <Alert severity="warning">{t('project.readme.loadFailed', { message: blob.error.message })}</Alert> : null}
     {tree.data && !readme ? <Typography color="textSecondary" variant="body2">{tree.snapshot?.nextPage ? t('project.readme.notInFirstPage') : t('project.readme.none')}</Typography> : null}
     {blob.data && markdown ? <MarkdownLinkProvider instanceUrl={instanceUrl} projectUrl={project.webUrl} repository={repository} sessionId={sessionId}><MockMarkdown body={blob.data.content} size="body1" /></MarkdownLinkProvider> : null}
-    {blob.data && !markdown ? <FullFileView content={blob.data.content} language="text" loading={false} /> : null}
+    {blob.data && !markdown ? <Suspense fallback={null}><FullFileView content={blob.data.content} language="text" loading={false} /></Suspense> : null}
   </Box>
 }

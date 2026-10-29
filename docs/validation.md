@@ -192,3 +192,18 @@ The cause of transitions getting slower as stored data grows was measured with d
 | Re-showing 600 comment bodies | Reopening the same MR | 1,112 ms | 225 ms | Same |
 
 The read records were parsed in full on every render, so they are now parsed only when the stored content changes. Updating the read records on the MR screen also runs only when the discussions change, not on every render. The cache counted the total size of all entries on every read, so expired entries are now excluded by a read condition, and capacity cleanup is done on write using only the index. Rendered Markdown is reused for up to 2,000 comment bodies. Re-rendering the whole list of 60 discussions and 180 comments still takes about 360 to 420 ms in jsdom, and this remains.
+
+
+## Start-up code and tab switching
+
+The code loaded before the first screen was halved, and a click on an MR tab no longer waits for the tab to render. The figures are build artifact sizes, not start-up or transition times on WebView2 or with real GitLab data: the machine was shared with other heavy jobs during this work, and timings in the browser preview varied by up to five times between identical runs, so none are recorded.
+
+| Target | Condition | Before | After | Environment |
+| --- | --- | --- | --- | --- |
+| JS loaded before the first screen | Entry script and its preloaded chunks | 2,211.9 kB (gzip 674.9 kB), 8 files | 1,116.2 kB (gzip 336.2 kB), 5 files | Production build |
+
+The editor's chunk group took React's JSX runtime as a dependency, so every chunk imported the editor and it loaded at start with ProseMirror. The vendor groups now claim what the first screen needs first. The MR detail and code screens, the local clone settings and a README's plain file view load on demand, and the first two are loaded while the app is idle after start. The language files start loading before the other modules evaluate.
+
+The tab strip follows a click at once; the tab renders in the background and another click can interrupt it; N / P do nothing until it has rendered. The click itself still renders the tab being left once more, and a switch renders the MR detail several times as the new tab's reads settle, with the active tab each time; this remains. Keeping the tab being left as it was rendered was tried and dropped: its menus and pickers live outside it and would have stayed usable with outdated handlers.
+
+The watched MRs' activity no longer reruns, with every other watched MR, each time the workspace changes, and the MR screen records read state without rerunning on its own writes. Files without a review mark are no longer hashed. In Rust, a read releases its HTTP slot once GitLab has answered (a failure keeps it until its cooldown is recorded), the response is no longer copied before it is saved, and the duplicate-request check skips an older saved answer in SQL instead of parsing it.

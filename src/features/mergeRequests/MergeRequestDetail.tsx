@@ -22,7 +22,7 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { memo, useCallback, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
 import { hairline } from '../../components/hairline'
@@ -121,7 +121,10 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   }, [])
   const queryClient = useQueryClient()
   const [localTab, setLocalTab] = useState<ReviewTab>('overview')
-  const activeTab = tab ?? localTab
+  const selectedTab = tab ?? localTab
+  // The tab strip follows a click at once; the tab itself renders in the background,
+  // where another click can interrupt it, so a heavy tab never holds up the click.
+  const activeTab = useDeferredValue(selectedTab)
   const setActiveTab = (next: ReviewTab) => { if (onTabChange) onTabChange(next); else setLocalTab(next) }
   // A thread opened from the diff, shown once the discussion tab has settled.
   const pendingThread = useRef<string | null>(null)
@@ -270,15 +273,18 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   // The close confirmation names this MR if it holds unsent input.
   const rememberTarget = useEffectEvent(() => { if (tabMeta) rememberComposerTarget(session, resourceId, iid, { projectPath: tabMeta.projectPath, title: tabMeta.title }) })
   useEffect(() => { rememberTarget() }, [session, resourceId, iid, tabMeta?.title, tabMeta?.projectPath])
+  // Recording reads the latest workspace without rerunning on each of its changes (its own included).
+  const observeComments = useEffectEvent((notes: Note[], complete: boolean) => workspace.observe({ projectId: resourceId, iid }, notes, complete))
   useEffect(() => {
     if (!session || accessDenied) return
-    workspace.observe({ projectId: resourceId, iid }, commentNotes, discussionWindow.ready && !discussionWindow.error)
-  }, [commentNotes, session, accessDenied, workspace, resourceId, iid, discussionWindow.ready, discussionWindow.error])
+    observeComments(commentNotes, discussionWindow.ready && !discussionWindow.error)
+  }, [commentNotes, session, accessDenied, resourceId, iid, discussionWindow.ready, discussionWindow.error])
   // Pushes, approvals and state changes are on the MR's page, so they are read while it is shown.
+  const markActivityRead = useEffectEvent((updatedAt: string) => workspace.markActivityRead({ projectId: resourceId, iid }, updatedAt))
   useEffect(() => {
     if (!session || accessDenied || !mergeRequest?.updatedAt) return
-    workspace.markActivityRead({ projectId: resourceId, iid }, mergeRequest.updatedAt)
-  }, [session, accessDenied, workspace, resourceId, iid, mergeRequest?.updatedAt])
+    markActivityRead(mergeRequest.updatedAt)
+  }, [session, accessDenied, resourceId, iid, mergeRequest?.updatedAt])
   const latestDiscussions = discussionWindow.latest
   useEffect(() => {
     if (!session || !latestDiscussions?.data || latestDiscussions.source !== 'network' || discussionWindow.error) return
@@ -375,6 +381,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
 
   // N / P move through the unresolved threads shown in the discussion list or under the diff lines.
   const stepUnresolved = (direction: 1 | -1) => {
+    // N / P pressed while another tab is still rendering would move the tab being left.
+    if (selectedTab !== activeTab) return
     const unresolvedDiscussions = discussions.filter(isUnresolvedDiscussion)
     const unresolved = new Set(unresolvedDiscussions.map((discussion) => discussion.id))
     const inDiff = activeTab === 'changes'
@@ -948,7 +956,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         <MergeRequestSummary approvedBy={approvedBy} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
         {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open participants={mentionParticipants} /> : null}
         <Bar sx={{ columnGap: 1, mt: 0.5 }}>
-          <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0 }} value={activeTab}>
+          <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0 }} value={selectedTab}>
             <Tab label={t('mergeRequest.detail.tabOverview')} value="overview" />
             <Tab label={<Row spacing={1}><span>{t('mergeRequest.detail.tabDiscussion')}</span>{unresolvedCount > 0 ? <Chip aria-label={t('mergeRequest.detail.unresolvedCount', { count: unresolvedCount })} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Row>} value="discussion" />
             <Tab label={t('mergeRequest.detail.tabChanges')} value="changes" />

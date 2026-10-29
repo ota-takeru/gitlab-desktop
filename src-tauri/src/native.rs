@@ -828,17 +828,16 @@ impl NativeState {
             if let Some(mut snapshot) = self
                 .blocking(move |inner| {
                     ensure_active(inner, &dedup_session)?;
-                    Ok(inner
+                    inner
                         .store
-                        .get(&dedup_session.account, &dedup_key)?
-                        .filter(|snapshot| snapshot.fetched_at >= queued_at))
+                        .get_since(&dedup_session.account, &dedup_key, queued_at)
                 })
                 .await?
             {
                 snapshot.source = "network".into();
                 return Ok(Some(snapshot));
             }
-            let _slot = session
+            let slot = session
                 .slots
                 .clone()
                 .acquire_owned()
@@ -863,6 +862,10 @@ impl NativeState {
                     return Err(error);
                 }
             };
+            // The HTTP slot is free once GitLab has answered; saving the answer
+            // must not hold back another screen's request. A failure keeps it
+            // until its cooldown is recorded, so no waiting request slips past.
+            drop(slot);
             if let Query::Approvals { .. } = input.query {
                 let approved = result.data["approvedBy"].as_array().is_some_and(|users| {
                     users
@@ -888,20 +891,18 @@ impl NativeState {
             };
             // Job logs can hold secrets printed by CI scripts, so they stay in memory only.
             let persist = !matches!(input.query, Query::JobTrace { .. });
-            let copy = snapshot.clone();
             let session = session.clone();
             self.blocking(move |inner| {
                 ensure_active(inner, &session)?;
                 if session.revision.load(Ordering::SeqCst) != revision {
                     return Err(cancelled());
                 }
-                if !persist {
-                    return Ok(());
+                if persist {
+                    inner.store.put(&session.account, &key, &snapshot)?;
                 }
-                inner.store.put(&session.account, &key, &copy)
+                Ok(Some(snapshot))
             })
-            .await?;
-            Ok(Some(snapshot))
+            .await
         };
         tokio::select! { result = work => result, _ = session.cancelled.cancelled()=>Err(cancelled()), _ = registration.token.cancelled()=>Err(cancelled()) }
     }
