@@ -195,6 +195,7 @@ export function clearComposerBufferStore(): void {
     entry.sessionId = null
     entry.status = 'memory'
     if (entry.listeners.size === 0) {
+      syncSafety(entry)
       composerBuffers.delete(key)
     } else {
       // Keep subscribed entries in place so a mounted composer remains wired
@@ -231,7 +232,8 @@ export function useComposerBuffer(bufferKey: string, sessionId: string | null = 
 
     return () => {
       current.listeners.delete(listener)
-      if (!current.listeners.size) current.setUnsafe = undefined
+      // The guard key outlives the editor, so a save or hydration that ends
+      // after unmount must still be able to release it.
       // Keep the entry and its debounce timer alive across route/unmount
       // changes. The updater guard intentionally remains active for retained
       // text until an explicit clear or a successful deletion.

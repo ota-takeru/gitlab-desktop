@@ -220,6 +220,32 @@ afterEach(() => {
     expect(screen.getByRole('textbox', { name: 'body' })).toHaveValue('ユーザーが入力した本文')
   })
 
+  it('releases updater safety when hydration finishes after the composer unmounts', async () => {
+    isDesktopRuntimeMock.mockReturnValue(true)
+    let resolveHydration: (draft: null) => void = () => undefined
+    getLocalDraftMock.mockReturnValue(new Promise((resolve) => { resolveHydration = resolve }))
+    const key = createComposerBufferKey(sessionA, 'project-1', '7', 'new', position)
+    const view = render(<AutoUpdateSafetyProvider><Composer bufferKey={key} sessionId={sessionA.id} /><Indicator /></AutoUpdateSafetyProvider>)
+
+    await waitFor(() => expect(getLocalDraftMock).toHaveBeenCalled())
+    expect(screen.getByTestId('safe')).toHaveTextContent('unsafe')
+    view.rerender(<AutoUpdateSafetyProvider><Indicator /></AutoUpdateSafetyProvider>)
+    await act(async () => resolveHydration(null))
+
+    expect(screen.getByTestId('safe')).toHaveTextContent(/^safe$/u)
+  })
+
+  it('releases updater safety of an unmounted composer when logout clears its text', () => {
+    const key = createComposerBufferKey(sessionA, 'project-1', '7', 'new', position)
+    const view = render(<AutoUpdateSafetyProvider><Composer bufferKey={key} /><Indicator /></AutoUpdateSafetyProvider>)
+    fireEvent.change(screen.getByRole('textbox', { name: 'body' }), { target: { value: '未送信の本文' } })
+    view.rerender(<AutoUpdateSafetyProvider><Indicator /></AutoUpdateSafetyProvider>)
+    expect(screen.getByTestId('safe')).toHaveTextContent('unsafe')
+
+    act(() => clearComposerBufferStore())
+    expect(screen.getByTestId('safe')).toHaveTextContent(/^safe$/u)
+  })
+
   it('seeds an edit only after hydration found no kept text, so a kept edit is not overwritten', async () => {
     isDesktopRuntimeMock.mockReturnValue(true)
     let resolveHydration: (draft: { body: string; updatedAt: number } | null) => void = () => undefined
