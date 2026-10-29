@@ -6,6 +6,7 @@ import { gridLine } from '../theme'
 import { edgeRow } from './edges'
 import { frame, hairline } from './hairline'
 import { paneGutter } from './paneSx'
+import { alignTop } from './rows'
 
 /**
  * Heading of the list pane: title, short context and icon actions on one line.
@@ -19,7 +20,7 @@ export function PaneHeader({ title, subtitle, actions, children, navigation }: {
   const actionsGroup = actions ? <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0, minHeight: 32 }}>{actions}</Stack> : null
   if (navigation) return <>
     <Box sx={{ ...hairline('bottom'), flexShrink: 0, px: paneGutter, pt: 1.5 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0, ...edgeRow }}>
+      <Stack direction="row" spacing={1} sx={{ ...alignTop, minWidth: 0, ...edgeRow }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component="h1" sx={visuallyHiddenSx}>{title}</Typography>
           {navigation}

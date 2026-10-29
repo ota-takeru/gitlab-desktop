@@ -13,6 +13,7 @@ import { rehypeReviewDiff } from '../../lib/markdownReview'
 import { grid } from '../../theme'
 import type { FullFileDiffAnnotations } from '../../features/mergeRequests/fullFileAnnotations'
 import { useGitLabImage } from '../../features/shared/useGitLabImage'
+import { alignTop } from '../rows'
 
 interface MarkdownNode { type: string; value?: string; children?: MarkdownNode[] }
 
@@ -89,7 +90,7 @@ function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: Markdow
       const value = node?.properties?.['data-review-blame-line']
       const line = typeof value === 'string' ? Number(value) : NaN
       if (!Number.isSafeInteger(line) || line < 1) return <div>{children}</div>
-      return <Box component="div" data-review-blame-line={line} sx={{ alignItems: 'start', display: 'grid', gap: 1, gridTemplateColumns: 'minmax(110px, 132px) minmax(0, 1fr)', minWidth: 0 }}>
+      return <Box component="div" data-review-blame-line={line} sx={{ ...alignTop, display: 'grid', gap: 1, gridTemplateColumns: 'minmax(110px, 132px) minmax(0, 1fr)', minWidth: 0 }}>
         <Box className="markdown-blame-cell" sx={{ minWidth: 0 }}>{renderBlame(line)}</Box>
         <Box sx={{ minWidth: 0 }}>{children}</Box>
       </Box>

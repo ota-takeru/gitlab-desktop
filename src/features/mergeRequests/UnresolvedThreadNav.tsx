@@ -19,7 +19,7 @@ export function UnresolvedThreadNav({ discussions, olderNotLoaded, onSelect }: {
   const threads = discussions.filter(isUnresolvedDiscussion)
   return (
     <Stack aria-label={t('review.unresolved.title')} component="nav" sx={{ bgcolor: 'surface.raised', ...panelFrame(), borderRadius: 1, minWidth: 0 }}>
-      <Stack direction="row" sx={{ alignItems: 'baseline', ...hairline('bottom'), px: 1.5, py: 0.5 }}>
+      <Stack direction="row" sx={{ alignItems: 'center', ...hairline('bottom'), px: 1.5, py: 0.5 }}>
         <Typography color="textSecondary" variant="overline">{t('review.unresolved.title')}</Typography>
         <Typography color="textSecondary" sx={{ ml: 'auto' }} variant="caption">{t('review.unresolved.count', { count: threads.length })}</Typography>
       </Stack>

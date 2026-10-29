@@ -41,6 +41,13 @@ const iconSizePattern = /\bfontSize\s*:\s*(\d+)\b(?!\.)/gu
 // button by MUI's size classes makes one that matches nothing beside it.
 const buttonSizePattern = /MuiButton-size\w*|MuiIconButton-size\w*/gu
 const iconSizes = new Set([14, 16, 18, 20, 24, 32, 40])
+// Rows align one way (components/rows): one-line items centre, a mark beside content that wraps sits on its
+// first line (alignTop with firstLine(n)), cells that fill the row stretch. Baseline alignment stretches the
+// row off the grid, top alignment written by hand skips the first-line rule, and a row that says nothing
+// stretches its items to the top by default.
+const baselinePattern = /\balignItems\s*:\s*(['"`])baseline\1/gu
+const topPattern = /\balignItems\s*:\s*(['"`])(?:flex-)?start\1/gu
+const rowStackPattern = /<Stack\b/gu
 const borderPattern = /\bborder(?:Top|Bottom|Left|Right)?(?:Width)?\s*:\s*(?:[1-9]|[\w.]+\s*\?\s*[1-9]|(['"`])[1-9][^'"`]*\1|`[1-9])/gu
 
 /** The text of the innermost { … } around an index, and the key it is the value of. */
@@ -121,7 +128,7 @@ function gridChecks(source, relativePath) {
   }
 }
 
-/** One way to do a thing: edges, icon sizes and button sizes come from the shared rules, not from each screen. */
+/** One way to do a thing: edges, row alignment, icon sizes and button sizes come from the shared rules, not from each screen. */
 function consistencyChecks(source, relativePath) {
   const at = (match) => `${relativePath}:${lineOf(source, match.index)}`
   if (relativePath !== join('src', 'components', 'edges.ts')) {
@@ -134,6 +141,23 @@ function consistencyChecks(source, relativePath) {
     const value = Number(match[1])
     if (value < 14 || iconSizes.has(value)) continue
     violations.push(`${at(match)}: icon size ${value}; use one of the icon sizes ${[...iconSizes].join(', ')}`)
+  }
+  for (const match of source.matchAll(baselinePattern)) {
+    violations.push(`${at(match)}: baseline alignment; centre the row (alignItems: 'center'), see components/rows`)
+  }
+  if (relativePath !== join('src', 'components', 'rows.ts')) {
+    for (const match of source.matchAll(topPattern)) {
+      const tag = enclosingTag(source, match.index)
+      const { text } = enclosingObject(source, match.index)
+      const column = /flexDirection\s*:\s*'column'/u.test(text) || (/^<Stack\b/u.test(tag) && (!/\bdirection=/u.test(tag) || /direction="column"/u.test(tag)))
+      if (column) continue
+      violations.push(`${at(match)}: top alignment in a row; use alignTop with firstLine(n) around the mark, from components/rows`)
+    }
+  }
+  for (const match of source.matchAll(rowStackPattern)) {
+    const tag = enclosingTag(source, match.index + 1)
+    if (!/\bdirection="row"/u.test(tag) || /alignItems|alignTop|firstLine\(/u.test(tag)) continue
+    violations.push(`${at(match)}: a row that leaves its vertical alignment unsaid; centre it (alignItems: 'center'), or use alignTop or 'stretch' (components/rows)`)
   }
   for (const match of source.matchAll(buttonSizePattern)) {
     violations.push(`${at(match)}: ${match[0]} re-sizes a button by hand; use size="dense" or variant="quiet" from the theme, or a theme override`)
@@ -219,5 +243,5 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`)
   process.exitCode = 1
 } else {
-  console.log('Design guard passed: colors and type sizes stay in src/theme.ts, line boxes and rows stay on the 4px grid, edges, icon sizes and button sizes come from the shared rules, interface text is in the message files, and no direct network calls are present.')
+  console.log('Design guard passed: colors and type sizes stay in src/theme.ts, line boxes and rows stay on the 4px grid, edges, row alignment, icon sizes and button sizes come from the shared rules, interface text is in the message files, and no direct network calls are present.')
 }

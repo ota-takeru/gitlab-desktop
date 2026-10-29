@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { RelativeTime } from '../../components/RelativeTime'
 import { delayedRevealSx } from '../../components/paneSx'
+import { alignTop } from '../../components/rows'
 import { shortSha } from '../../lib/format'
 import { findLocalRepository, findOwnLocalRepositories, getLocalChanges, getLocalFile, getLocalRepository, getLocalScanFolders, getLocalStatus, linkLocalRepository, pickLocalRepositoryFolder, setLocalScanFolders, summarizeLocalStatus, unlinkLocalRepository, type LocalRepository, type OwnProjectSearch } from '../../lib/localRepository'
 import { normalizeGitLabError } from '../../lib/gitlab'
@@ -206,7 +207,7 @@ function LinkRepository({ fieldRef, onLinked, projectId, projectPath, search, se
       <Typography variant="body2">{t('review.local.link.description')}</Typography>
       <Typography color="textSecondary" variant="caption">{t('review.local.link.readOnly', { project: projectPath ?? t('review.local.link.thisProject') })}</Typography>
       {projectPath ? null : <Alert severity="warning">{t('review.local.link.noProjectPath')}</Alert>}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+      <Stack direction="row" spacing={1} sx={alignTop}>
         <TextField disabled={linking || !projectPath} fullWidth onChange={(event) => setPath(event.target.value)} inputRef={fieldRef} placeholder={'C:\\path\\to\\repository'} size="small" slotProps={{ htmlInput: { 'aria-label': t('review.local.link.folder'), spellCheck: false } }} value={path} />
         <Button disabled={linking || !projectPath} onClick={() => void pick()} sx={{ flexShrink: 0 }} variant="outlined">{t('review.local.link.pick')}</Button>
         <Button disabled={linking || !projectPath || !path.trim()} sx={{ flexShrink: 0 }} type="submit" variant="contained">{linking ? t('review.local.link.checking') : t('review.local.link.submit')}</Button>

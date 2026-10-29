@@ -39,6 +39,7 @@ import { ChangeMarker } from './ChangeMarker'
 import { changeMarkerStyles } from './changeMarkerStyles'
 import { MarkdownDiffPreview } from './MarkdownDiffPreview'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
+import { alignTop } from '../../components/rows'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { annotateFullFile, filePageStart, firstChangedFileLine, type FullFileDiffAnnotations, type RemovedFileLines } from './fullFileAnnotations'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
@@ -484,7 +485,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
 
   return (
     <Box ref={rootRef}>
-      <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'flex-start', minHeight: 420 }}>
+      <Stack direction="row" spacing={1.5} useFlexGap sx={{ ...alignTop, minHeight: 420 }}>
         <Box component="nav" aria-label={t('review.fileTree.title')} sx={{ ...panelFrame({ position: false }), borderRadius: 1, display: treeShown ? 'flex' : 'none', flex: '0 0 240px', flexDirection: 'column', maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 40px)`, minWidth: 0, position: 'sticky', top: 'var(--detail-header-height, 0px)' }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
             <Typography color="textSecondary" variant="overline">{t('review.fileTree.title')}</Typography>
@@ -513,7 +514,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             {treeFits ? <Tooltip title={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')}><IconButton aria-label={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')} aria-pressed={treeShown} onClick={toggleTree}><ViewSidebarOutlinedIcon /></IconButton></Tooltip> : null}
             <Tooltip title={t('review.diff.previousFileTooltip')}><span><IconButton aria-keyshortcuts="[" aria-label={t('review.diff.previousFile')} disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowLeftRoundedIcon /></IconButton></span></Tooltip>
             <Tooltip title={t('review.diff.nextFileTooltip')}><span><IconButton aria-keyshortcuts="]" aria-label={t('review.diff.nextFile')} disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowRightRoundedIcon /></IconButton></span></Tooltip>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: '1 1 280px', minWidth: 0 }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: '1 1 280px', minWidth: 0 }}>
               {/* Long paths lose their start, not their name; the isolate keeps a leading '.' in place. */}
               <Tooltip title={displayedPath ?? ''}><Typography noWrap sx={{ direction: 'rtl', fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0, textAlign: 'left' }} variant="body2"><bdi dir="ltr">{displayedPath ?? t('review.diff.selectFile')}</bdi></Typography></Tooltip>
               {diffs.length > 1 ? <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{displayedIndex + 1}/{diffs.length}</Typography> : null}
@@ -941,7 +942,7 @@ function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: b
   </Box>
   // Keep the blame and line-number gutters continuous so removed code lines up with the file's code column.
   return blameEnabled
-    ? <Stack direction="row"><span className="blame-cell" /><Box sx={{ ...hairline('right'), flex: '0 0 52px' }} />{deletion}</Stack>
+    ? <Stack direction="row" sx={{ alignItems: 'stretch' }}><span className="blame-cell" /><Box sx={{ ...hairline('right'), flex: '0 0 52px' }} />{deletion}</Stack>
     : deletion
 }
 
@@ -1048,6 +1049,7 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
             return <Fragment key={fileLine}>
               {(changeMarkers?.removedByAnchor.get(fileLine) ?? []).map((item, removedIndex) => <RemovedFullFileLines blameEnabled={blameEnabled} item={item} key={`${item.oldStart}:${removedIndex}`} />)}
               <Stack data-change={additions ? 'add' : undefined} data-file-line={fileLine} data-testid="file-line" direction="row" sx={(theme) => ({
+                alignItems: 'stretch',
                 backgroundColor: additions ? theme.palette.diff?.addedBackground : undefined,
                 boxShadow: additions ? `inset 3px 0 0 ${theme.palette.success.main}` : undefined, minHeight: 20,
               })}>{blameEnabled ? <BlameCell line={fileLine} side="new" /> : null}<Typography color="textSecondary" sx={{ ...hairline('right'), flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Stack>

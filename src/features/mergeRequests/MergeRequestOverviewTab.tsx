@@ -53,7 +53,7 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
       {descriptionEdit ? <Stack spacing={1}>
         <MarkdownEditor autoFocus disabled={editDisabled} label={t('mergeRequest.overview.editDescription')} onChange={onChangeEdit} ref={editorRef} toolbarEnd={<TemplateMenu disabled={editDisabled} onInsert={(content) => editorRef.current?.insertBlock(content)} query={{ kind: 'descriptionTemplates', projectId: mergeRequest.projectId }} />} value={descriptionEdit.body} />
         {descriptionEdit.expected !== (description ?? '') ? <Alert severity="warning">{t('mergeRequest.overview.descriptionChanged')}</Alert> : null}
-        <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
           <Button onClick={() => void (async () => { if (descriptionEdit.body === descriptionEdit.expected || await confirm({ cancelLabel: t('mergeRequest.overview.discardKeepEditing'), confirmLabel: t('mergeRequest.overview.discardConfirm'), destructive: true, title: t('mergeRequest.overview.discardTitle') })) onCancelEdit() })()}>{t('mergeRequest.common.cancel')}</Button>
           <Button disabled={editDisabled || descriptionEdit.body === descriptionEdit.expected} onClick={onSaveEdit} variant="contained">{t('mergeRequest.common.save')}</Button>
         </Stack>
@@ -74,7 +74,7 @@ function useLabelChips(mergeRequest: MergeRequest): React.ReactNode {
   // Label colours come from the project's first page of labels; a label not on it shows without one.
   const labelsQuery = useMemo<LabelsQuery | null>(() => mergeRequest.labels?.length ? { kind: 'labels', page: 1, projectId: mergeRequest.projectId, search: '' } : null, [mergeRequest.labels?.length, mergeRequest.projectId])
   const labelColors = useGitLabQuery<LabelsQuery>(session?.id ?? null, labelsQuery)
-  return mergeRequest.labels?.length ? <Stack direction="row" key="labels" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>{mergeRequest.labels.map((label) => <LabelChip color={labelColors.data?.find((item) => item.name === label)?.color} key={label} name={label} />)}</Stack> : t('mergeRequest.common.none')
+  return mergeRequest.labels?.length ? <Stack direction="row" key="labels" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>{mergeRequest.labels.map((label) => <LabelChip color={labelColors.data?.find((item) => item.name === label)?.color} key={label} name={label} />)}</Stack> : t('mergeRequest.common.none')
 }
 
 function milestoneText(mergeRequest: MergeRequest): string {

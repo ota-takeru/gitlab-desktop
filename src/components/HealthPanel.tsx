@@ -2,6 +2,7 @@ import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlin
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import MemoryOutlinedIcon from '@mui/icons-material/MemoryOutlined'
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -14,6 +15,7 @@ import { translate } from '../i18n/i18n'
 import { useT } from '../i18n/useT'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { RuntimeHealthState } from '../types/runtime'
+import { alignTop, firstLine } from './rows'
 import { StatusPill, type StatusTone } from './StatusPill'
 
 function statusCopy(state: RuntimeHealthState, inTauri: boolean) {
@@ -84,8 +86,8 @@ export function HealthPanel() {
               justifyContent: 'space-between',
             }}
           >
-            <Stack direction="row" spacing={1.5}>
-              <MemoryOutlinedIcon sx={{ color: 'primary.main', mt: 0.25 }} />
+            <Stack direction="row" spacing={1.5} sx={alignTop}>
+              <Box sx={firstLine(5)}><MemoryOutlinedIcon sx={{ color: 'primary.main' }} /></Box>
               <Stack spacing={0.5}>
                 <Typography component="h2" id="runtime-health-title" variant="h2">
                   {t('common.health.title')}

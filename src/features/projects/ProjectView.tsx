@@ -27,6 +27,7 @@ import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { paneGutter, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
+import { alignTop } from '../../components/rows'
 import { StateIcon } from '../../components/StateIcon'
 import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
@@ -172,7 +173,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
                 leading={<SourceOutlinedIcon sx={{ color: 'place.projects', fontSize: 16 }} />}
                 onOpen={() => openProject(project)}
               >
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
                   <Tooltip enterDelay={600} title={project.name}><Typography noWrap sx={{ fontWeight: 600, minWidth: 0 }} variant="body2">{project.name}</Typography></Tooltip>
                   {project.archived ? <StateIcon icon={<Inventory2OutlinedIcon fontSize="inherit" />} label={t('project.list.archived')} /> : null}
                   {project.lastActivityAt ? <RelativeTime prefix={t('project.list.activity')} value={project.lastActivityAt} /> : null}
@@ -198,7 +199,7 @@ export function ProjectShortcuts({ ids, label, labelOf, onOpen, secondaryIds, se
 function ShortcutGroup({ icon, ids, label, labelOf, onOpen }: { icon?: React.ReactNode; ids: string[]; label: string; labelOf: (id: string) => ProjectLabel | undefined; onOpen: (projectId: string) => void }) {
   const t = useT()
   if (ids.length === 0) return null
-  return <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}><Typography color="textSecondary" sx={{ alignItems: 'center', display: 'inline-flex', flex: '0 0 auto', gap: 0.5, minHeight: 24, minWidth: 32 }} variant="caption">{icon}{label}</Typography><Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => {
+  return <Stack direction="row" spacing={1} sx={alignTop}><Typography color="textSecondary" sx={{ alignItems: 'center', display: 'inline-flex', flex: '0 0 auto', gap: 0.5, minHeight: 24, minWidth: 32 }} variant="caption">{icon}{label}</Typography><Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>{ids.map((id) => {
     const project = labelOf(id)
     // A shortcut saved before names were kept shows its id until the project is listed again.
     if (!project) return <Chip clickable key={`${label}:${id}`} label={t('project.fallbackName', { id })} onClick={() => onOpen(id)} size="small" variant="outlined" />

@@ -12,6 +12,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
+import { alignTop, firstLine } from '../../components/rows'
 import { useReorder } from '../../components/useReorder'
 import { useT } from '../../i18n/useT'
 import { gridLine } from '../../theme'
@@ -96,8 +97,8 @@ export function MergeRequestTab({ collapsed, meta, mrRef, onClose, onOpen, onTog
           {meta ? <MergeRequestStateIcon state={meta.state} /> : null}
           <Typography sx={{ fontFamily: 'code.fontFamily', fontWeight: selected ? 600 : 500, letterSpacing: 0, lineHeight: gridLine(5), maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }} variant="overline">{mrRef.iid}</Typography>
         </ListItemButton>
-        : <ListItemButton aria-current={selected ? 'page' : undefined} aria-description={t('mergeRequest.tabs.reorderHint')} aria-label={expandedName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ alignItems: 'flex-start', cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 32, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
-          <Box sx={{ display: 'flex', flexShrink: 0, pt: 0.25 }}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
+        : <ListItemButton aria-current={selected ? 'page' : undefined} aria-description={t('mergeRequest.tabs.reorderHint')} aria-label={expandedName} component="div" onClick={onOpen} selected={selected} {...item} sx={{ ...alignTop, cursor: reorder.draggingKey ? 'grabbing' : undefined, color: selected ? 'text.primary' : 'text.secondary', gap: 1, minHeight: 32, pl: 1, pr: 0.5, py: 0.5, '&:hover': { color: 'text.primary' }, ...selectedSx }}>
+          <Box sx={firstLine(5)}>{meta ? <MergeRequestStateIcon state={meta.state} /> : <Box sx={{ width: 16 }} />}</Box>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ display: '-webkit-box', fontSize: 'body2.fontSize', fontWeight: selected ? 600 : 500, lineHeight: gridLine(5), overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{name}</Typography>
             {project ? <Typography color="textSecondary" noWrap sx={{ pr: onClose ? 6 : 3 }} variant="caption">{project} !{mrRef.iid}</Typography> : null}

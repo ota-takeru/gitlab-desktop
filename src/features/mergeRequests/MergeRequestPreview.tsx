@@ -77,7 +77,7 @@ export function MergeRequestPreview({ approval, closeAt, mergeRequest, onClose, 
         </Stack>
         <Typography color="textSecondary" component="div" sx={{ fontFamily: 'code.fontFamily', mt: 1, overflowWrap: 'anywhere' }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
         {people.length ? <Typography color="textSecondary" component="div" variant="caption">{people.join(' · ')}</Typography> : null}
-        {mergeRequest.labels?.length ? <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5, mt: 1 }}>{mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" />)}</Stack> : null}
+        {mergeRequest.labels?.length ? <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>{mergeRequest.labels.map((label) => <Chip key={label} label={label} size="small" variant="outlined" />)}</Stack> : null}
         <Box sx={{ ...hairline('top'), mt: 1.5, pt: 1.5 }}>
           <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)}><MockMarkdown body={mergeRequest.description || t('mergeRequest.common.descriptionEmpty')} /></MarkdownLinkProvider>
         </Box>

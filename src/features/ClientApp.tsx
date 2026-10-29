@@ -839,7 +839,7 @@ function CacheSettings({ sessionId }: { sessionId: string | null }) {
   return <Stack spacing={1.5}>
     <Dialog aria-labelledby="discard-inputs-title" open={discarding}><DialogTitle id="discard-inputs-title">{t('settings.data.discard.progressTitle')}</DialogTitle><DialogContent><Typography variant="body2">{t('settings.data.discard.progress')}</Typography></DialogContent></Dialog>
     <Typography color="textSecondary" variant="body2">{t('settings.data.note')}</Typography>
-    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
       <Button disabled={!sessionId} onClick={() => void clear()} variant="outlined">{t('settings.data.clearCache')}</Button>
       <Button color="error" disabled={discarding} onClick={() => void discardInputs()} variant="outlined">{t('settings.data.discard.button')}</Button>
     </Stack>
@@ -866,7 +866,7 @@ const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, initialMe
     if (lookup.loading) return <MergeRequestSkeleton />
     const failure = describeMergeRequestFailure(lookup.error)
     return <PaneEmpty description={failure.description} title={failure.title}>
-      <Stack direction="row" spacing={1}>
+      <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}>
         {failure.retry ? <Button onClick={lookup.refresh} variant="outlined">{t('app.mergeRequest.retry')}</Button> : null}
         <Button onClick={onBack} startIcon={<ArrowBackRoundedIcon />}>{backLabel}</Button>
       </Stack>

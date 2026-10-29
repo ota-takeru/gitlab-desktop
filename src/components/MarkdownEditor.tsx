@@ -20,6 +20,7 @@ import { findScrollContainer } from '../features/mergeRequests/discussionScroll'
 import { insertTextareaText, useMarkdownFormatting } from '../features/shared/useMarkdownFormatting'
 import { MarkdownToolbar } from './MarkdownToolbar'
 import { markdownBodySx } from './markdownBodySx'
+import { alignTop } from './rows'
 
 export type MarkdownEditorMode = 'rich' | 'source'
 export const MARKDOWN_EDITOR_MODE_KEY = 'gitlab-desktop.markdownEditorMode'
@@ -620,7 +621,7 @@ const richEditorSx = {
     py: 1,
     '& p.is-editor-empty:first-of-type::before': { color: 'text.secondary', content: 'attr(data-placeholder)', float: 'left', height: 0, pointerEvents: 'none' },
     '& ul[data-type="taskList"]': { listStyle: 'none', pl: 0.5 },
-    '& ul[data-type="taskList"] li': { alignItems: 'flex-start', display: 'flex', gap: 1 },
+    '& ul[data-type="taskList"] li': { ...alignTop, display: 'flex', gap: 1 },
     '& ul[data-type="taskList"] li > div': { flex: 1, minWidth: 0 },
     '& ul[data-type="taskList"] li > label': { lineHeight: 1, pt: 0.5 },
     '& ul[data-type="taskList"] li p, & td p, & th p': { my: 0 },

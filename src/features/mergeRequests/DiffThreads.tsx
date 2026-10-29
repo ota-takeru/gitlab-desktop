@@ -10,6 +10,7 @@ import { frame, hairline, panelFrame } from '../../components/hairline'
 import { gridLine } from '../../theme'
 import { RelativeTime } from '../../components/RelativeTime'
 import { ResolveToggle } from '../../components/ResolveToggle'
+import { firstLine } from '../../components/rows'
 import { StateIcon } from '../../components/StateIcon'
 import type { Discussion, Draft, Note, Position } from '../../types/gitlab'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
@@ -88,9 +89,9 @@ function DiffThread({ actions, discussion, onOpen, sessionId, suggestionActions 
   return <Box aria-label={t('review.discussion.threadLabel', { author: notes[0]?.author.name ?? '' })} component="article" data-diff-thread={discussion.id} tabIndex={-1} sx={{ bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, overflow: 'clip', scrollMarginTop: 'calc(var(--detail-header-height, 0px) + var(--diff-file-header-height, 0px) + 8px)', '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` } }}>
     {expanded ? <Stack divider={<Box sx={hairline('top')} />}>
       {notes.map((note) => <Box key={note.id} sx={{ columnGap: 1.5, display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', px: 1.5, py: 1 }}>
-        <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
+        <Box sx={{ ...firstLine(6), mt: 0.5 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
         <Box sx={{ minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap', minHeight: 24, minWidth: 0, pt: 0.5, rowGap: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', minHeight: 24, minWidth: 0, pt: 0.5, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2">{note.author.name}</Typography>
             <RelativeTime value={note.createdAt} />
           </Stack>

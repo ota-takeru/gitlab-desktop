@@ -434,12 +434,12 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
             </Paper>
           </Popper>
           <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            {queueSwitches.length ? <Stack aria-label={t('mrList.queue.group')} direction="row" role="group" sx={{ gap: 0.5, mr: 0.5 }}>
+            {queueSwitches.length ? <Stack aria-label={t('mrList.queue.group')} direction="row" role="group" sx={{ alignItems: 'center', gap: 0.5, mr: 0.5 }}>
               {queueSwitches.map(({ active, label, patch }) => <Chip aria-pressed={active} color={active ? 'primary' : 'default'} key={label} label={label} onClick={() => applyConditions(patch)} size="small" variant={active ? 'filled' : 'outlined'} />)}
             </Stack> : null}
             {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>{t('mrList.search.clear')}</Button> : null}
             {/* The order is not a condition, so it stays a pull-down beside the field. */}
-            <Stack direction="row" sx={{ gap: 0.5, ml: 'auto' }}>
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 0.5, ml: 'auto' }}>
               <Select aria-label={t('mrList.order.aria')} displayEmpty onChange={(event) => applyConditions({ orderBy: event.target.value as OrderBy })} sx={pillSelectSx} value={draft.orderBy}>
                 <MenuItem value="updated_at">{t('mrList.order.updated')}</MenuItem>
                 <MenuItem value="created_at">{t('mrList.order.created')}</MenuItem>
@@ -470,7 +470,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
           <Stack spacing={2}>
             <Box>
               <Typography color="textSecondary" sx={{ display: 'block', mb: 1 }} variant="overline">{t('mrList.saved.saveCurrent')}</Typography>
-              <Stack direction="row" spacing={1}>
+              <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}>
                 <TextField fullWidth label={t('mrList.saved.nameOptional')} onChange={(event) => setSaveLabel(event.target.value)} value={saveLabel} />
                 <Button onClick={() => { if (saveSearch()) setSavedSearchesOpen(false) }} startIcon={<SaveRoundedIcon />} type="button" variant="contained">{t('mrList.saved.save')}</Button>
               </Stack>
@@ -487,7 +487,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
                         </Button>
                         <Tooltip title={t('mrList.saved.delete')}><IconButton aria-label={t('mrList.saved.deleteAria', { name: saved.label })} onClick={() => deleteSavedSearch(saved.id)}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
                       </Stack>
-                      <Stack direction="row" spacing={1}>
+                      <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}>
                         <TextField fullWidth label={t('mrList.saved.name')} onChange={(event) => setRenameLabels((current) => ({ ...current, [saved.id]: event.target.value }))} value={renameLabels[saved.id] ?? saved.label} />
                         <Button disabled={!cleanOptional(renameLabels[saved.id]) || (renameLabels[saved.id] ?? saved.label).trim() === saved.label} onClick={() => renameSavedSearch(saved)} startIcon={<EditOutlinedIcon />} sx={{ flexShrink: 0 }}>{t('mrList.saved.rename')}</Button>
                       </Stack>
@@ -840,7 +840,7 @@ const MergeRequestResultRow = memo(function MergeRequestResultRow({ approval, ap
       selected={selected}
     >
       {/* The time follows the MR's name instead of sitting at the far edge of a wide row. */}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
         <Tooltip title={`${showProject ? `${mergeRequest.projectPath || t('mrList.row.project', { id: mergeRequest.projectId })} ` : ''}!${mergeRequest.iid}`}><Typography color="textSecondary" noWrap sx={{ minWidth: 0 }} variant="caption">{showProject ? `${mergeRequest.projectPath || t('mrList.row.project', { id: mergeRequest.projectId })} ` : ''}!{mergeRequest.iid}</Typography></Tooltip>
         <Typography aria-hidden color="textSecondary" variant="caption">·</Typography>
         <RelativeTime prefix={byCreation ? t('mrList.row.created') : t('mrList.row.updated')} value={byCreation && createdAt ? createdAt : mergeRequest.updatedAt} />

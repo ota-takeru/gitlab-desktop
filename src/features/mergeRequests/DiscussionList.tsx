@@ -28,6 +28,7 @@ import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useStableCallback } from '../shared/useStableCallback'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { GitLabUserLink } from '../../components/GitLabUserLink'
+import { firstLine } from '../../components/rows'
 import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest, type ScrollAnchor } from './discussionScroll'
 import { CommentChangeStatus } from './CommentChangeStatus'
 import { positionLabel as formatPositionLabel } from './diffLineThreads'
@@ -429,10 +430,10 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
         '&::before': unread ? { bgcolor: 'primary.main', bottom: 0, content: '""', left: 0, position: 'absolute', top: 0, width: 3 } : undefined,
       }}
     >
-      <Box sx={{ pt: 0.25 }}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
+      <Box sx={firstLine(6)}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>
       <Box sx={{ minWidth: 0 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minHeight: 24, minWidth: 0, ...edgeRow }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flex: 1, flexWrap: 'wrap', minWidth: 0, rowGap: 0 }}>
             <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }} variant="body2"><GitLabUserLink user={note.author} /></Typography>
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
             {own ? <Typography color="textSecondary" variant="caption">{t('review.note.own')}</Typography> : null}

@@ -36,6 +36,7 @@ import { PipelineStatus } from '../../components/PipelineStatus'
 import { ReactionBar } from '../../components/ReactionBar'
 import { applyOwnReaction } from '../../lib/awardEmoji'
 import { RelativeTime } from '../../components/RelativeTime'
+import { alignTop } from '../../components/rows'
 import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
 import { translate } from '../../i18n/i18n'
@@ -1125,7 +1126,7 @@ export function BufferedReviewComposer({ onAddReviewers, onSetReviewers, ...prop
   const mentionedParticipants = (props.mentionParticipants ?? []).filter((user) => mentionedNames.includes(user.username.toLocaleLowerCase()))
   const onSubmitComment = (nextBody: string, thread: boolean, position?: Position) => flushBeforeSubmit(() => props.onSubmitComment(nextBody, thread, position))
   const onSaveDraft = (nextBody: string, position?: Position) => flushBeforeSubmit(() => props.onSaveDraft(nextBody, position))
-  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>{t('mergeRequest.composer.discard')}</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{onSetReviewers && mentionedNames.length ? <Alert action={<Stack direction="row" spacing={0.5}>{onAddReviewers && mentionedParticipants.length ? <Button color="inherit" disabled={props.disabled || props.pending} onClick={() => onAddReviewers(mentionedParticipants)} size="small">{t('mergeRequest.composer.addMentionedReviewers', { count: mentionedParticipants.length, name: `@${mentionedParticipants[0].username}` })}</Button> : null}<Button color="inherit" onClick={onSetReviewers} size="small">{mentionedParticipants.length ? t('mergeRequest.composer.chooseReviewers') : t('mergeRequest.composer.setReviewers')}</Button></Stack>} severity="info">{t('mergeRequest.composer.noReviewers')}</Alert> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
+  return <Stack spacing={0.5}><ReviewComposer {...props} disabled={props.disabled || submitting} onChange={change} onDetachedAttachment={(markdown) => { appendComposerBuffer(props.bufferKey, markdown) }} onSaveDraft={onSaveDraft} onSubmitComment={onSubmitComment} pending={props.pending || submitting} value={body} />{body ? <Button color="inherit" disabled={props.disabled || props.pending || submitting} onClick={discardInput} size="small" sx={{ alignSelf: 'flex-end', color: 'text.secondary' }}>{t('mergeRequest.composer.discard')}</Button> : null}{persistenceLabel ? <Typography color="textSecondary" variant="caption">{persistenceLabel}</Typography> : null}{onSetReviewers && mentionedNames.length ? <Alert action={<Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>{onAddReviewers && mentionedParticipants.length ? <Button color="inherit" disabled={props.disabled || props.pending} onClick={() => onAddReviewers(mentionedParticipants)} size="small">{t('mergeRequest.composer.addMentionedReviewers', { count: mentionedParticipants.length, name: `@${mentionedParticipants[0].username}` })}</Button> : null}<Button color="inherit" onClick={onSetReviewers} size="small">{mentionedParticipants.length ? t('mergeRequest.composer.chooseReviewers') : t('mergeRequest.composer.setReviewers')}</Button></Stack>} severity="info">{t('mergeRequest.composer.noReviewers')}</Alert> : null}{error ? <Alert severity="warning">{error}</Alert> : null}{flushError ? <Alert severity="warning">{flushError}</Alert> : null}</Stack>
 }
 
 
@@ -1136,7 +1137,7 @@ const noUsers: GitLabUser[] = []
 const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, mergeRequest, myApproved, onCopyHeadSha, onEditPeople, peopleDisabled }: { approvedBy: GitLabUser[]; mergeRequest: MergeRequest; myApproved: boolean; onCopyHeadSha: (sha: string) => Promise<void>; onEditPeople: (field: 'assignees' | 'reviewers') => void; peopleDisabled: boolean }) {
   const t = useT()
   return <>
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: 1 }}>
+    <Stack direction="row" spacing={1} sx={{ ...alignTop, mt: 1 }}>
       <Tooltip enterDelay={600} title={mergeRequest.title}><Typography component="h1" sx={{ display: '-webkit-box', flex: 1, minWidth: 0, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="h1">{mergeRequest.title}</Typography></Tooltip>
     </Stack>
     <Stack direction="row" sx={{ alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>

@@ -4,6 +4,7 @@ import Stack from '@mui/material/Stack'
 import type { ReactNode } from 'react'
 import { hairline } from './hairline'
 import { paneGutter } from './paneSx'
+import { alignTop, firstLine } from './rows'
 
 interface ListRowProps {
   selected?: boolean
@@ -67,7 +68,7 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
         onKeyDown={onPreview ? (event) => { if (event.key === ' ') { event.preventDefault(); onPreview() } } : undefined}
         onKeyUp={onPreview ? (event) => { if (event.key === ' ') event.preventDefault() } : undefined}
         sx={{
-          alignItems: 'flex-start',
+          ...alignTop,
           bgcolor: selected ? 'surface.selected' : previewing ? 'action.hover' : 'transparent',
           ...hairline('bottom', { position: false }),
           display: 'flex',
@@ -82,7 +83,7 @@ export function ListRow({ selected = false, disabled = false, onOpen, children, 
           '&.Mui-disabled': { opacity: 0.6 },
         }}
       >
-        {leading ? <Box sx={{ display: 'flex', flexShrink: 0, pt: 0.25 }}>{leading}</Box> : null}
+        {leading ? <Box sx={firstLine(5)}>{leading}</Box> : null}
         <Box sx={{ flex: 1, minWidth: 0, pr: reserve ? ACTIONS_SPACE : 0 }}>{children}</Box>
       </ButtonBase>
       {actions || stickyActions ? (

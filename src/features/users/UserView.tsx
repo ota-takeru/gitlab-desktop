@@ -28,7 +28,7 @@ export function UserNavigation({ onTabChange, sessionId, status, tab, user }: { 
     heading={<>
       <GitLabUserAvatar sessionId={sessionId} size={24} user={user} />
       {/* Name and username share one baseline. */}
-      <Tooltip title={`${user.name} @${user.username}`}><Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexShrink: 1, minWidth: 0 }}>
+      <Tooltip title={`${user.name} @${user.username}`}><Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 1, minWidth: 0 }}>
         <Typography component="div" noWrap sx={{ minWidth: 0 }} variant="h1">{user.name || user.username}</Typography>
         <Typography color="textSecondary" component="div" noWrap sx={{ flexShrink: 0 }} variant="caption">@{user.username}{status ? ` · ${status}` : ''}</Typography>
       </Stack></Tooltip>

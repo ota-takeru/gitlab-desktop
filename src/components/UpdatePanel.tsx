@@ -25,6 +25,7 @@ import { normalizeGitLabError } from '../lib/gitlab'
 import { isGitLabErrorShape } from '../types/gitlab'
 import { flushComposerBuffers } from '../features/mergeRequests/useComposerBuffer'
 import { RelativeTime } from './RelativeTime'
+import { alignTop, firstLine } from './rows'
 import { StatusPill, type StatusTone } from './StatusPill'
 import { UpdateNavButton } from './UpdateNavButton'
 
@@ -318,8 +319,8 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
   // The settings page: its section already carries the heading.
   return <>
     <Stack spacing={1.5}>
-      <Stack aria-atomic="true" aria-live="polite" direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-        {copy.icon}
+      <Stack aria-atomic="true" aria-live="polite" direction="row" spacing={1} sx={alignTop}>
+        <Box sx={firstLine(5)}>{copy.icon}</Box>
         <Stack sx={{ minWidth: 0 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
             <Typography sx={{ fontWeight: 600 }} variant="body2">{copy.title}</Typography>
