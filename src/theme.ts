@@ -302,9 +302,9 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       },
       MuiCssBaseline: {
         styleOverrides: {
-          // A sideways touchpad swipe would otherwise drag the whole window sideways (the WebView's
-          // overscroll and back/forward swipe) until the fingers lift, even when nothing scrolls sideways.
-          'html, body': { overscrollBehaviorX: 'none' },
+          // A touchpad swipe past the end of the scrollable content would otherwise drag the whole window
+          // (the WebView's overscroll and back/forward swipe) until the fingers lift.
+          'html, body': { overscrollBehavior: 'none' },
           body: {
             minWidth: 360,
             fontSize: '0.8125rem',
