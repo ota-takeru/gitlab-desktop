@@ -46,7 +46,7 @@ describe('WorkspaceSettings account lifecycle', () => {
     mocks.enableDesktopNotifications.mockReturnValue(permission.promise)
     render(<WorkspaceSettings />)
 
-    fireEvent.click(screen.getByLabelText('担当・レビューMRへの新着コメントをデスクトップ通知'))
+    fireEvent.click(screen.getByLabelText('自分のMRの新しい更新をデスクトップ通知'))
     expect(mocks.enableDesktopNotifications).toHaveBeenCalledTimes(1)
 
     act(() => globalThis.dispatchEvent(new Event('gitlab-account-replaced')))

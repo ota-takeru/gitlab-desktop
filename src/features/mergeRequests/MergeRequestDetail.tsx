@@ -264,6 +264,11 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     if (!session || accessDenied) return
     workspace.observe({ projectId: resourceId, iid }, commentNotes, discussionWindow.ready && !discussionWindow.error)
   }, [commentNotes, session, accessDenied, workspace, resourceId, iid, discussionWindow.ready, discussionWindow.error])
+  // Pushes, approvals and state changes are on the MR's page, so they are read while it is shown.
+  useEffect(() => {
+    if (!session || accessDenied || !mergeRequest?.updatedAt) return
+    workspace.markActivityRead({ projectId: resourceId, iid }, mergeRequest.updatedAt)
+  }, [session, accessDenied, workspace, resourceId, iid, mergeRequest?.updatedAt])
   const latestDiscussions = discussionWindow.latest
   useEffect(() => {
     if (!session || !latestDiscussions?.data || latestDiscussions.source !== 'network' || discussionWindow.error) return

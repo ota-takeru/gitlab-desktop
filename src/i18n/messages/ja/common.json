@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "添付ファイルのアップロードはデスクトップ版で利用できます。",
   "attachments.tooLarge": "添付ファイルは10 MiB以下にしてください。",
   "notifications.newTodos": "新しい通知が{count}件あります。",
-  "notifications.newComments": "担当・レビューMRに新着コメントが{count}件あります。",
+  "notifications.newActivity": "自分のMRに新しい更新が{count}件あります。",
   "link.projectNotFound": "プロジェクトを取得できませんでした。",
   "link.openFailed": "リンクを開けませんでした: {message}",
   "richMarkdown.image": "[画像: {alt}]",

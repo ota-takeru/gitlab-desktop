@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "O envio de anexos está disponível no app de desktop.",
   "attachments.tooLarge": "Os anexos devem ter 10 MiB ou menos.",
   "notifications.newTodos": "{count, plural, one {Você tem # novo item de to-do.} other {Você tem # novos itens de to-do.}}",
-  "notifications.newComments": "{count, plural, one {# novo comentário nos merge requests atribuídos a você ou em revisão.} other {# novos comentários nos merge requests atribuídos a você ou em revisão.}}",
+  "notifications.newActivity": "{count, plural, one {# nova atualização nos seus merge requests.} other {# novas atualizações nos seus merge requests.}}",
   "link.projectNotFound": "Não foi possível obter o projeto.",
   "link.openFailed": "Não foi possível abrir o link: {message}",
   "richMarkdown.image": "[Imagem: {alt}]",

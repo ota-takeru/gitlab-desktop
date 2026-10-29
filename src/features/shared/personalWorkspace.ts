@@ -7,6 +7,8 @@ export interface WorkspaceSettings {
   autoRefresh: boolean
   notifyComments: boolean
   notifyTodos: boolean
+  /** Shows MR comments, pushes, approvals and state changes among the notifications, as GitLab's emails do. */
+  showActivity: boolean
 }
 interface Reading { known: Record<string, string>; read: Record<string, string> }
 /** What a sidebar tab shows, as of the last time the MR was seen; kept so tabs need no requests. */
@@ -20,12 +22,16 @@ interface WorkspaceData {
   tabs: Record<string, TabMeta>
   recent: MrRef[]
   reading: Record<string, Reading>
+  /** When MR events started being followed (ISO time); earlier ones never count as unread. */
+  activitySince?: string
+  /** Per MR, the time up to which its events are read. */
+  activityRead: Record<string, string>
   settings: WorkspaceSettings
 }
-export const defaultWorkspaceSettings: WorkspaceSettings = { autoRefresh: true, notifyComments: false, notifyTodos: false }
+export const defaultWorkspaceSettings: WorkspaceSettings = { autoRefresh: true, notifyComments: false, notifyTodos: false, showActivity: true }
 const changedEvent = 'gitlab-workspace-preferences-change'
 export function mrRefKey(ref: MrRef): string { return `${ref.projectId}:${ref.iid}` }
-const emptyData = (): WorkspaceData => ({ pinned: [], open: [], shown: {}, tabs: {}, recent: [], reading: {}, settings: { ...defaultWorkspaceSettings } })
+const emptyData = (): WorkspaceData => ({ pinned: [], open: [], shown: {}, tabs: {}, recent: [], reading: {}, activityRead: {}, settings: { ...defaultWorkspaceSettings } })
 const MAX_OPEN_TABS = 20
 /** Open tabs stay mounted with their data, so ones not shown for three days close. */
 export const STALE_TAB_MS = 3 * 24 * 60 * 60_000
@@ -78,10 +84,14 @@ function parseWorkspace(raw: string): WorkspaceData {
     const open = refs(value.open, MAX_OPEN_TABS).filter((ref) => !pinned.some((item) => mrRefKey(item) === mrRefKey(ref)))
     const shown = Object.fromEntries(Object.entries(value.shown && typeof value.shown === 'object' ? value.shown : {})
       .filter(([ref, date]) => open.some((item) => mrRefKey(item) === ref) && typeof date === 'string' && Number.isFinite(Date.parse(date))))
-    return { pinned, open, shown, tabs: tabMeta(value.tabs), recent: refs(value.recent, 30), reading, settings: {
+    const activityRead = Object.fromEntries(Object.entries(value.activityRead && typeof value.activityRead === 'object' ? value.activityRead : {})
+      .filter(([ref, date]) => /^[1-9]\d*:[1-9]\d*$/u.test(ref) && typeof date === 'string' && Number.isFinite(Date.parse(date))).slice(-200))
+    const activitySince = typeof value.activitySince === 'string' && Number.isFinite(Date.parse(value.activitySince)) ? value.activitySince : undefined
+    return { pinned, open, shown, tabs: tabMeta(value.tabs), recent: refs(value.recent, 30), reading, activityRead, ...(activitySince ? { activitySince } : {}), settings: {
       autoRefresh: value.settings?.autoRefresh !== false,
       notifyComments: value.settings?.notifyComments === true,
       notifyTodos: value.settings?.notifyTodos === true,
+      showActivity: value.settings?.showActivity !== false,
     } }
   } catch { return emptyData() }
 }
@@ -144,6 +154,35 @@ export function hasViewedMergeRequest(scope: PreferenceScope, ref: MrRef): boole
   const data = readWorkspaceSnapshot(scope)
   const refKey = mrRefKey(ref)
   return [...data.recent, ...data.open].some((item) => mrRefKey(item) === refKey)
+}
+/**
+ * Whether an MR event is unread: newer than when events started being followed, and then a
+ * comment not read where the MR list counts unread comments, any other event newer than the MR's read time.
+ */
+function activityUnreadIn(data: WorkspaceData, ref: MrRef, createdAt: string, commentId: string | null): boolean {
+  if (!data.activitySince) return false
+  const created = Date.parse(createdAt)
+  if (created <= Date.parse(data.activitySince)) return false
+  if (commentId !== null) return data.reading[mrRefKey(ref)]?.read[commentId] === undefined
+  return !(created <= Date.parse(data.activityRead[mrRefKey(ref)] ?? ''))
+}
+/** Starts following MR events from `now`, once. */
+export function startActivity(scope: PreferenceScope, now = Date.now()) {
+  const data = readWorkspace(scope)
+  if (data.activitySince) return
+  data.activitySince = new Date(now).toISOString()
+  save(scope, data)
+}
+/** Reads the MR's events up to `until`; an earlier time than the recorded one changes nothing. */
+export function markActivityRead(scope: PreferenceScope, ref: MrRef, until: string) {
+  if (!validRef(ref) || !Number.isFinite(Date.parse(until))) return
+  const data = readWorkspace(scope)
+  const refKey = mrRefKey(ref)
+  if (Date.parse(until) <= Date.parse(data.activityRead[refKey] ?? '')) return
+  delete data.activityRead[refKey]
+  data.activityRead[refKey] = until
+  data.activityRead = Object.fromEntries(Object.entries(data.activityRead).slice(-200))
+  save(scope, data)
 }
 export function workspaceUnreadCount(scope: PreferenceScope, ref: MrRef): number | undefined {
   return unreadCountIn(readWorkspaceSnapshot(scope), ref)
@@ -213,6 +252,9 @@ function workspaceApi(scope: PreferenceScope, connected: boolean, data: Workspac
     unreadCount: (ref: MrRef) => unreadCountIn(data, ref),
     observe: (ref: MrRef, notes: Note[], complete = false) => { if (connected) observeComments(scope, ref, notes, scope.userId, false, complete) },
     markRead: (ref: MrRef, notes: Note[]) => { if (connected) observeComments(scope, ref, notes, scope.userId, true) },
+    isActivityUnread: (ref: MrRef, createdAt: string, commentId: string | null) => activityUnreadIn(data, ref, createdAt, commentId),
+    startActivity: () => { if (connected) startActivity(scope) },
+    markActivityRead: (ref: MrRef, until: string) => { if (connected) markActivityRead(scope, ref, until) },
     isPinned: (ref: MrRef) => data.pinned.some((item) => mrRefKey(item) === mrRefKey(ref)),
     /** Pinning moves an open tab into the pinned tabs. `meta` names the tab when the MR has not been opened. */
     togglePinned: (ref: MrRef, meta?: TabMeta) => {

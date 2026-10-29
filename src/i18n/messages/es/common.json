@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "La carga de adjuntos está disponible en la aplicación de escritorio.",
   "attachments.tooLarge": "Los adjuntos deben ocupar 10 MiB o menos.",
   "notifications.newTodos": "{count, plural, one {Tienes # tarea pendiente nueva.} other {Tienes # tareas pendientes nuevas.}}",
-  "notifications.newComments": "{count, plural, one {# comentario nuevo en tus solicitudes de fusión asignadas o de revisión.} other {# comentarios nuevos en tus solicitudes de fusión asignadas o de revisión.}}",
+  "notifications.newActivity": "{count, plural, one {# actualización nueva en tus solicitudes de fusión.} other {# actualizaciones nuevas en tus solicitudes de fusión.}}",
   "link.projectNotFound": "No se pudo obtener el proyecto.",
   "link.openFailed": "No se pudo abrir el enlace: {message}",
   "richMarkdown.image": "[Imagen: {alt}]",

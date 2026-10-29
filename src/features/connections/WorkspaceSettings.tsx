@@ -42,6 +42,7 @@ export function WorkspaceSettings() {
   return <Box><Stack spacing={0.5}>
     <FormControlLabel control={<Checkbox checked={workspace.settings.autoRefresh} disabled={!session} onChange={(_, value) => workspace.setSettings({ autoRefresh: value })} size="small" />} label={t('settings.workspace.autoRefresh')} />
     <Typography color="textSecondary" sx={{ mb: 1, mt: -0.5, pl: 3 }} variant="caption">{t('settings.workspace.autoRefreshHint')}</Typography>
+    <FormControlLabel control={<Checkbox checked={workspace.settings.showActivity} disabled={!session} onChange={(_, value) => workspace.setSettings({ showActivity: value })} size="small" />} label={t('settings.workspace.showActivity')} />
     <FormControlLabel control={<Checkbox checked={workspace.settings.notifyComments} disabled={!session || busy} onChange={(_, value) => void toggleNotification('notifyComments', value)} size="small" />} label={t('settings.workspace.notifyComments')} />
     <FormControlLabel control={<Checkbox checked={workspace.settings.notifyTodos} disabled={!session || busy} onChange={(_, value) => void toggleNotification('notifyTodos', value)} size="small" />} label={t('settings.workspace.notifyTodos')} />
     <Typography color="textSecondary" sx={{ mt: -0.5, pl: 3 }} variant="caption">{t('settings.workspace.notifyHint')}</Typography>

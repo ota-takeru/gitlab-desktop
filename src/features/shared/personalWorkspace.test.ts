@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { GitLabSession, Note } from '../../types/gitlab'
 import { clearPreferences, preferenceScope, scopedKey } from './preferences'
-import { closeStaleTabs, observeComments, openWorkspaceTab, readWorkspace, STALE_TAB_MS, unreadComments, usePersonalWorkspace, workspaceUnreadCount } from './personalWorkspace'
+import { closeStaleTabs, markActivityRead, observeComments, openWorkspaceTab, readWorkspace, STALE_TAB_MS, startActivity, unreadComments, usePersonalWorkspace, workspaceUnreadCount } from './personalWorkspace'
 
 const scope = preferenceScope('https://gitlab.example/GitLab', '42')
 const ref = { iid: '3', projectId: '77' }
@@ -191,5 +191,32 @@ describe('open tabs', () => {
     expect(readWorkspace(scope).open).toEqual([ref])
     closeStaleTabs(scope, null, now + STALE_TAB_MS)
     expect(readWorkspace(scope).open).toEqual([])
+  })
+})
+
+describe('MR activity', () => {
+  beforeEach(() => clearPreferences(scope))
+
+  it('counts nothing as unread before following starts, nor events from before it', () => {
+    const { result } = renderHook(() => usePersonalWorkspace(session))
+    expect(result.current.isActivityUnread(ref, '2026-10-10T00:00:00.000Z', null)).toBe(false)
+
+    act(() => startActivity(scope, Date.parse('2026-10-05T00:00:00.000Z')))
+    startActivity(scope, Date.parse('2026-10-09T00:00:00.000Z'))
+    expect(result.current.isActivityUnread(ref, '2026-10-04T00:00:00.000Z', null)).toBe(false)
+    expect(result.current.isActivityUnread(ref, '2026-10-06T00:00:00.000Z', null)).toBe(true)
+  })
+
+  it('reads other events up to a time, and comments only where unread comments are kept', () => {
+    startActivity(scope, Date.parse('2026-10-01T00:00:00.000Z'))
+    const { result } = renderHook(() => usePersonalWorkspace(session))
+    act(() => markActivityRead(scope, ref, '2026-10-08T00:00:00.000Z'))
+    markActivityRead(scope, ref, '2026-10-03T00:00:00.000Z')
+
+    expect(result.current.isActivityUnread(ref, '2026-10-07T00:00:00.000Z', null)).toBe(false)
+    expect(result.current.isActivityUnread(ref, '2026-10-09T00:00:00.000Z', null)).toBe(true)
+    expect(result.current.isActivityUnread(ref, '2026-10-07T00:00:00.000Z', '1')).toBe(true)
+    act(() => result.current.markRead(ref, [makeNote('1', { createdAt: '2026-10-07T00:00:00.000Z' })]))
+    expect(result.current.isActivityUnread(ref, '2026-10-07T00:00:00.000Z', '1')).toBe(false)
   })
 })

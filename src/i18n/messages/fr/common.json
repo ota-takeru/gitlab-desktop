@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "L’envoi de pièces jointes est disponible dans l’application de bureau.",
   "attachments.tooLarge": "Les pièces jointes ne doivent pas dépasser 10 MiB.",
   "notifications.newTodos": "{count, plural, one {Vous avez # nouvelle tâche à faire.} many {Vous avez # nouvelles tâches à faire.} other {Vous avez # nouvelles tâches à faire.}}",
-  "notifications.newComments": "{count, plural, one {# nouveau commentaire sur vos requêtes de fusion assignées ou à relire.} many {# nouveaux commentaires sur vos requêtes de fusion assignées ou à relire.} other {# nouveaux commentaires sur vos requêtes de fusion assignées ou à relire.}}",
+  "notifications.newActivity": "{count, plural, one {# nouvelle mise à jour sur vos requêtes de fusion.} many {# nouvelles mises à jour sur vos requêtes de fusion.} other {# nouvelles mises à jour sur vos requêtes de fusion.}}",
   "link.projectNotFound": "Impossible d’obtenir le projet.",
   "link.openFailed": "Impossible d’ouvrir le lien : {message}",
   "richMarkdown.image": "[Image : {alt}]",

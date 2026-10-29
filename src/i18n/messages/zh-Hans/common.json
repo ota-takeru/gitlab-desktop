@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "附件上传仅在桌面应用中可用。",
   "attachments.tooLarge": "附件必须小于或等于 10 MiB。",
   "notifications.newTodos": "{count, plural, other {你有 # 个新的待办事项。}}",
-  "notifications.newComments": "{count, plural, other {指派给你的合并请求或待审核的合并请求有 # 条新评论。}}",
+  "notifications.newActivity": "{count, plural, other {你的合并请求有 # 条新动态。}}",
   "link.projectNotFound": "无法获取项目。",
   "link.openFailed": "无法打开链接：{message}",
   "richMarkdown.image": "[图片：{alt}]",

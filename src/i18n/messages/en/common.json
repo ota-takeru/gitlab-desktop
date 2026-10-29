@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "Attachment uploads are available in the desktop app.",
   "attachments.tooLarge": "Attachments must be 10 MiB or smaller.",
   "notifications.newTodos": "{count, plural, one {You have # new to-do item.} other {You have # new to-do items.}}",
-  "notifications.newComments": "{count, plural, one {# new comment on your assigned or review merge requests.} other {# new comments on your assigned or review merge requests.}}",
+  "notifications.newActivity": "{count, plural, one {# new update on your merge requests.} other {# new updates on your merge requests.}}",
   "link.projectNotFound": "Couldn't get the project.",
   "link.openFailed": "Couldn't open the link: {message}",
   "richMarkdown.image": "[Image: {alt}]",

@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "附件上傳可在桌面應用程式中使用。",
   "attachments.tooLarge": "附件必須小於等於 10 MiB。",
   "notifications.newTodos": "{count, plural, other {您有 # 個新的待辦事項。}}",
-  "notifications.newComments": "{count, plural, other {您已指派或審查中的合併請求有 # 則新留言。}}",
+  "notifications.newActivity": "{count, plural, other {您的合併請求有 # 則新動態。}}",
   "link.projectNotFound": "無法取得專案。",
   "link.openFailed": "無法開啟連結：{message}",
   "richMarkdown.image": "[圖片：{alt}]",

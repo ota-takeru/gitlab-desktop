@@ -116,7 +116,7 @@ it('shows a missing user without fetching unscoped MRs or projects', () => {
     ? { ...emptyQueryResult(), snapshot: snapshot(null) } : emptyQueryResult())
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
   expect(screen.getByText('ユーザーが見つかりません')).toBeInTheDocument()
-  expect(gitlabQueryMock.mock.calls.some(([, query]) => query?.kind === 'userProjects' || query?.kind === 'mrs' && !query.reviewerId)).toBe(false)
+  expect(gitlabQueryMock.mock.calls.some(([, query]) => query?.kind === 'userProjects' || query?.kind === 'mrs' && !query.reviewerId && !query.assigneeId && !query.authorId)).toBe(false)
 })
 
 it('retains the installation guard when authentication expiry resets the private workspace', async () => {

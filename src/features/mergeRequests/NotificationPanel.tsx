@@ -2,12 +2,19 @@ import AlternateEmailRoundedIcon from '@mui/icons-material/AlternateEmailRounded
 import AssignmentIndOutlinedIcon from '@mui/icons-material/AssignmentIndOutlined'
 import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
+import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded'
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
+import CommitRoundedIcon from '@mui/icons-material/CommitRounded'
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded'
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import HowToRegOutlinedIcon from '@mui/icons-material/HowToRegOutlined'
+import MergeRoundedIcon from '@mui/icons-material/MergeRounded'
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import PersonSearchOutlinedIcon from '@mui/icons-material/PersonSearchOutlined'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded'
+import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -35,11 +42,13 @@ import { translate, type MessageKey } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
-import type { GitLabCommandError, GitLabTodo, TodosQuery } from '../../types/gitlab'
+import type { GitLabCommandError, GitLabSession, GitLabTodo, TodosQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
-import type { MrRef } from '../shared/personalWorkspace'
+import { mrRefKey, usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
 import { runGitLabMutation, useGitLabMutation } from '../shared/useGitLabMutation'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { todoNoteId, type ActivityKind, type MergeRequestActivity } from './activityFeed'
+import { useLoadedActivity } from './activityStore'
 import { forgetDoneTodos, isNotificationTodo } from './todoCache'
 
 const actionLabels: Record<string, MessageKey> = { assigned: 'mrList.notifications.action.assigned', mentioned: 'mrList.notifications.action.mentioned', directly_addressed: 'mrList.notifications.action.directlyAddressed', approval_required: 'mrList.notifications.action.approvalRequired', marked: 'mrList.notifications.action.marked', build_failed: 'mrList.notifications.action.buildFailed', unmergeable: 'mrList.notifications.action.unmergeable', merge_train_removed: 'mrList.notifications.action.mergeTrainRemoved', review_requested: 'mrList.notifications.action.reviewRequested' }
@@ -49,6 +58,24 @@ const actionTones: Record<string, StateIconTone> = { build_failed: 'error', unme
 const actionIcons: Record<string, ReactElement> = { assigned: <AssignmentIndOutlinedIcon fontSize="inherit" />, mentioned: <AlternateEmailRoundedIcon fontSize="inherit" />, directly_addressed: <AlternateEmailRoundedIcon fontSize="inherit" />, approval_required: <HowToRegOutlinedIcon fontSize="inherit" />, marked: <BookmarkBorderRoundedIcon fontSize="inherit" />, build_failed: <ErrorOutlineRoundedIcon fontSize="inherit" />, unmergeable: <BlockRoundedIcon fontSize="inherit" />, merge_train_removed: <WarningAmberRoundedIcon fontSize="inherit" />, review_requested: <PersonSearchOutlinedIcon fontSize="inherit" /> }
 // A mention carries the comment that made it; for the other events the text only repeats the MR.
 const quotesComment = new Set(['mentioned', 'directly_addressed'])
+const activityLabels: Record<Exclude<ActivityKind, 'pushed'>, MessageKey> = { comment: 'mrList.notifications.activity.comment', approved: 'mrList.notifications.activity.approved', unapproved: 'mrList.notifications.activity.unapproved', merged: 'mrList.notifications.activity.merged', closed: 'mrList.notifications.activity.closed', reopened: 'mrList.notifications.activity.reopened' }
+const activityTones: Partial<Record<ActivityKind, StateIconTone>> = { approved: 'success', merged: 'success', unapproved: 'warning', closed: 'neutral' }
+const activityIcons: Record<ActivityKind, ReactElement> = { comment: <ChatBubbleOutlineRoundedIcon fontSize="inherit" />, pushed: <CommitRoundedIcon fontSize="inherit" />, approved: <CheckCircleOutlineRoundedIcon fontSize="inherit" />, unapproved: <RemoveCircleOutlineRoundedIcon fontSize="inherit" />, merged: <MergeRoundedIcon fontSize="inherit" />, closed: <CancelOutlinedIcon fontSize="inherit" />, reopened: <ReplayRoundedIcon fontSize="inherit" /> }
+
+/**
+ * The MR events shown beside the To-Dos: unread ones, or with `read` the read ones. A comment a
+ * To-Do is about is left to the To-Do.
+ */
+function useActivityNotifications(session: GitLabSession | null, read: boolean, todos: GitLabTodo[]): MergeRequestActivity[] {
+  const workspace = usePersonalWorkspace(session)
+  const loaded = useLoadedActivity(session?.id ?? null)
+  return useMemo(() => {
+    if (!workspace.settings.showActivity) return []
+    const fromTodos = new Set(todos.map(todoNoteId))
+    return loaded.filter((item) => !fromTodos.has(item.id)
+      && workspace.isActivityUnread(item, item.createdAt, item.kind === 'comment' ? item.id : null) !== read)
+  }, [loaded, read, todos, workspace])
+}
 
 /**
  * The navigation's notification button. The count sits inside the bell, and
@@ -80,7 +107,9 @@ export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpen
   // The first page is the count, shared with the panel's first page and the desktop notifications.
   const query = useMemo(() => session ? ({ kind: 'todos' as const, page: 1 }) : null, [session])
   const result = useGitLabQuery(session?.id ?? null, query)
-  const count = result.data?.filter(isNotificationTodo).length ?? 0
+  const todos = useMemo(() => result.data?.filter(isNotificationTodo) ?? [], [result.data])
+  const activity = useActivityNotifications(session, false, todos)
+  const count = todos.length + activity.length
   const more = result.snapshot?.nextPage != null
   const title = count || more ? t(more ? 'mrList.notifications.navTitleMore' : 'mrList.notifications.navTitle', { count }) : t('mrList.notifications.title')
   return <>
@@ -98,19 +127,44 @@ export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpen
   </>
 }
 
+/** A GitLab To-Do, or an event on one of the user's MRs that GitLab only emails about. */
+type NotificationEntry = { todo: GitLabTodo; activity?: undefined } | { todo?: undefined; activity: MergeRequestActivity }
+
+function entryOf(entry: NotificationEntry): GitLabTodo | MergeRequestActivity {
+  return entry.todo ?? entry.activity
+}
+
 /** The notifications of one MR, newest first; a mention per comment would otherwise fill the stack with one MR. */
 interface NotificationGroup {
   key: string
-  todos: GitLabTodo[]
+  entries: NotificationEntry[]
 }
 
-function groupByMergeRequest(todos: GitLabTodo[]): NotificationGroup[] {
-  const groups = new Map<string, GitLabTodo[]>()
-  for (const todo of todos) {
-    const key = `${todo.projectId}-${todo.iid}`
-    groups.set(key, [...(groups.get(key) ?? []), todo])
+function groupByMergeRequest(entries: NotificationEntry[]): NotificationGroup[] {
+  const groups = new Map<string, NotificationEntry[]>()
+  const sorted = [...entries].sort((left, right) => Date.parse(entryOf(right).createdAt) - Date.parse(entryOf(left).createdAt))
+  for (const entry of sorted) {
+    const { iid, projectId } = entryOf(entry)
+    const key = `${projectId}-${iid}`
+    groups.set(key, [...(groups.get(key) ?? []), entry])
   }
-  return [...groups].map(([key, items]) => ({ key, todos: items }))
+  return [...groups].map(([key, items]) => ({ key, entries: items }))
+}
+
+/**
+ * Reads MR events: comments where the MR list counts unread comments, the other events up to
+ * the newest of them.
+ */
+function markActivityRead(workspace: ReturnType<typeof usePersonalWorkspace>, items: MergeRequestActivity[]) {
+  const byMergeRequest = new Map<string, MergeRequestActivity[]>()
+  for (const item of items) byMergeRequest.set(mrRefKey(item), [...(byMergeRequest.get(mrRefKey(item)) ?? []), item])
+  for (const group of byMergeRequest.values()) {
+    const ref = { iid: group[0].iid, projectId: group[0].projectId }
+    const comments = group.filter((item) => item.kind === 'comment').map((item) => item.note)
+    if (comments.length) workspace.markRead(ref, comments)
+    const latest = group.filter((item) => item.kind !== 'comment').map((item) => item.createdAt).sort((left, right) => Date.parse(right) - Date.parse(left))[0]
+    if (latest) workspace.markActivityRead(ref, latest)
+  }
 }
 
 /** Scrolling, or reading every notification, goes through at most this many pages of GitLab's To-Dos (100 each). */
@@ -135,6 +189,8 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
   const t = useT()
   const queryClient = useQueryClient()
   const notify = useNotify()
+  const { session } = useConnection()
+  const workspace = usePersonalWorkspace(session)
   const [marking, setMarking] = useState<{ done: number; total: number | null } | null>(null)
   // Read notifications stay in GitLab as done To-Dos, so they can be looked back on.
   const [read, setRead] = useState(false)
@@ -163,24 +219,31 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
     const pages = [result.data, ...Array.from({ length: morePages }, (_, index) => loadedPages[index + 2]?.data)]
     return pages.flatMap((data) => data ?? []).filter((todo) => isNotificationTodo(todo) && !seen.has(todo.id) && Boolean(seen.add(todo.id)))
   }, [result.data, loadedPages, morePages])
-  const groups = useMemo(() => groupByMergeRequest(notifications), [notifications])
+  const activity = useActivityNotifications(session, read, notifications)
+  const entries = useMemo((): NotificationEntry[] => [...notifications.map((todo) => ({ todo })), ...activity.map((item) => ({ activity: item }))], [activity, notifications])
+  const groups = useMemo(() => groupByMergeRequest(entries), [entries])
   const shown = result.data !== null
   const loadingMore = Boolean(last?.loading) || (morePages > 0 && !last)
   const loadMore = nextPage !== null && !loadingMore && !last?.error && morePages + 1 < MAX_PAGES ? () => setMorePages((count) => count + 1) : undefined
   const scrollRef = useRef<HTMLDivElement>(null)
   // Opening a notification reads it, with the others of its MR: the MR opens at once and the reads are sent behind it.
   const open = (group: NotificationGroup) => {
-    if (read) { onOpen(group.todos[0]); return }
+    const { iid, projectId } = entryOf(group.entries[0])
+    if (read) { onOpen({ iid, projectId }); return }
+    markActivityRead(workspace, group.entries.flatMap((entry) => entry.activity ? [entry.activity] : []))
     void (async () => {
       const read: string[] = []
-      for (const todo of group.todos) if (await markNotificationRead(notify, sessionId, todo, false)) read.push(todo.id)
+      for (const entry of group.entries) if (entry.todo && await markNotificationRead(notify, sessionId, entry.todo, false)) read.push(entry.todo.id)
       forgetDoneTodos(queryClient, sessionId, read)
     })()
-    onOpen(group.todos[0])
+    onOpen({ iid, projectId })
   }
   // Every page, not only those scrolled to. Each read goes under its MR's write record, so a failed
   // or unknown one never hides the others; the list is reloaded once at the end.
   const markAllRead = async () => {
+    // The events are read on this device at once; only the To-Dos are sent to GitLab.
+    const events = activity.length
+    markActivityRead(workspace, activity)
     setMarking({ done: 0, total: null })
     const targets: GitLabTodo[] = []
     try {
@@ -214,7 +277,7 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
     setMarking(null)
     notify(failed
       ? { message: t('mrList.notifications.markedSome', { failed, read: read.length }), severity: 'warning' }
-      : { message: t('mrList.notifications.markedAll', { count: read.length }), severity: 'success' })
+      : { message: t('mrList.notifications.markedAll', { count: read.length + events }), severity: 'success' })
   }
   return <>
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...hairline('bottom'), flexShrink: 0, pl: 1.5, pr: 0.5, py: 0.5 }}>
@@ -224,14 +287,14 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
         <ToggleButton sx={{ px: 1, py: 0.25 }} value="read">{t('mrList.notifications.read')}</ToggleButton>
       </ToggleButtonGroup>
       <Typography aria-live="polite" color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">
-        {shown ? <>{t(nextPage !== null ? 'mrList.notifications.countMore' : 'mrList.notifications.count', { count: notifications.length })}{result.stale ? ` · ${t('mrList.notifications.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) })}` : result.refreshing ? ` · ${t('mrList.notifications.refreshing')}` : ''}</> : result.loading ? t('mrList.notifications.loading') : null}
+        {shown ? <>{t(nextPage !== null ? 'mrList.notifications.countMore' : 'mrList.notifications.count', { count: entries.length })}{result.stale ? ` · ${t('mrList.notifications.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) })}` : result.refreshing ? ` · ${t('mrList.notifications.refreshing')}` : ''}</> : result.loading ? t('mrList.notifications.loading') : null}
       </Typography>
-      {read ? null : <Button disabled={!shown || !notifications.length || marking !== null} onClick={() => void markAllRead()} size="small">{marking ? marking.total === null ? t('mrList.notifications.checking') : t('mrList.notifications.marking', { done: marking.done, total: marking.total }) : t('mrList.notifications.markAll')}</Button>}
+      {read ? null : <Button disabled={!shown || !entries.length || marking !== null} onClick={() => void markAllRead()} size="small">{marking ? marking.total === null ? t('mrList.notifications.checking') : t('mrList.notifications.marking', { done: marking.done, total: marking.total }) : t('mrList.notifications.markAll')}</Button>}
       <Tooltip title={t('mrList.notifications.refresh')}><span><IconButton aria-label={t('mrList.notifications.refreshAria')} disabled={result.loading || result.refreshing} onClick={() => { setMorePages(0); result.refresh() }}><RefreshRoundedIcon /></IconButton></span></Tooltip>
     </Stack>
     <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
       {result.error ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('mrList.notifications.retry')}</Button>} severity={result.data ? 'warning' : 'error'} sx={{ m: 1 }}>{result.data ? t('mrList.notifications.staleError', { error: result.error.message }) : result.error.message}</Alert> : null}
-      {shown && notifications.length === 0 && nextPage === null ? read
+      {shown && entries.length === 0 && nextPage === null ? read
         ? <PaneEmpty description={t('mrList.notifications.emptyReadDescription')} icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title={t('mrList.notifications.emptyReadTitle')} />
         : <PaneEmpty description={t('mrList.notifications.emptyDescription')} icon={<NotificationsNoneRoundedIcon fontSize="inherit" />} title={t('mrList.notifications.emptyTitle')} /> : null}
       {groups.length ? <Stack aria-label={t('mrList.notifications.title')} component="ul" onKeyDown={moveListRowFocus} spacing={1} sx={{ m: 0, p: 1 }}>
@@ -285,8 +348,13 @@ function MoreNotifications({ capped, cappedNote, error, loading, onLoad, onRetry
  */
 function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; group: NotificationGroup; onOpen: () => void }) {
   const t = useT()
-  const [todo, ...others] = group.todos
-  const label = t(actionLabels[todo.actionName] ?? 'mrList.notifications.action.other')
+  const [newest, ...others] = group.entries
+  const { todo, activity } = newest
+  const label = todo ? t(actionLabels[todo.actionName] ?? 'mrList.notifications.action.other')
+    : activity.kind === 'pushed' ? t('mrList.notifications.activity.pushed', { count: activity.commits ?? 0 })
+      : t(activity.path ? 'mrList.notifications.activity.diffComment' : activityLabels[activity.kind])
+  const item = entryOf(newest)
+  const quote = todo ? quotesComment.has(todo.actionName) && todo.body ? todo.body : null : activity.kind === 'comment' ? activity.note.body : null
   // The cards behind show as edges below this one, at most two, like a stack of paper.
   const behind = Math.min(others.length, 2)
   return <Box component="li" sx={{ listStyle: 'none', pb: behind * 0.5, position: 'relative' }}>
@@ -294,16 +362,17 @@ function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; grou
     <Box sx={{ bgcolor: 'surface.raised', ...panelFrame(), borderRadius: 2, overflow: 'hidden' }}>
       <ButtonBase data-list-row="true" disabled={disabled} onClick={onOpen} sx={{ alignItems: 'stretch', display: 'flex', flexDirection: 'column', pb: 1, px: 1.5, pt: 1, textAlign: 'left', width: '100%', '&:hover': { bgcolor: 'action.hover' }, '&:focus-visible': { outlineOffset: -2 } }}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-          <StateIcon icon={actionIcons[todo.actionName] ?? <NotificationsNoneRoundedIcon fontSize="inherit" />} label={label} tone={actionTones[todo.actionName] ?? 'info'} />
+          <StateIcon icon={todo ? actionIcons[todo.actionName] ?? <NotificationsNoneRoundedIcon fontSize="inherit" /> : activityIcons[activity.kind]} label={label} tone={(todo ? actionTones[todo.actionName] : activityTones[activity.kind]) ?? 'info'} />
           <Typography aria-hidden sx={{ fontWeight: 600 }} variant="caption">{label}</Typography>
           <Typography aria-hidden color="textSecondary" variant="caption">·</Typography>
-          <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{todo.projectName} !{todo.iid}</Typography>
+          <Typography color="textSecondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">{todo ? todo.projectName : activity.projectLabel} !{item.iid}</Typography>
           {/* When the newest notification arrived, not when the MR changed. */}
-          <RelativeTime value={todo.createdAt} />
+          <RelativeTime value={item.createdAt} />
         </Stack>
-        <Typography sx={{ display: '-webkit-box', fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{todo.title}</Typography>
-        {quotesComment.has(todo.actionName) && todo.body ? <Typography color="textSecondary" sx={{ display: '-webkit-box', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="caption">{todo.author.name}: {todo.body}</Typography>
-          : <Typography color="textSecondary" noWrap variant="caption">{todo.author.name}</Typography>}
+        <Typography sx={{ display: '-webkit-box', fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="body2">{item.title}</Typography>
+        {activity?.path ? <Typography color="textSecondary" noWrap sx={{ fontFamily: 'code.fontFamily' }} variant="caption">{activity.path}{activity.line ? `:${activity.line}` : ''}</Typography> : null}
+        {quote ? <Typography color="textSecondary" sx={{ display: '-webkit-box', overflow: 'hidden', overflowWrap: 'anywhere', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }} variant="caption">{item.author.name}: {quote}</Typography>
+          : <Typography color="textSecondary" noWrap variant="caption">{item.author.name}</Typography>}
         {others.length ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('mrList.notifications.others', { count: others.length })}</Typography> : null}
       </ButtonBase>
     </Box>

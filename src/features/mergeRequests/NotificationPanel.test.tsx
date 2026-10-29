@@ -1,10 +1,14 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createTheme } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import type { GitLabSession, GitLabTodo } from '../../types/gitlab'
+import type { GitLabSession, GitLabTodo, MergeRequest, Note } from '../../types/gitlab'
+import { startActivity } from '../shared/personalWorkspace'
+import { clearPreferences, preferenceScope } from '../shared/preferences'
+import { mergeRequestActivity } from './activityFeed'
+import { forgetActivity, publishActivity } from './activityStore'
 import { NotificationNavItem } from './NotificationPanel'
 
 const { gitlabQueryMock, mutationKeys, queryMock, runDetailedMock } = vi.hoisted(() => ({ gitlabQueryMock: vi.fn(), mutationKeys: [] as string[], queryMock: vi.fn(), runDetailedMock: vi.fn() }))
@@ -183,7 +187,7 @@ it('stacks the notifications of one MR into one card that reads them all', async
   expect(within(cards[1]).queryByText(/^ほか/u)).not.toBeInTheDocument()
 
   fireEvent.click(within(cards[0]).getByRole('button'))
-  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: '9', iid: '3' }))
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '3' }))
   await waitFor(() => expect(runDetailedMock.mock.calls.map(([action]) => (action as { todoId: string }).todoId)).toEqual(['9', '1']))
 })
 
@@ -219,6 +223,40 @@ it('shows read notifications on request and opens them without another read', ()
   expect(queryMock).toHaveBeenCalledWith('session-1', { kind: 'todos', page: 1, done: true })
   expect(screen.queryByRole('button', { name: 'すべて既読' })).not.toBeInTheDocument()
   fireEvent.click(screen.getByText('Already read'))
-  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: '8', iid: '9' }))
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '9' }))
   expect(runDetailedMock).not.toHaveBeenCalled()
+})
+
+it('shows the events of the user\'s MRs beside the To-Dos, leaves a mentioned comment to its To-Do, and reads them on opening', () => {
+  const scope = preferenceScope(sessionFixture.instanceUrl, sessionFixture.user.id)
+  clearPreferences(scope)
+  const hourAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60_000).toISOString()
+  startActivity(scope, Date.now() - 24 * 60 * 60_000)
+  const mergeRequest = { iid: '5', projectId: '77', projectPath: 'group/desktop', title: 'Add login', updatedAt: hourAgo(1) } as MergeRequest
+  const note = (id: string, body: string, createdAt: string, system = false): Note => ({ author: { id: '9', name: '作者', username: 'author' }, body, createdAt, id, position: null, resolvable: false, resolved: false, system })
+  publishActivity('session-1', '77:5', mergeRequestActivity(mergeRequest, [
+    note('86', 'approved this merge request', hourAgo(3), true),
+    note('87', 'Looks good', hourAgo(2)),
+    note('88', '@reviewer please check', hourAgo(1)),
+    note('85', 'added 2 commits', hourAgo(48), true),
+  ], '42'))
+  try {
+    queryMock.mockReturnValue(result([todo({ body: '@reviewer please check', createdAt: hourAgo(1), id: '1', iid: '5', title: 'Add login', webUrl: 'https://gitlab.example/group/desktop/-/merge_requests/5#note_88' })]))
+    const onOpen = vi.fn()
+    runDetailedMock.mockResolvedValue({ error: null, ok: true, status: 'success' })
+    renderWithClient(<NotificationNavItem collapsed={false} navigationWidth={52} onOpen={onOpen} />)
+
+    // The To-Do, the comment and the approval; the push came before events were followed.
+    fireEvent.click(screen.getByRole('button', { name: '通知 3件' }))
+    const [card] = within(screen.getByRole('list', { name: '通知' })).getAllByRole('listitem')
+    expect(within(card).getByText('作者: @reviewer please check')).toBeInTheDocument()
+    expect(within(card).getByText('ほか2件')).toBeInTheDocument()
+
+    act(() => fireEvent.click(within(card).getAllByRole('button')[0]))
+    expect(onOpen).toHaveBeenCalledWith({ iid: '5', projectId: '77' })
+    expect(screen.getByRole('button', { name: '通知 1件' })).toBeInTheDocument()
+  } finally {
+    forgetActivity('session-1', '77:5')
+    clearPreferences(scope)
+  }
 })

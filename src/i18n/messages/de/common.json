@@ -197,7 +197,7 @@
   "attachments.desktopOnly": "Anhänge können in der Desktop-App hochgeladen werden.",
   "attachments.tooLarge": "Anhänge dürfen höchstens 10 MiB groß sein.",
   "notifications.newTodos": "{count, plural, one {Sie haben # neues To-do.} other {Sie haben # neue To-dos.}}",
-  "notifications.newComments": "{count, plural, one {# neuer Kommentar in Ihren zugewiesenen oder Review-Merge-Requests.} other {# neue Kommentare in Ihren zugewiesenen oder Review-Merge-Requests.}}",
+  "notifications.newActivity": "{count, plural, one {# neue Aktualisierung in Ihren Merge-Requests.} other {# neue Aktualisierungen in Ihren Merge-Requests.}}",
   "link.projectNotFound": "Das Projekt konnte nicht abgerufen werden.",
   "link.openFailed": "Der Link konnte nicht geöffnet werden: {message}",
   "richMarkdown.image": "[Bild: {alt}]",

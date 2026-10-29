@@ -72,6 +72,7 @@ vi.mock('../connections/connectionContext', () => ({
 vi.mock('../shared/personalWorkspace', () => ({
   usePersonalWorkspace: () => ({
     isPinned: () => false,
+    markActivityRead: vi.fn(),
     markRead: detailMocks.markReadMock,
     observe: detailMocks.workspaceObserveMock,
     recordRecent: detailMocks.recordRecentMock,
