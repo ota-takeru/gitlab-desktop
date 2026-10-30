@@ -99,7 +99,7 @@ function DraftEditor({ bufferKey, disabled, draft, mentionParticipants, onClose,
   const [saving, setSaving] = useState(false)
   const seededRef = useRef(false)
   const editorRef = useRef<MarkdownEditorHandle | null>(null)
-  const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: disabled || saving, editorRef, enabled: Boolean(sessionId), participants: mentionParticipants })
+  const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: disabled || saving, editorRef, enabled: Boolean(sessionId), participants: mentionParticipants, value: body })
   const { onPasteImage, status: attachmentStatus, uploading } = useAttachmentPaste(editorRef, onUploadAttachment, (markdown) => { appendComposerBuffer(bufferKey, markdown) })
   useEffect(() => {
     // Start from the draft, or from the text kept when the edit was last closed.

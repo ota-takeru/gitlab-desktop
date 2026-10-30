@@ -1,24 +1,28 @@
 import Popper, { type PopperProps } from '@mui/material/Popper'
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react'
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react'
 
 import type { MarkdownEditorHandle, MarkdownEditorKeyEvent } from '../../components/MarkdownEditor'
+import type { MentionStatuses } from '../../lib/mentionRanges'
 import type { GitLabUser } from '../../types/gitlab'
+import { ConnectionContext } from '../connections/connectionContext'
 import { MentionSuggestions } from './MentionSuggestions'
+import { useMentionStatuses } from './useMentionStatuses'
 
 /**
  * `@` mention candidates for a MarkdownEditor: spread `editorProps` on it, run
  * `handleKeyDown` first in its onKeyDown, attach `containerRef` to the element
- * around it and render `popup`.
+ * around it and render `popup`. Mentions in `value` show whether they name a user.
  */
-export function useMentionSuggestions({ disabled = false, editorRef, enabled, participants = EMPTY_USERS }: {
+export function useMentionSuggestions({ disabled = false, editorRef, enabled, participants = EMPTY_USERS, value }: {
   disabled?: boolean
   editorRef: RefObject<MarkdownEditorHandle | null>
   enabled: boolean
   /** People of the MR, offered as soon as `@` is typed and ahead of other users. */
   participants?: GitLabUser[]
+  value: string
 }): {
   containerRef: (element: HTMLElement | null) => void
-  editorProps: { activeDescendantId: string | null; controlsId: string | null; onMentionQueryChange?: (query: string | null) => void }
+  editorProps: { activeDescendantId: string | null; controlsId: string | null; mentionStatuses?: MentionStatuses; onMentionQueryChange?: (query: string | null) => void }
   handleKeyDown: (event: MarkdownEditorKeyEvent) => boolean
   popup: ReactNode
 } {
@@ -35,6 +39,9 @@ export function useMentionSuggestions({ disabled = false, editorRef, enabled, pa
     get contextElement() { return containerRef.current ?? undefined },
   }), [editorRef])
   const shown = enabled && query !== null
+  // Editors outside a connection, as in tests of the lists alone, look nothing up.
+  const sessionId = useContext(ConnectionContext)?.session?.id ?? null
+  const mentionStatuses = useMentionStatuses(enabled ? sessionId : null, value, participants)
   const listShown = shown && candidates.length > 0 && !disabled
 
   useEffect(() => {
@@ -87,6 +94,7 @@ export function useMentionSuggestions({ disabled = false, editorRef, enabled, pa
     editorProps: {
       activeDescendantId: listShown ? mentionOptionId(listId, activeIndex) : null,
       controlsId: listShown ? listId : null,
+      mentionStatuses,
       onMentionQueryChange: enabled ? (next) => { setQuery(next); setActiveIndex(0) } : undefined,
     },
     handleKeyDown,

@@ -225,6 +225,35 @@ describe('MarkdownEditor', () => {
     expect(onMentionQueryChange).toHaveBeenLastCalledWith(null)
   })
 
+  it('marks mentions of known and unknown users in rich mode, but not in code', async () => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
+    const statuses = new Map([['ota', 'resolved'], ['nobody', 'unresolved']] as const)
+    const view = render(<MarkdownEditor label="本文" mentionStatuses={statuses} onChange={() => undefined} value="@Ota と @nobody、`@ota` と @sato" />)
+    const textbox = screen.getByRole('textbox', { name: '本文' })
+
+    await waitFor(() => expect(textbox.querySelector('.mention-resolved')).toHaveTextContent('@Ota'))
+    expect(textbox.querySelector('.mention-unresolved')).toHaveTextContent('@nobody')
+    // Code and a mention still being looked up have no mark.
+    expect(textbox.querySelectorAll('[data-mention-status]')).toHaveLength(2)
+
+    view.rerender(<MarkdownEditor label="本文" mentionStatuses={new Map([...statuses, ['sato', 'resolved']])} onChange={() => undefined} value="@Ota と @nobody、`@ota` と @sato" />)
+    await waitFor(() => expect(textbox.querySelectorAll('.mention-resolved')).toHaveLength(2))
+  })
+
+  it('underlines mentions of known and unknown users over the Markdown input', () => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'source')
+    const statuses = new Map([['ota', 'resolved'], ['nobody', 'unresolved']] as const)
+    const view = render(<MarkdownEditor label="本文" mentionStatuses={statuses} onChange={() => undefined} value={'確認\n@ota と @nobody と @sato'} />)
+
+    expect(view.container.querySelector('.mention-resolved')).toHaveTextContent('@ota')
+    expect(view.container.querySelector('.mention-unresolved')).toHaveTextContent('@nobody')
+    // The copy holds the same text, so its marks sit over the mentions in the input.
+    expect(view.container.querySelector('.mention-resolved')?.parentElement?.textContent).toBe('確認\n@ota と @nobody と @sato')
+
+    view.rerender(<MarkdownEditor label="本文" mentionStatuses={statuses} onChange={() => undefined} value="@sato" />)
+    expect(view.container.querySelector('[data-mention-status]')).toBeNull()
+  })
+
   it('hands a pasted image to the caller in rich mode', () => {
     localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
     const file = new File(['image'], 'clipboard.png', { type: 'image/png' })

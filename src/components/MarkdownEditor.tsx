@@ -6,11 +6,14 @@ import Typography from '@mui/material/Typography'
 import type { Editor, EditorOptions } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
+import type { Theme } from '@mui/material/styles'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type FocusEvent as ReactFocusEvent, type ReactNode, type Ref } from 'react'
 
 import type { MarkdownFormat } from '../lib/markdownFormat'
 import { shownOffsetOfSource, sourceOffsetOfShown } from '../lib/markdownPosition'
+import { MentionHighlight, setMentionStatuses } from '../lib/mentionHighlight'
+import { findMentionRanges, type MentionStatuses } from '../lib/mentionRanges'
 import { applyRichFormat, canEditAsRichText, createRichMarkdownExtensions, getEditorMarkdown, richTextBefore, shownText } from '../lib/richMarkdown'
 import { gridLine } from '../theme'
 import { hairline, panelFrame } from './hairline'
@@ -56,6 +59,8 @@ interface MarkdownEditorProps {
   autoFocus?: boolean
   disabled?: boolean
   label: string
+  /** Shows each `@username` with a status as a link to a user, or as one GitLab does not know. */
+  mentionStatuses?: MentionStatuses
   placeholder?: string
   ref?: Ref<MarkdownEditorHandle>
   /**
@@ -192,7 +197,7 @@ const COMPOSITION_SETTLE_MS = 50
 /** The editor gives no reactions, so the picker marks none as given. */
 const NO_EMOJI: ReadonlySet<string> = new Set()
 
-function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false, editorRef, handleRef, initialCaret, label, onChange, onKeyDown, onMentionQueryChange, onPasteImage, onUnsupported, placeholder, restoreKey, value }: InputProps & { editorRef: { current: Editor | null }; onUnsupported: () => void }) {
+function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false, editorRef, handleRef, initialCaret, label, mentionStatuses, onChange, onKeyDown, onMentionQueryChange, onPasteImage, onUnsupported, placeholder, restoreKey, value }: InputProps & { editorRef: { current: Editor | null }; onUnsupported: () => void }) {
   const lastValueRef = useRef(value)
   const [mountCaret] = useState(initialCaret)
   // Refs outlive the editor, which TipTap destroys while KeepAlive hides the screen and creates again when it shows.
@@ -222,7 +227,7 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
   // useEditor applies options that changed since the last render to the editor, which redraws it and ends an IME
   // conversion in progress, so they stay the same while typing re-renders: the text is followed by the effect below.
   const [initialContent] = useState(value)
-  const extensions = useMemo(() => createRichMarkdownExtensions(placeholder), [placeholder])
+  const extensions = useMemo(() => [...createRichMarkdownExtensions(placeholder), MentionHighlight], [placeholder])
   const editorProps = useMemo<EditorOptions['editorProps']>(() => ({
     attributes: { 'aria-label': label, 'aria-multiline': 'true', role: 'textbox' },
     handleKeyDown: (_view, event) => {
@@ -303,6 +308,18 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
     editor?.setEditable(!disabled, false)
   }, [disabled, editor])
 
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    const apply = () => { editor.view.dispatch(setMentionStatuses(editor.state.tr, mentionStatuses)) }
+    if (editor.isInitialized) {
+      apply()
+      return
+    }
+    // A transaction before onCreate restores the caret would keep the new editor's caret as the one to restore.
+    editor.on('create', apply)
+    return () => { editor.off('create', apply) }
+  }, [editor, mentionStatuses])
+
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     // ProseMirror only manages the attributes it set itself, so these stay until changed here.
@@ -375,7 +392,7 @@ interface SourceInputHandle {
   selection: () => SwitchedSelection | null
 }
 
-function SourceInput({ activeDescendantId, autoFocus, controlsId, disabled = false, handleRef, initialCaret, inputHandleRef, label, onChange, onKeyDown, onMentionQueryChange, onPasteImage, placeholder, restoreKey, value }: InputProps & { inputHandleRef: { current: SourceInputHandle | null } }) {
+function SourceInput({ activeDescendantId, autoFocus, controlsId, disabled = false, handleRef, initialCaret, inputHandleRef, label, mentionStatuses, onChange, onKeyDown, onMentionQueryChange, onPasteImage, placeholder, restoreKey, value }: InputProps & { inputHandleRef: { current: SourceInputHandle | null } }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const valueRef = useRef(value)
   const mentionRef = useRef<{ start: number; end: number } | null>(null)
@@ -486,42 +503,87 @@ function SourceInput({ activeDescendantId, autoFocus, controlsId, disabled = fal
   }))
 
   return (
-    <InputBase
-      disabled={disabled}
-      fullWidth
-      // InputBase calls this without an event when it is disabled while focused.
-      onBlur={(event?: ReactFocusEvent) => { if (!event || leftForElsewhere(event.nativeEvent, controlsId)) onMentionQueryChange?.(null) }}
-      inputProps={{
-        'aria-activedescendant': activeDescendantId ?? undefined, 'aria-controls': controlsId ?? undefined, 'aria-label': label,
-        onCompositionEnd: () => { composingRef.current = false },
-        onCompositionStart: () => { composingRef.current = true },
-      }}
-      inputRef={inputRef}
-      minRows={2}
-      multiline
-      onChange={(event) => {
-        updateValue(event.target.value)
-        reportMention()
-      }}
-      onClick={reportMention}
-      onKeyDown={(event) => {
-        // Keys such as Enter confirm the IME's text then, as in the rich editor.
-        if (event.nativeEvent.isComposing) return
-        if (onKeyDown?.(event)) return
-        handleFormatShortcut(event)
-      }}
-      onKeyUp={reportMention}
-      onPaste={(event) => {
-        const image = imageFromClipboard(event.clipboardData)
-        if (!image || !onPasteImage) return
-        event.preventDefault()
-        onPasteImage(image)
-      }}
-      placeholder={placeholder}
-      sx={{ fontFamily: 'code.fontFamily', fontSize: 'body2.fontSize', lineHeight: gridLine(5), px: 1, py: 1 }}
-      value={value}
-    />
+    <Box sx={{ position: 'relative' }}>
+      <InputBase
+        disabled={disabled}
+        fullWidth
+        // InputBase calls this without an event when it is disabled while focused.
+        onBlur={(event?: ReactFocusEvent) => { if (!event || leftForElsewhere(event.nativeEvent, controlsId)) onMentionQueryChange?.(null) }}
+        inputProps={{
+          'aria-activedescendant': activeDescendantId ?? undefined, 'aria-controls': controlsId ?? undefined, 'aria-label': label,
+          onCompositionEnd: () => { composingRef.current = false },
+          onCompositionStart: () => { composingRef.current = true },
+        }}
+        inputRef={inputRef}
+        minRows={2}
+        multiline
+        onChange={(event) => {
+          updateValue(event.target.value)
+          reportMention()
+        }}
+        onClick={reportMention}
+        onKeyDown={(event) => {
+          // Keys such as Enter confirm the IME's text then, as in the rich editor.
+          if (event.nativeEvent.isComposing) return
+          if (onKeyDown?.(event)) return
+          handleFormatShortcut(event)
+        }}
+        onKeyUp={reportMention}
+        onPaste={(event) => {
+          const image = imageFromClipboard(event.clipboardData)
+          if (!image || !onPasteImage) return
+          event.preventDefault()
+          onPasteImage(image)
+        }}
+        placeholder={placeholder}
+        sx={{ fontFamily: 'code.fontFamily', fontSize: 'body2.fontSize', lineHeight: gridLine(5), px: 1, py: 1 }}
+        value={value}
+      />
+      <MentionBackdrop statuses={mentionStatuses} textareaRef={inputRef} value={value} />
+    </Box>
   )
+}
+
+/** Underlines the mentions of a textarea, which cannot style its own text, in a copy of the text laid over it. */
+function MentionBackdrop({ statuses, textareaRef, value }: { statuses: MentionStatuses | undefined; textareaRef: { current: HTMLTextAreaElement | null }; value: string }) {
+  const backdropRef = useRef<HTMLDivElement | null>(null)
+  const ranges = statuses?.size ? findMentionRanges(value).filter((range) => statuses.has(range.username.toLowerCase())) : []
+  const shown = ranges.length > 0
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    const backdrop = backdropRef.current
+    const parent = backdrop?.parentElement
+    if (!shown || !textarea || !backdrop || !parent) return
+    const place = () => {
+      const style = globalThis.getComputedStyle(textarea)
+      for (const name of MIRRORED_TEXTAREA_STYLES) backdrop.style.setProperty(name, style.getPropertyValue(name))
+      const box = textarea.getBoundingClientRect()
+      const frame = parent.getBoundingClientRect()
+      Object.assign(backdrop.style, { height: `${box.height}px`, left: `${box.left - frame.left}px`, top: `${box.top - frame.top}px` })
+      backdrop.scrollTop = textarea.scrollTop
+    }
+    place()
+    textarea.addEventListener('scroll', place)
+    // The textarea grows with its text and narrows with the window after this render.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place)
+    observer?.observe(textarea)
+    return () => {
+      textarea.removeEventListener('scroll', place)
+      observer?.disconnect()
+    }
+  }, [shown, textareaRef, value])
+
+  if (!shown) return null
+  const parts: ReactNode[] = []
+  let last = 0
+  for (const range of ranges) {
+    const status = statuses?.get(range.username.toLowerCase())
+    parts.push(value.slice(last, range.start), <span className={`mention-${status}`} data-mention-status={status} key={range.start}>{value.slice(range.start, range.end)}</span>)
+    last = range.end
+  }
+  parts.push(value.slice(last))
+  return <Box aria-hidden ref={backdropRef} sx={mentionBackdropSx}>{parts}</Box>
 }
 
 /** Focus left the input, not for its suggestion list (or the box scrolling it) nor only for another window. */
@@ -640,8 +702,28 @@ function writeMode(mode: MarkdownEditorMode) {
   }
 }
 
+/** A known user's mention reads as a link; one GitLab does not know is underlined as a mistake. */
+const mentionStatusSx = {
+  '& .mention-resolved': { textDecoration: 'underline', textDecorationColor: (theme: Theme) => theme.palette.primary.main, textUnderlineOffset: '2px' },
+  '& .mention-unresolved': { textDecoration: 'underline wavy', textDecorationColor: (theme: Theme) => theme.palette.error.main, textUnderlineOffset: '2px' },
+}
+
+const mentionBackdropSx = {
+  ...mentionStatusSx,
+  borderColor: 'transparent',
+  color: 'transparent',
+  m: 0,
+  overflow: 'hidden',
+  overflowWrap: 'break-word',
+  pointerEvents: 'none',
+  position: 'absolute',
+  whiteSpace: 'pre-wrap',
+}
+
 const richEditorSx = {
   '& .ProseMirror': {
+    ...mentionStatusSx,
+    '& .mention-resolved': { ...mentionStatusSx['& .mention-resolved'], color: 'primary.main' },
     ...markdownBodySx('body2'),
     minHeight: 60,
     outline: 'none',

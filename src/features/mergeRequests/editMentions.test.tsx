@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,8 +7,16 @@ import type { Draft, GitLabUser, Note } from '../../types/gitlab'
 import { DiscussionList } from './DiscussionList'
 import { DraftList } from './DraftList'
 import { clearComposerBufferStore } from './useComposerBuffer'
+import { clearMentionLookups } from './useMentionStatuses'
 
-vi.mock('../connections/connectionContext', () => ({ useConnection: () => ({ session: { id: 'session-1' } }) }))
+const { queryGitLab } = vi.hoisted(() => ({ queryGitLab: vi.fn() }))
+
+vi.mock('../connections/connectionContext', async () => {
+  const { createContext } = await import('react')
+  const connection = { session: { id: 'session-1' } }
+  return { ConnectionContext: createContext(connection), useConnection: () => connection }
+})
+vi.mock('../../lib/gitlab', () => ({ queryGitLab }))
 vi.mock('../shared/useGitLabQuery', () => ({ useGitLabQuery: () => ({ data: [], loading: false }) }))
 
 const currentUser: GitLabUser = { id: 'user-1', name: '自分', username: 'reviewer' }
@@ -17,6 +25,8 @@ const participants: GitLabUser[] = [{ id: 'user-2', name: '太田 健', username
 describe('mentions while editing', () => {
   beforeEach(() => {
     clearComposerBufferStore()
+    clearMentionLookups()
+    queryGitLab.mockReset()
     globalThis.localStorage.setItem('gitlab-desktop.markdownEditorMode', 'source')
   })
 
@@ -37,6 +47,19 @@ describe('mentions while editing', () => {
     fireEvent.change(textbox, { target: { selectionEnd: 7, selectionStart: 7, value: '元の本文 @太' } })
     fireEvent.keyDown(textbox, { key: 'Enter' })
     expect(screen.getByRole('textbox', { name: 'コメントを編集' })).toHaveValue('元の本文 @ota ')
+  })
+
+  it('shows which mentions in an own comment being edited name a user', async () => {
+    queryGitLab.mockImplementation(async ({ query }: { query: { username: string } }) => ({ data: query.username === 'sato' ? { id: 'user-3', name: '佐藤', username: 'sato' } : null }))
+    const note: Note = { author: currentUser, body: '@ota @sato @nobody', createdAt: '2026-01-01T00:00:00.000Z', id: 'note-1', position: null, resolvable: false, resolved: false, system: false }
+    const view = render(<ThemeProvider theme={createAppTheme('dark')}><DiscussionList currentUserId={currentUser.id} discussions={[{ id: 'discussion-1', individualNote: false, notes: [note] }]} mentionParticipants={participants} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} sessionId="session-1" /></ThemeProvider>)
+
+    fireEvent.click(screen.getByRole('button', { name: '自分のコメント「@ota @sato @nobody」を編集' }))
+    // A participant counts at once; the others once GitLab has answered.
+    await waitFor(() => expect(view.container.querySelectorAll('.mention-resolved')).toHaveLength(2))
+    expect([...view.container.querySelectorAll('.mention-resolved')].map((mark) => mark.textContent)).toEqual(['@ota', '@sato'])
+    expect(view.container.querySelector('.mention-unresolved')).toHaveTextContent('@nobody')
+    expect(queryGitLab.mock.calls.map(([input]) => input.query.username)).toEqual(['sato', 'nobody'])
   })
 
   it('offers the MR participants in a draft being edited', () => {

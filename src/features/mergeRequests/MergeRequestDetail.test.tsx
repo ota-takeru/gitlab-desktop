@@ -65,7 +65,8 @@ const detailMocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('../connections/connectionContext', () => ({
+vi.mock('../connections/connectionContext', async (importOriginal) => ({
+  ...await importOriginal<object>(),
   useConnection: () => ({ session: detailMocks.session }),
 }))
 

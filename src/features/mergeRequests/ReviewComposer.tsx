@@ -135,7 +135,7 @@ export function ReviewComposer({
   }
   const controlsDisabled = disabled || (pending && !uploading) || submitting
   const targetControlsDisabled = controlsDisabled || uploading
-  const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: controlsDisabled, editorRef, enabled: enableMentions, participants: mentionParticipants })
+  const { containerRef: mentionContainerRef, editorProps: mentionEditorProps, handleKeyDown: handleMentionKeyDown, popup: mentionPopup } = useMentionSuggestions({ disabled: controlsDisabled, editorRef, enabled: enableMentions, participants: mentionParticipants, value })
 
   const uploadAttachment = async (file: File) => {
     if (!onUploadAttachment || disabled || pending || submittingRef.current || uploadingRef.current) return
