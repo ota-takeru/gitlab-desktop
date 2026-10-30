@@ -225,6 +225,21 @@ describe('MarkdownEditor', () => {
     expect(onMentionQueryChange).toHaveBeenLastCalledWith(null)
   })
 
+  it('offers mention candidates again when the rich editor is focused again with the caret in place', async () => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
+    const onMentionQueryChange = vi.fn()
+    render(<MarkdownEditor label="本文" onChange={() => undefined} onMentionQueryChange={onMentionQueryChange} value="hi @al" />)
+    act(() => { richEditor('本文').commands.focus('end') })
+    await waitFor(() => expect(onMentionQueryChange).toHaveBeenLastCalledWith('al'))
+
+    const textbox = screen.getByRole('textbox', { name: '本文' })
+    fireEvent.blur(textbox)
+    await waitFor(() => expect(onMentionQueryChange).toHaveBeenLastCalledWith(null))
+
+    fireEvent.focus(textbox)
+    await waitFor(() => expect(onMentionQueryChange).toHaveBeenLastCalledWith('al'))
+  })
+
   it('marks mentions of known and unknown users in rich mode, but not in code', async () => {
     localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
     const statuses = new Map([['ota', 'resolved'], ['nobody', 'unresolved']] as const)

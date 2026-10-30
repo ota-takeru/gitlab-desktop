@@ -288,6 +288,8 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
       else if (autoFocus) current.commands.focus('end')
       createdRef.current = true
     },
+    // Focused again with the caret where it was, the selection does not change, so the `@query` is offered here.
+    onFocus: ({ editor: current }) => reportMention(current),
     onSelectionUpdate: ({ editor: current }) => reportMention(current),
     onTransaction: ({ editor: current }) => { selectionRef.current = { anchor: current.state.selection.anchor, head: current.state.selection.head } },
     onUpdate: ({ editor: current }) => {
