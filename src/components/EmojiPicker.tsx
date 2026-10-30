@@ -9,7 +9,8 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import type { Theme } from '@mui/material/styles'
+import { memo, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import { useT } from '../i18n/useT'
 import { hairline } from './hairline'
@@ -145,40 +146,8 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
           : <><CircularProgress size={20} /><Typography color="textSecondary" variant="caption">{t('common.emoji.loading')}</Typography></>}
       </Stack> : shown.length === 0 ? <Typography color="textSecondary" sx={{ pt: 2, textAlign: 'center' }} variant="body2">
         {t('common.emoji.noResults', { query: query.trim() })}
-      </Typography> : <Box aria-label={searching ? t('common.emoji.results') : tab === RECENT ? t('common.emoji.recent') : t(EMOJI_CATEGORIES[tab])} role="group" sx={{ display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, ${CELL}px)` }}>
-        {shown.map((choice, index) => {
-          const given = mine.has(choice.name)
-          return <Box
-            aria-label={t(given ? 'common.emoji.choiceGiven' : 'common.emoji.choice', { emoji: choice.emoji, label: choice.label, name: choice.name })}
-            aria-pressed={given}
-            component="button"
-            key={choice.name}
-            onClick={() => onPick(choice.name)}
-            onFocus={() => setActive(index)}
-            onMouseEnter={() => setPreviewed(choice)}
-            onMouseLeave={() => setPreviewed(null)}
-            sx={{
-              alignItems: 'center',
-              bgcolor: given ? 'action.selected' : 'transparent',
-              border: 0,
-              borderRadius: 1,
-              boxShadow: (theme) => given ? `inset 0 0 0 1px ${theme.palette.primary.main}` : 'none',
-              color: 'text.primary',
-              cursor: 'pointer',
-              display: 'flex',
-              fontSize: 20,
-              height: CELL,
-              justifyContent: 'center',
-              p: 0,
-              width: CELL,
-              '&:hover': { bgcolor: 'action.hover' },
-              '&:focus': { outline: 'none' },
-              '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` },
-            }}
-            tabIndex={index === active ? 0 : -1}
-            type="button"
-          >{choice.emoji}</Box>
-        })}
+      </Typography> : <Box aria-label={searching ? t('common.emoji.results') : tab === RECENT ? t('common.emoji.recent') : t(EMOJI_CATEGORIES[tab])} role="group" sx={gridSx}>
+        <EmojiCells active={active} mine={mine} onPick={onPick} setActive={setActive} setPreviewed={setPreviewed} shown={shown} />
       </Box>}
     </Box>
     <Row spacing={1} sx={{ ...hairline('top'), minHeight: 48, px: 1.5, py: 0.5 }}>
@@ -192,3 +161,60 @@ function PickerBody({ mine, onPick }: { mine: ReadonlySet<string>; onPick: (name
     </Row>
   </Stack>
 }
+
+/**
+ * The grid's buttons, apart from the picker so that hovering, which changes
+ * only the preview, does not render a category's hundreds of cells again.
+ */
+const EmojiCells = memo(function EmojiCells({ active, mine, onPick, setActive, setPreviewed, shown }: {
+  active: number
+  mine: ReadonlySet<string>
+  onPick: (name: string) => void
+  setActive: (index: number) => void
+  setPreviewed: (choice: EmojiChoice | null) => void
+  shown: readonly EmojiChoice[]
+}) {
+  const t = useT()
+  return shown.map((choice, index) => {
+    const given = mine.has(choice.name)
+    return <button
+      aria-label={t(given ? 'common.emoji.choiceGiven' : 'common.emoji.choice', { emoji: choice.emoji, label: choice.label, name: choice.name })}
+      aria-pressed={given}
+      key={choice.name}
+      onClick={() => onPick(choice.name)}
+      onFocus={() => setActive(index)}
+      onMouseEnter={() => setPreviewed(choice)}
+      onMouseLeave={() => setPreviewed(null)}
+      tabIndex={index === active ? 0 : -1}
+      type="button"
+    >{choice.emoji}</button>
+  })
+})
+
+/** The cells' style, given once on the grid rather than built for each of up to hundreds of cells. */
+const gridSx = {
+  display: 'grid',
+  gridTemplateColumns: `repeat(${COLUMNS}, ${CELL}px)`,
+  '& > button': {
+    alignItems: 'center',
+    bgcolor: 'transparent',
+    border: 0,
+    borderRadius: 1,
+    color: 'text.primary',
+    cursor: 'pointer',
+    display: 'flex',
+    fontSize: 20,
+    height: CELL,
+    justifyContent: 'center',
+    p: 0,
+    width: CELL,
+    // Before the hover and focus styles, which show over a given emoji as they did per cell.
+    '&[aria-pressed="true"]': {
+      bgcolor: 'action.selected',
+      boxShadow: (theme: Theme) => `inset 0 0 0 1px ${theme.palette.primary.main}`,
+    },
+    '&:hover': { bgcolor: 'action.hover' },
+    '&:focus': { outline: 'none' },
+    '&:focus-visible': { boxShadow: (theme: Theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` },
+  },
+} as const

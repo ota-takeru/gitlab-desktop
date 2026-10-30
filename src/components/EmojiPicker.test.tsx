@@ -20,6 +20,8 @@ it('finds emoji by Japanese words and by GitLab names, and offers only names Git
   // Skin-tone variants and flags are left out of the picker.
   expect(choices.some((choice) => /(?:_tone[1-5]|skin_tone)/u.test(choice.name))).toBe(false)
   expect(choices.some((choice) => choice.name.startsWith('flag_'))).toBe(false)
+  // GitLab's list gives a few names twice; each is offered once, as the character the name shows as.
+  expect(new Set(choices.map((choice) => choice.name)).size).toBe(choices.length)
 })
 
 it('starts with the common reactions and picks a search result with Enter', async () => {
