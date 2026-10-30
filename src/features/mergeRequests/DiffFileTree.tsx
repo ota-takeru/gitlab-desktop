@@ -8,7 +8,7 @@ import Box from '@mui/material/Box'
 import ListItemButton from '@mui/material/ListItemButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { useT } from '../../i18n/useT'
@@ -21,7 +21,7 @@ import { buildFileTree, type FileEntry, type TreeNode } from './diffFileOrder'
  * Changed files as a folder tree, as in GitLab's file browser: folders first,
  * and a folder with only one folder inside shows as one row (`src/features`).
  */
-export function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isReviewed, onSelect, threadCount }: { displayedPath: string | null; entries: FileEntry[]; expandAll: boolean; fileMark: (diff: Diff) => ReactNode; isReviewed: (path: string) => boolean; onSelect: (path: string) => void; threadCount?: (path: string) => FileThreadCount | undefined }) {
+export const DiffFileTree = memo(function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isReviewed, onSelect, threadCount }: { displayedPath: string | null; entries: FileEntry[]; expandAll: boolean; fileMark: (diff: Diff) => ReactNode; isReviewed: (path: string) => boolean; onSelect: (path: string) => void; threadCount?: (path: string) => FileThreadCount | undefined }) {
   const t = useT()
   const tree = useMemo(() => buildFileTree(entries), [entries])
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
@@ -62,7 +62,7 @@ export function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isRe
   }
   visit(tree, 0)
   return <>{rows}</>
-}
+})
 
 /** Threads on a file; unresolved ones get their own icon, so the state does not rest on colour alone. */
 export function FileThreadMark({ count }: { count?: FileThreadCount }) {

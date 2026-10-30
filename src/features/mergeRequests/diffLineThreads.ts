@@ -1,5 +1,6 @@
 import { translate } from '../../i18n/i18n'
 import type { Diff, Discussion, Draft, Position } from '../../types/gitlab'
+import type { ThreadView } from './DiffThreads'
 import type { ParsedLine } from './diffParser'
 
 /** Places line comments of a diff file by line, for the threads shown under diff lines. */
@@ -88,4 +89,20 @@ export function fileRowLabel(path: string, threads: FileThreadCount | undefined,
 
 export function threadLabel({ total, unresolved }: FileThreadCount): string {
   return unresolved ? translate('review.fileTree.threadsUnresolved', { total, unresolved }) : translate('review.fileTree.threads', { total })
+}
+
+export function lineThreadKeys(line?: ParsedLine, view?: ThreadView): string[] {
+  const key = line && view ? lineKey(line) : null
+  // A line shown as unchanged because only its whitespace changed keeps the comments on its removed version too.
+  return key && line?.whitespaceOnly && line.oldLine != null ? [key, `o:${line.oldLine}`] : key ? [key] : []
+}
+
+export function lineComposer(line?: ParsedLine, view?: ThreadView): React.ReactNode {
+  const key = line && view ? lineKey(line) : null
+  return key && line && view?.composer?.key === key && (view.composer.position.newPath === line.newPath || view.composer.position.oldPath === line.oldPath) ? view.composer.node : null
+}
+
+/** Whether LineThreads shows anything under the line. */
+export function lineHasThreads(line: ParsedLine | undefined, view: ThreadView | undefined): boolean {
+  return lineThreadKeys(line, view).some((at) => Boolean(view?.threads.get(at)?.length || view?.drafts?.get(at)?.length)) || Boolean(lineComposer(line, view))
 }

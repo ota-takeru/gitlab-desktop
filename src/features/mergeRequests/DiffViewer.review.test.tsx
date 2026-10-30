@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
@@ -187,10 +187,21 @@ describe('DiffViewer unchanged lines', () => {
   it('reads the file on demand with the whole-file query and keeps the row when that fails', () => {
     const refresh = vi.fn()
     const state = (data: unknown, error: unknown) => ({ data, error, loading: false, refreshing: false, refresh, snapshot: null, stale: false })
-    // A disabled (null) query, as the closed Blame's, has no data.
-    const answer = (data: unknown, error: unknown) => queryMock.mockImplementation((_session: string, query: unknown) => query ? state(data, error) : state(undefined, null))
+    // A disabled (null) query, as the closed Blame's, has no data. A new answer renders the
+    // components that read the query again, as React Query does, not the whole tree.
+    const listeners = new Set<() => void>()
+    let version = 0
+    const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }
+    const answer = (data: unknown, error: unknown) => {
+      queryMock.mockImplementation((_session: string, query: unknown) => {
+        useSyncExternalStore(subscribe, () => version)
+        return query ? state(data, error) : state(undefined, null)
+      })
+      version += 1
+      listeners.forEach((listener) => listener())
+    }
     answer(null, { message: 'offline' })
-    const view = render(<Harness diffs={[diff]} fileSource={{ projectId: '15', sessionId: 's1', sha: 'head-sha' }} />)
+    render(<Harness diffs={[diff]} fileSource={{ projectId: '15', sessionId: 's1', sha: 'head-sha' }} />)
     // Only the closed Blame's disabled queries are asked for before the row is opened.
     expect(queryMock.mock.calls.every(([, query]) => query === null)).toBe(true)
 
@@ -202,8 +213,7 @@ describe('DiffViewer unchanged lines', () => {
     fireEvent.click(screen.getByRole('button', { name: '変更のない15行を表示' }))
     expect(refresh).toHaveBeenCalled()
 
-    answer({ content: file }, null)
-    view.rerender(<Harness diffs={[diff]} fileSource={{ projectId: '15', sessionId: 's1', sha: 'head-sha' }} />)
+    act(() => answer({ content: file }, null))
     expect(screen.getAllByTestId('diff-opened-line')).toHaveLength(15)
   })
 

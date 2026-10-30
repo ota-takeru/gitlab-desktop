@@ -14,7 +14,7 @@ import { StateIcon } from '../../components/StateIcon'
 import type { Discussion, Draft, Note, Position } from '../../types/gitlab'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import type { ParsedLine } from './diffParser'
-import { lineKey, positionLines } from './diffLineThreads'
+import { lineComposer, lineThreadKeys, positionLines } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
 import { NoteBody, type SuggestionActions } from './SuggestionBlock'
 import { useT } from '../../i18n/useT'
@@ -50,12 +50,10 @@ export interface ThreadView {
 
 export function LineThreads({ line, view }: { line?: ParsedLine; view?: ThreadView }) {
   const t = useT()
-  const key = line && view ? lineKey(line) : null
-  // A line shown as unchanged because only its whitespace changed keeps the comments on its removed version too.
-  const keys = key && line?.whitespaceOnly && line.oldLine != null ? [key, `o:${line.oldLine}`] : key ? [key] : []
+  const keys = lineThreadKeys(line, view)
   const threads = keys.flatMap((at) => view?.threads.get(at) ?? [])
   const drafts = keys.flatMap((at) => view?.drafts?.get(at) ?? [])
-  const composer = key && line && view?.composer?.key === key && (view.composer.position.newPath === line.newPath || view.composer.position.oldPath === line.oldPath) ? view.composer.node : null
+  const composer = lineComposer(line, view)
   if (!threads.length && !drafts.length && !composer) return null
   return <Box className="diff-threads" sx={{ bgcolor: 'surface.list', ...hairline(['top', 'bottom']), fontFamily: 'fontFamily', lineHeight: gridLine(5), px: 1.5, py: 1, whiteSpace: 'normal' }}>
     <Stack spacing={1} sx={{ maxWidth: 900 }}>
