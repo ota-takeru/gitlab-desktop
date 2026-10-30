@@ -45,7 +45,7 @@ import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } fro
 import { projectUrlOf } from '../../lib/markdownLinks'
 import type { Approvals, AwardEmoji, Commit, DiffsQuery, Diff, Discussion, Draft, FileQuery, GitLabUser, GitLabAction, GitLabQuery, GitLabSnapshot, ApprovalsQuery, CommitDiffQuery, MergeRequest, MergeRequestQuery, MrApprovalsQuery, MrAwardsQuery, MrVersion, MrVersionsQuery, Note, NoteAwardsQuery, Position, ReviewResourceQuery, VersionCompareQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
-import { usePersonalWorkspace } from '../shared/personalWorkspace'
+import { mrRefKey, usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useDiscussionWindow } from './useDiscussionWindow'
 import { formatNames } from './mergeActions'
@@ -114,7 +114,11 @@ function holdsMergeRequest(key: string, projectPath: string | null | undefined, 
 export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.back'), focusNote, initialMergeRequest, onBack, onNoteFocused, onOpenProject, onTabChange, tab }: MergeRequestDetailProps) {
   const t = useT()
   const { session } = useConnection()
-  const workspace = usePersonalWorkspace(session)
+  // The review reads this MR's read comments, its pin and the comment notifications; other writes do not render it again.
+  const workspace = usePersonalWorkspace(session, (data) => {
+    const refKey = mrRefKey(initialMergeRequest)
+    return JSON.stringify([data.reading[refKey]?.read, data.pinned.some((item) => mrRefKey(item) === refKey), data.settings.notifyComments])
+  })
   const sectionRef = useRef<HTMLElement | null>(null)
   const headerRef = useRef<HTMLElement | null>(null)
   useLayoutEffect(() => {

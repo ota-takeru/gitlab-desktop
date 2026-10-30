@@ -55,9 +55,9 @@ function key(scope: PreferenceScope) { return scopedKey(scope, 'personal-workspa
 function storedWorkspace(scope: PreferenceScope): string {
   try { return localStorage.getItem(key(scope)) ?? '' } catch { return '' }
 }
-/** A fresh copy that the caller may change and save. */
+/** A fresh copy that the caller may change and save; copied from the parsed snapshot, so writes do not validate every read marker again. */
 export function readWorkspace(scope: PreferenceScope): WorkspaceData {
-  return parseWorkspace(storedWorkspace(scope))
+  return structuredClone(readWorkspaceSnapshot(scope))
 }
 let snapshot: { key: string; raw: string; data: WorkspaceData } | null = null
 /**
@@ -234,15 +234,19 @@ function subscribe(listener: () => void) {
   globalThis.addEventListener('storage', listener)
   return () => { globalThis.removeEventListener(changedEvent, listener); globalThis.removeEventListener('storage', listener) }
 }
-export function usePersonalWorkspace(session: GitLabSession | null) {
+/**
+ * With `watch`, the caller renders again only when the text `watch` derives from the stored workspace
+ * changes, not on every write (a recent MR, another MR's read markers); what it reads outside `watch`
+ * may then be as old as that render.
+ */
+export function usePersonalWorkspace(session: GitLabSession | null, watch?: (data: WorkspaceData) => string) {
   const instanceUrl = session?.instanceUrl ?? 'anonymous'
   const userId = session?.user.id ?? 'anonymous'
   const connected = Boolean(session)
-  const version = useSyncExternalStore(subscribe, () => storedWorkspace({ instanceUrl, userId }), () => '')
+  const version = useSyncExternalStore(subscribe, () => watch ? watch(readWorkspaceSnapshot({ instanceUrl, userId })) : storedWorkspace({ instanceUrl, userId }), () => '')
+  // The same object until the stored workspace (or what `watch` reads) changes, so effects that use it do not rerun on every render.
   // Rows of long lists ask for unread counts, so they share this one parsed copy.
-  const data = readWorkspaceSnapshot({ instanceUrl, userId })
-  // The same object until the stored workspace changes, so effects that use it do not rerun on every render.
-  return useMemo(() => workspaceApi({ instanceUrl, userId }, connected, data, version), [connected, data, instanceUrl, userId, version])
+  return useMemo(() => workspaceApi({ instanceUrl, userId }, connected, readWorkspaceSnapshot({ instanceUrl, userId }), version), [connected, instanceUrl, userId, version])
 }
 
 function workspaceApi(scope: PreferenceScope, connected: boolean, data: WorkspaceData, version: string) {

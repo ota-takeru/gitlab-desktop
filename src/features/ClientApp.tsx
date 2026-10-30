@@ -199,7 +199,8 @@ function SessionScopedWorkspace({ colorPreference, onColorPreferenceChange }: Co
 
 function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, sessionKey, status }: ColorPreferenceProps & { sessionKey: string; status: string }) {
   const { session } = useConnection()
-  const workspace = usePersonalWorkspace(session)
+  // Everything below renders again only for the setting it reads, not for every workspace write.
+  const workspace = usePersonalWorkspace(session, (data) => String(data.settings.autoRefresh))
   const autoInstallAllowed = useAutoUpdateAllowed() && status !== 'checking'
   // The updater stays mounted across authentication resets so its install guard
   // and result remain active for the lifetime of the app.
@@ -216,7 +217,8 @@ function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, se
 function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstallAllowed, sessionKey, status }: ColorPreferenceProps & { autoInstallAllowed: boolean; sessionKey: string; status: string }) {
   const { reauthRequired, session } = useConnection()
   const t = useT()
-  const workspace = usePersonalWorkspace(session)
+  // The screens read only the pinned and open tabs here.
+  const workspace = usePersonalWorkspace(session, (data) => JSON.stringify([data.pinned, data.open]))
   const locationHash = useSyncExternalStore(subscribeToClientLocation, getClientLocationHash, getClientLocationHash)
   // An expired token keeps the screen where it was, so reconnecting returns to it.
   const awaitingReauth = !session && Boolean(reauthRequired)
