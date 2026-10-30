@@ -156,7 +156,7 @@ pub enum MergeRequestState {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-// Query dispatch admits at most four concurrent requests per session; keeping
+// Query dispatch admits at most eight concurrent requests per session; keeping
 // this short-lived IPC DTO flat avoids allocating a box for each MR query.
 #[allow(clippy::large_enum_variant)]
 pub enum Query {

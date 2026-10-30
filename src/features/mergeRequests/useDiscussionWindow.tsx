@@ -80,7 +80,11 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
       if (newest && newest.length < MIN_INITIAL_DISCUSSIONS) defaultLow = total - 1
     }
     const low = total === null ? 1 : Math.max(floor, Math.min(fixedLow ?? (walkedForward ? 1 : defaultLow), total))
-    const observed = total === null ? Array.from({ length: probeTo }, (_, index) => index + 1) : Array.from({ length: total - low + 1 }, (_, index) => low + index)
+    // The page before the newest is read beside it, not after it: it is the context page
+    // when the newest is short, and the first older page otherwise. Once the first view is
+    // fixed it stays observed only until its read ends.
+    const context = total !== null && !walkedForward && total > 1 && low === total && (fixedLow === null || store.get(total - 1)?.loading) ? [total - 1] : []
+    const observed = total === null ? Array.from({ length: probeTo }, (_, index) => index + 1) : [...context, ...Array.from({ length: total - low + 1 }, (_, index) => low + index)]
     const newestPage = total ?? probeTo
     const newestState = store.get(newestPage)
     const newestKnown = Boolean(total !== null && newestState?.data)

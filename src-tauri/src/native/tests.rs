@@ -1145,3 +1145,57 @@ fn gravatar_urls_are_accepted_only_over_https_from_gravatar() {
         assert!(gravatar_url(rejected).is_none(), "{rejected}");
     }
 }
+
+#[tokio::test]
+async fn a_restored_session_stays_when_gitlab_confirms_its_user() {
+    let (api, started, release, server) =
+        spawn_http_response("200 OK", r#"{"id":1,"username":"fixture"}"#);
+    let (state, session) = test_state(api);
+    let worker = state.clone();
+    let id = session.public.id.clone();
+    let pending = tokio::spawn(async move { worker.verify_session(id).await });
+    started.await.unwrap();
+    release.send(()).unwrap();
+    pending.await.unwrap().unwrap();
+    assert!(state.active(&session.public.id).is_ok());
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn a_restored_session_whose_token_names_another_user_is_ended_and_its_cache_removed() {
+    let (api, started, release, server) =
+        spawn_http_response("200 OK", r#"{"id":2,"username":"someone"}"#);
+    let (state, session) = test_state(api);
+    let account = session.account.clone();
+    state
+        .blocking(move |inner| {
+            inner.store.put(
+                &account,
+                "cached",
+                &Snapshot {
+                    data: serde_json::json!([]),
+                    fetched_at: now_ms(),
+                    source: "network".into(),
+                    next_page: None,
+                    total_pages: None,
+                    completeness: "complete".into(),
+                },
+            )
+        })
+        .await
+        .unwrap();
+    let worker = state.clone();
+    let id = session.public.id.clone();
+    let pending = tokio::spawn(async move { worker.verify_session(id).await });
+    started.await.unwrap();
+    release.send(()).unwrap();
+    assert_eq!(pending.await.unwrap().unwrap_err().code, "AUTH_REQUIRED");
+    assert!(state.active(&session.public.id).is_err());
+    let account = session.account.clone();
+    assert!(state
+        .blocking(move |inner| inner.store.get(&account, "cached"))
+        .await
+        .unwrap()
+        .is_none());
+    server.join().unwrap();
+}

@@ -74,6 +74,13 @@ async fn restore_session(
     state.native()?.restore().await
 }
 #[tauri::command]
+async fn verify_session(
+    state: tauri::State<'_, ApplicationState>,
+    session_id: String,
+) -> Result<(), AppError> {
+    state.native()?.verify_session(session_id).await
+}
+#[tauri::command]
 async fn disconnect_gitlab(
     state: tauri::State<'_, ApplicationState>,
     session_id: String,
@@ -433,6 +440,7 @@ pub fn run() {
             list_glab_connections,
             connect_gitlab_from_glab,
             restore_session,
+            verify_session,
             disconnect_gitlab,
             query_gitlab,
             mutate_gitlab,

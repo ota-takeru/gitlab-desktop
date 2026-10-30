@@ -36,7 +36,7 @@ vi.mock('./connections/ConnectionProvider', () => ({
   ConnectionProvider: ({ children }: { children: ReactNode }) => children,
 }))
 vi.mock('./connections/connectionContext', async (importOriginal) => ({ ...await importOriginal<object>(), useConnection: () => connection }))
-vi.mock('./shared/useGitLabQuery', () => ({ useGitLabQuery: gitlabQueryMock }))
+vi.mock('./shared/useGitLabQuery', () => ({ prefetchGitLabQuery: vi.fn(), useGitLabQuery: gitlabQueryMock }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock, isTauri: () => true }))
 vi.mock('../lib/localRepository', async () => ({ ...await vi.importActual<typeof import('../lib/localRepository')>('../lib/localRepository'), getLocalScanFolders: async () => [] }))
 

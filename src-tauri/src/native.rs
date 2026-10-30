@@ -361,7 +361,10 @@ fn make_session(
         cancelled: CancellationToken::new(),
         requests: Mutex::new(HashMap::new()),
         query_locks: Mutex::new(HashMap::new()),
-        slots: Arc::new(Semaphore::new(4)),
+        // Opening an MR's changes reads about seven resources at once (the MR, its
+        // diff, discussions, drafts, approvals, versions and commits). Each waits
+        // on GitLab for about half a second, so fewer slots add that much again.
+        slots: Arc::new(Semaphore::new(8)),
         external_avatar_slots: Arc::new(Semaphore::new(2)),
         image_slots: Arc::new(Semaphore::new(4)),
         background_slots: Arc::new(Semaphore::new(2)),
@@ -373,6 +376,35 @@ fn make_session(
         avatars: Mutex::new(HashMap::new()),
         images: Mutex::new(HashMap::new()),
     }))
+}
+
+async fn run_blocking<T: Send + 'static>(
+    inner: Arc<Mutex<Inner>>,
+    job: impl FnOnce(&mut Inner) -> Result<T, AppError> + Send + 'static,
+) -> Result<T, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = inner.lock().map_err(|_| storage_error())?;
+        job(&mut inner)
+    })
+    .await
+    .map_err(|_| storage_error())?
+}
+
+/// In development builds, how long each GitLab read waited for a slot and took,
+/// by kind only: the query itself can name private projects and searches.
+fn log_query_timing(query: &Query, queued_at: u64, started_at: u64, ok: bool) {
+    if cfg!(debug_assertions) {
+        let kind = serde_json::to_value(query)
+            .ok()
+            .and_then(|value| value["kind"].as_str().map(str::to_owned))
+            .unwrap_or_default();
+        eprintln!(
+            "[gitlab] {kind} waited {}ms, read {}ms{}",
+            started_at.saturating_sub(queued_at),
+            now_ms().saturating_sub(started_at),
+            if ok { "" } else { " (failed)" }
+        );
+    }
 }
 
 impl NativeState {
@@ -392,13 +424,7 @@ impl NativeState {
         &self,
         job: impl FnOnce(&mut Inner) -> Result<T, AppError> + Send + 'static,
     ) -> Result<T, AppError> {
-        let inner = self.inner.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let mut inner = inner.lock().map_err(|_| storage_error())?;
-            job(&mut inner)
-        })
-        .await
-        .map_err(|_| storage_error())?
+        run_blocking(self.inner.clone(), job).await
     }
 
     fn active(&self, id: &str) -> Result<Arc<LiveSession>, AppError> {
@@ -605,22 +631,8 @@ impl NativeState {
         .await
         .map_err(|_| storage_error())??;
         let client = http_client(&token, saved.bearer)?;
-        let instance = normalize_instance(&saved.instance_url)?;
-        let api = instance.join("api/v4/").map_err(|_| cancelled())?;
-        match identify(&client, &api).await {
-            Ok(user) if user.id == saved.user.id => (),
-            Ok(_) => return Err(auth_required()),
-            Err(error) if error.code == "NETWORK" || error.code == "TIMEOUT" => (), // cache-only navigation remains possible
-            Err(error) => {
-                let account = saved.credential_key.clone();
-                self.blocking(move |inner| {
-                    inner.store.clear_account(&account)?;
-                    Ok(())
-                })
-                .await?;
-                return Err(error);
-            }
-        }
+        // The saved answers show at once; the screen confirms the account with
+        // `verify_session` beside its first reads instead of waiting for it here.
         let session = make_session(saved, client)?;
         let public = session.public.clone();
         self.blocking(move |inner| {
@@ -629,6 +641,30 @@ impl NativeState {
         })
         .await?;
         Ok(Some(public))
+    }
+
+    /// Confirms that the restored session's token still belongs to its user. A
+    /// network failure keeps the session for cache-only navigation; any other
+    /// failure ends it and removes the account's saved answers, as a refused
+    /// read does.
+    pub async fn verify_session(&self, id: String) -> Result<(), AppError> {
+        let session = self.active(&id)?;
+        let error = match identify(&session.client, &session.api_base).await {
+            Ok(user) if user.id == session.public.user.id => return Ok(()),
+            Ok(_) => auth_required(),
+            Err(error) if error.code == "NETWORK" || error.code == "TIMEOUT" => return Ok(()),
+            Err(error) => error,
+        };
+        let _lifecycle = self.lifecycle.lock().await;
+        self.blocking(move |inner| {
+            // A session the user already left or replaced is not touched.
+            ensure_active(inner, &session)?;
+            session.cancelled.cancel();
+            inner.active = None;
+            inner.store.clear_account(&session.account)
+        })
+        .await?;
+        Err(error)
     }
 
     pub async fn disconnect(&self, id: String) -> Result<(), AppError> {
@@ -838,12 +874,21 @@ impl NativeState {
             lock
         };
         let work = async {
-            let _deduplicate = query_lock.lock().await;
+            let deduplicate = query_lock.clone().lock_owned().await;
             let dedup_session = session.clone();
             let dedup_key = key.clone();
+            // Only the save time is read unless an identical read saved meanwhile,
+            // so a large saved answer is not parsed before every network read.
             if let Some(mut snapshot) = self
                 .blocking(move |inner| {
                     ensure_active(inner, &dedup_session)?;
+                    if inner
+                        .store
+                        .fetched_at(&dedup_session.account, &dedup_key)?
+                        .is_none_or(|fetched| fetched < queued_at)
+                    {
+                        return Ok(None);
+                    }
                     Ok(inner
                         .store
                         .get(&dedup_session.account, &dedup_key)?
@@ -857,7 +902,9 @@ impl NativeState {
             let _slot = slots.acquire_owned().await.map_err(|_| cancelled())?;
             check_cooldown(&session)?;
             let revision = session.revision.load(Ordering::SeqCst);
+            let started_at = now_ms();
             let result = gitlab_api::fetch(&session.client, &session.api_base, &input.query).await;
+            log_query_timing(&input.query, queued_at, started_at, result.is_ok());
             let mut result = match result {
                 Ok(value) => value,
                 Err(error) => {
@@ -900,8 +947,10 @@ impl NativeState {
             // Job logs can hold secrets printed by CI scripts, so they stay in memory only.
             let persist = !matches!(input.query, Query::JobTrace { .. });
             let copy = snapshot.clone();
+            let (client, api_base) = (session.client.clone(), session.api_base.clone());
+            let ended = session.cancelled.clone();
             let session = session.clone();
-            self.blocking(move |inner| {
+            let save = move |inner: &mut Inner| {
                 ensure_active(inner, &session)?;
                 if session.revision.load(Ordering::SeqCst) != revision {
                     return Err(cancelled());
@@ -910,8 +959,26 @@ impl NativeState {
                     return Ok(());
                 }
                 inner.store.put(&session.account, &key, &copy)
-            })
-            .await?;
+            };
+            if let Query::Diffs { .. } = input.query {
+                // A diff page is shown at once; whether its head moved during the
+                // read is confirmed afterwards, and only a confirmed page is saved.
+                // The lock stays held so an identical read waits for that save.
+                let inner = self.inner.clone();
+                let query = input.query.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _deduplicate = deduplicate;
+                    let confirmed = tokio::select! {
+                        result = gitlab_api::confirm_unchanged(&client, &api_base, &query) => result.is_ok(),
+                        _ = ended.cancelled() => false,
+                    };
+                    if confirmed {
+                        let _ = run_blocking(inner, save).await;
+                    }
+                });
+            } else {
+                self.blocking(save).await?;
+            }
             Ok(Some(snapshot))
         };
         tokio::select! { result = work => result, _ = session.cancelled.cancelled()=>Err(cancelled()), _ = registration.token.cancelled()=>Err(cancelled()) }

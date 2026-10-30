@@ -151,6 +151,22 @@ export function applyConfirmedGitLabChange<Q extends GitLabQuery>(
     : current)
 }
 
+/**
+ * Reads `query` ahead of the screen that will show it, under the key that screen's
+ * `useGitLabQuery` uses (`query` must have the same fields in the same order), so the
+ * screen opens on it or joins the read in flight. It yields to the screen's reads, and
+ * data still fresh is not read again.
+ */
+export function prefetchGitLabQuery<Q extends GitLabQuery>(queryClient: QueryClient, sessionId: string, query: Q): void {
+  const queryKey = ['gitlab', sessionId, JSON.stringify(query)] as const
+  void queryClient.prefetchQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
+    queryFn: ({ signal }) => fetchGitLabQuery(sessionId, query, true, signal, queryClient.getQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey)?.snapshot ?? null, (snapshot) => {
+      queryClient.setQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey, { error: null, snapshot })
+    }),
+    queryKey,
+  })
+}
+
 async function fetchGitLabQuery<Q extends GitLabQuery>(
   sessionId: string,
   query: Q,

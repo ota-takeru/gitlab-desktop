@@ -7,6 +7,7 @@ import {
   isTauri,
   normalizeGitLabError,
   restoreGitLabSession,
+  verifyGitLabSession,
   type ConnectGitLabInput,
 } from '../../lib/gitlab'
 import { translate } from '../../i18n/i18n'
@@ -46,6 +47,15 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     setStatus('connected')
   }, [])
 
+  const requireReauthentication = useCallback((expired: GitLabSession) => {
+    clearPreferences({ instanceUrl: expired.instanceUrl, userId: expired.user.id })
+    operationRef.current += 1
+    setReauthRequired({ instanceUrl: expired.instanceUrl, username: expired.user.username })
+    setSession(null)
+    setStatus('disconnected')
+    setError(normalizeGitLabError({ code: 'AUTH_REQUIRED', message: translate('connection.errors.authRequired') }))
+  }, [])
+
   const restore = useCallback(async () => {
     if (!isTauri()) {
       setStatus('unsupported')
@@ -58,8 +68,24 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       const restored = await restoreGitLabSession()
       if (operation !== operationRef.current) return null
       const validSession = restored && isSessionShape(restored) ? restored : null
-      if (validSession) adoptSession(validSession)
-      else {
+      if (validSession) {
+        adoptSession(validSession)
+        // The saved answers show while GitLab confirms the account; Rust ends the session
+        // and removes them if it is refused.
+        void verifyGitLabSession(validSession.id).catch((caught: unknown) => {
+          if (operation !== operationRef.current) return
+          const nextError = normalizeGitLabError(caught)
+          if (nextError.code === 'AUTH_REQUIRED') {
+            requireReauthentication(validSession)
+            return
+          }
+          operationRef.current += 1
+          setSession(null)
+          setError(nextError)
+          setRestoreFailed(true)
+          setStatus('error')
+        })
+      } else {
         setSession(null)
         setRestoreFailed(false)
         setStatus('disconnected')
@@ -77,7 +103,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       setStatus(nextError.code === 'AUTH_REQUIRED' ? 'disconnected' : 'error')
       return null
     }
-  }, [adoptSession])
+  }, [adoptSession, requireReauthentication])
 
   useEffect(() => {
     let active = true
@@ -92,16 +118,11 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     const handleAuthRequired = (event: Event) => {
       const failedSessionId = (event as CustomEvent<{ sessionId: string }>).detail?.sessionId
       if (!session || failedSessionId !== session.id) return
-      if (session) clearPreferences({ instanceUrl: session.instanceUrl, userId: session.user.id })
-      operationRef.current += 1
-      setReauthRequired({ instanceUrl: session.instanceUrl, username: session.user.username })
-      setSession(null)
-      setStatus('disconnected')
-      setError(normalizeGitLabError({ code: 'AUTH_REQUIRED', message: translate('connection.errors.authRequired') }))
+      requireReauthentication(session)
     }
     globalThis.addEventListener('gitlab-auth-required', handleAuthRequired)
     return () => globalThis.removeEventListener('gitlab-auth-required', handleAuthRequired)
-  }, [session])
+  }, [requireReauthentication, session])
 
   const connectWith = useCallback(async (attempt: () => Promise<GitLabSession>) => {
     const previousSession = session

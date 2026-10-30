@@ -219,13 +219,12 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     }
 
     let (bytes, headers) = if let Some((project_id, iid, head_sha)) = diff_revision {
-        // The head is confirmed on both sides of the diff read; the first check
-        // runs beside the read, not before it, to save a round trip per page.
+        // The head is checked beside the read, not before it, to save a round
+        // trip; the check after the read is `confirm_unchanged`, run before saving.
         let (_, page) = tokio::try_join!(
             ensure_head_sha(client, api_base, project_id, iid, head_sha),
             get_bytes(client, &url, MAX_RESPONSE_BYTES),
         )?;
-        ensure_head_sha(client, api_base, project_id, iid, head_sha).await?;
         page
     } else {
         get_bytes(client, &url, MAX_RESPONSE_BYTES).await?
@@ -257,6 +256,25 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         result.truncated = false;
     }
     Ok(result)
+}
+
+/// Whether what `fetch` read for `query` is still what its key names. A diff
+/// page is keyed by the MR's head, which can move while the page is read, so
+/// the head is checked again after the read; other reads need no check.
+pub async fn confirm_unchanged(
+    client: &Client,
+    api_base: &Url,
+    query: &Query,
+) -> Result<(), AppError> {
+    match query {
+        Query::Diffs {
+            project_id,
+            iid,
+            head_sha,
+            ..
+        } => ensure_head_sha(client, api_base, project_id, iid, head_sha).await,
+        _ => Ok(()),
+    }
 }
 
 /// Repository files are shown as UTF-8, or in the legacy encoding they most
@@ -362,8 +380,26 @@ async fn fetch_mrs_matching_number(
     let in_project = project_id.is_some();
 
     let (url, response_kind) = build_query_url(api_base, query)?;
-    let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-    let mut result = decode_page(response_kind, &bytes, &headers)?;
+    // The text matches and the number match are read side by side.
+    let text_matches = async {
+        let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+        decode_page(response_kind, &bytes, &headers)
+    };
+    let number_match = async {
+        if !first_page {
+            return Ok(None);
+        }
+        if in_project {
+            let (url, response_kind) = build_query_url(api_base, &by_iid)?;
+            let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+            decode_page(response_kind, &bytes, &headers).map(Some)
+        } else {
+            fetch_mrs_numbered_outside_project(client, api_base, query, iid, 1)
+                .await
+                .map(Some)
+        }
+    };
+    let (mut result, number_match) = tokio::try_join!(text_matches, number_match)?;
     let mut items: Vec<Value> = result
         .data
         .as_array()
@@ -372,14 +408,7 @@ async fn fetch_mrs_matching_number(
         .filter(|item| item["iid"].as_str() != Some(iid))
         .cloned()
         .collect();
-    if first_page {
-        let matches = if in_project {
-            let (url, response_kind) = build_query_url(api_base, &by_iid)?;
-            let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-            decode_page(response_kind, &bytes, &headers)?
-        } else {
-            fetch_mrs_numbered_outside_project(client, api_base, query, iid, 1).await?
-        };
+    if let Some(matches) = number_match {
         result.truncated |= matches.truncated;
         if let Value::Array(mut matched) = matches.data {
             matched.append(&mut items);

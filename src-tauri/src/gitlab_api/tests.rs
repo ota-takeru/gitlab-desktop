@@ -614,7 +614,7 @@ fn decodes_shift_jis_file_when_not_utf8() {
 }
 
 #[test]
-fn diff_fetch_requires_the_expected_head_before_and_after_loading() {
+fn diff_fetch_checks_the_head_beside_the_read_and_confirms_it_after() {
     let merge_request = format!(r#"{{"diff_refs":{{"head_sha":"{HEAD_SHA}"}}}}"#);
     let fixture = Fixture::routed(vec![
         ("/merge_requests/9 ", response("200 OK", &merge_request, "")),
@@ -623,44 +623,48 @@ fn diff_fetch_requires_the_expected_head_before_and_after_loading() {
             response(
                 "200 OK",
                 r#"[{"old_path":"src/a.ts","new_path":"src/a.ts","diff":"@@","new_file":false,"deleted_file":false,"renamed_file":false,"too_large":false}]"#,
-                "X-Next-Page: 2\r\n",
+                "X-Next-Page: 2
+",
             ),
         ),
         ("/merge_requests/9 ", response("200 OK", &merge_request, "")),
     ]);
     let client = Client::builder().build().unwrap();
+    let query = Query::Diffs {
+        project_id: "42".to_owned(),
+        iid: "9".to_owned(),
+        head_sha: HEAD_SHA.to_owned(),
+        page: 1,
+    };
     let result = runtime()
-        .block_on(fetch(
-            &client,
-            &fixture.url(),
-            &Query::Diffs {
-                project_id: "42".to_owned(),
-                iid: "9".to_owned(),
-                head_sha: HEAD_SHA.to_owned(),
-                page: 1,
-            },
-        ))
+        .block_on(fetch(&client, &fixture.url(), &query))
         .unwrap();
 
     assert_eq!(result.data[0]["newPath"], "src/a.ts");
     assert_eq!(result.next_page, Some(2));
+    {
+        let requests = fixture.requests.lock().unwrap();
+        // The page is returned after one head check made beside the read.
+        assert_eq!(requests.len(), 2);
+        let diff_read = requests
+            .iter()
+            .position(|request| request.contains("/projects/42/merge_requests/9/diffs?"))
+            .unwrap();
+        assert!(requests[1 - diff_read].contains("/projects/42/merge_requests/9 HTTP/1.1"));
+        assert!(requests[diff_read]
+            .to_lowercase()
+            .contains("accept-encoding: gzip"));
+    }
+    runtime()
+        .block_on(confirm_unchanged(&client, &fixture.url(), &query))
+        .unwrap();
     let requests = fixture.requests.lock().unwrap();
     assert_eq!(requests.len(), 3);
-    // The first head check goes beside the diff read; the second follows it.
-    let diff_read = requests
-        .iter()
-        .position(|request| request.contains("/projects/42/merge_requests/9/diffs?"))
-        .unwrap();
-    assert!(diff_read < 2);
-    assert!(requests[1 - diff_read].contains("/projects/42/merge_requests/9 HTTP/1.1"));
     assert!(requests[2].contains("/projects/42/merge_requests/9 HTTP/1.1"));
-    assert!(requests[diff_read]
-        .to_lowercase()
-        .contains("accept-encoding: gzip"));
 }
 
 #[test]
-fn diff_fetch_rejects_data_if_the_head_changes_while_loading() {
+fn diff_confirmation_fails_if_the_head_changes_while_loading() {
     let before = format!(r#"{{"diff_refs":{{"head_sha":"{HEAD_SHA}"}}}}"#);
     let changed = r#"{"diff_refs":{"head_sha":"fedcba9876543210fedcba9876543210fedcba98"}}"#;
     let fixture = Fixture::routed(vec![
@@ -676,17 +680,17 @@ fn diff_fetch_rejects_data_if_the_head_changes_while_loading() {
         ("/merge_requests/9 ", response("200 OK", changed, "")),
     ]);
     let client = Client::builder().build().unwrap();
+    let query = Query::Diffs {
+        project_id: "42".to_owned(),
+        iid: "9".to_owned(),
+        head_sha: HEAD_SHA.to_owned(),
+        page: 1,
+    };
+    runtime()
+        .block_on(fetch(&client, &fixture.url(), &query))
+        .unwrap();
     let error = runtime()
-        .block_on(fetch(
-            &client,
-            &fixture.url(),
-            &Query::Diffs {
-                project_id: "42".to_owned(),
-                iid: "9".to_owned(),
-                head_sha: HEAD_SHA.to_owned(),
-                page: 1,
-            },
-        ))
+        .block_on(confirm_unchanged(&client, &fixture.url(), &query))
         .unwrap_err();
 
     assert_eq!(error.code, "INVALID_INPUT");

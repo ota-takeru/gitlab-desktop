@@ -169,6 +169,20 @@ impl Store {
         .transpose()
     }
 
+    /// When the unexpired answer for `key` was saved, without reading the answer itself.
+    pub fn fetched_at(&self, account: &str, key: &str) -> Result<Option<u64>, AppError> {
+        let fetched: Option<i64> = self
+            .0
+            .query_row(
+                "SELECT fetched FROM cache WHERE account=? AND key=? AND fetched >= ?",
+                params![account, key, retention_cutoff()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| storage_error())?;
+        Ok(fetched.map(|fetched| u64::try_from(fetched).unwrap_or(0)))
+    }
+
     pub fn put(&mut self, account: &str, key: &str, snapshot: &Snapshot) -> Result<(), AppError> {
         let text = serde_json::to_string(snapshot).map_err(|_| storage_error())?;
         if text.len() > 8 * 1024 * 1024 {

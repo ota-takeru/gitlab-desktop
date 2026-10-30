@@ -220,12 +220,15 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const accessDenied = currentResult.error?.code === 'AUTH_REQUIRED' || currentResult.error?.code === 'FORBIDDEN' || currentResult.error?.code === 'NOT_FOUND'
   const mergeRequest = accessDenied ? null : currentResult.data ?? initialMergeRequest
   const mergeRequestHeadSha = mergeRequest?.diffRefs?.headSha
+  // An MR opened from a list has no diff refs until its own read answers, but the
+  // list's head lets the first diff page start beside that read; Rust checks it.
+  const diffHeadSha = mergeRequestHeadSha ?? (mergeRequest?.headSha || undefined)
 
   // A commit's diff or a version comparison is shown read-only: no new line comments, threads or reviewed marks.
   const comparing = Boolean(compareVersion && mergeRequestHeadSha)
   const showingLocal = localChanges && Boolean(mergeRequestHeadSha)
   const readOnlyChanges = Boolean(selectedCommit) || comparing || showingLocal
-  const diffsQuery = useMemo<DiffsQuery | null>(() => activeTab === 'changes' && !selectedCommit && !compareVersion && !showingLocal && mergeRequestHeadSha ? ({ headSha: mergeRequestHeadSha, iid, kind: 'diffs', page: changePage, projectId: resourceId } as DiffsQuery) : null, [activeTab, changePage, compareVersion, iid, resourceId, selectedCommit, showingLocal, mergeRequestHeadSha])
+  const diffsQuery = useMemo<DiffsQuery | null>(() => activeTab === 'changes' && !selectedCommit && !compareVersion && !showingLocal && diffHeadSha ? ({ headSha: diffHeadSha, iid, kind: 'diffs', page: changePage, projectId: resourceId } as DiffsQuery) : null, [activeTab, changePage, compareVersion, iid, resourceId, selectedCommit, showingLocal, diffHeadSha])
   const commitDiffQuery = useMemo<CommitDiffQuery | null>(() => activeTab === 'changes' && selectedCommit ? ({ iid, kind: 'commitDiff', page: changePage, projectId: resourceId, sha: selectedCommit } as CommitDiffQuery) : null, [activeTab, changePage, iid, resourceId, selectedCommit])
   const versionCompareQuery = useMemo<VersionCompareQuery | null>(() => activeTab === 'changes' && !selectedCommit && compareVersion && mergeRequestHeadSha ? { fromSha: compareVersion, iid, kind: 'versionCompare', page: changePage, projectId: resourceId, toSha: mergeRequestHeadSha } : null, [activeTab, changePage, compareVersion, iid, mergeRequestHeadSha, resourceId, selectedCommit])
   const versionsQuery = useMemo<MrVersionsQuery | null>(() => activeTab === 'changes' ? { iid, kind: 'mrVersions', page: 1, projectId: resourceId } : null, [activeTab, iid, resourceId])

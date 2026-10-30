@@ -91,6 +91,16 @@ export async function restoreGitLabSession(): Promise<GitLabSession | null> {
   }
 }
 
+/** Confirms a restored session's account with GitLab; resolves when GitLab cannot be reached. */
+export async function verifyGitLabSession(sessionId: string): Promise<void> {
+  ensureDesktop()
+  try {
+    await invoke<void>('verify_session', { sessionId })
+  } catch (error) {
+    throw normalizeGitLabError(error)
+  }
+}
+
 export async function disconnectGitLab(sessionId: string): Promise<void> {
   ensureDesktop()
   try {

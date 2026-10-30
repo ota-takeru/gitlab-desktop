@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitLabSnapshot, Project, ProjectQuery } from '../../types/gitlab'
-import { applyConfirmedGitLabChange, useGitLabQuery } from './useGitLabQuery'
+import { applyConfirmedGitLabChange, prefetchGitLabQuery, useGitLabQuery } from './useGitLabQuery'
 
 const { cancelMock, queryGitLabMock } = vi.hoisted(() => ({ cancelMock: vi.fn(), queryGitLabMock: vi.fn() }))
 
@@ -68,6 +68,17 @@ describe('useGitLabQuery', () => {
     act(() => applyConfirmedGitLabChange(queryClient, 'session-1', { ...query, page: 2 }, () => []))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(screen.getByTestId('name')).toHaveTextContent('Renamed')
+  })
+
+  it('opens a screen on a read made ahead of it, in the background, without reading again', async () => {
+    queryGitLabMock.mockImplementation(({ mode }: { mode: string }) => mode === 'cache' ? Promise.resolve(null) : Promise.resolve(snapshot('network')))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } })
+    prefetchGitLabQuery(queryClient, 'session-1', query)
+    await waitFor(() => expect(queryGitLabMock).toHaveBeenCalledWith(expect.objectContaining({ background: true, mode: 'network' })))
+
+    renderProbe(queryClient)
+    await waitFor(() => expect(screen.getByTestId('query-state')).toHaveTextContent('network:idle:ok'))
+    expect(queryGitLabMock).toHaveBeenCalledTimes(2)
   })
 
   it('hydrates a cache snapshot while the network refresh is in flight', async () => {
