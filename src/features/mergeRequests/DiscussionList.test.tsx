@@ -120,6 +120,15 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.queryByRole('button', { name: '他の人のコメント「reply-other の本文」を削除' })).not.toBeInTheDocument()
   })
 
+  it('shows when an edited comment was saved, not only when it was first posted', () => {
+    const edited = createNote('edited', currentUser, { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:06:00.000Z' })
+
+    const { container } = renderList([createDiscussion([edited])])
+
+    expect(container.querySelector('time[datetime="2026-01-01T00:00:00.000Z"]')).toBeInTheDocument()
+    expect(container.querySelector('time[datetime="2026-01-01T00:06:00.000Z"]')).toHaveTextContent(/^編集済み /)
+  })
+
   it('passes the edited reply body and note to onEdit', async () => {
     const ownedReply = createNote('reply-owned', currentUser, { body: '元の返信' })
     const onEdit = vi.fn().mockResolvedValue(true)

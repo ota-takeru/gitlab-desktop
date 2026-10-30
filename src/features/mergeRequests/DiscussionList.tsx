@@ -467,7 +467,8 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
             {own ? <Typography color="textSecondary" variant="caption">{t('review.note.own')}</Typography> : null}
             <RelativeTime value={note.createdAt} />
-            {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">{t('review.note.edited')}</Typography> : null}
+            {/* GitLab keeps created_at on an edit, so the edit's own time comes from updated_at. */}
+            {note.updatedAt && note.updatedAt !== note.createdAt ? <RelativeTime prefix={t('review.note.edited')} value={note.updatedAt} /> : null}
             {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('review.note.unread')}</Typography> : null}
           </Row>
           {own && !note.system ? (
