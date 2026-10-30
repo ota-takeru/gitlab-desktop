@@ -7,6 +7,7 @@ mod dto;
 mod gitlab_api;
 mod glab;
 mod local_git;
+mod memory;
 mod native;
 mod storage;
 mod text_encoding;
@@ -386,6 +387,14 @@ fn runtime_info() -> RuntimeInfo {
     }
 }
 
+/// Whether the system is short of physical memory, so the interface keeps fewer hidden screens.
+/// Each reading also updates how much memory the WebView keeps while out of focus.
+#[tauri::command]
+fn memory_pressure(window: tauri::WebviewWindow) -> bool {
+    memory::update_webview_memory_target(&window);
+    memory::memory_constrained()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -403,6 +412,14 @@ pub fn run() {
         .manage(updates::UpdateState::default())
         .manage(CloseGuard::default())
         .on_window_event(|window, event| {
+            if matches!(
+                event,
+                tauri::WindowEvent::Focused(_) | tauri::WindowEvent::Resized(_)
+            ) {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    memory::update_webview_memory_target(&webview);
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let guard = window.state::<CloseGuard>();
                 if guard.active.load(Ordering::SeqCst) && !guard.closing.load(Ordering::SeqCst) {
@@ -435,6 +452,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            memory_pressure,
             connect_gitlab,
             reauthenticate_gitlab,
             list_glab_connections,

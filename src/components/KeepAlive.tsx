@@ -29,6 +29,8 @@ interface KeptScreens {
   recent: string[]
   /** The `keep` list the screens were last counted with. */
   kept: string
+  /** The limit they were last counted with; a lower one drops screens at once. */
+  max: number
 }
 
 function keptScreens(screens: KeptScreens, activeKey: string | null, max: number, keep: readonly string[]): KeptScreens {
@@ -37,7 +39,7 @@ function keptScreens(screens: KeptScreens, activeKey: string | null, max: number
   const recent = [...(activeKey === null ? [] : [activeKey]), ...screens.recent.filter((key) => key !== activeKey)]
     .filter((key) => key === activeKey || kept.has(key) || ++others < Math.max(1, max))
   const order = [...screens.order.filter((key) => recent.includes(key)), ...(activeKey === null || screens.order.includes(activeKey) ? [] : [activeKey])]
-  return { kept: keep.join(' '), order, recent }
+  return { kept: keep.join(' '), max, order, recent }
 }
 
 /**
@@ -49,9 +51,9 @@ function keptScreens(screens: KeptScreens, activeKey: string | null, max: number
  * document queries that must ignore the hidden ones.
  */
 export function KeepAlive({ activeKey, children, component = 'div', keep = noKeys, max, renderKey, sx }: KeepAliveProps) {
-  const [screens, setScreens] = useState<KeptScreens>({ kept: '', order: [], recent: [] })
+  const [screens, setScreens] = useState<KeptScreens>({ kept: '', max, order: [], recent: [] })
   let current = screens
-  if ((activeKey !== null && screens.recent[0] !== activeKey) || screens.kept !== keep.join(' ')) {
+  if ((activeKey !== null && screens.recent[0] !== activeKey) || screens.kept !== keep.join(' ') || screens.max !== max) {
     current = keptScreens(screens, activeKey, max, keep)
     setScreens(current)
   }

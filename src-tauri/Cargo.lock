@@ -1530,6 +1530,8 @@ dependencies = [
  "tokio-util",
  "url",
  "uuid",
+ "webview2-com",
+ "windows",
  "yaml-rust2",
 ]
 

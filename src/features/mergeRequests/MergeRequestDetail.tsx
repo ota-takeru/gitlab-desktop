@@ -28,6 +28,7 @@ import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
 import { hairline } from '../../components/hairline'
 import { useConfirm, useNotify } from '../../components/feedbackContext'
 import { KeepAlive } from '../../components/KeepAlive'
+import { useMemoryPressure } from '../shared/MemoryPressure'
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { GitLabUserLink } from '../../components/GitLabUserLink'
 import { MergeRequestStateGlyph } from '../../components/MergeRequestStateIcon'
@@ -137,6 +138,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const queryClient = useQueryClient()
   const [localTab, setLocalTab] = useState<ReviewTab>('overview')
   const activeTab = tab ?? localTab
+  const memoryConstrained = useMemoryPressure()
   const setActiveTab = (next: ReviewTab) => { if (onTabChange) onTabChange(next); else setLocalTab(next) }
   // A thread opened from the diff, shown once the discussion tab has settled.
   const pendingThread = useRef<string | null>(null)
@@ -993,7 +995,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         {noteAwardsQuery && noteAwardsResult.error ? <Alert action={<Button color="inherit" onClick={noteAwardsResult.refresh}>{t('mergeRequest.reactions.retry')}</Button>} severity="warning">{noteAwardsResult.data ? t('mergeRequest.reactions.refreshFailed', { error: noteAwardsResult.error.message }) : t('mergeRequest.reactions.noteLoadFailed', { error: noteAwardsResult.error.message })}</Alert> : null}
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.reactions.truncated')}</Alert> : null}
         {/* Visited tabs stay mounted, hidden, so switching back shows them at once with their scroll, input and highlighted code. */}
-        <Box><KeepAlive activeKey={activeTab} max={4}>
+        <Box><KeepAlive activeKey={activeTab} max={memoryConstrained ? 1 : 4}>
         {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab settled={discussionViewSettled} focusNoteId={discussionViewSettled ? focusNote?.noteId : undefined} onFocusNoteDone={onNoteFocused} projectId={resourceId} templateProjectPath={projectPath ?? undefined} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} mentionParticipants={mentionParticipants} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onAddReviewers={addReviewers} onSaveDraft={saveDraft} onSetReviewers={setReviewers} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {activeTab === 'changes' ? <Stack spacing={1}>
         {drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">{t('mergeRequest.drafts.publishInDiscussion')}</Button>} severity="info">{t('mergeRequest.drafts.pending', { count: drafts.length })}</Alert> : null}

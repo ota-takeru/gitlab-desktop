@@ -15,3 +15,14 @@ it('keeps the listed screens mounted beyond the limit until they leave the list'
   rerender(view('e', []))
   expect(container.children).toHaveLength(2)
 })
+
+it('drops the screens beyond a lowered limit without waiting for the next screen', () => {
+  const view = (active: string, max: number) => <KeepAlive activeKey={active} max={max}>{active}</KeepAlive>
+  const { container, rerender } = render(view('a', 3))
+  for (const active of ['b', 'c']) rerender(view(active, 3))
+  expect(container.children).toHaveLength(3)
+
+  rerender(view('c', 1))
+  expect(container.children).toHaveLength(1)
+  expect(container.querySelector('[data-screen-active="true"]')).toHaveTextContent('c')
+})

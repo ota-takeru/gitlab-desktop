@@ -61,6 +61,8 @@ export function installFixtureIpc(state: FixtureState): void {
     const payload = (args ?? {}) as Record<string, unknown>
     switch (command) {
       case 'runtime_info': return { appVersion: 'fixture', arch: 'x86_64', os: 'windows' }
+      // `?lowMemory` shows the screens as they behave while the system is short of memory.
+      case 'memory_pressure': return new URLSearchParams(window.location.search).has('lowMemory')
       case 'restore_session':
       case 'connect_gitlab':
       case 'connect_gitlab_from_glab': return fixtureSession

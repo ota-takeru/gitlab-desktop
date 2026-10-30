@@ -69,6 +69,7 @@ import { personalQueueFor } from './mergeRequests/personalQueue'
 import { closeStaleTabs, hasViewedMergeRequest, mrRefKey, openWorkspaceTab, STALE_TAB_MS, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
 import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
+import { MemoryPressure, useMemoryPressureReading } from './shared/MemoryPressure'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
@@ -482,6 +483,13 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     return () => globalThis.clearInterval(timer)
   }, [instanceUrl, selectedIid, selectedProjectId, userId])
   const openTabKeys = useMemo(() => workspace.open.map(mrRefKey), [workspace.open])
+  // Short of memory, only the screens on view stay mounted and fetched data nothing shows is let go:
+  // Rust's disk cache brings it back when a screen reads it again.
+  const queryClient = useQueryClient()
+  const releaseUnusedData = useCallback((constrained: boolean) => {
+    if (constrained) queryClient.removeQueries({ queryKey: ['gitlab'], type: 'inactive' })
+  }, [queryClient])
+  const memoryConstrained = useMemoryPressureReading(releaseUnusedData)
   const selectedHasTab = selectedPinned || Boolean(selected && openTabKeys.includes(mrRefKey(selected)))
 
   const personal = personalQueueFor(listParams, session?.user.id)
@@ -528,6 +536,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   const projectsSelected = !selected && (route === 'projects' || route === 'overview' || route === 'branches' || route === 'code' || (route === 'mrs' && hubTab === null))
 
   return (
+    <MemoryPressure value={memoryConstrained}>
     <MarkdownLinkProvider instanceUrl={session?.instanceUrl} open={openMarkdownLink}>
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <Box sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
@@ -591,7 +600,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                   Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once. */}
               <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy. */}
-                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={6} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={memoryConstrained ? 1 : 6} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
@@ -604,9 +613,9 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 </QueryRefreshPolicy>
                 </KeepAlive>
               </Box>
-              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={openTabKeys} max={5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
               {/* An MR with a sidebar tab keeps its data while hidden, so switching back shows it at once. */}
-              {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
+              {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab && !memoryConstrained ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute
                   initialMergeRequest={mergeRequest}
                   key={`${selected.projectId}:${selected.iid}`}
@@ -632,6 +641,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
       </>} />
     </Box>
     </MarkdownLinkProvider>
+    </MemoryPressure>
   )
 }
 
