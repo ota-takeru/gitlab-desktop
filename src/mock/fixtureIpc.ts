@@ -250,7 +250,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'mrAwards': return awards.get(keyOf(find(request).mergeRequest)) ?? []
       case 'noteAwards': {
         const target = data.mergeRequests.find(({ mergeRequest }) => mergeRequest.projectPath === request.projectPath && mergeRequest.iid === request.iid) ?? notFound()
-        return notesOf(target).filter((item) => !item.system).map((item) => ({ awards: awards.get(`${keyOf(target.mergeRequest)}:${item.id}`) ?? [], noteId: item.id }))
+        return notesOf(target).filter((item) => !item.system).map((item) => ({ awards: awards.get(`${keyOf(target.mergeRequest)}:${item.id}`) ?? [], lastEditedAt: item.updatedAt ?? null, noteId: item.id }))
       }
       case 'mrPipelines': return pipelines.pipelinesOf(find(request).mergeRequest).map((item) => ({ ...item.pipeline }))
       case 'pipeline': return { ...pipelines.pipeline(request.pipelineId).pipeline }

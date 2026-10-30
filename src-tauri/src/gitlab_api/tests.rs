@@ -1894,7 +1894,7 @@ fn merge_request_reactions_use_the_rest_award_list() {
 fn comment_reactions_read_back_from_the_newest_page_to_the_oldest_shown_comment() {
     let user = r#"{"id":"gid://gitlab/User/7","username":"alice","name":"Alice"}"#;
     let newest = format!(
-        r#"{{"data":{{"project":{{"mergeRequest":{{"notes":{{"pageInfo":{{"hasPreviousPage":true,"startCursor":"c2"}},"nodes":[{{"id":"gid://gitlab/DiffNote/50","awardEmoji":{{"nodes":[{{"name":"tada","user":{user}}}]}}}},{{"id":"gid://gitlab/Note/60","awardEmoji":{{"nodes":[]}}}}]}}}}}}}}}}"#
+        r#"{{"data":{{"project":{{"mergeRequest":{{"notes":{{"pageInfo":{{"hasPreviousPage":true,"startCursor":"c2"}},"nodes":[{{"id":"gid://gitlab/DiffNote/50","awardEmoji":{{"nodes":[{{"name":"tada","user":{user}}}]}}}},{{"id":"gid://gitlab/Note/60","lastEditedAt":"2026-10-01T09:06:00Z","awardEmoji":{{"nodes":[]}}}}]}}}}}}}}}}"#
     );
     let older = r#"{"data":{"project":{"mergeRequest":{"notes":{"pageInfo":{"hasPreviousPage":true,"startCursor":"c1"},"nodes":[{"id":"gid://gitlab/Note/30","awardEmoji":{"nodes":[]}},{"id":"gid://gitlab/Note/40","awardEmoji":{"nodes":[]}}]}}}}}"#;
     let fixture = Fixture::new_at_path(
@@ -1916,9 +1916,9 @@ fn comment_reactions_read_back_from_the_newest_page_to_the_oldest_shown_comment(
     assert_eq!(
         result.data,
         json!([
-            {"noteId": "50", "awards": [{"name": "tada", "user": {"id": "7", "username": "alice", "name": "Alice"}}]},
-            {"noteId": "60", "awards": []},
-            {"noteId": "40", "awards": []},
+            {"noteId": "50", "awards": [{"name": "tada", "user": {"id": "7", "username": "alice", "name": "Alice"}}], "lastEditedAt": null},
+            {"noteId": "60", "awards": [], "lastEditedAt": "2026-10-01T09:06:00Z"},
+            {"noteId": "40", "awards": [], "lastEditedAt": null},
         ])
     );
     let requests = fixture.requests.lock().unwrap();

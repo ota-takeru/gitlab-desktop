@@ -5,7 +5,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { createAppTheme } from '../../theme'
 import type { Discussion, GitLabUser, Note } from '../../types/gitlab'
 import type { Position } from '../../types/gitlab'
-import { DiscussionList, type OlderDiscussions } from './DiscussionList'
+import { DiscussionList, type NoteReactions, type OlderDiscussions } from './DiscussionList'
 import { clearComposerBufferStore } from './useComposerBuffer'
 
 const currentUser: GitLabUser = { id: 'user-1', name: '自分', username: 'reviewer' }
@@ -38,6 +38,7 @@ function renderList(
     onOpenPosition?: (position: Position) => void
     onReply?: (discussion: Discussion) => void
     onResolve?: (discussion: Discussion, resolved: boolean) => Promise<boolean>
+    reactions?: NoteReactions
     replyDiscussionId?: string
     unreadNoteIds?: string[]
   } = {},
@@ -49,6 +50,7 @@ function renderList(
         discussions={discussions}
         onMarkRead={callbacks.onMarkRead}
         onOpenPosition={callbacks.onOpenPosition}
+        reactions={callbacks.reactions}
         replyDiscussionId={callbacks.replyDiscussionId}
         unreadNoteIds={callbacks.unreadNoteIds}
         onDelete={callbacks.onDelete ?? vi.fn().mockResolvedValue(true)}
@@ -127,6 +129,19 @@ describe('DiscussionList note ownership and resolution', () => {
 
     expect(container.querySelector('time[datetime="2026-01-01T00:00:00.000Z"]')).toBeInTheDocument()
     expect(container.querySelector('time[datetime="2026-01-01T00:06:00.000Z"]')).toHaveTextContent(/^編集済み /)
+  })
+
+  it('marks a comment edited only when its body was edited, not when a reaction or a resolve moved updated_at', () => {
+    // GitLab's REST updated_at moves on reactions and resolves too; the edit time comes with the reactions.
+    const reacted = createNote('reacted', currentUser, { updatedAt: '2026-01-01T00:03:00.000Z' })
+    const edited = createNote('edited', currentUser, { updatedAt: '2026-01-01T00:09:00.000Z' })
+    const reactions: NoteReactions = { awardsByNote: new Map(), disabled: false, editedAtByNote: new Map([['reacted', null], ['edited', '2026-01-01T00:06:00.000Z']]), onToggle: vi.fn() }
+
+    const { container } = renderList([createDiscussion([reacted, edited])], { reactions })
+
+    expect(screen.getAllByText(/編集済み/)).toHaveLength(1)
+    expect(container.querySelector('li[data-note-id="edited"] time[datetime="2026-01-01T00:06:00.000Z"]')).toHaveTextContent(/^編集済み /)
+    expect(container.querySelector('li[data-note-id="reacted"]')).not.toHaveTextContent('編集済み')
   })
 
   it('passes the edited reply body and note to onEdit', async () => {

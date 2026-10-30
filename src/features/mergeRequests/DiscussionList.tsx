@@ -90,6 +90,8 @@ interface DiscussionListProps {
 export interface NoteReactions {
   /** Each comment's reactions; an entry keeps its identity while unchanged, so the other comments do not render again. */
   awardsByNote: ReadonlyMap<string, readonly AwardEmoji[]>
+  /** When each comment's body was last edited (null if never), read with the reactions: GitLab's REST updated_at also moves on a reaction or a resolve. */
+  editedAtByNote?: ReadonlyMap<string, string | null>
   disabled: boolean
   /** Keeps one identity, like the other callbacks, so that the comments stay memoized. */
   onToggle: (note: Note, name: string, add: boolean) => Promise<boolean> | void
@@ -350,6 +352,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
             <Box component="ol" sx={{ listStyle: 'none', m: 0, minWidth: 0, p: 0, [THREAD_WITH_CODE_WIDE]: { gridColumn: 1, gridRow: 1 } }}>
               {visibleNotes.map((note, index) => <NoteItem
                 awards={reactions?.awardsByNote.get(note.id)}
+                editedAt={reactions?.editedAtByNote ? reactions.editedAtByNote.get(note.id) ?? null : note.updatedAt !== note.createdAt ? note.updatedAt : null}
                 confirm={confirm}
                 currentUserId={currentUserId}
                 disabled={disabled}
@@ -400,6 +403,8 @@ interface NoteItemProps {
   currentUserId: string
   disabled: boolean
   divided: boolean
+  /** When the body was last edited; null if it never was. */
+  editedAt?: string | null
   /** Where the edit's text is kept while this comment is being edited; null otherwise. */
   editBufferKey: string | null
   mentionParticipants?: GitLabUser[]
@@ -416,7 +421,7 @@ interface NoteItemProps {
 }
 
 /** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
-const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, editedAt, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
   const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
@@ -467,8 +472,8 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
             {own ? <Typography color="textSecondary" variant="caption">{t('review.note.own')}</Typography> : null}
             <RelativeTime value={note.createdAt} />
-            {/* GitLab keeps created_at on an edit, so the edit's own time comes from updated_at. */}
-            {note.updatedAt && note.updatedAt !== note.createdAt ? <RelativeTime prefix={t('review.note.edited')} value={note.updatedAt} /> : null}
+            {/* GitLab keeps created_at on an edit, so the edit's own time is shown beside it. */}
+            {editedAt ? <RelativeTime prefix={t('review.note.edited')} value={editedAt} /> : null}
             {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('review.note.unread')}</Typography> : null}
           </Row>
           {own && !note.system ? (

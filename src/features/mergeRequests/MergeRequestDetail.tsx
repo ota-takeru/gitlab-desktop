@@ -256,6 +256,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const noteAwardsQuery = useMemo<NoteAwardsQuery | null>(() => (activeTab === 'discussion' || activeTab === 'changes') && projectPath && sinceNoteId ? { iid, kind: 'noteAwards', projectPath, sinceNoteId } : null, [activeTab, iid, projectPath, sinceNoteId])
   const noteAwardsResult = useGitLabQuery<NoteAwardsQuery>(session?.id ?? null, noteAwardsQuery)
   const awardsByNote = useMemo(() => new Map((noteAwardsResult.data ?? []).map((entry) => [entry.noteId, entry.awards])), [noteAwardsResult.data])
+  // Read with the reactions, as GitLab's REST notes have no edit time of their own.
+  const editedAtByNote = useMemo(() => noteAwardsResult.data ? new Map(noteAwardsResult.data.map((entry) => [entry.noteId, entry.lastEditedAt ?? null])) : undefined, [noteAwardsResult.data])
   const mrAwardsQuery = useMemo<MrAwardsQuery | null>(() => activeTab === 'overview' ? { iid, kind: 'mrAwards', projectId: resourceId } : null, [activeTab, iid, resourceId])
   const mrAwardsResult = useGitLabQuery<MrAwardsQuery>(session?.id ?? null, mrAwardsQuery)
   const mergeRequestNotifications = useLoadedMergeRequestNotifications(session?.id ?? null, resourceId, iid)
@@ -570,7 +572,10 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
 
   const discussionIdForNote = (note: Note) => discussions.find((discussion) => discussion.notes.some((item) => item.id === note.id))?.id ?? null
   const noteEditBufferKey = (note: Note) => createComposerBufferKey(session, resourceId, iid, `edit:${note.id}`)
-  const editNote = (note: Note, body: string) => runAction({ body, iid, kind: 'editNote', noteId: note.id, projectId: resourceId }, () => discussionWindow.refreshDiscussion(discussionIdForNote(note)))
+  const editNote = (note: Note, body: string) => runAction({ body, iid, kind: 'editNote', noteId: note.id, projectId: resourceId }, () => {
+    noteAwardsResult.refresh()
+    return discussionWindow.refreshDiscussion(discussionIdForNote(note))
+  })
   const deleteNote = (note: Note) => runAction({ iid, kind: 'deleteNote', noteId: note.id, projectId: resourceId }, () => discussionWindow.refreshDiscussion(discussionIdForNote(note)))
   const resolveDiscussion = (discussion: Discussion, resolved: boolean) => runAction({ discussionId: discussion.id, iid, kind: 'resolve', projectId: resourceId, resolved }, () => discussionWindow.refreshDiscussion(discussion.id))
   const toggleReaction = (name: string, add: boolean, noteId?: string) => runAction({ iid, kind: add ? 'addAward' : 'removeAward', name, projectId: resourceId, ...(noteId ? { noteId } : {}) }, () => {
@@ -586,7 +591,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     else mrAwardsResult.refresh()
   })
   const reactionsDisabled = !session || mutation.isLocked || mutation.isPending
-  const noteReactions: NoteReactions = { awardsByNote, disabled: reactionsDisabled, onToggle: (note, name, add) => toggleReaction(name, add, note.id) }
+  const noteReactions: NoteReactions = { awardsByNote, editedAtByNote, disabled: reactionsDisabled, onToggle: (note, name, add) => toggleReaction(name, add, note.id) }
   const renderNoteReactions = (note: Note) => <ReactionBar awards={awardsByNote.get(note.id) ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={t('mergeRequest.reactions.noteLabel', { name: note.author.name })} onToggle={(name, add) => toggleReaction(name, add, note.id)} />
   // Applying commits to the source branch, so the MR, its diffs and the threads all change.
   const suggestionActions: SuggestionActions | undefined = session ? {

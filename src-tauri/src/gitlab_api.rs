@@ -1913,7 +1913,7 @@ async fn fetch_comment_templates(
 const NOTE_AWARD_PAGE_SIZE: u32 = 100;
 /// Pages read back from the newest comment before the result is marked truncated.
 const MAX_NOTE_AWARD_PAGES: usize = 5;
-const NOTE_AWARDS_QUERY: &str = "query($path: ID!, $iid: String!, $last: Int!, $before: String) { project(fullPath: $path) { mergeRequest(iid: $iid) { notes(filter: ONLY_COMMENTS, last: $last, before: $before) { pageInfo { hasPreviousPage startCursor } nodes { id awardEmoji { nodes { name user { id username name } } } } } } } }";
+const NOTE_AWARDS_QUERY: &str = "query($path: ID!, $iid: String!, $last: Int!, $before: String) { project(fullPath: $path) { mergeRequest(iid: $iid) { notes(filter: ONLY_COMMENTS, last: $last, before: $before) { pageInfo { hasPreviousPage startCursor } nodes { id lastEditedAt awardEmoji { nodes { name user { id username name } } } } } } } }";
 
 /// Reads the reactions on the comments of one merge request from the newest
 /// comment back to `since_note_id`, the oldest comment on screen. The REST
@@ -1989,7 +1989,11 @@ async fn fetch_note_awards(
                 .and_then(Value::as_array)
                 .map(|awards| awards.iter().map(normalize_graphql_award).collect())
                 .unwrap_or_else(|| Ok(Vec::new()))?;
-            results.push(json!({ "noteId": note_id, "awards": awards }));
+            // REST notes carry no edit time; their updated_at also moves on a reaction or a resolve.
+            let last_edited_at = node.get("lastEditedAt").and_then(Value::as_str);
+            results.push(
+                json!({ "noteId": note_id, "awards": awards, "lastEditedAt": last_edited_at }),
+            );
         }
         let page_info = notes.get("pageInfo");
         let has_previous = page_info
