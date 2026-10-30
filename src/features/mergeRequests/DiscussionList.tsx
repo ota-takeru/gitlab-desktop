@@ -85,6 +85,8 @@ interface DiscussionListProps {
   onFocusNoteDone?: () => void
   /** Uploads a file pasted into an edit and returns its Markdown. */
   onUploadAttachment?: (file: File) => Promise<string | null>
+  /** The discussion has loaded and been placed at its opening position. */
+  settled?: boolean
 }
 
 export interface NoteReactions {
@@ -109,7 +111,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
@@ -165,6 +167,14 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   useEffect(() => {
     olderRef.current = older
   }, [older])
+
+  // Threads out of view skip styling and layout only after the opening position is set and a frame has recorded
+  // every thread's height, which a skipped one keeps; showing a long discussion again then lays out only what is in view.
+  useEffect(() => {
+    if (!settled) return
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => listRef.current?.setAttribute('data-skip-offscreen', 'true')) })
+    return () => cancelAnimationFrame(frame)
+  }, [settled])
 
   // Track the thread at the top of the view so content inserted above it
   // (older pages, refreshed threads) never moves what the reader is looking at.
@@ -316,7 +326,9 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const threadLabel = positionLabel ?? t('review.discussion.threadLabel', { author: firstNote?.author.name ?? '' })
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
         return (
-          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
+          // A thread skipped out of view keeps the height it was last laid out at; one added since takes an estimate
+          // until shown, and the anchor above keeps the thread being read still when that changes.
+          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, containIntrinsicSize: 'auto 240px', minWidth: 0, overflow: 'clip', '[data-skip-offscreen="true"] > &': { contentVisibility: 'auto' } }}>
             {isThreadCollapsible(notes) ? (
               <Bar spacing={1} sx={{ ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, px: 1.5, py: 0.5 }}>
                 <Row spacing={1} sx={{ flex: '1 1 auto', minWidth: 0 }}>
