@@ -6,6 +6,7 @@
 import { mockIPC } from '@tauri-apps/api/mocks'
 
 import { createFixtureData, fixtureSession, fixtureUser, type FixtureMergeRequest } from './gitlabFixtures'
+import { fixtureBlame, fixtureCommitDiff } from './fileHistory'
 import { createPipelineFixtures } from './pipelineFixtures'
 import type { AwardEmoji, Discussion, Draft, GitLabAction, GitLabErrorShape, GitLabQuery, GitLabSnapshot, Note, QueryData, TreeEntry } from '../types/gitlab'
 
@@ -132,6 +133,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'get_gitlab_image': return null
       case 'plugin:notification|is_permission_granted': return false
       case 'plugin:notification|request_permission': return 'denied'
+      case 'verify_session':
       case 'acknowledge_pending_operation':
       case 'cancel_gitlab_request':
       case 'clear_gitlab_cache':
@@ -189,7 +191,8 @@ export function installFixtureIpc(state: FixtureState): void {
         const items = data.mergeRequests.map((item) => item.mergeRequest).filter((mergeRequest) => mergeRequest.projectId === request.projectId)
         const branches = [
           ...items.map((mergeRequest) => ({ commit: { authorName: mergeRequest.author.name, committedDate: mergeRequest.updatedAt, id: mergeRequest.headSha ?? '', shortId: (mergeRequest.headSha ?? '').slice(0, 8), title: mergeRequest.title }, default: false, merged: mergeRequest.state === 'merged', name: mergeRequest.sourceBranch, protected: false, webUrl: '' })),
-          ...(items[0] ? [{ commit: null, default: true, merged: false, name: items[0].targetBranch, protected: true, webUrl: '' }] : []),
+          // The repository's files are the first MR's, so the default branch is at its head.
+          ...(items[0] ? [{ commit: { authorName: items[0].author.name, committedDate: items[0].updatedAt, id: items[0].headSha ?? '', shortId: (items[0].headSha ?? '').slice(0, 8), title: items[0].title }, default: true, merged: false, name: items[0].targetBranch, protected: true, webUrl: '' }] : []),
         ]
         return branches.filter((branch, index) => branches.findIndex((other) => other.name === branch.name) === index && matches(branch.name, request.search))
       }
@@ -209,13 +212,10 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'commits': return find(request).commits.map(({ createdAt, id, title }) => ({ createdAt, committedAt: createdAt, id, title }))
       case 'drafts': return drafts.get(keyOf(request)) ?? []
       case 'diffs': return find(request).diffs
-      case 'commitDiff': return find(request).commits.find((commit) => commit.id === request.sha)?.diffs ?? notFound()
-      case 'blame': {
-        const file = projectFiles(request.projectId)[request.path]
-        if (file === undefined) return notFound()
-        const lines = file.split('\n').slice(request.startLine - 1, request.endLine)
-        return lines.length ? [{ authorName: 'Fixture User', commitId: request.sha, committedAt: new Date().toISOString(), lines, title: 'Fixture commit' }] : []
-      }
+      case 'commitDiff': return fixtureCommitDiff(request.sha, projectFiles(request.projectId))
+        ?? data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === request.projectId).flatMap((item) => item.commits).find((commit) => commit.id === request.sha)?.diffs
+        ?? notFound()
+      case 'blame': return fixtureBlame(request.path, request.sha, request.startLine, request.endLine, projectFiles(request.projectId)[request.path]) ?? notFound()
       case 'commitMergeRequests': return data.mergeRequests.map(({ mergeRequest }) => mergeRequest)
         .filter((mr) => mr.projectId === request.projectId && mr.headSha === request.sha)
         .map((mr) => ({ iid: mr.iid, projectId: mr.projectId, state: mr.state, title: mr.title, webUrl: mr.webUrl }))

@@ -162,7 +162,8 @@ export interface DiffsQuery extends Omit<ReviewResourceQuery, 'kind'> {
 export interface CommitDiffQuery {
   kind: 'commitDiff'
   projectId: string
-  iid: string
+  /** The MR the commit is read for; absent for a repository file's history. */
+  iid?: string
   sha: string
   page: number
 }

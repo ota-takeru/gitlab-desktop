@@ -261,7 +261,9 @@ pub enum Query {
     },
     CommitDiff {
         project_id: String,
-        iid: String,
+        /// The MR the commit is read for; absent for a repository file's history.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        iid: Option<String>,
         sha: String,
         page: u32,
     },

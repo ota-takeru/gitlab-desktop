@@ -1190,7 +1190,7 @@ fn uses_project_scoped_mr_and_repository_commit_diff_routes() {
             &fixture.url(),
             &Query::CommitDiff {
                 project_id: "42".to_owned(),
-                iid: "9".to_owned(),
+                iid: Some("9".to_owned()),
                 sha: HEAD_SHA.to_owned(),
                 page: 1,
             },

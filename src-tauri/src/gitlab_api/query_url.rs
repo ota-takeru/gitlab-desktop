@@ -333,7 +333,9 @@ pub(super) fn build_query_url(
             page,
         } => {
             validate_id(project_id, "projectId")?;
-            validate_id(iid, "iid")?;
+            if let Some(iid) = iid {
+                validate_id(iid, "iid")?;
+            }
             validate_sha(sha, "sha")?;
             validate_page(*page)?;
             (

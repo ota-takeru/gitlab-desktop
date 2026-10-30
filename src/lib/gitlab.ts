@@ -166,6 +166,11 @@ export async function cancelGitLabRequest(sessionId: string, requestId: string):
   }
 }
 
+/** A commit's page on GitLab, under its project's page. */
+export function commitUrl(projectUrl: string, sha: string): string {
+  return `${projectUrl.replace(/\/+$/u, '')}/-/commit/${sha}`
+}
+
 export async function openGitLabUrl(sessionId: string, url: string): Promise<void> {
   ensureDesktop()
   try {

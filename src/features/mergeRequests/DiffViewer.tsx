@@ -33,6 +33,7 @@ import { DiffFileTree, FileThreadMark } from './DiffFileTree'
 import { FILE_LIST_MODE_KEY, readFileListMode, type FileListMode } from './diffFileOrder'
 import { DiffGap, type GapExpansion } from './DiffGap'
 import { BlameCell, BlameProvider } from './BlamePanel'
+import { blameCellStyles } from './blameLines'
 import type { HistoryCursor } from './lineHistory'
 import { LineHistoryView } from './LineHistoryView'
 import { ChangeMarker } from './ChangeMarker'
@@ -93,7 +94,7 @@ interface DiffViewerProps {
    * commit), to open unchanged lines between hunks. Without it they open only
    * from `fileContent`.
    */
-  fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; /** The MR's; line history reads commit diffs through it. */ iid?: string }
+  fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; /** The MR's; line history reads commit diffs through it. */ iid?: string; /** The project's GitLab page, for opening a commit there. */ projectUrl?: string }
   /** Applying the suggestions in the threads shown under the lines. */
   suggestionActions?: SuggestionActions
 }
@@ -113,7 +114,16 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   /** The lines whose history replaces the diff, for the file it was opened from. */
   const [history, setHistory] = useState<{ path: string; start: HistoryCursor } | null>(null)
   const historyStart = history && history.path === displayedPath ? history.start : null
-  const openHistory = fileSource?.iid && displayedPath ? (start: HistoryCursor) => setHistory({ path: displayedPath, start }) : undefined
+  /** Where the page was scrolled when the history replaced the file, put back when it closes. */
+  const historyScroll = useRef<{ element: HTMLElement; top: number } | null>(null)
+  const openHistory = fileSource && displayedPath ? (start: HistoryCursor) => {
+    const element = scrollParentOf(fileTopRef.current)
+    historyScroll.current = { element, top: element.scrollTop }
+    setHistory({ path: displayedPath, start })
+    // The history opens at the top of the file panel, as the diff did.
+    if (fileTopRef.current && fileTopRef.current.getBoundingClientRect().top < 0) fileTopRef.current.scrollIntoView({ block: 'start' })
+  } : undefined
+  const closeHistory = () => setHistory(null)
   // Diff-only controls keep their place in the whole-file view, so the header does not rewrap and move the content and the view switch under the pointer.
   const diffOnlySx = view === 'diff' ? undefined : { visibility: 'hidden' } as const
   const canBlame = Boolean(fileSource && displayedPath && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && (!selectedDiff.deletedFile || fileSource?.beforeSha))
@@ -494,8 +504,17 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     restoreDiffAnchor.current = null
   }, [diffOffset, displayedPath, layout, renderedMarkdownDiff, view])
 
+  useLayoutEffect(() => {
+    if (historyStart || !historyScroll.current) return
+    const { element, top } = historyScroll.current
+    historyScroll.current = null
+    element.scrollTop = top
+  }, [historyStart])
+
   // Rows that must be on screen with the first render: the line shown, the search hit, the chosen lines.
   const [wholePageKey, setWholePageKey] = useState<string | null>(null)
+  // The lines chosen for a comment, offered to Blame as a range to follow.
+  const blameSelection = chosenRange ? chosenLineRange(displayLines.slice(chosenRange[0], chosenRange[1] + 1)) : undefined
   const firstRows = wholePageKey === diffKey ? rows.length : Math.max(selectedLineIndex, currentSearchMatch, chosenRange?.[1] ?? -1) - diffOffset + 1
   const diffContent = renderedMarkdownDiff
     ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}><MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} /></MarkdownLinkProvider>
@@ -565,8 +584,11 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.fileTree.noMatch')}</Typography> : null}
           {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Row spacing={1}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">{t('review.diff.tooLarge')}</Typography></Row></Box> : null}
           {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">{t('review.diff.collapsed')}</Typography></Box> : null}
-          {historyStart && fileSource?.iid ? <LineHistoryView key={JSON.stringify(historyStart)} iid={fileSource.iid} onClose={() => setHistory(null)} onRestart={(start) => setHistory({ path: displayedPath ?? '', start })} projectId={fileSource.projectId} sessionId={fileSource.sessionId} start={historyStart} /> : view === 'file' ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{canBlame && fileSource && selectedDiff
-            ? <BlameProvider enabled={blameOpen} onHistory={openHistory} initialNewLine={fileAnchor?.path === displayedPath ? fileAnchor.line : 1} key={`${fileSource.sha}:${displayedPath}:full`} lines={[]} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>
+          {historyStart && fileSource ? <LineHistoryView key={JSON.stringify(historyStart)} iid={fileSource.iid} onClose={closeHistory} onRestart={(start) => setHistory({ path: displayedPath ?? '', start })} projectId={fileSource.projectId} projectUrl={fileSource.projectUrl} sessionId={fileSource.sessionId} start={historyStart} /> : null}
+          {/* The file stays mounted under the history, so closing it keeps its place, opened lines and editors. */}
+          <Box sx={historyStart ? { display: 'none' } : { display: 'contents' }}>
+          {view === 'file' ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{canBlame && fileSource && selectedDiff
+            ? <BlameProvider enabled={blameOpen} onHistory={openHistory} key={`${fileSource.sha}:${displayedPath}:full`} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} projectUrl={fileSource.projectUrl} sessionId={fileSource.sessionId} sha={fileSource.sha}>
                 <FullFileView blameEnabled={blameOpen} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} targetTop={fileAnchor?.path === displayedPath ? fileAnchor.top : undefined} />
               </BlameProvider>
             : <FullFileView key={displayedPath ?? ''} content={fileContent} diffLines={parsed.status === 'valid' ? parsed.lines : undefined} language={language} loading={fileLoading} path={displayedPath} targetLine={fileAnchor?.path === displayedPath ? fileAnchor.line : undefined} targetTop={fileAnchor?.path === displayedPath ? fileAnchor.top : undefined} />}</MarkdownLinkProvider> : <>
@@ -580,9 +602,10 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={displayLines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, displayLines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {/* Always wrapped while Blame can be shown, so toggling it does not remount the diff and an open comment editor in it. */}
             {canBlame && fileSource && selectedDiff
-              ? <BlameProvider beforeSha={fileSource.beforeSha} enabled={blameOpen} onHistory={openHistory} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} lines={rows} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
+              ? <BlameProvider beforeSha={fileSource.beforeSha} enabled={blameOpen} onHistory={openHistory} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} projectUrl={fileSource.projectUrl} selectedLines={blameSelection} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
               : diffContent}
           </>}
+          </Box>
         </Box>
       </Row>
     </Box>
@@ -673,10 +696,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRan
       // Long code lines wrap, so the page stays the only scroll.
       '& .diff-rows': { minWidth: 0 },
       ...chunkStyles,
-      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', ...hairline('right'), color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
-      '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
-      '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
-      '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      ...blameCellStyles(theme),
       '& .diff-row': { '--row-bg': theme.palette.background.paper, alignItems: 'stretch', backgroundColor: 'var(--row-bg)', color: theme.palette.text.primary, display: 'flex', minHeight: 20 },
       '& .diff-row[data-kind="add"]': { '--row-bg': theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"]': { '--row-bg': theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
@@ -903,10 +923,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
       '& .split-row': { display: 'grid', gridTemplateColumns: blameEnabled ? '106px 72px minmax(0, 1fr) 106px 72px minmax(0, 1fr)' : '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 20 },
-      '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', ...hairline('right'), color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
-      '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
-      '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
-      '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      ...blameCellStyles(theme),
       '& .split-row .blame-cell': { width: 106 },
       '& .split-row .blame-author': { display: 'none' },
       '& .split-row[data-selected="true"]': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
@@ -1167,12 +1184,7 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
   if (loading) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.loading')}</Typography>
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.notLoaded')}</Typography>
 
-  return <Box ref={rootRef} sx={blameEnabled ? (theme: Theme) => ({
-    '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', ...hairline('right'), color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
-    '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
-    '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
-    '& .blame-author': { fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  }) : undefined}>
+  return <Box ref={rootRef} sx={blameEnabled ? (theme: Theme) => blameCellStyles(theme) : undefined}>
     {markdown ? <Box sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}>
       <Button aria-label={showSource ? t('review.fullFile.renderMarkdown') : t('review.fullFile.showMarkdownSource')} onClick={toggleSource} size="small" variant="outlined">{showSource ? t('review.fullFile.markdown') : t('review.fullFile.source')}</Button>
     </Box> : null}
@@ -1238,6 +1250,24 @@ function nearestFileLine(root: HTMLElement, line: number): HTMLElement | null {
 }
 
 /** Scrolls the nearest scrolling ancestor of `node`, or the page, by `delta` pixels. */
+/** The new-side lines among `lines`, or the removed ones when none are new. */
+function chosenLineRange(lines: ParsedLine[]): { side: 'old' | 'new'; range: { start: number; end: number } } | undefined {
+  for (const side of ['new', 'old'] as const) {
+    const numbers = lines.flatMap((line) => (side === 'new' ? line.newLine : line.kind === 'remove' ? line.oldLine : undefined) ?? [])
+    if (numbers.length) return { range: { end: Math.max(...numbers), start: Math.min(...numbers) }, side }
+  }
+  return undefined
+}
+
+/** The element that scrolls `node`: its nearest scrolling ancestor, or the page. */
+function scrollParentOf(node: HTMLElement | null): HTMLElement {
+  for (let parent = node?.parentElement; parent; parent = parent.parentElement) {
+    const overflow = getComputedStyle(parent).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && parent.scrollHeight > parent.clientHeight) return parent
+  }
+  return (document.scrollingElement ?? document.documentElement) as HTMLElement
+}
+
 function scrollNearestBy(node: HTMLElement, delta: number) {
   if (!delta) return
   for (let parent = node.parentElement; parent; parent = parent.parentElement) {

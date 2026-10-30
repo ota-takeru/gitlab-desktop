@@ -28,6 +28,9 @@ import { formatFetchedAt } from '../../lib/format'
 import { languageForPath } from '../../lib/syntaxHighlight'
 import type { BlobQuery, BranchesQuery, TreeEntry, TreeQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
+import { BlameProvider } from '../mergeRequests/BlamePanel'
+import type { HistoryCursor } from '../mergeRequests/lineHistory'
+import { LineHistoryView } from '../mergeRequests/LineHistoryView'
 import { FullFileView } from '../mergeRequests/DiffViewer'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { Row } from '../../components/Row'
@@ -62,6 +65,9 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
   const blob = useGitLabQuery(session?.id ?? null, session ? blobQuery : null)
   const branchesQuery = useMemo<BranchesQuery>(() => ({ kind: 'branches', page: 1, projectId, search: '' }), [projectId])
   const branches = useGitLabQuery(session?.id ?? null, session ? branchesQuery : null)
+  const [blameOpen, setBlameOpen] = useState(false)
+  /** The lines whose history replaces the file, for the file and branch it was opened from. */
+  const [history, setHistory] = useState<{ fileKey: string; start: HistoryCursor } | null>(null)
 
   if (!session) {
     return <PaneEmpty description={t('project.connect.code')} title={t('project.connect.title')}><Button href="#client/settings" variant="contained">{t('project.connect.openSettings')}</Button></PaneEmpty>
@@ -76,11 +82,16 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
   const branchNames = (branches.data ?? []).map((branch) => branch.name)
   const defaultBranch = branches.data?.find((branch) => branch.default)?.name
   if (ref && !branchNames.includes(ref)) branchNames.unshift(ref)
+  // Blame needs the commit the file was read at: the branch's latest, when the listing has it.
+  const blameSha = branches.data?.find((branch) => ref ? branch.name === ref : branch.default)?.commit?.id
+  const fileKey = file ? `${ref ?? ''}\n${file.path}\n${file.sha}` : ''
+  const historyStart = history && history.fileKey === fileKey ? history.start : null
+  const canBlame = Boolean(file && blameSha && blob.data)
 
   return (
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader
-        actions={<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={shown.loading || shown.refreshing} onClick={shown.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>}
+        actions={<>{canBlame ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>{t('review.diff.blame')}</Button> : null}<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={shown.loading || shown.refreshing} onClick={shown.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip></>}
         navigation={navigation}
         title={t('project.code.title', { project: projectName })}
       >
@@ -117,7 +128,19 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
         {shown.error && !shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>{t('project.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{errorMessage(shown.error, Boolean(file), path)}</Alert> : null}
         {shown.error && shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>{t('project.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('project.code.refreshFailed', { message: shown.error.message })}</Alert> : null}
         {file
-          ? shown.error && !shown.data ? null : <MarkdownLinkProvider instanceUrl={session.instanceUrl} projectUrl={projectUrl} repository={markdownRepository} sessionId={session.id}><FullFileView key={`${file.path}:${file.sha}`} content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} path={file.path} /></MarkdownLinkProvider>
+          ? shown.error && !shown.data ? null : <>
+            {historyStart ? <LineHistoryView closeLabel={t('review.history.closeFile')} key={JSON.stringify(historyStart)} onClose={() => setHistory(null)} onRestart={(start) => setHistory({ fileKey, start })} projectId={projectId} projectUrl={projectUrl} sessionId={session.id} start={historyStart} /> : null}
+            {/* The file stays mounted under the history, so closing it keeps its place. */}
+            <Box sx={historyStart ? { display: 'none' } : undefined}>
+              <MarkdownLinkProvider instanceUrl={session.instanceUrl} projectUrl={projectUrl} repository={markdownRepository} sessionId={session.id}>
+                {canBlame && blameSha
+                  ? <BlameProvider enabled={blameOpen} key={`${blameSha}:${file.path}`} newPath={file.path} oldPath={file.path} onHistory={(start) => setHistory({ fileKey, start })} projectId={projectId} projectUrl={projectUrl} sessionId={session.id} sha={blameSha}>
+                    <FullFileView blameEnabled={blameOpen} content={blob.data?.content} key={`${file.path}:${file.sha}`} language={languageForPath(file.path)} loading={blob.loading} path={file.path} />
+                  </BlameProvider>
+                  : <FullFileView key={`${file.path}:${file.sha}`} content={blob.data?.content} language={languageForPath(file.path)} loading={blob.loading} path={file.path} />}
+              </MarkdownLinkProvider>
+            </Box>
+          </>
           : <>
             {tree.data && entries.length === 0 && !path ? <PaneEmpty description={t('project.code.empty.description')} icon={<FolderOutlinedIcon fontSize="inherit" />} title={t('project.code.empty.title')} /> : null}
             {tree.data && (entries.length || path) ? <Box aria-label={t('project.code.label')} component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>

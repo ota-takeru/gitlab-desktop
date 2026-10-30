@@ -24,19 +24,39 @@ beforeEach(() => {
   })
 })
 
-it('follows the lines back one commit at a time, through a rename, to where they were added', async () => {
-  render(<ThemeProvider theme={createAppTheme('light')}><LineHistoryView iid="5" onClose={vi.fn()} onRestart={vi.fn()} projectId="7" sessionId="s1" start={{ path: 'b.ts', range: { start: 2, end: 2 }, sha: sha('h') }} /></ThemeProvider>)
+it('follows the lines back commit after commit without asking, through a rename, to where they were added', async () => {
+  render(<ThemeProvider theme={createAppTheme('light')}><LineHistoryView iid="5" onClose={vi.fn()} onRestart={vi.fn()} projectId="7" projectUrl="https://gitlab.example/x" sessionId="s1" start={{ path: 'b.ts', range: { start: 2, end: 2 }, sha: sha('h') }} /></ThemeProvider>)
   const steps = screen.getByRole('list', { name: '変更したコミット' })
-  expect(await within(steps).findByText('Rewrite two')).toBeInTheDocument()
+  expect(await within(steps).findByText('Add two')).toBeInTheDocument()
+  expect(within(steps).getByText('Rewrite two')).toBeInTheDocument()
   expect(screen.getAllByText('two v2').length).toBeGreaterThan(0)
   expect(queryGitLabMock).toHaveBeenCalledWith(expect.objectContaining({ mode: 'network', query: { iid: '5', kind: 'commitDiff', page: 1, projectId: '7', sha: sha('c') } }))
-
-  fireEvent.click(screen.getByRole('button', { name: 'さらに前へ' }))
-  expect(await within(steps).findByText('Add two')).toBeInTheDocument()
   expect(queryGitLabMock).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ kind: 'blame', path: 'a.ts', sha: sha('p'), startLine: 2, endLine: 2 }) }))
   expect(screen.getByRole('status')).toHaveTextContent('ここで追加された行です。')
   expect(screen.queryByRole('button', { name: 'さらに前へ' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'GitLabでコミットを開く' })).toBeInTheDocument()
+
+  fireEvent.click(within(steps).getByText('Add two'))
   expect(screen.getByText('a.ts の 2〜2行目')).toBeInTheDocument()
+})
+
+it('reads a repository file\'s commits without an MR', async () => {
+  render(<ThemeProvider theme={createAppTheme('light')}><LineHistoryView onClose={vi.fn()} onRestart={vi.fn()} projectId="7" sessionId="s1" start={{ path: 'b.ts', range: { start: 2, end: 2 }, sha: sha('h') }} /></ThemeProvider>)
+  expect(await screen.findAllByText('Rewrite two')).not.toHaveLength(0)
+  expect(queryGitLabMock).toHaveBeenCalledWith(expect.objectContaining({ mode: 'network', query: { kind: 'commitDiff', page: 1, projectId: '7', sha: sha('c') } }))
+})
+
+it('follows other lines from an earlier commit, keeping the steps that led there', async () => {
+  const onRestart = vi.fn()
+  render(<ThemeProvider theme={createAppTheme('light')}><LineHistoryView iid="5" onClose={vi.fn()} onRestart={onRestart} projectId="7" sessionId="s1" start={{ path: 'b.ts', range: { start: 2, end: 2 }, sha: sha('h') }} /></ThemeProvider>)
+  const steps = screen.getByRole('list', { name: '変更したコミット' })
+  fireEvent.click(await within(steps).findByText('Add two'))
+  fireEvent.click(screen.getByRole('button', { name: 'この版から範囲を変えて辿る' }))
+  expect(screen.getByText(/dddddddd 時点の a.ts から辿ります/u)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'この範囲で辿り直す' }))
+  expect(onRestart).not.toHaveBeenCalled()
+  expect(queryGitLabMock).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ kind: 'blame', path: 'a.ts', sha: sha('d') }) }))
+  expect(within(steps).getByText('Rewrite two')).toBeInTheDocument()
 })
 
 it('follows other lines when the range is changed', async () => {
