@@ -320,6 +320,28 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.getByText('thread-reply の本文')).toBeInTheDocument()
   })
 
+  it('folds the replies between a long thread’s first comment and its latest ones, keeping unread replies in view', () => {
+    const notes = Array.from({ length: 10 }, (_, index) => createNote(`long-${index + 1}`, otherUser))
+
+    renderList([createDiscussion(notes)], { unreadNoteIds: ['long-5'] })
+
+    const shown = () => Array.from(document.querySelectorAll('[data-note-id]'), (element) => element.getAttribute('data-note-id'))
+    expect(shown()).toEqual(['long-1', 'long-5', 'long-8', 'long-9', 'long-10'])
+    expect(screen.getByRole('button', { name: '3件の返信を表示' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2件の返信を表示' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '3件の返信を表示' }))
+    expect(shown()).toEqual(notes.map((note) => note.id))
+    expect(document.activeElement).toHaveAttribute('data-note-id', 'long-2')
+  })
+
+  it('shows a single reply rather than fold it', () => {
+    renderList([createDiscussion(Array.from({ length: 5 }, (_, index) => createNote(`short-${index + 1}`, otherUser)))])
+
+    expect(document.querySelectorAll('[data-note-id]')).toHaveLength(5)
+    expect(screen.queryByRole('button', { name: /件の返信を表示/ })).not.toBeInTheDocument()
+  })
+
   it('jumps to the chronologically earliest unread and latest notes across loaded pages', () => {
     const discussions = Array.from({ length: 21 }, (_, index) => createDiscussion([
       createNote(`dated-${index + 1}`, otherUser, {

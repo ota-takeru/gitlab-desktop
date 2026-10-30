@@ -54,14 +54,15 @@ import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
 import { readLoadedDiffPages, useDiscussionCode } from './useDiscussionCode'
-import { DiscussionList, type NoteReactions, type OlderDiscussions } from './DiscussionList'
+import { DiscussionList, type DiscussionFilter, type NoteReactions, type OlderDiscussions } from './DiscussionList'
 import { commentScrollPositions } from './composerBuffers'
 import { diffFileOrder } from './diffFileOrder'
 import { LocalChanges, LocalStatusBadge } from './LocalChanges'
 import { DiscussionLayout } from './DiscussionLayout'
 import { lineKey, threadsByLine } from './diffLineThreads'
 import { isUnresolvedDiscussion } from './discussionStatus'
-import { UnresolvedThreadNav, UnresolvedThreadStepper } from './UnresolvedThreadNav'
+import { ThreadOutline } from './ThreadOutline'
+import { UnresolvedThreadStepper } from './UnresolvedThreadNav'
 import { plainExcerpt } from './discussionText'
 import { MergeRequestPeopleDialog } from './MergeRequestPeopleDialog'
 import { PipelinesTab } from './PipelinesTab'
@@ -1020,6 +1021,7 @@ function DiscussionTab({ settled, focusNoteId, onFocusNoteDone, projectId, iid, 
   const t = useT()
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
+  const [filter, setFilter] = useState<DiscussionFilter>('all')
   // While a new comment is sent, the composer keeps its place on screen and the comment appears above it,
   // instead of pushing the composer down. The place is released once React has shown the refreshed threads.
   const composerRef = useRef<HTMLDivElement | null>(null)
@@ -1050,7 +1052,7 @@ function DiscussionTab({ settled, focusNoteId, onFocusNoteDone, projectId, iid, 
       composer={(
         <Box ref={composerRef}><BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} templateProjectPath={templateProjectPath} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onAddReviewers={onAddReviewers} onSaveDraft={onSaveDraft} onSetReviewers={onSetReviewers} onSubmitComment={submitFromComposer} pending={mutationPending} /></Box>
       )}
-      navigator={discussions.length ? <UnresolvedThreadNav discussions={discussions} olderNotLoaded={older.hasOlder} onSelect={openThread} /> : null}
+      navigator={discussions.length ? <ThreadOutline discussions={discussions} filter={filter} olderNotLoaded={older.hasOlder} onSelect={openThread} unreadNoteIds={unreadNoteIds} /> : null}
       side={<>
         {draftError && !drafts.length ? <Alert severity="error">{t('mergeRequest.drafts.loadFailed', { error: draftError.message })}</Alert> : null}
         {draftError && drafts.length ? <Alert severity="warning">{t('mergeRequest.drafts.refreshFailed', { error: draftError.message })}</Alert> : null}
@@ -1060,7 +1062,7 @@ function DiscussionTab({ settled, focusNoteId, onFocusNoteDone, projectId, iid, 
         {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
         {discussionError && discussions.length ? <Alert severity="warning">{t('mergeRequest.detail.discussionRefreshFailed', { error: discussionError.message })}</Alert> : null}
         {loading && !discussions.length ? <LoadingPanel label={t('mergeRequest.detail.discussionLoading')} /> : null}
-        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList settled={settled} focusNoteId={focusNoteId} onFocusNoteDone={onFocusNoteDone} onUploadAttachment={onUploadAttachment} projectId={projectId} iid={iid} headSha={headSha} reactions={reactions} editingNoteId={editingNoteId} mentionParticipants={mentionParticipants} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
+        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList settled={settled} filter={filter} onFilterChange={setFilter} focusNoteId={focusNoteId} onFocusNoteDone={onFocusNoteDone} onUploadAttachment={onUploadAttachment} projectId={projectId} iid={iid} headSha={headSha} reactions={reactions} editingNoteId={editingNoteId} mentionParticipants={mentionParticipants} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
       </>}
     />
   )
