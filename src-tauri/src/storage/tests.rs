@@ -499,3 +499,44 @@ fn pending_receipt_validates_resource_and_action_bytes_and_caps_without_eviction
         .unwrap()
         .is_some());
 }
+
+#[test]
+fn saves_through_a_write_ahead_log_that_keeps_no_removed_payload() {
+    let path = temporary_path("wal");
+    let log = PathBuf::from(format!("{}-wal", path.display()));
+    let secret = "removed-payload-7f3a";
+    let mut store = Store::open(&path).unwrap();
+    let mode: String = store
+        .0
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(mode, "wal");
+    let snapshot = Snapshot {
+        data: serde_json::json!([{ "body": secret }]),
+        fetched_at: now_ms(),
+        source: "network".into(),
+        next_page: None,
+        total_pages: None,
+        completeness: "complete".into(),
+    };
+    store.put("account-a", "query", &snapshot).unwrap();
+    store
+        .save_draft("account-a", "mr:1:comment", secret)
+        .unwrap();
+    store.clear_private_account("account-a").unwrap();
+    let contains = |file: &PathBuf| {
+        fs::read(file)
+            .map(|bytes| {
+                bytes
+                    .windows(secret.len())
+                    .any(|window| window == secret.as_bytes())
+            })
+            .unwrap_or(false)
+    };
+    assert!(!contains(&path));
+    assert!(!contains(&log));
+    drop(store);
+    let _ = fs::remove_file(&path);
+    let _ = fs::remove_file(&log);
+    let _ = fs::remove_file(format!("{}-shm", path.display()));
+}

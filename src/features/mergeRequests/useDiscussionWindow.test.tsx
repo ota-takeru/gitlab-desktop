@@ -110,6 +110,24 @@ describe('useDiscussionWindow', () => {
     expect(current.value?.hasOlder).toBe(false)
   })
 
+  it('shows the newest threads while their context page is still loading', async () => {
+    mocks.pages = {
+      1: { data: threads('p1', 30), nextPage: 2, totalPages: 3 },
+      3: { data: threads('p3', 3), nextPage: null, totalPages: 3 },
+    }
+    const { current, view } = renderWindow()
+
+    await waitFor(() => expect(current.value?.ready).toBe(true))
+    expect(current.value?.discussions.map((discussion) => discussion.id)).toEqual(threads('p3', 3).map((discussion) => discussion.id))
+    expect(current.value?.loadingOlder).toBe(true)
+
+    mocks.pages[2] = { data: threads('p2', 30), nextPage: 3, totalPages: 3 }
+    view.rerender(<Harness onWindow={(window) => { current.value = window }} />)
+    await waitFor(() => expect(current.value?.discussions).toHaveLength(33))
+    expect(current.value?.discussions[0].id).toBe('p2-1')
+    expect(current.value?.loadingOlder).toBe(false)
+  })
+
   it('walks forward when GitLab does not report the page count', async () => {
     mocks.pages = {
       1: { data: threads('p1', 30), nextPage: 2 },

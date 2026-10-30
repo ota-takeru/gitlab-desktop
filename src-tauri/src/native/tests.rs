@@ -655,6 +655,7 @@ fn projects_input(session: &LiveSession, mode: ReadMode) -> QueryInput {
             include_archived: true,
             page: 1,
         },
+        background: false,
     }
 }
 
@@ -782,6 +783,7 @@ async fn job_logs_are_returned_but_never_saved_to_the_cache() {
             project_id: "7".into(),
             job_id: "900".into(),
         },
+        background: false,
     };
     let key = serde_json::to_string(&input.query).unwrap();
     let worker = state.clone();
@@ -832,6 +834,7 @@ async fn a_job_without_a_log_keeps_the_account_cache() {
             project_id: "7".into(),
             job_id: "900".into(),
         },
+        background: false,
     };
     let worker = state.clone();
     let pending = tokio::spawn(async move { worker.query(input).await });

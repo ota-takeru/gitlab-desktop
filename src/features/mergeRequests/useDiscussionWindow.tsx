@@ -19,7 +19,7 @@ const REFRESH_WAIT_MS = 5_000
 export interface DiscussionWindow {
   /** Loaded discussions in GitLab order (oldest first) within the loaded page range. */
   discussions: Discussion[]
-  /** True until the newest page (and its context page) are available for the first view. */
+  /** True until the newest page is available for the first view; its context page follows as an older page. */
   loading: boolean
   ready: boolean
   error: GitLabCommandError | null
@@ -84,7 +84,9 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
     const newestPage = total ?? probeTo
     const newestState = store.get(newestPage)
     const newestKnown = Boolean(total !== null && newestState?.data)
-    const ready = total !== null && newestKnown && (fixedLow !== null || observed.every((page) => store.get(page)?.data))
+    // The newest threads show as soon as they are read; a context page still loading (or failed)
+    // shows as an older page being loaded, with its retry, instead of holding the whole list back.
+    const ready = total !== null && newestKnown
     const merged = new Map<string, Discussion>()
     if (total !== null) {
       for (let page = low; page <= total; page += 1) {

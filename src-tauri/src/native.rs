@@ -37,6 +37,13 @@ pub struct LiveSession {
     /// Gravatar fetches use their own slots so an unreachable external host
     /// (common on internal networks) cannot delay GitLab queries and writes.
     external_avatar_slots: Arc<Semaphore>,
+    /// Avatars and images in comments from the instance wait here, so a page of
+    /// rows with pictures does not hold the slots its own data needs.
+    image_slots: Arc<Semaphore>,
+    /// Reads the screen did not ask for (the workspace monitor) run in their own
+    /// slots and queue, so they never delay or crowd out what is on screen.
+    background_slots: Arc<Semaphore>,
+    background_pending: Arc<Semaphore>,
     pending: Arc<Semaphore>,
     mutation_lock: AsyncMutex<()>,
     revision: AtomicU64,
@@ -356,6 +363,9 @@ fn make_session(
         query_locks: Mutex::new(HashMap::new()),
         slots: Arc::new(Semaphore::new(4)),
         external_avatar_slots: Arc::new(Semaphore::new(2)),
+        image_slots: Arc::new(Semaphore::new(4)),
+        background_slots: Arc::new(Semaphore::new(2)),
+        background_pending: Arc::new(Semaphore::new(32)),
         pending: Arc::new(Semaphore::new(16)),
         mutation_lock: AsyncMutex::new(()),
         revision: AtomicU64::new(0),
@@ -802,7 +812,13 @@ impl NativeState {
                 })
                 .await;
         }
-        let _pending = session.pending.clone().try_acquire_owned().map_err(|_| {
+        let (pending, slots) = if input.background {
+            (&session.background_pending, &session.background_slots)
+        } else {
+            (&session.pending, &session.slots)
+        };
+        let slots = slots.clone();
+        let _pending = pending.clone().try_acquire_owned().map_err(|_| {
             AppError::new(
                 "RATE_LIMITED",
                 "処理待ちが多すぎます。少し待って再試行してください。",
@@ -838,12 +854,7 @@ impl NativeState {
                 snapshot.source = "network".into();
                 return Ok(Some(snapshot));
             }
-            let _slot = session
-                .slots
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| cancelled())?;
+            let _slot = slots.acquire_owned().await.map_err(|_| cancelled())?;
             check_cooldown(&session)?;
             let revision = session.revision.load(Ordering::SeqCst);
             let result = gitlab_api::fetch(&session.client, &session.api_base, &input.query).await;
@@ -1157,7 +1168,7 @@ impl NativeState {
         let session = self.active(&id)?;
         let (url, client, slots) =
             if let Some(url) = instance_avatar_url(&session.public.instance_url, &input) {
-                (url, session.client.clone(), session.slots.clone())
+                (url, session.client.clone(), session.image_slots.clone())
             } else if let Some(url) = gravatar_url(&input) {
                 (
                     url,
@@ -1222,7 +1233,7 @@ impl NativeState {
         let api_url = project_upload_api_url(&session.public.instance_url, &url);
         let fetched = tokio::select! {
             fetched = async {
-                let _slot = session.slots.clone().acquire_owned().await.ok()?;
+                let _slot = session.image_slots.clone().acquire_owned().await.ok()?;
                 // The web route of a project upload signs in through the browser and
                 // ignores the token; GitLab 17.4+ serves the same file through the API.
                 if let Some(api_url) = api_url {
@@ -2143,6 +2154,9 @@ pub struct QueryInput {
     pub request_id: String,
     pub mode: ReadMode,
     pub query: Query,
+    /// A read no screen is waiting for, run after the screen's own reads.
+    #[serde(default)]
+    pub background: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

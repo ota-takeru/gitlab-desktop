@@ -25,9 +25,9 @@ export function WorkspaceMonitor() {
   const roleQueries = useMemo(() => (['authorId', 'assigneeId', 'reviewerId'] as const).map((role): MergeRequestsQuery | null => session && following
     ? { kind: 'mrs', search: '', state: 'all', [role]: session.user.id, updatedAfter, orderBy: 'updated_at', sort: 'desc', page: 1 }
     : null), [following, session, updatedAfter])
-  const authored = useGitLabQuery(session?.id ?? null, roleQueries[0])
-  const assigned = useGitLabQuery(session?.id ?? null, roleQueries[1])
-  const reviews = useGitLabQuery(session?.id ?? null, roleQueries[2])
+  const authored = useGitLabQuery(session?.id ?? null, roleQueries[0], { background: true })
+  const assigned = useGitLabQuery(session?.id ?? null, roleQueries[1], { background: true })
+  const reviews = useGitLabQuery(session?.id ?? null, roleQueries[2], { background: true })
   const watched = [...new Map([...(authored.data ?? []), ...(assigned.data ?? []), ...(reviews.data ?? [])].map((mr) => [mrRefKey(mr), mr])).values()]
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, WATCHED_MRS)
   useEffect(() => { if (following) startActivity() }, [following, startActivity])
@@ -53,7 +53,7 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
   const { session } = useConnection()
   const workspace = usePersonalWorkspace(session)
   const query = useMemo(() => session ? ({ kind: 'notes' as const, projectId: mergeRequest.projectId, iid: mergeRequest.iid, page: 1 }) : null, [mergeRequest.iid, mergeRequest.projectId, session])
-  const result = useGitLabQuery(session?.id ?? null, query, { refreshIntervalMs: false })
+  const result = useGitLabQuery(session?.id ?? null, query, { background: true, refreshIntervalMs: false })
   const { refresh } = result
   const updatedAt = useRef(mergeRequest.updatedAt)
   useEffect(() => {

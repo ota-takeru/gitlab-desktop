@@ -43,7 +43,7 @@ import { formatFetchedAt, formatMergeRequestState, mergeRequestStateTone, shortS
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { projectUrlOf } from '../../lib/markdownLinks'
-import type { Approvals, AwardEmoji, Commit, DiffsQuery, Diff, Discussion, Draft, FileQuery, GitLabUser, GitLabAction, GitLabQuery, GitLabSnapshot, ApprovalsQuery, CommitDiffQuery, MergeRequest, MergeRequestQuery, MrAwardsQuery, MrVersion, MrVersionsQuery, Note, NoteAwardsQuery, Position, ReviewResourceQuery, VersionCompareQuery } from '../../types/gitlab'
+import type { Approvals, AwardEmoji, Commit, DiffsQuery, Diff, Discussion, Draft, FileQuery, GitLabUser, GitLabAction, GitLabQuery, GitLabSnapshot, ApprovalsQuery, CommitDiffQuery, MergeRequest, MergeRequestQuery, MrApprovalsQuery, MrAwardsQuery, MrVersion, MrVersionsQuery, Note, NoteAwardsQuery, Position, ReviewResourceQuery, VersionCompareQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
@@ -99,6 +99,16 @@ export interface MergeRequestDetailProps {
   focusNote?: { noteId: string } | null
   /** The named comment was shown, or is not among the comments. */
   onNoteFocused?: () => void
+}
+
+/** Whether an approvals batch key names the MR; without a project path every batch may. */
+function holdsMergeRequest(key: string, projectPath: string | null | undefined, iid: string): boolean {
+  if (!projectPath) return true
+  try {
+    return (JSON.parse(key) as MrApprovalsQuery).items.some((item) => item.iid === iid && item.projectPath === projectPath)
+  } catch {
+    return true
+  }
 }
 
 export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.back'), focusNote, initialMergeRequest, onBack, onNoteFocused, onOpenProject, onTabChange, tab }: MergeRequestDetailProps) {
@@ -857,8 +867,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     try {
       const success = await mutation.run({ iid, kind, projectId: resourceId, ...(myApproved ? {} : { sha: mergeRequest.headSha }) } as GitLabAction)
       if (success) {
-        // List pages group by approval; let them pick up the change.
-        void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') })
+        // List pages group by approval; the batches holding this MR pick up the change.
+        void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') && holdsMergeRequest(query.queryKey[2], mergeRequest.projectPath, iid) })
         if (approvalsQuery) await refetchQuery(approvalsQuery)
         if (kind === 'approve') notify({ celebrate: true, message: t('mergeRequest.approval.approved', { iid: mergeRequest.iid }), severity: 'success' })
       }

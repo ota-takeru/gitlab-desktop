@@ -24,6 +24,8 @@ pub const MAX_RESPONSE_BYTES: usize = 5 * 1024 * 1024;
 pub const MAX_FILE_BYTES: usize = 1024 * 1024;
 pub const MAX_PAGE: u32 = 1_000_000;
 pub const MAX_ACTION_BODY_BYTES: usize = 64 * 1024;
+/// Retries after a dropped connection or a passing server error. A read that
+/// timed out is not repeated: it has already held its slot for the whole limit.
 const MAX_GET_RETRIES: usize = 2;
 const PER_PAGE: u32 = 30;
 /// Group candidates for the search condition picker.
@@ -205,10 +207,6 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         } => Some((project_id.as_str(), iid.as_str(), head_sha.as_str())),
         _ => None,
     };
-    if let Some((project_id, iid, head_sha)) = diff_revision {
-        ensure_head_sha(client, api_base, project_id, iid, head_sha).await?;
-    }
-
     if matches!(query, Query::File { .. } | Query::Blob { .. }) {
         let (bytes, _headers) = get_bytes(client, &url, MAX_FILE_BYTES).await?;
         let content = decode_file_text(bytes)?;
@@ -220,10 +218,18 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
         });
     }
 
-    let (bytes, headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-    if let Some((project_id, iid, head_sha)) = diff_revision {
+    let (bytes, headers) = if let Some((project_id, iid, head_sha)) = diff_revision {
+        // The head is confirmed on both sides of the diff read; the first check
+        // runs beside the read, not before it, to save a round trip per page.
+        let (_, page) = tokio::try_join!(
+            ensure_head_sha(client, api_base, project_id, iid, head_sha),
+            get_bytes(client, &url, MAX_RESPONSE_BYTES),
+        )?;
         ensure_head_sha(client, api_base, project_id, iid, head_sha).await?;
-    }
+        page
+    } else {
+        get_bytes(client, &url, MAX_RESPONSE_BYTES).await?
+    };
     let mut result = decode_page(response_kind, &bytes, &headers)?;
     if let Query::User { username } = query {
         let exact_user = {
@@ -1638,10 +1644,7 @@ async fn get_bytes(
                 let headers = response.headers().clone();
                 match read_limited(response, max_bytes).await {
                     Ok(bytes) => return Ok((bytes, headers)),
-                    Err(error)
-                        if matches!(error.code.as_str(), "NETWORK" | "TIMEOUT")
-                            && retries < MAX_GET_RETRIES =>
-                    {
+                    Err(error) if error.code == "NETWORK" && retries < MAX_GET_RETRIES => {
                         retries += 1;
                         wait_for_get_retry(retries).await;
                     }
@@ -1649,7 +1652,7 @@ async fn get_bytes(
                 }
             }
             Err(error) => {
-                if retries < MAX_GET_RETRIES {
+                if retries < MAX_GET_RETRIES && !error.is_timeout() {
                     retries += 1;
                     wait_for_get_retry(retries).await;
                     continue;
@@ -1772,6 +1775,38 @@ async fn post_graphql(
 
 /// Description templates read with their text; more are marked truncated.
 const MAX_DESCRIPTION_TEMPLATES: usize = 30;
+/// Template texts read side by side.
+const TEMPLATE_READS_AT_ONCE: usize = 4;
+
+async fn fetch_description_template(
+    client: &Client,
+    api_base: &Url,
+    project_id: &str,
+    key: &str,
+) -> Result<Value, AppError> {
+    let malformed = || {
+        unsupported_response("GitLabから対応していない形式のテンプレートが返されました。")
+            .key("native.response.unsupportedTemplates")
+    };
+    let url = endpoint(
+        api_base,
+        &["projects", project_id, "templates", "merge_requests", key],
+    )?;
+    let (bytes, _headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
+    let template: Value = serde_json::from_slice(&bytes).map_err(|_| malformed())?;
+    require_object(
+        &template,
+        "native.response.unsupportedTemplates",
+        "GitLabから対応していない形式のテンプレートが返されました。",
+    )?;
+    let name = template.get("name").and_then(Value::as_str).unwrap_or(key);
+    Ok(json!({
+        "id": key,
+        "name": name,
+        "content": string_field(&template, "content"),
+        "scope": "project",
+    }))
+}
 
 /// Reads the project's merge request description templates. GitLab lists only
 /// their names, so each template's text costs one more request.
@@ -1805,26 +1840,22 @@ async fn fetch_description_templates(
                 .ok_or_else(malformed)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    // A few texts are read at a time, in list order, rather than one after another.
     let mut items = Vec::new();
-    for key in keys.iter().take(MAX_DESCRIPTION_TEMPLATES) {
-        let url = endpoint(
-            api_base,
-            &["projects", project_id, "templates", "merge_requests", key],
-        )?;
-        let (bytes, _headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-        let template: Value = serde_json::from_slice(&bytes).map_err(|_| malformed())?;
-        require_object(
-            &template,
-            "native.response.unsupportedTemplates",
-            "GitLabから対応していない形式のテンプレートが返されました。",
-        )?;
-        let name = template.get("name").and_then(Value::as_str).unwrap_or(key);
-        items.push(json!({
-            "id": key,
-            "name": name,
-            "content": string_field(&template, "content"),
-            "scope": "project",
-        }));
+    for batch in keys
+        .iter()
+        .take(MAX_DESCRIPTION_TEMPLATES)
+        .collect::<Vec<_>>()
+        .chunks(TEMPLATE_READS_AT_ONCE)
+    {
+        items.extend(
+            futures_util::future::try_join_all(
+                batch
+                    .iter()
+                    .map(|key| fetch_description_template(client, api_base, project_id, key)),
+            )
+            .await?,
+        );
     }
     Ok(ApiResult {
         data: Value::Array(items),
@@ -2974,42 +3005,47 @@ async fn fetch_pipeline_jobs(
 ) -> Result<ApiResult, AppError> {
     validate_id(project_id, "projectId")?;
     validate_id(pipeline_id, "pipelineId")?;
-    let (mut items, mut truncated) = fetch_job_pages(
-        client,
-        api_base,
-        project_id,
-        pipeline_id,
-        "jobs",
-        MAX_JOB_PAGES,
-        normalize_job,
-    )
-    .await?;
     // GitLab 19.2 renamed the trigger job list; older servers know only `bridges`.
-    let trigger_jobs = match fetch_job_pages(
-        client,
-        api_base,
-        project_id,
-        pipeline_id,
-        "bridges",
-        MAX_TRIGGER_JOB_PAGES,
-        normalize_trigger_job,
-    )
-    .await
-    {
-        Err(error) if error.code == "NOT_FOUND" => {
-            fetch_job_pages(
-                client,
-                api_base,
-                project_id,
-                pipeline_id,
-                "trigger_jobs",
-                MAX_TRIGGER_JOB_PAGES,
-                normalize_trigger_job,
-            )
-            .await?
+    let trigger_jobs = async {
+        match fetch_job_pages(
+            client,
+            api_base,
+            project_id,
+            pipeline_id,
+            "bridges",
+            MAX_TRIGGER_JOB_PAGES,
+            normalize_trigger_job,
+        )
+        .await
+        {
+            Err(error) if error.code == "NOT_FOUND" => {
+                fetch_job_pages(
+                    client,
+                    api_base,
+                    project_id,
+                    pipeline_id,
+                    "trigger_jobs",
+                    MAX_TRIGGER_JOB_PAGES,
+                    normalize_trigger_job,
+                )
+                .await
+            }
+            result => result,
         }
-        result => result?,
     };
+    // The two lists do not depend on each other, so they are read side by side.
+    let ((mut items, mut truncated), trigger_jobs) = tokio::try_join!(
+        fetch_job_pages(
+            client,
+            api_base,
+            project_id,
+            pipeline_id,
+            "jobs",
+            MAX_JOB_PAGES,
+            normalize_job,
+        ),
+        trigger_jobs,
+    )?;
     items.extend(trigger_jobs.0);
     truncated |= trigger_jobs.1;
     Ok(ApiResult {

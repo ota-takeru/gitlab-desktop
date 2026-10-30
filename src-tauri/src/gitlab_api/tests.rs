@@ -45,6 +45,43 @@ impl Fixture {
         }
     }
 
+    /// Answers each request with the first unused response whose needle its
+    /// request line contains, for reads sent side by side in any order.
+    fn routed(routes: Vec<(&str, String)>) -> Self {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = format!("http://{}/api/v4/", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&requests);
+        let mut routes: Vec<(String, Option<String>)> = routes
+            .into_iter()
+            .map(|(needle, answer)| (needle.to_owned(), Some(answer)))
+            .collect();
+        listener.set_nonblocking(true).unwrap();
+        let thread = thread::spawn(move || {
+            for _ in 0..routes.len() {
+                let Some(mut stream) = accept_within(&listener, FIXTURE_WAIT) else {
+                    return;
+                };
+                stream.set_nonblocking(false).unwrap();
+                stream.set_read_timeout(Some(FIXTURE_WAIT)).unwrap();
+                let request = read_request(&mut stream);
+                let line = request.lines().next().unwrap_or_default().to_owned();
+                captured.lock().unwrap().push(request);
+                let answer = routes
+                    .iter_mut()
+                    .find(|(needle, answer)| answer.is_some() && line.contains(needle.as_str()))
+                    .and_then(|(_, answer)| answer.take())
+                    .unwrap_or_else(|| response("500 Internal Server Error", "{}", ""));
+                let _ = stream.write_all(answer.as_bytes());
+            }
+        });
+        Self {
+            address,
+            requests,
+            thread: Some(thread),
+        }
+    }
+
     fn url(&self) -> Url {
         Url::parse(&self.address).unwrap()
     }
@@ -579,14 +616,17 @@ fn decodes_shift_jis_file_when_not_utf8() {
 #[test]
 fn diff_fetch_requires_the_expected_head_before_and_after_loading() {
     let merge_request = format!(r#"{{"diff_refs":{{"head_sha":"{HEAD_SHA}"}}}}"#);
-    let fixture = Fixture::new(vec![
-        response("200 OK", &merge_request, ""),
-        response(
-            "200 OK",
-            r#"[{"old_path":"src/a.ts","new_path":"src/a.ts","diff":"@@","new_file":false,"deleted_file":false,"renamed_file":false,"too_large":false}]"#,
-            "X-Next-Page: 2\r\n",
+    let fixture = Fixture::routed(vec![
+        ("/merge_requests/9 ", response("200 OK", &merge_request, "")),
+        (
+            "/merge_requests/9/diffs?",
+            response(
+                "200 OK",
+                r#"[{"old_path":"src/a.ts","new_path":"src/a.ts","diff":"@@","new_file":false,"deleted_file":false,"renamed_file":false,"too_large":false}]"#,
+                "X-Next-Page: 2\r\n",
+            ),
         ),
-        response("200 OK", &merge_request, ""),
+        ("/merge_requests/9 ", response("200 OK", &merge_request, "")),
     ]);
     let client = Client::builder().build().unwrap();
     let result = runtime()
@@ -606,23 +646,34 @@ fn diff_fetch_requires_the_expected_head_before_and_after_loading() {
     assert_eq!(result.next_page, Some(2));
     let requests = fixture.requests.lock().unwrap();
     assert_eq!(requests.len(), 3);
-    assert!(requests[0].contains("/projects/42/merge_requests/9 HTTP/1.1"));
-    assert!(requests[1].contains("/projects/42/merge_requests/9/diffs?"));
+    // The first head check goes beside the diff read; the second follows it.
+    let diff_read = requests
+        .iter()
+        .position(|request| request.contains("/projects/42/merge_requests/9/diffs?"))
+        .unwrap();
+    assert!(diff_read < 2);
+    assert!(requests[1 - diff_read].contains("/projects/42/merge_requests/9 HTTP/1.1"));
     assert!(requests[2].contains("/projects/42/merge_requests/9 HTTP/1.1"));
+    assert!(requests[diff_read]
+        .to_lowercase()
+        .contains("accept-encoding: gzip"));
 }
 
 #[test]
 fn diff_fetch_rejects_data_if_the_head_changes_while_loading() {
     let before = format!(r#"{{"diff_refs":{{"head_sha":"{HEAD_SHA}"}}}}"#);
     let changed = r#"{"diff_refs":{"head_sha":"fedcba9876543210fedcba9876543210fedcba98"}}"#;
-    let fixture = Fixture::new(vec![
-        response("200 OK", &before, ""),
-        response(
-            "200 OK",
-            r#"[{"old_path":"src/old.ts","new_path":"src/old.ts","diff":"@@","new_file":false,"deleted_file":false,"renamed_file":false,"too_large":false}]"#,
-            "",
+    let fixture = Fixture::routed(vec![
+        ("/merge_requests/9 ", response("200 OK", &before, "")),
+        (
+            "/merge_requests/9/diffs?",
+            response(
+                "200 OK",
+                r#"[{"old_path":"src/old.ts","new_path":"src/old.ts","diff":"@@","new_file":false,"deleted_file":false,"renamed_file":false,"too_large":false}]"#,
+                "",
+            ),
         ),
-        response("200 OK", changed, ""),
+        ("/merge_requests/9 ", response("200 OK", changed, "")),
     ]);
     let client = Client::builder().build().unwrap();
     let error = runtime()
@@ -2184,21 +2235,30 @@ fn mr_pipelines_are_project_scoped_pages_with_the_running_project() {
 
 #[test]
 fn pipeline_jobs_read_every_page_then_trigger_jobs() {
-    let fixture = Fixture::new(vec![
-        response(
-            "200 OK",
-            r#"[{"id":902,"name":"test","stage":"test","status":"failed","allow_failure":false,"duration":12.5,"failure_reason":"script_failure","web_url":"https://gitlab.example/j/902"}]"#,
-            "X-Next-Page: 2\r\n",
+    let fixture = Fixture::routed(vec![
+        (
+            "/jobs?page=1&",
+            response(
+                "200 OK",
+                r#"[{"id":902,"name":"test","stage":"test","status":"failed","allow_failure":false,"duration":12.5,"failure_reason":"script_failure","web_url":"https://gitlab.example/j/902"}]"#,
+                "X-Next-Page: 2\r\n",
+            ),
         ),
-        response(
-            "200 OK",
-            r#"[{"id":901,"name":"build","stage":"build","status":"success"}]"#,
-            "",
+        (
+            "/jobs?page=2&",
+            response(
+                "200 OK",
+                r#"[{"id":901,"name":"build","stage":"build","status":"success"}]"#,
+                "",
+            ),
         ),
-        response(
-            "200 OK",
-            r#"[{"id":903,"name":"deploy","stage":"deploy","status":"running","downstream_pipeline":{"id":88,"status":"running","web_url":"https://gitlab.example/other/-/pipelines/88"}}]"#,
-            "",
+        (
+            "/bridges?page=1&",
+            response(
+                "200 OK",
+                r#"[{"id":903,"name":"deploy","stage":"deploy","status":"running","downstream_pipeline":{"id":88,"status":"running","web_url":"https://gitlab.example/other/-/pipelines/88"}}]"#,
+                "",
+            ),
         ),
     ]);
     let result = runtime()
@@ -2212,15 +2272,18 @@ fn pipeline_jobs_read_every_page_then_trigger_jobs() {
         ))
         .unwrap();
     let requests = fixture.requests.lock().unwrap();
+    // Jobs and trigger jobs are read side by side; the job pages in order.
+    let at = |line: &str| {
+        requests
+            .iter()
+            .position(|request| request.starts_with(line))
+            .unwrap()
+    };
     assert!(
-        requests[0].starts_with("GET /api/v4/projects/7/pipelines/77/jobs?page=1&per_page=100 ")
+        at("GET /api/v4/projects/7/pipelines/77/jobs?page=1&per_page=100 ")
+            < at("GET /api/v4/projects/7/pipelines/77/jobs?page=2&per_page=100 ")
     );
-    assert!(
-        requests[1].starts_with("GET /api/v4/projects/7/pipelines/77/jobs?page=2&per_page=100 ")
-    );
-    assert!(
-        requests[2].starts_with("GET /api/v4/projects/7/pipelines/77/bridges?page=1&per_page=100 ")
-    );
+    at("GET /api/v4/projects/7/pipelines/77/bridges?page=1&per_page=100 ");
     assert!(!result.truncated);
     let jobs = result.data.as_array().unwrap();
     assert_eq!(jobs.len(), 3);
@@ -2233,10 +2296,10 @@ fn pipeline_jobs_read_every_page_then_trigger_jobs() {
     drop(requests);
 
     // A server that removed `bridges` lists them as `trigger_jobs`.
-    let fixture = Fixture::new(vec![
-        response("200 OK", "[]", ""),
-        response("404 Not Found", "{}", ""),
-        response("200 OK", "[]", ""),
+    let fixture = Fixture::routed(vec![
+        ("/jobs?", response("200 OK", "[]", "")),
+        ("/bridges?", response("404 Not Found", "{}", "")),
+        ("/trigger_jobs?", response("200 OK", "[]", "")),
     ]);
     runtime()
         .block_on(fetch(
@@ -2248,8 +2311,17 @@ fn pipeline_jobs_read_every_page_then_trigger_jobs() {
             },
         ))
         .unwrap();
-    assert!(fixture.requests.lock().unwrap()[2]
-        .starts_with("GET /api/v4/projects/7/pipelines/77/trigger_jobs?page=1&per_page=100 "));
+    let requests = fixture.requests.lock().unwrap();
+    let at = |line: &str| {
+        requests
+            .iter()
+            .position(|request| request.starts_with(line))
+            .unwrap()
+    };
+    assert!(
+        at("GET /api/v4/projects/7/pipelines/77/bridges?page=1&per_page=100 ")
+            < at("GET /api/v4/projects/7/pipelines/77/trigger_jobs?page=1&per_page=100 ")
+    );
 }
 
 #[test]
@@ -2272,6 +2344,7 @@ fn job_trace_keeps_the_end_and_requests_only_the_tail() {
     let request = fixture.requests.lock().unwrap()[0].to_lowercase();
     assert!(request.starts_with("get /api/v4/projects/7/jobs/900/trace "));
     assert!(request.contains(&format!("range: bytes=-{MAX_TRACE_BYTES}")));
+    assert!(request.contains("accept-encoding: identity"));
     assert_eq!(result.data["headOmitted"], false);
     assert_eq!(result.data["omittedLines"], 0);
     assert_eq!(

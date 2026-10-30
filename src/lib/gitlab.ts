@@ -24,6 +24,8 @@ export interface QueryGitLabInput<Q extends GitLabQuery> {
   query: Q
   mode: GitLabQueryMode
   requestId?: string
+  /** A read no screen waits for; Rust runs it after the screen's own reads. */
+  background?: boolean
 }
 
 export interface MutateGitLabInput {
@@ -99,6 +101,7 @@ export async function disconnectGitLab(sessionId: string): Promise<void> {
 }
 
 export async function queryGitLab<Q extends GitLabQuery>({
+  background = false,
   mode,
   query,
   requestId = createRequestId('query'),
@@ -107,7 +110,7 @@ export async function queryGitLab<Q extends GitLabQuery>({
   ensureDesktop()
   try {
     return await invoke<GitLabSnapshot<GitLabQueryData<Q>> | null>('query_gitlab', {
-      input: { mode, query, requestId, sessionId },
+      input: { background, mode, query, requestId, sessionId },
     })
   } catch (error) {
     throw normalizeGitLabError(error)

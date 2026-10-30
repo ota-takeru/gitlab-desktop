@@ -97,6 +97,15 @@ impl Store {
         connection
             .execute_batch("PRAGMA secure_delete = ON; PRAGMA auto_vacuum = FULL; PRAGMA max_page_count = 65536;")
             .map_err(|_| storage_error())?;
+        // Every fetched answer is saved before the screen gets it. With a write-ahead log a
+        // save is an append that is synced at checkpoints, not several syncs of the database
+        // and its journal; NORMAL can lose only the last saves on a power cut, never corrupt.
+        connection
+            .pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))
+            .map_err(|_| storage_error())?;
+        connection
+            .pragma_update(None, "synchronous", "NORMAL")
+            .map_err(|_| storage_error())?;
         {
             let migration = connection.transaction().map_err(|_| storage_error())?;
             migration
@@ -233,7 +242,15 @@ impl Store {
             .map_err(|_| storage_error())?;
         // secure_delete overwrites removed payloads; auto_vacuum reclaims pages
         // at commit without rebuilding the database on every review operation.
-        Ok(())
+        self.discard_log()
+    }
+
+    /// The write-ahead log still holds earlier copies of the pages a removal
+    /// overwrote; writing them back and emptying it leaves no removed payload on disk.
+    fn discard_log(&self) -> Result<(), AppError> {
+        self.0
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .map_err(|_| storage_error())
     }
 
     /// Removes the account's saved answers that `rules` select. Keys are the
@@ -339,7 +356,7 @@ impl Store {
         self.0
             .execute("DELETE FROM local_drafts WHERE account=?", [account])
             .map_err(|_| storage_error())?;
-        Ok(())
+        self.discard_log()
     }
 
     pub fn pending_operation(
@@ -500,7 +517,7 @@ impl Store {
             .execute("DELETE FROM pending_operations WHERE account=?", [account])
             .map_err(|_| storage_error())?;
         transaction.commit().map_err(|_| storage_error())?;
-        Ok(())
+        self.discard_log()
     }
 }
 
