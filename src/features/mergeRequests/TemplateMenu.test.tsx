@@ -13,7 +13,7 @@ const fixtures = vi.hoisted(() => ({
   ],
 }))
 
-vi.mock('../connections/connectionContext', () => ({ useConnection: () => ({ session: { id: 'session-1' } }) }))
+vi.mock('../connections/connectionContext', async (importOriginal) => ({ ...await importOriginal<object>(), useConnection: () => ({ session: { id: 'session-1' } }) }))
 vi.mock('../shared/useGitLabQuery', () => ({
   useGitLabQuery: (_sessionId: string | null, query: unknown) => {
     fixtures.queries.push(query)
