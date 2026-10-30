@@ -13,6 +13,8 @@ const MIN_INITIAL_DISCUSSIONS = 10
  * older threads appear without a write of one's own; GitLab files a reply under its thread's page.
  */
 export const OLDER_PAGE_REFRESH_MS = 5 * 60_000
+/** The longest a write waits for the newest page to be read again. */
+const REFRESH_WAIT_MS = 5_000
 
 export interface DiscussionWindow {
   /** Loaded discussions in GitLab order (oldest first) within the loaded page range. */
@@ -33,11 +35,12 @@ export interface DiscussionWindow {
   loadOlder: () => void
   /** Retries the older page that failed to load. */
   retryOlder: () => void
-  refreshLatest: () => void
+  /** Refreshes the newest page; resolves once its new threads arrive (or after REFRESH_WAIT_MS), so a posted comment shows before its text leaves the composer. */
+  refreshLatest: () => Promise<void>
   /** Refreshes every loaded page, while the window is active. */
   refreshAll: () => void
-  /** Refreshes the page holding the discussion (and the newest page for new threads). */
-  refreshDiscussion: (discussionId: string | null) => void
+  /** Refreshes the page holding the discussion (and the newest page for new threads); resolves as refreshLatest does. */
+  refreshDiscussion: (discussionId: string | null) => Promise<void>
   /** Renders the page observers; keep it mounted while discussions should stay live. */
   observers: React.ReactNode
 }
@@ -117,13 +120,26 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
   }, [state.floor, state.hasOlder, state.loadingOlder, state.low])
 
   const retryOlder = useCallback(() => { store.get(state.low)?.refresh() }, [state.low, store])
-  const refreshLatest = useCallback(() => { store.get(state.latestPage)?.refresh() }, [state.latestPage, store])
+  const refreshPage = useCallback((page: number) => {
+    const before = store.get(page)
+    if (!before) return Promise.resolve()
+    before.refresh()
+    return new Promise<void>((resolve) => {
+      const done = () => { unsubscribe(); globalThis.clearTimeout(timer); resolve() }
+      const unsubscribe = store.subscribe(() => {
+        const current = store.get(page)
+        // New threads can show before the network read ends, so their arrival is what ends the wait.
+        if (current && (current.data !== before.data || current.snapshot?.fetchedAt !== before.snapshot?.fetchedAt || current.error !== before.error)) done()
+      })
+      const timer = globalThis.setTimeout(done, REFRESH_WAIT_MS)
+    })
+  }, [store])
+  const refreshLatest = useCallback(() => refreshPage(state.latestPage), [refreshPage, state.latestPage])
   const refreshAll = useCallback(() => { if (active) for (const page of state.observed) store.get(page)?.refresh() }, [active, state.observed, store])
-  const refreshDiscussion = useCallback((discussionId: string | null) => {
+  const refreshDiscussion = useCallback(async (discussionId: string | null) => {
     const holder = discussionId ? store.entries().find(([page, value]) => page >= state.low && value.data?.some((discussion) => discussion.id === discussionId)) : undefined
-    if (holder && holder[0] !== state.latestPage) holder[1].refresh()
-    store.get(state.latestPage)?.refresh()
-  }, [state.latestPage, state.low, store])
+    await Promise.all([holder && holder[0] !== state.latestPage ? refreshPage(holder[0]) : undefined, refreshPage(state.latestPage)])
+  }, [refreshPage, state.latestPage, state.low, store])
 
   const observers = active
     // Older pages refresh less often than the newest one, and at once after a write that touches them.

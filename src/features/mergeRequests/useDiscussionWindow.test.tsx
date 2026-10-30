@@ -76,8 +76,26 @@ describe('useDiscussionWindow', () => {
     // Older pages poll less often, and at once after related writes.
     expect(mocks.refreshIntervals[2]).toBe(OLDER_PAGE_REFRESH_MS)
 
-    act(() => current.value?.refreshDiscussion('p2-5'))
+    act(() => { void current.value?.refreshDiscussion('p2-5') })
     expect(mocks.refreshes).toEqual([2, 3])
+  })
+
+  it('resolves a refresh of the newest page once its new threads have arrived', async () => {
+    mocks.pages = { 1: { data: threads('p1', 12), nextPage: null, totalPages: 1 } }
+    const { current, view } = renderWindow()
+    await waitFor(() => expect(current.value?.ready).toBe(true))
+
+    let resolved = false
+    act(() => { void current.value?.refreshLatest().then(() => { resolved = true }) })
+    expect(mocks.refreshes).toEqual([1])
+    await Promise.resolve()
+    expect(resolved).toBe(false)
+
+    // The posted comment's thread arrives with the page read again.
+    mocks.pages = { 1: { data: threads('p1', 13), nextPage: null, totalPages: 1 } }
+    view.rerender(<Harness onWindow={(window) => { current.value = window }} />)
+    await waitFor(() => expect(resolved).toBe(true))
+    expect(current.value?.discussions).toHaveLength(13)
   })
 
   it('adds the previous page when the newest page is short so the first view has context', async () => {

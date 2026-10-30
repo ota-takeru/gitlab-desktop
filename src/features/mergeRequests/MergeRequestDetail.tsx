@@ -49,7 +49,7 @@ import { usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useDiscussionWindow } from './useDiscussionWindow'
 import { formatNames } from './mergeActions'
-import { positionAtLatest } from './discussionScroll'
+import { findScrollContainer, positionAtLatest } from './discussionScroll'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
@@ -505,10 +505,11 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   }, [confirm, outsider, t])
 
   const runMutation = mutation.run
-  const runAction = useCallback(async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
+  // A refresh that resolves (the newest discussions page) is waited for, so what was written shows before the action ends.
+  const runAction = useCallback(async (action: GitLabAction, refresh?: () => void | Promise<void>, localDraftKey?: string) => {
     if (!await confirmOutsideWrite()) return false
     const success = await runMutation(action, localDraftKey)
-    if (success) refresh?.()
+    if (success) await refresh?.()
     return success
   }, [confirmOutsideWrite, runMutation])
   // Stable, so the memoized header actions render only when the MR or the lock changes.
@@ -1000,6 +1001,25 @@ function DiscussionTab({ focusNoteId, onFocusNoteDone, projectId, iid, headSha, 
   const t = useT()
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
+  // While a new comment is sent, the composer keeps its place on screen and the comment appears above it,
+  // instead of pushing the composer down. The place is released once React has shown the refreshed threads.
+  const composerRef = useRef<HTMLDivElement | null>(null)
+  const composerPinRef = useRef<number | null>(null)
+  const submitFromComposer: typeof onSubmitComment = async (...args) => {
+    composerPinRef.current = composerRef.current?.getBoundingClientRect().top ?? null
+    try {
+      return await onSubmitComment(...args)
+    } finally {
+      globalThis.setTimeout(() => { composerPinRef.current = null }, 0)
+    }
+  }
+  useLayoutEffect(() => {
+    const pinned = composerPinRef.current
+    const composer = composerRef.current
+    const host = composer ? findScrollContainer(composer) : null
+    if (pinned === null || !composer || !host) return
+    host.scrollTop += composer.getBoundingClientRect().top - pinned
+  }, [discussions])
   const openThread = (discussionId: string) => {
     const thread = document.querySelector<HTMLElement>(`[data-discussion-id="${CSS.escape(discussionId)}"]`)
     if (!thread) return
@@ -1009,7 +1029,7 @@ function DiscussionTab({ focusNoteId, onFocusNoteDone, projectId, iid, headSha, 
   return (
     <DiscussionLayout
       composer={(
-        <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} templateProjectPath={templateProjectPath} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onAddReviewers={onAddReviewers} onSaveDraft={onSaveDraft} onSetReviewers={onSetReviewers} onSubmitComment={onSubmitComment} pending={mutationPending} />
+        <Box ref={composerRef}><BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} templateProjectPath={templateProjectPath} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onAddReviewers={onAddReviewers} onSaveDraft={onSaveDraft} onSetReviewers={onSetReviewers} onSubmitComment={submitFromComposer} pending={mutationPending} /></Box>
       )}
       navigator={discussions.length ? <UnresolvedThreadNav discussions={discussions} olderNotLoaded={older.hasOlder} onSelect={openThread} /> : null}
       side={<>

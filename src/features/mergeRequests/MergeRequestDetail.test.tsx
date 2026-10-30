@@ -109,9 +109,13 @@ vi.mock('../../lib/attachments', async () => ({
   uploadGitLabAttachment: detailMocks.uploadMock,
 }))
 
-vi.mock('../shared/useGitLabQuery', () => ({
+vi.mock('../shared/useGitLabQuery', async () => {
+  const { useState } = await import('react')
+  return {
   applyConfirmedGitLabChange: detailMocks.applyConfirmedMock,
   useGitLabQuery: (_sessionId: string | null, query: { kind: string; page?: number; search?: string } | null) => {
+    // A refresh reads the query again, as the real hook does, so its snapshot gets a new time.
+    const [fetchedAt, setFetchedAt] = useState(1)
     detailMocks.queryCalls.push(query)
     let data: unknown = null
     if (query?.kind === 'mr') data = detailMocks.mergeRequest
@@ -132,12 +136,13 @@ vi.mock('../shared/useGitLabQuery', () => ({
       error: null,
       loading: false,
       refreshing: false,
-      refresh: () => { if (query) detailMocks.refreshKinds.push(query.kind) },
-      snapshot: query ? { data, source: 'network', nextPage: query.kind === 'diffs' && detailMocks.diffPages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt: 1 } : null,
+      refresh: () => { if (query) { detailMocks.refreshKinds.push(query.kind); setFetchedAt((current) => current + 1) } },
+      snapshot: query ? { data, source: 'network', nextPage: query.kind === 'diffs' && detailMocks.diffPages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt } : null,
       stale: false,
     }
   },
-}))
+  }
+})
 
 vi.mock('../shared/useGitLabMutation', () => ({
   clearGitLabMutationStates: vi.fn(),
