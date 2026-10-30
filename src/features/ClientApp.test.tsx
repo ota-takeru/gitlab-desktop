@@ -35,10 +35,13 @@ const { connection, gitlabQueryMock, invokeMock } = vi.hoisted(() => ({
 vi.mock('./connections/ConnectionProvider', () => ({
   ConnectionProvider: ({ children }: { children: ReactNode }) => children,
 }))
-vi.mock('./connections/connectionContext', () => ({ useConnection: () => connection }))
+vi.mock('./connections/connectionContext', async () => ({ ...await vi.importActual<typeof import('./connections/connectionContext')>('./connections/connectionContext'), useConnection: () => connection }))
 vi.mock('./shared/useGitLabQuery', () => ({ useGitLabQuery: gitlabQueryMock }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock, isTauri: () => true }))
 vi.mock('../lib/localRepository', async () => ({ ...await vi.importActual<typeof import('../lib/localRepository')>('../lib/localRepository'), getLocalScanFolders: async () => [] }))
+
+/** Back reaches the page after the click, outside act, and the screens follow it in a transition. */
+const renderBack = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 
 const sessionFixture: GitLabSession = { id: 'session-1', instanceUrl: 'https://gitlab.com', serverVersion: null, user: { id: '1', name: 'One', username: 'one' } }
 const mergeRequestFixture: MergeRequest = {
@@ -105,10 +108,12 @@ it('keeps a user MR list and its filters when switching profile tabs and returni
   fireEvent.click(screen.getByRole('tab', { name: '作成したMR' }))
   expect(await screen.findByRole('combobox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveValue('searchable list')
   fireEvent.click(document.querySelector('[data-screen-active="true"] [data-list-row="true"][data-mr-id="42-7"]')!)
-  // The first MR screen of the file renders after its lazily loaded module resolves.
+  // The first MR screen of the file renders after its lazily loaded module resolves, in the transition that opened it.
+  await act(async () => { await import('./mergeRequests/MergeRequestDetail') })
   expect(await screen.findByRole('heading', { name: 'Add searchable list' }, { timeout: 3_000 })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '@oneに戻る' }))
   await waitFor(() => expect(window.location.hash).not.toContain('mr='))
+  await renderBack()
   expect(screen.getByRole('tab', { name: '作成したMR' })).toBeVisible()
   expect(screen.getByRole('combobox', { name: 'MRをタイトル・説明・MR番号で検索' })).toHaveValue('searchable list')
 })
@@ -300,6 +305,7 @@ it('keeps the list mounted and only toggles the selection parameter when opening
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7'))
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  await renderBack()
   expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('unsent draft')
 })
 
@@ -324,6 +330,7 @@ it('returns to the list through history, so Back does not reopen the MR', async 
   fireEvent.click(screen.getByRole('button', { name: 'レビュー依頼に戻る' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
   expect(window.history.length).toBe(entries)
+  await renderBack()
   expect(screen.queryByRole('button', { name: 'レビュー依頼に戻る' })).not.toBeInTheDocument()
 
   // Reached directly, the MR has no list behind it and the list is opened instead.
@@ -376,6 +383,7 @@ it('preserves MR search filters when returning from an opened request', async ()
 
   // Returning goes back through history, which completes after the click.
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&search=needle'))
+  await renderBack()
   expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('needle')
   expectOwnMrs('レビュー依頼')
 })
@@ -410,6 +418,7 @@ it.each([
 
   fireEvent.click(await screen.findByRole('button', { name: /に戻る$/u }))
   await waitFor(() => expect(window.location.hash).toBe(`#client/mrs?${queryString}`))
+  await renderBack()
   expectOwnMrs(tab)
   expect(screen.getByRole('button', { name: 'MR一覧' })).toHaveAttribute('aria-current', 'page')
 })
@@ -697,7 +706,8 @@ it('returns the focus to the MR row it was opened from', async () => {
   expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
-  await waitFor(() => expect((document.activeElement as HTMLElement | null)?.dataset.mrId).toBe('42-7'))
+  await renderBack()
+  expect((document.activeElement as HTMLElement | null)?.dataset.mrId).toBe('42-7')
 })
 
 it.each([

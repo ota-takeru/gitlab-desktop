@@ -1,7 +1,9 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import type { GitLabSnapshot, GitLabTodo } from '../../types/gitlab'
+import { useStoreInTransition } from '../shared/useStoreInTransition'
+import { useQueryCacheSubscription } from './useDiscussionPages'
 
 interface LoadedTodos {
   snapshot: GitLabSnapshot<GitLabTodo[]> | null
@@ -32,7 +34,8 @@ function isDoneTodosKey(key: readonly unknown[]): boolean {
  */
 export function useLoadedMergeRequestNotifications(sessionId: string | null, projectId: string, iid: string): GitLabTodo[] {
   const cache = useQueryClient().getQueryCache()
-  const subscribe = useCallback((listener: () => void) => cache.subscribe(listener), [cache])
+  // The cache notifies while a query is added during a render, so changes are followed after it.
+  const subscribe = useQueryCacheSubscription()
   const getSnapshot = useCallback(() => {
     if (!sessionId) return '[]'
     const found = new Map<string, GitLabTodo>()
@@ -44,7 +47,7 @@ export function useLoadedMergeRequestNotifications(sessionId: string | null, pro
     }
     return JSON.stringify([...found.values()])
   }, [cache, iid, projectId, sessionId])
-  const serialized = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const serialized = useStoreInTransition(subscribe, getSnapshot)
   return useMemo(() => JSON.parse(serialized) as GitLabTodo[], [serialized])
 }
 

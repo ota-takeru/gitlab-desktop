@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -1063,7 +1063,9 @@ describe('reactions and To-Dos', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '通知を既読にする' }))
     await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ iid: '120', kind: 'markTodoDone', projectId: '7', todoId: '501' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '通知を既読にする' })).not.toBeInTheDocument())
+    // The cached To-Dos change after the write, outside act, and the screen follows in a transition.
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+    expect(screen.queryByRole('button', { name: '通知を既読にする' })).not.toBeInTheDocument()
     expect(detailMocks.queryCalls).not.toContainEqual(expect.objectContaining({ kind: 'todos' }))
   })
 })

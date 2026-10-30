@@ -207,3 +207,21 @@ The editor's chunk group took React's JSX runtime as a dependency, so every chun
 The tab strip follows a click at once; the tab renders in the background and another click can interrupt it; N / P do nothing until it has rendered. The click itself still renders the tab being left once more, and a switch renders the MR detail several times as the new tab's reads settle, with the active tab each time; this remains. Keeping the tab being left as it was rendered was tried and dropped: its menus and pickers live outside it and would have stayed usable with outdated handlers.
 
 The watched MRs' activity no longer reruns, with every other watched MR, each time the workspace changes, and the MR screen records read state without rerunning on its own writes. Files without a review mark are no longer hashed. In Rust, a read releases its HTTP slot once GitLab has answered (a failure keeps it until its cooldown is recorded), the response is no longer copied before it is saved, and the duplicate-request check skips an older saved answer in SQL instead of parsing it.
+
+## Clicks during tab switching and rapid clicks
+
+A click on an MR tab, a sidebar tab or an MR row no longer renders the whole workspace before the frame. Measured with the fixture client in a production build in headless Microsoft Edge (Playwright) at 1280×840 with the CPU throttled 4×, two runs each, alternating with the build before the change (d97d003); medians of the steps of each scenario. Not measured on WebView2 or with real GitLab data, and the machine was shared with other work.
+
+| Target | Before: click to next paint | After | Before: longest frame | After |
+| --- | --- | --- | --- | --- |
+| MR tab (7 switches) | 312 ms | 64 ms | 360 ms | 130 ms |
+| Sidebar tab between 4 open MRs (6 switches) | 448 ms | 64 ms | 390 ms | 150 ms |
+| 16 MR tab clicks 60 ms apart | 704 ms | 128 ms | 701 ms | 861 ms |
+| 12 sidebar tab clicks 80 ms apart | 2,504 ms | 256 ms | 2,471 ms | 863 ms |
+| Opening an MR from the list | 560 ms | 40 ms | 781 ms | 341 ms |
+
+Long tasks in the two rapid-click scenarios fell from 5.8 s and 8.0 s to 2.7 s and 2.0 s.
+
+The location was read with useSyncExternalStore, which React always renders at once, so every click rendered the whole workspace (about 1,100 to 1,250 components) inside the click. The screens now follow the location in a transition, which a later click interrupts; the MR tab strip moves to the clicked tab at once by itself. GitLab answers (useGitLabQuery), loaded discussion and diff pages, activity, notifications and the personal workspace also render in transitions. Showing an MR recorded it as recently viewed, and the record rendered every screen that reads the workspace; the visit records (`recent`, `shown`), which no screen shows, no longer do. A composer starting to hold back updates rendered the whole workspace for the update button; only the update controls render now. Moving the pointer onto the expanded sidebar rendered the navigation.
+
+What remains: the commit of a transition (DOM changes, and the effects of the screen being hidden and the one being shown) runs in one task, so a long frame still appears once when a switch finishes and when a new MR mounts; the MUI tab strip renders twice more after a click to place its indicator.

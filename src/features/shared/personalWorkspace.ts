@@ -1,6 +1,7 @@
-import { useMemo, useSyncExternalStore } from 'react'
+import { useMemo } from 'react'
 import type { GitLabSession, Note } from '../../types/gitlab'
 import { scopedKey, type PreferenceScope } from './preferences'
+import { useStoreInTransition } from './useStoreInTransition'
 
 export interface MrRef { projectId: string; iid: string }
 export interface WorkspaceSettings {
@@ -69,6 +70,21 @@ function readWorkspaceSnapshot(scope: PreferenceScope): WorkspaceData {
   const raw = storedWorkspace(scope)
   if (snapshot?.key !== storageKey || snapshot.raw !== raw) snapshot = { data: parseWorkspace(raw), key: storageKey, raw }
   return snapshot.data
+}
+let rendered: { key: string; raw: string; version: string; data: WorkspaceData } | null = null
+/**
+ * What screens render from the workspace: the visit records (`recent`, `shown`), which
+ * change on every MR shown, are left out of its version, so recording one renders nothing.
+ * They are read from storage where needed. The data keeps its identity while the version does.
+ */
+function renderedWorkspace(scope: PreferenceScope): { version: string; data: WorkspaceData } {
+  const storageKey = key(scope)
+  const raw = storedWorkspace(scope)
+  if (rendered?.key === storageKey && rendered.raw === raw) return rendered
+  const data = readWorkspaceSnapshot(scope)
+  const version = JSON.stringify({ ...data, recent: undefined, shown: undefined })
+  rendered = rendered?.key === storageKey && rendered.version === version ? { ...rendered, raw } : { data, key: storageKey, raw, version }
+  return rendered
 }
 function parseWorkspace(raw: string): WorkspaceData {
   try {
@@ -238,16 +254,16 @@ export function usePersonalWorkspace(session: GitLabSession | null) {
   const instanceUrl = session?.instanceUrl ?? 'anonymous'
   const userId = session?.user.id ?? 'anonymous'
   const connected = Boolean(session)
-  const version = useSyncExternalStore(subscribe, () => storedWorkspace({ instanceUrl, userId }), () => '')
+  const version = useStoreInTransition(subscribe, () => renderedWorkspace({ instanceUrl, userId }).version)
   // Rows of long lists ask for unread counts, so they share this one parsed copy.
-  const data = readWorkspaceSnapshot({ instanceUrl, userId })
+  const { data } = renderedWorkspace({ instanceUrl, userId })
   // The same object until the stored workspace changes, so effects that use it do not rerun on every render.
   return useMemo(() => workspaceApi({ instanceUrl, userId }, connected, data, version), [connected, data, instanceUrl, userId, version])
 }
 
 function workspaceApi(scope: PreferenceScope, connected: boolean, data: WorkspaceData, version: string) {
   return {
-    version, pinned: data.pinned, open: data.open, tabs: data.tabs, recent: data.recent, settings: data.settings,
+    version, pinned: data.pinned, open: data.open, tabs: data.tabs, settings: data.settings,
     unreadIds: (ref: MrRef, notes: Note[]) => unreadIn(data, ref, notes, scope.userId),
     unreadCount: (ref: MrRef) => unreadCountIn(data, ref),
     observe: (ref: MrRef, notes: Note[], complete = false) => { if (connected) observeComments(scope, ref, notes, scope.userId, false, complete) },

@@ -22,7 +22,7 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { memo, useCallback, useDeferredValue, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, startTransition, useCallback, useDeferredValue, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useOptimistic, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmScope, type ConfirmOptions } from '../../components/Feedback'
 import { hairline } from '../../components/hairline'
@@ -956,12 +956,12 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         <MergeRequestSummary approvedBy={approvedBy} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
         {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open participants={mentionParticipants} /> : null}
         <Bar sx={{ columnGap: 1, mt: 0.5 }}>
-          <Tabs aria-label={t('mergeRequest.detail.tabs')} onChange={(_, value: ReviewTab) => setActiveTab(value)} sx={{ flex: '0 1 auto', minWidth: 0 }} value={selectedTab}>
+          <ReviewTabStrip label={t('mergeRequest.detail.tabs')} onChange={setActiveTab} value={selectedTab}>
             <Tab label={t('mergeRequest.detail.tabOverview')} value="overview" />
             <Tab label={<Row spacing={1}><span>{t('mergeRequest.detail.tabDiscussion')}</span>{unresolvedCount > 0 ? <Chip aria-label={t('mergeRequest.detail.unresolvedCount', { count: unresolvedCount })} color="warning" label={unresolvedCount} size="small" variant="outlined" /> : null}</Row>} value="discussion" />
             <Tab label={t('mergeRequest.detail.tabChanges')} value="changes" />
             <Tab label={t('mergeRequest.detail.tabPipelines')} value="pipelines" />
-          </Tabs>
+          </ReviewTabStrip>
           {activeTab === 'discussion' ? <Tooltip describeChild title={descriptionOpen ? t('mergeRequest.detail.hideDescription') : t('mergeRequest.detail.showDescription')}><Button aria-keyshortcuts="D" aria-pressed={descriptionOpen} color={descriptionOpen ? 'primary' : 'inherit'} onClick={() => setDescriptionOpen((open) => !open)} size="small" startIcon={<DescriptionOutlinedIcon />} sx={{ flexShrink: 0, ml: 'auto' }}>{t('mergeRequest.overview.description')}</Button></Tooltip> : null}
           {activeTab !== 'overview' && activeTab !== 'pipelines' && unresolvedCount > 0 ? <Box sx={{ ml: activeTab === 'discussion' ? 0 : 'auto' }}><UnresolvedThreadStepper count={unresolvedCount} onStep={stepUnresolved} /></Box> : null}
         </Bar>
@@ -1147,6 +1147,15 @@ export function BufferedReviewComposer({ onAddReviewers, onSetReviewers, ...prop
 const noUsers: GitLabUser[] = []
 
 /** The title, state and people lines of the header, memoized: they change with the MR, not with what the reader does below. */
+/**
+ * The tab strip moves to a clicked tab at once, rendering only itself; the MR screen
+ * follows in a transition, which a later click interrupts.
+ */
+function ReviewTabStrip({ children, label, onChange, value }: { children: ReactNode; label: string; onChange: (tab: ReviewTab) => void; value: ReviewTab }) {
+  const [shown, setShown] = useOptimistic(value)
+  return <Tabs aria-label={label} onChange={(_, next: ReviewTab) => startTransition(() => { setShown(next); onChange(next) })} sx={{ flex: '0 1 auto', minWidth: 0 }} value={shown}>{children}</Tabs>
+}
+
 const MergeRequestSummary = memo(function MergeRequestSummary({ approvedBy, mergeRequest, myApproved, onCopyHeadSha, onEditPeople, peopleDisabled }: { approvedBy: GitLabUser[]; mergeRequest: MergeRequest; myApproved: boolean; onCopyHeadSha: (sha: string) => Promise<void>; onEditPeople: (field: 'assignees' | 'reviewers') => void; peopleDisabled: boolean }) {
   const t = useT()
   return <>

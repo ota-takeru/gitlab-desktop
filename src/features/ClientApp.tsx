@@ -25,7 +25,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { hairline } from '../components/hairline'
@@ -213,7 +213,6 @@ function SessionScopedWorkspace({ colorPreference, onColorPreferenceChange }: Co
 function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, sessionKey, status }: ColorPreferenceProps & { sessionKey: string; status: string }) {
   const { session } = useConnection()
   const workspace = usePersonalWorkspace(session)
-  const autoInstallAllowed = useAutoUpdateAllowed() && status !== 'checking'
   // The updater stays mounted across authentication resets so its install guard
   // and result remain active for the lifetime of the app.
   return <Box sx={{ bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -221,16 +220,16 @@ function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, se
     {/* Unsent text and pending writes hold back app updates, not data refresh: typed text lives in its own buffers. */}
     <QueryRefreshPolicy value={workspace.settings.autoRefresh}>
       <WorkspaceMonitor key={sessionKey} />
-      <ClientWorkspace colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} autoInstallAllowed={autoInstallAllowed} sessionKey={sessionKey} status={status} />
+      <ClientWorkspace colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} sessionKey={sessionKey} status={status} />
     </QueryRefreshPolicy>
   </Box>
 }
 
-function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstallAllowed, sessionKey, status }: ColorPreferenceProps & { autoInstallAllowed: boolean; sessionKey: string; status: string }) {
+function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey, status }: ColorPreferenceProps & { sessionKey: string; status: string }) {
   const { reauthRequired, session } = useConnection()
   const t = useT()
   const workspace = usePersonalWorkspace(session)
-  const locationHash = useSyncExternalStore(subscribeToClientLocation, getClientLocationHash, getClientLocationHash)
+  const locationHash = useClientLocationHash()
   // An expired token keeps the screen where it was, so reconnecting returns to it.
   const awaitingReauth = !session && Boolean(reauthRequired)
   const location = readClientLocation(Boolean(session) || awaitingReauth, locationHash, session?.user.id)
@@ -451,15 +450,16 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
   }
 
-  const openMergeRequest = (nextMergeRequest: MergeRequest) => {
+  // Opening an MR renders it in a transition, as every change of the location does.
+  const openMergeRequest = (nextMergeRequest: MergeRequest) => startTransition(() => {
     setOpenedMergeRequest({ sessionKey, mergeRequest: nextMergeRequest })
     select({ iid: nextMergeRequest.iid, projectId: nextMergeRequest.projectId })
-  }
+  })
 
-  const openMergeRequestRef = (ref: MrRef | null, tab?: ReviewTab) => {
+  const openMergeRequestRef = (ref: MrRef | null, tab?: ReviewTab) => startTransition(() => {
     setOpenedMergeRequest(null)
     select(ref, tab)
-  }
+  })
   // A link opens the MR on the tab its URL names, and at the comment its `#note_<id>` names.
   const openMergeRequestTarget = (ref: MrRef, target?: MergeRequestTarget) => {
     setNoteFocus(target?.noteId ? { key: mrRefKey(ref), noteId: target.noteId } : null)
@@ -566,7 +566,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           </Box>
           {/* Notifications are not a place: they open over the page, from beside the settings. */}
           <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref) => openMergeRequestRef(ref, 'discussion')} onOpenChange={foldForNotifications} /></List>
-          <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
+          <AutoInstallAllowed status={status}>{(allowed) => <UpdateSidebarButton autoInstallAllowed={allowed} collapsed={navCollapsed} />}</AutoInstallAllowed>
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>
             <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ ...hairline('top'), color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
@@ -591,7 +591,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
               <Box component="main" sx={{ flex: 1, overflow: 'auto' }}>
-                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><SettingsView autoInstallAllowed={autoInstallAllowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onShowShortcuts={() => setShortcutsOpen(true)} /></Box>
+                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><AutoInstallAllowed status={status}>{(allowed) => <SettingsView autoInstallAllowed={allowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onShowShortcuts={() => setShortcutsOpen(true)} />}</AutoInstallAllowed></Box>
               </Box>
             ) : null}
             {!waitingForSessionRestore && route !== 'settings' && awaitingReauth ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}>
@@ -638,7 +638,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
       </Box>
       {/* Update notices live in the bar, in a slot of fixed height, so the page never shifts. */}
       <ConnectionStatusBar awaitingReauth={awaitingReauth} trailing={<>
-        <UpdatePanel autoInstallAllowed={autoInstallAllowed} notificationOnly />
+        <AutoInstallAllowed status={status}>{(allowed) => <UpdatePanel autoInstallAllowed={allowed} notificationOnly />}</AutoInstallAllowed>
         <AppVersionLabel />
       </>} />
     </Box>
@@ -676,7 +676,8 @@ function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizi
   }, [collapsed, notificationsOpen, peeking, resting])
   // Followed per element rather than on entering, so moving onto or off the notification button counts.
   const follow = (event: ReactMouseEvent<HTMLElement>) => {
-    if (notificationsOpen) return
+    // Expanded, resting does nothing, and following it would render the navigation on every move onto it.
+    if (notificationsOpen || !collapsed) return
     setResting(!(event.target instanceof Element && event.target.closest('[data-no-peek]')))
   }
   const leave = () => {
@@ -931,6 +932,14 @@ function MergeRequestSkeleton() {
   </Box>
 }
 
+/**
+ * Whether an update may install by itself, read where it is shown, so a composer that
+ * starts or stops holding updates back does not render the whole workspace again.
+ */
+function AutoInstallAllowed({ children, status }: { children: (allowed: boolean) => ReactNode; status: string }) {
+  return children(useAutoUpdateAllowed() && status !== 'checking')
+}
+
 function RestoreSessionPanel() {
   const t = useT()
   return <Box aria-live="polite" role="status"><PaneEmpty title={t('app.restoring')} /></Box>
@@ -948,6 +957,22 @@ function subscribeToClientLocation(onChange: () => void) {
 }
 
 function getClientLocationHash() { return window.location.hash }
+
+/**
+ * The location the screens show. A change renders them in a transition, so a click
+ * returns at once and a later click interrupts the rendering; the MR tab strip shows
+ * the clicked tab itself meanwhile.
+ * (useSyncExternalStore would render the whole workspace inside the click.)
+ */
+function useClientLocationHash() {
+  const [hash, setHash] = useState(getClientLocationHash)
+  useEffect(() => {
+    const follow = () => startTransition(() => setHash(getClientLocationHash()))
+    follow()
+    return subscribeToClientLocation(follow)
+  }, [])
+  return hash
+}
 
 /** `userId` decides only where a location without a route starts. */
 function readClientLocation(hasSession: boolean, hash = window.location.hash, userId?: string): { raw: string; route: ClientRoute; params: Record<string, string> } {
