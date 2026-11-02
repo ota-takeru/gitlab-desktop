@@ -135,6 +135,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'get_gitlab_image': return null
       case 'plugin:notification|is_permission_granted': return false
       case 'plugin:notification|request_permission': return 'denied'
+      case 'plugin:image|new': return 1
       case 'verify_session':
       case 'acknowledge_pending_operation':
       case 'cancel_gitlab_request':
@@ -145,7 +146,10 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'open_token_creation_page':
       case 'set_window_close_guard':
       case 'close_app_window':
-      case 'plugin:notification|notify': return null
+      case 'plugin:notification|notify':
+      case 'plugin:window|set_badge_count':
+      case 'plugin:window|set_overlay_icon':
+      case 'plugin:resources|close': return null
       default:
         console.warn(`fixture IPC: unhandled command ${command}`)
         throw { code: 'UNSUPPORTED', message: `固定データでは未対応のコマンドです: ${command}` } satisfies GitLabErrorShape

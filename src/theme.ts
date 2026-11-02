@@ -150,6 +150,9 @@ export const grid = 4
 /** A line height of whole grid steps, in px: a unitless ratio such as 1.45 × 12px leaves a 17.4px line. */
 export const gridLine = (steps: number) => `${steps * grid}px`
 
+/** The unread mark drawn over the taskbar button (lib/appBadge); the taskbar follows neither the app's light nor dark theme. */
+export const appBadgeColors = { fill: '#e01e5a', text: '#ffffff' } as const
+
 /** The line height of each text variant, in grid steps, so a mark can be sized to a variant's first line (components/rows). */
 export const typeLines = { body1: 6, body2: 5, caption: 5, code: 5, h1: 6, h2: 5, h3: 5, iconCount: 4, overline: 4, subtitle1: 6, subtitle2: 5 } as const
 

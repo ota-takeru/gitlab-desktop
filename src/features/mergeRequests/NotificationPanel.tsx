@@ -40,7 +40,9 @@ import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon, type StateIconTone } from '../../components/StateIcon'
 import { translate, type MessageKey } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
+import { setAppBadge } from '../../lib/appBadge'
 import { formatFetchedAt } from '../../lib/format'
+import { countLabel } from '../../lib/notificationCount'
 import { normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
 import type { GitLabCommandError, GitLabSession, GitLabTodo, TodosQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
@@ -115,6 +117,8 @@ export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpen
   const activity = useActivityNotifications(session, false, todos)
   const count = todos.length + activity.length
   const more = result.snapshot?.nextPage != null
+  useEffect(() => { setAppBadge(count, count || more ? countLabel(count, more) : '') }, [count, more])
+  useEffect(() => () => setAppBadge(0, ''), [])
   const title = count || more ? t(more ? 'mrList.notifications.navTitleMore' : 'mrList.notifications.navTitle', { count }) : t('mrList.notifications.title')
   return <>
     <ClientNavItem collapsed={collapsed} disabled={!session} expanded={Boolean(button)} place="notifications" icon={<NotificationBellIcon count={count} more={more} withCount={collapsed} />} label={t('mrList.notifications.title')} onClick={(event) => openAt(event.currentTarget)} selected={Boolean(button)} title={title} trailing={<NotificationCount count={count} more={more} />} />

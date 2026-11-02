@@ -3,10 +3,7 @@ import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
-
-function countLabel(count: number, more: boolean): string {
-  return count > 9 ? '9+' : more ? `${count || ''}+` : String(count)
-}
+import { countLabel } from '../lib/notificationCount'
 
 /** A small quiet tag in the place it belongs, rather than a badge on a corner. Narrow enough for "9+" in the collapsed navigation. */
 function CountTag({ children }: { children: ReactNode }) {
