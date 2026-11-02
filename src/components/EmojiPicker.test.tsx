@@ -52,7 +52,8 @@ it('shows a category and moves through the grid with the arrow keys', async () =
   const { onPick, picker } = renderPicker()
   await within(picker).findByRole('group', { name: 'よく使う' })
   fireEvent.click(within(picker).getByRole('tab', { name: '食べ物' }))
-  const food = within(picker).getByRole('group', { name: '食べ物' })
+  // The grid follows once the tab indicator has moved.
+  const food = await within(picker).findByRole('group', { name: '食べ物' })
   expect(within(food).getByRole('button', { name: /:hamburger:/u })).toBeInTheDocument()
 
   const search = within(picker).getByRole('textbox', { name: '絵文字を検索' })
