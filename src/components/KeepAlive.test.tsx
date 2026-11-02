@@ -79,4 +79,16 @@ describe('revealWhenReady', () => {
     expect(screenOf(container, 'a')).not.toHaveStyle({ opacity: '0' })
     expect(screenOf(container, 'b')).toHaveStyle({ display: 'none' })
   })
+
+  it('waits for reads inside kept screens of its own', () => {
+    const nested = (active: string, held: boolean) => <KeepAlive activeKey={active} max={3} revealWhenReady><KeepAlive activeKey="tab" max={3}><Holding held={held} label={active} /></KeepAlive></KeepAlive>
+    const { container, rerender } = render(nested('a', false))
+    rerender(nested('b', true))
+    act(() => { vi.advanceTimersToNextFrame() })
+    expect(screenOf(container, 'b')).toHaveStyle({ opacity: '0' })
+
+    rerender(nested('b', false))
+    act(() => { vi.advanceTimersToNextFrame() })
+    expect(screenOf(container, 'b')).not.toHaveStyle({ opacity: '0' })
+  })
 })

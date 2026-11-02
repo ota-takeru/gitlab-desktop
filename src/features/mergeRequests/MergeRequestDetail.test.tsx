@@ -888,7 +888,7 @@ describe('MergeRequestDetail header, results and pending review', () => {
 
       // Another tab and back: the edit is still open with its text.
       fireEvent.click(screen.getByRole('tab', { name: '変更' }))
-      expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument())
       fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
       expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('直した下書き')
 

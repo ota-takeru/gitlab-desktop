@@ -603,9 +603,10 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             {!waitingForSessionRestore && !awaitingReauth ? <>
               {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive.
                   Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once. */}
-              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-                {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy. */}
-                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={memoryConstrained ? 1 : 6} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative' }}>
+                {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy.
+                    A list shown for the first time shows once its saved data is read; the list before it stays until then. */}
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={memoryConstrained ? 1 : 6} revealWhenReady={!memoryConstrained} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}

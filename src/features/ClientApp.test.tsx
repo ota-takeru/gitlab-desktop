@@ -420,7 +420,7 @@ it('returns to the last MR list tab from the navigation', async () => {
   // Projects are a place of their own, without the MR list's chips.
   fireEvent.click(screen.getByRole('button', { name: 'プロジェクト' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/projects'))
-  expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument())
 
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?page=1&state=opened&assignee=self&orderBy=updated_at&sort=desc'))
@@ -442,7 +442,7 @@ it('opens the project screen from an MR and names where Back returns to', async 
   expect(screen.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByRole('heading', { name: 'group/projectの概要' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'プロジェクト' })).toHaveAttribute('aria-current', 'page')
-  expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument())
 })
 
 it('switches a project screen between its MRs and branches, and shows the MRs of a branch', async () => {

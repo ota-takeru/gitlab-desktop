@@ -202,7 +202,8 @@ async function fetchGitLabQuery<Q extends GitLabQuery>(
         const error = normalizeGitLabError(caught)
         if (error.code !== 'NOT_FOUND' && isAccessDenied(error)) return { error, snapshot: null }
       }
-      setSavedDataChecked(checkKey, true)
+      // Saved data found holds the screen until it renders (React Query tells the screen a task later), not until now.
+      if (!cached) setSavedDataChecked(checkKey, true)
     }
 
     throwIfAborted(signal)
@@ -222,7 +223,7 @@ async function fetchGitLabQuery<Q extends GitLabQuery>(
   }
 }
 
-/** Reads in flight that have checked the saved data, by session and query; the rest still keep a waiting screen out of sight. */
+/** Reads in flight that found no saved data, by session and query; the rest keep a waiting screen out of sight until their data renders. */
 const checkedSavedData = new Set<string>()
 const savedDataListeners = new Set<() => void>()
 

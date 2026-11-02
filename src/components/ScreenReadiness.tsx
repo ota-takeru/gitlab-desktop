@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
-import { ScreenReadinessContext, type HoldScreen } from './screenReadinessContext'
+import { ScreenReadinessContext, useScreenReadiness, type HoldScreen } from './screenReadinessContext'
 
 /** How long a screen waits at most for its reads to check the saved data before it shows anyway. */
 const READINESS_LIMIT_MS = 1000
@@ -7,9 +7,11 @@ const READINESS_LIMIT_MS = 1000
 /**
  * While `waiting`, tells `onReady` once no read inside holds the screen any more
  * for a whole frame (reads that start from another's data get to start), or after
- * READINESS_LIMIT_MS at most.
+ * READINESS_LIMIT_MS at most. Not waiting, the reads inside hold the screen around it
+ * instead, so a screen with kept screens of its own (tabs) waits for theirs.
  */
 export function ScreenReadinessGate({ children, onReady, waiting }: { children: ReactNode; onReady: () => void; waiting: boolean }) {
+  const outer = useScreenReadiness()
   const onReadyRef = useRef(onReady)
   useLayoutEffect(() => { onReadyRef.current = onReady })
   const holds = useRef(0)
@@ -47,5 +49,5 @@ export function ScreenReadinessGate({ children, onReady, waiting }: { children: 
       cancelAnimationFrame(frame.current)
     }
   }, [check, finish, waiting])
-  return <ScreenReadinessContext.Provider value={waiting ? hold : null}>{children}</ScreenReadinessContext.Provider>
+  return <ScreenReadinessContext.Provider value={waiting ? hold : outer}>{children}</ScreenReadinessContext.Provider>
 }
