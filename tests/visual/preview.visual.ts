@@ -25,7 +25,7 @@ test('preview diff timeline, Blame and associated MR', async ({ page }, testInfo
   await expect(page.getByRole('button', { name: 'Blame' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('02-commit-timeline.png'), animations: 'disabled' })
   await page.getByRole('button', { name: 'Blame' }).click()
-  const gutter = page.locator('[data-side="new"] .blame-action').filter({ hasText: /^[0-9a-f]{8}$/ }).first()
+  const gutter = page.locator('[data-side="new"] .blame-action').filter({ hasText: /^b7c2e810/ }).first()
   await expect(gutter).toBeVisible()
   await gutter.click()
   await expect(page.getByRole('dialog', { name: 'Blameのコミット詳細' })).toBeVisible()

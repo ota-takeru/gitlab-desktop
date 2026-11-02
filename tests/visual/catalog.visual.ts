@@ -49,7 +49,7 @@ for (const theme of themes) {
         await expect.soft(page).toHaveScreenshot(`client-mr-discussion-${suffix}.png`)
 
         await page.getByRole('tab', { name: '変更' }).click()
-        await expect(page.getByText('src/lib/review-cache.ts').first()).toBeVisible()
+        await expect(page.getByText('src/lib/review-cache.ts').filter({ visible: true }).first()).toBeVisible()
         await expect.soft(page).toHaveScreenshot(`client-mr-changes-${suffix}.png`)
 
         await open(page, `/?fixture=ready&theme=${theme}#client/branches?projectId=101&projectName=platform%2Fdesktop-client`)
