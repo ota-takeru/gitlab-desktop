@@ -1010,16 +1010,16 @@ describe('stepping through unresolved threads', () => {
       await waitFor(() => expect(focusedThread()).toBe('readme'))
     })
 
-    it('opens a file on a later diff page and focuses its thread', async () => {
+    it('lists the files of every diff page together and opens one from a later page at its thread', async () => {
       detailMocks.diffPages = { 1: [file('README.md')], 2: [file('src/example.ts')] }
       detailMocks.discussions[1] = [thread('example', 'src/example.ts', 2, 'えぐざんぷる')]
       renderDetail('changes')
-      await screen.findByRole('button', { name: '差分の次のページ' })
+      await screen.findByText('2/2')
+      expect(screen.queryByRole('button', { name: '差分の次のページ' })).not.toBeInTheDocument()
       expect(screen.queryByText('えぐざんぷる')).not.toBeInTheDocument()
 
       fireEvent.keyDown(document.body, { key: 'n' })
       await waitFor(() => expect(focusedThread()).toBe('example'))
-      expect(screen.getByText('差分のページ 2')).toBeInTheDocument()
     })
   })
 

@@ -56,7 +56,8 @@ import { findScrollContainer, positionAtLatest } from './discussionScroll'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
-import { readLoadedDiffPages, useDiscussionCode } from './useDiscussionCode'
+import { useDiscussionCode } from './useDiscussionCode'
+import { useAllDiffPages } from './useAllDiffPages'
 import { DiscussionList, type DiscussionFilter, type NoteReactions, type OlderDiscussions } from './DiscussionList'
 import { commentScrollPositions } from './composerBuffers'
 import { diffFileOrder } from './diffFileOrder'
@@ -160,7 +161,6 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const [pendingFileTarget, setPendingFileTarget] = useState<string | null>(null)
   const [draftPage, setDraftPage] = useState(1)
   const [commitPage, setCommitPage] = useState(1)
-  const [changePage, setChangePage] = useState(1)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null)
   // The head of an earlier version: the changes tab then shows that version → the latest.
@@ -241,9 +241,9 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const comparing = Boolean(compareVersion && mergeRequestHeadSha)
   const showingLocal = localChanges && Boolean(mergeRequestHeadSha)
   const readOnlyChanges = Boolean(selectedCommit) || comparing || showingLocal
-  const diffsQuery = useMemo<DiffsQuery | null>(() => activeTab === 'changes' && !selectedCommit && !compareVersion && !showingLocal && diffHeadSha ? ({ headSha: diffHeadSha, iid, kind: 'diffs', page: changePage, projectId: resourceId } as DiffsQuery) : null, [activeTab, changePage, compareVersion, iid, resourceId, selectedCommit, showingLocal, diffHeadSha])
-  const commitDiffQuery = useMemo<CommitDiffQuery | null>(() => activeTab === 'changes' && selectedCommit ? ({ iid, kind: 'commitDiff', page: changePage, projectId: resourceId, sha: selectedCommit } as CommitDiffQuery) : null, [activeTab, changePage, iid, resourceId, selectedCommit])
-  const versionCompareQuery = useMemo<VersionCompareQuery | null>(() => activeTab === 'changes' && !selectedCommit && compareVersion && mergeRequestHeadSha ? { fromSha: compareVersion, iid, kind: 'versionCompare', page: changePage, projectId: resourceId, toSha: mergeRequestHeadSha } : null, [activeTab, changePage, compareVersion, iid, mergeRequestHeadSha, resourceId, selectedCommit])
+  const diffsQuery = useMemo<DiffsQuery | null>(() => activeTab === 'changes' && !selectedCommit && !compareVersion && !showingLocal && diffHeadSha ? ({ headSha: diffHeadSha, iid, kind: 'diffs', page: 1, projectId: resourceId } as DiffsQuery) : null, [activeTab, compareVersion, iid, resourceId, selectedCommit, showingLocal, diffHeadSha])
+  const commitDiffQuery = useMemo<CommitDiffQuery | null>(() => activeTab === 'changes' && selectedCommit ? ({ iid, kind: 'commitDiff', page: 1, projectId: resourceId, sha: selectedCommit } as CommitDiffQuery) : null, [activeTab, iid, resourceId, selectedCommit])
+  const versionCompareQuery = useMemo<VersionCompareQuery | null>(() => activeTab === 'changes' && !selectedCommit && compareVersion && mergeRequestHeadSha ? { fromSha: compareVersion, iid, kind: 'versionCompare', page: 1, projectId: resourceId, toSha: mergeRequestHeadSha } : null, [activeTab, compareVersion, iid, mergeRequestHeadSha, resourceId, selectedCommit])
   const versionsQuery = useMemo<MrVersionsQuery | null>(() => activeTab === 'changes' ? { iid, kind: 'mrVersions', page: 1, projectId: resourceId } : null, [activeTab, iid, resourceId])
   const commitsQuery = useMemo<CommitsQuery | null>(() => activeTab === 'changes' ? ({ iid, kind: 'commits', page: commitPage, projectId: resourceId } as CommitsQuery) : null, [activeTab, commitPage, iid, resourceId])
   // The changes tab shows pending line comments under their lines too.
@@ -252,9 +252,9 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
 
   // The changes tab shows line comments too, so it keeps the discussions loaded.
   const discussionWindow = useDiscussionWindow(session?.id ?? null, resourceId, iid, activeTab === 'discussion' || activeTab === 'changes')
-  const diffsResult = useGitLabQuery<DiffsQuery>(session?.id ?? null, diffsQuery)
-  const commitDiffResult = useGitLabQuery<CommitDiffQuery>(session?.id ?? null, commitDiffQuery)
-  const versionCompareResult = useGitLabQuery<VersionCompareQuery>(session?.id ?? null, versionCompareQuery)
+  const diffsResult = useAllDiffPages(session?.id ?? null, diffsQuery)
+  const commitDiffResult = useAllDiffPages(session?.id ?? null, commitDiffQuery)
+  const versionCompareResult = useAllDiffPages(session?.id ?? null, versionCompareQuery)
   const versionsResult = useGitLabQuery<MrVersionsQuery>(session?.id ?? null, versionsQuery)
   const commitsResult = useGitLabQuery<CommitsQuery>(session?.id ?? null, commitsQuery)
   const draftsResult = useGitLabQuery<DraftsQuery>(session?.id ?? null, draftQuery)
@@ -396,12 +396,10 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     if (!pendingFileTarget || activeTab !== 'changes' || diffsResult.loading || diffsResult.refreshing || !diffsResult.data) return
     const timer = globalThis.setTimeout(() => {
       if (diffsResult.data!.some((diff) => diff.newPath === pendingFileTarget || diff.oldPath === pendingFileTarget)) { setPendingFileTarget(null); return }
-      const next = diffsResult.snapshot?.nextPage
-      if (next && next <= 10) setChangePage(next)
-      else { setPendingFileTarget(null); setViewPosition(undefined); setPositionError(t('mergeRequest.position.fileNotFound')) }
+      setPendingFileTarget(null); setViewPosition(undefined); setPositionError(t('mergeRequest.position.fileNotFound'))
     }, 0)
     return () => globalThis.clearTimeout(timer)
-  }, [activeTab, diffsResult.data, diffsResult.loading, diffsResult.refreshing, diffsResult.snapshot?.nextPage, pendingFileTarget, t])
+  }, [activeTab, diffsResult.data, diffsResult.loading, diffsResult.refreshing, pendingFileTarget, t])
 
   useLayoutEffect(() => {
     const pending = pendingDiffThread.current
@@ -443,22 +441,18 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   }
   /**
    * Opens the next (or previous) file with unresolved threads on the MR head,
-   * in the order the file list shows them, page by page and wrapping around,
-   * at its first (or last) thread. Files on diff pages not read yet come last.
+   * in the order the file list shows them, wrapping around, at its first (or
+   * last) thread. Files whose threads are not on the diff's lines come last.
    * Returns false when no other file has one.
    */
   const stepToUnresolvedFile = (unresolvedDiscussions: Discussion[], direction: 1 | -1): boolean => {
     if (readOnlyChanges || !session || !mergeRequestHeadSha) return false
-    const pages = readLoadedDiffPages(queryClient, session.id, resourceId, iid, mergeRequestHeadSha)
-    if (diffsResult.data) pages[changePage] = { data: diffsResult.data, nextPage: diffsResult.snapshot?.nextPage ?? null }
-    const files: Array<{ page: number | null; path: string; threads: Discussion[] }> = []
+    const files: Array<{ listed: boolean; path: string; threads: Discussion[] }> = []
     const placed = new Set<string>()
-    for (const page of Object.keys(pages).map(Number).sort((left, right) => left - right)) {
-      for (const diff of diffFileOrder(pages[page].data)) {
-        const threads = sortByLine(threadsByLine(unresolvedDiscussions, diff, mergeRequestHeadSha).byLine)
-        threads.forEach((thread) => placed.add(thread.id))
-        files.push({ page, path: diff.newPath || diff.oldPath, threads })
-      }
+    for (const diff of diffFileOrder(diffsResult.data ?? [])) {
+      const threads = sortByLine(threadsByLine(unresolvedDiscussions, diff, mergeRequestHeadSha).byLine)
+      threads.forEach((thread) => placed.add(thread.id))
+      files.push({ listed: true, path: diff.newPath || diff.oldPath, threads })
     }
     const unplaced = new Map<string, Map<string, Discussion[]>>()
     for (const discussion of unresolvedDiscussions) {
@@ -469,9 +463,9 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
       const byLine = unplaced.get(path) ?? new Map<string, Discussion[]>()
       unplaced.set(path, byLine.set(key, [...byLine.get(key) ?? [], discussion]))
     }
-    for (const path of [...unplaced.keys()].sort()) files.push({ page: null, path, threads: sortByLine(unplaced.get(path)!) })
+    for (const path of [...unplaced.keys()].sort()) files.push({ listed: false, path, threads: sortByLine(unplaced.get(path)!) })
     const shownPath = selectedDiff ? selectedDiff.newPath || selectedDiff.oldPath : null
-    const current = files.findIndex((file) => file.page === changePage && file.path === shownPath)
+    const current = files.findIndex((file) => file.listed && file.path === shownPath)
     const start = current >= 0 ? current : direction === 1 ? -1 : files.length
     for (let step = 1; step <= files.length; step += 1) {
       const at = ((start + direction * step) % files.length + files.length) % files.length
@@ -482,15 +476,12 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
       const position = thread?.notes.find((note) => !note.system && note.position)?.position
       if (!thread || !position) continue
       pendingDiffThread.current = { id: thread.id, path: file.path }
-      // The thread's line selects the right part of a long file; a file on an unread page is looked up from the first page.
+      // The thread's line selects the right part of a long file; a file missing from the diff is reported as not found.
       setViewPosition(position)
       setPositionError(null)
       setFileView('diff')
       setSelectedFile(file.path)
-      if (file.page !== changePage) {
-        setChangePage(file.page ?? 1)
-        setPendingFileTarget(file.path)
-      }
+      if (!file.listed) setPendingFileTarget(file.path)
       return true
     }
     return false
@@ -570,7 +561,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const openCommentPosition = (target: Position) => {
     setViewPosition(isPositionCurrent(target, mergeRequest) ? target : undefined)
     setPositionError(isPositionCurrent(target, mergeRequest) ? null : t('mergeRequest.position.outdatedComment'))
-    setSelectedCommit(null); setCompareVersion(null); setFileView('diff'); setChangePage(1)
+    setSelectedCommit(null); setCompareVersion(null); setFileView('diff')
     setSelectedFile(target.newPath || target.oldPath)
     setPendingFileTarget(target.newPath || target.oldPath)
     setActiveTab('changes')
@@ -1029,7 +1020,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
           renderReactions: renderNoteReactions,
           replyDiscussionId: replyDiscussion?.id ?? null,
           replyComposer,
-        }} pendingDrafts={readOnlyChanges ? undefined : drafts} lineComposer={lineComposer} discussions={readOnlyChanges ? undefined : discussions} compareBaseSha={mergeRequest.diffRefs?.baseSha} discussionHeadSha={mergeRequestHeadSha} discussionsIncomplete={discussionWindow.hasOlder} onOpenDiscussion={(discussionId) => { pendingThread.current = discussionId; setActiveTab('discussion') }} reviewContext={session && !readOnlyChanges && mergeRequestHeadSha ? { instanceUrl: session.instanceUrl, userId: session.user.id, projectId: resourceId, mergeRequestIid: iid, revision: mergeRequestHeadSha } : undefined} allowComments={!readOnlyChanges} changeNextPage={changesResult.snapshot?.nextPage ?? null} changePage={changePage} commitPage={commitPage} changesError={changesResult.error} changesLoading={Boolean(pendingFileTarget) || changesResult.loading} changesTruncated={comparing && changesResult.snapshot?.completeness === 'truncated'} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} local={session && mergeRequestHeadSha ? { active: showingLocal, badge: <LocalStatusBadge headSha={mergeRequestHeadSha} projectId={resourceId} projectPath={mergeRequest.projectPath ?? null} sessionId={session.id} sourceBranch={mergeRequest.sourceBranch} />, content: <LocalChanges headSha={mergeRequestHeadSha} onSelectFile={setSelectedFile} projectId={resourceId} projectPath={mergeRequest.projectPath ?? null} selectedFile={selectedFile} sessionId={session.id} userId={session.user.id} />, onSelect: () => { setLocalChanges(!showingLocal); setSelectedCommit(null); setCompareVersion(null); setSelectedFile(null); setFileView(null); setChangePage(1) } } : undefined} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={resolvedFileView} onComment={commentOnLines} onNextChangePage={() => setChangePage((current) => current + 1)} onNextCommitPage={() => setCommitPage((current) => current + 1)} onPrevChangePage={() => setChangePage((current) => Math.max(1, current - 1))} onPrevCommitPage={() => setCommitPage((current) => Math.max(1, current - 1))} onSelectCommit={(sha) => { setSelectedCommit(sha); setCompareVersion(null); setLocalChanges(false); setSelectedFile(null); setFileView(null); setChangePage(1) }} onSelectFile={(path) => { setSelectedFile(path); setFileView(null) }} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} suggestionActions={readOnlyChanges ? undefined : suggestionActions} versions={{ compareFrom: comparing ? compareVersion : null, error: versionsResult.error, headSha: mergeRequestHeadSha, items: (versionsResult.data ?? []) as MrVersion[], loading: versionsResult.loading, more: (versionsResult.snapshot?.nextPage ?? null) !== null, onSelect: (sha) => { setCompareVersion(sha); setSelectedCommit(null); setLocalChanges(false); setSelectedFile(null); setFileView(null); setChangePage(1) } }} /></Stack> : null}
+        }} pendingDrafts={readOnlyChanges ? undefined : drafts} lineComposer={lineComposer} discussions={readOnlyChanges ? undefined : discussions} compareBaseSha={mergeRequest.diffRefs?.baseSha} discussionHeadSha={mergeRequestHeadSha} discussionsIncomplete={discussionWindow.hasOlder} onOpenDiscussion={(discussionId) => { pendingThread.current = discussionId; setActiveTab('discussion') }} reviewContext={session && !readOnlyChanges && mergeRequestHeadSha ? { instanceUrl: session.instanceUrl, userId: session.user.id, projectId: resourceId, mergeRequestIid: iid, revision: mergeRequestHeadSha } : undefined} allowComments={!readOnlyChanges} commitPage={commitPage} changesError={changesResult.error} changesLoading={Boolean(pendingFileTarget) || changesResult.loading} changesTruncated={comparing && changesResult.snapshot?.completeness === 'truncated'} commitNextPage={commitsResult.snapshot?.nextPage ?? null} commits={commits} commitsError={commitsResult.error} local={session && mergeRequestHeadSha ? { active: showingLocal, badge: <LocalStatusBadge headSha={mergeRequestHeadSha} projectId={resourceId} projectPath={mergeRequest.projectPath ?? null} sessionId={session.id} sourceBranch={mergeRequest.sourceBranch} />, content: <LocalChanges headSha={mergeRequestHeadSha} onSelectFile={setSelectedFile} projectId={resourceId} projectPath={mergeRequest.projectPath ?? null} selectedFile={selectedFile} sessionId={session.id} userId={session.user.id} />, onSelect: () => { setLocalChanges(!showingLocal); setSelectedCommit(null); setCompareVersion(null); setSelectedFile(null); setFileView(null) } } : undefined} commitsLoading={commitsResult.loading} diffs={pendingFileTarget ? [] : diffs} fileResult={fileResult} fileView={resolvedFileView} onComment={commentOnLines} onNextCommitPage={() => setCommitPage((current) => current + 1)} onPrevCommitPage={() => setCommitPage((current) => Math.max(1, current - 1))} onSelectCommit={(sha) => { setSelectedCommit(sha); setCompareVersion(null); setLocalChanges(false); setSelectedFile(null); setFileView(null) }} onSelectFile={(path) => { setSelectedFile(path); setFileView(null) }} onViewChange={setFileView} selectedCommit={selectedCommit} selectedFile={selectedFile} selectedPosition={viewPosition ?? commentPosition} suggestionActions={readOnlyChanges ? undefined : suggestionActions} versions={{ compareFrom: comparing ? compareVersion : null, error: versionsResult.error, headSha: mergeRequestHeadSha, items: (versionsResult.data ?? []) as MrVersion[], loading: versionsResult.loading, more: (versionsResult.snapshot?.nextPage ?? null) !== null, onSelect: (sha) => { setCompareVersion(sha); setSelectedCommit(null); setLocalChanges(false); setSelectedFile(null); setFileView(null) } }} /></Stack> : null}
         {activeTab === 'overview' ? <OverviewTab approvedBy={approvedBy} approvalsError={approvalsResult.error} approvalsLoading={approvalsResult.loading} description={mergeRequest.description} descriptionEdit={descriptionEdit} editDisabled={mutation.isLocked || mutation.isPending} mergeRequest={mergeRequest} onRerequestReview={(user) => void rerequestReview(user)} onCancelEdit={() => setDescriptionEdit(null)} onUploadAttachment={uploadAttachment} onChangeEdit={(body) => setDescriptionEdit((current) => current ? { ...current, body } : current)} onSaveEdit={() => void saveDescription()} onStartEdit={() => setDescriptionEdit({ body: mergeRequest.description ?? '', expected: mergeRequest.description ?? '' })} reactions={<Stack spacing={0.5}>
           <ReactionBar awards={mrAwardsResult.data ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={t('mergeRequest.reactions.mrLabel')} onToggle={(name, add) => toggleReaction(name, add)} />
           {mrAwardsResult.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('mergeRequest.reactions.loading')}</Typography> : null}
