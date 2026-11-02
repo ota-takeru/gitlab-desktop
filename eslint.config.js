@@ -12,6 +12,7 @@ export default tseslint.config(
       'src-tauri/**',
       'output/**',
       '.playwright-cli/**',
+      '.claude/**',
       'src/**/*.d.ts',
     ],
   },
