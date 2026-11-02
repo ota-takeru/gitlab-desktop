@@ -66,8 +66,25 @@ export interface ProjectQuery {
   search: string
   membership: boolean
   includeArchived: boolean
+  /** The projects this user contributed to; GitLab then takes no other condition than the order. */
+  contributorId?: string
+  /** A group's projects, its subgroups' too; GitLab then filters by neither language nor activity. */
+  groupId?: string
+  visibility?: ProjectVisibility
+  /** The user's lowest role in the project: 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner. */
+  minAccessLevel?: number
+  topics?: string[]
+  language?: string
+  starred?: true
+  lastActivityAfter?: string
+  lastActivityBefore?: string
+  orderBy?: ProjectOrderBy
+  sort?: 'asc' | 'desc'
   page: number
 }
+
+export type ProjectVisibility = 'public' | 'internal' | 'private'
+export type ProjectOrderBy = 'last_activity_at' | 'name' | 'created_at' | 'star_count'
 
 export type MergeRequestState = 'all' | 'opened' | 'closed' | 'merged'
 

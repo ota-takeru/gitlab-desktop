@@ -150,6 +150,7 @@ fn normalizes_ids_and_pagination() {
                 search: String::new(),
                 membership: true,
                 include_archived: false,
+                filters: crate::dto::ProjectFilters::default(),
                 page: 1,
             },
         ))
@@ -398,6 +399,162 @@ fn user_and_user_projects_queries_validate_identifiers_and_build_expected_urls()
 }
 
 #[test]
+fn project_search_sends_its_conditions() {
+    let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let (url, _) = build_query_url(
+        &api,
+        &Query::Projects {
+            search: String::new(),
+            membership: true,
+            include_archived: false,
+            filters: crate::dto::ProjectFilters {
+                visibility: Some("internal".to_owned()),
+                min_access_level: Some(40),
+                topics: Some(vec!["rust".to_owned(), "desktop".to_owned()]),
+                language: Some("TypeScript".to_owned()),
+                starred: true,
+                last_activity_after: Some("2026-10-01T00:00:00.000Z".to_owned()),
+                order_by: Some("name".to_owned()),
+                sort: Some("asc".to_owned()),
+                ..Default::default()
+            },
+            page: 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(url.path(), "/api/v4/projects");
+    let params = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(params.get("membership").unwrap(), "true");
+    assert_eq!(params.get("visibility").unwrap(), "internal");
+    assert_eq!(params.get("min_access_level").unwrap(), "40");
+    assert_eq!(params.get("topic").unwrap(), "rust,desktop");
+    assert_eq!(
+        params.get("with_programming_language").unwrap(),
+        "TypeScript"
+    );
+    assert_eq!(params.get("starred").unwrap(), "true");
+    assert_eq!(
+        params.get("last_activity_after").unwrap(),
+        "2026-10-01T00:00:00.000Z"
+    );
+    assert_eq!(params.get("order_by").unwrap(), "name");
+    assert_eq!(params.get("sort").unwrap(), "asc");
+}
+
+#[test]
+fn project_search_in_a_group_lists_its_subgroups_and_keeps_membership() {
+    let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let query = |filters| Query::Projects {
+        search: "demo".to_owned(),
+        membership: true,
+        include_archived: true,
+        filters,
+        page: 1,
+    };
+    let (url, _) = build_query_url(
+        &api,
+        &query(crate::dto::ProjectFilters {
+            group_id: Some("platform/web".to_owned()),
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    assert_eq!(url.path(), "/api/v4/groups/platform%2Fweb/projects");
+    let params = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(params.get("include_subgroups").unwrap(), "true");
+    assert_eq!(params.get("min_access_level").unwrap(), "10");
+    assert_eq!(params.get("search").unwrap(), "demo");
+    assert!(!params.contains_key("membership"));
+    assert!(!params.contains_key("search_namespaces"));
+
+    let error = build_query_url(
+        &api,
+        &query(crate::dto::ProjectFilters {
+            group_id: Some("platform".to_owned()),
+            language: Some("Rust".to_owned()),
+            ..Default::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message_key.as_deref(),
+        Some("native.query.groupProjectFilter")
+    );
+    let error = build_query_url(
+        &api,
+        &query(crate::dto::ProjectFilters {
+            order_by: Some("path".to_owned()),
+            ..Default::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message_key.as_deref(),
+        Some("native.query.invalidProjectFilter")
+    );
+}
+
+#[test]
+fn project_search_by_contributor_lists_their_contributed_projects_in_order() {
+    let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let query = |search: &str, filters| Query::Projects {
+        search: search.to_owned(),
+        membership: true,
+        include_archived: false,
+        filters,
+        page: 2,
+    };
+    let (url, _) = build_query_url(
+        &api,
+        &query(
+            "",
+            crate::dto::ProjectFilters {
+                contributor_id: Some("9".to_owned()),
+                order_by: Some("name".to_owned()),
+                ..Default::default()
+            },
+        ),
+    )
+    .unwrap();
+    assert_eq!(url.path(), "/api/v4/users/9/contributed_projects");
+    let params = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(params.get("order_by").unwrap(), "name");
+    assert_eq!(params.get("page").unwrap(), "2");
+    assert!(!params.contains_key("membership"));
+    assert!(!params.contains_key("archived"));
+
+    for (search, filters) in [
+        (
+            "demo",
+            crate::dto::ProjectFilters {
+                contributor_id: Some("9".to_owned()),
+                ..Default::default()
+            },
+        ),
+        (
+            "",
+            crate::dto::ProjectFilters {
+                contributor_id: Some("9".to_owned()),
+                starred: true,
+                ..Default::default()
+            },
+        ),
+    ] {
+        let error = build_query_url(&api, &query(search, filters)).unwrap_err();
+        assert_eq!(
+            error.message_key.as_deref(),
+            Some("native.query.contributorProjectFilter")
+        );
+    }
+}
+
+#[test]
 fn project_search_includes_namespaces() {
     let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
     let (url, _) = build_query_url(
@@ -406,6 +563,7 @@ fn project_search_includes_namespaces() {
             search: "group/demo".to_owned(),
             membership: false,
             include_archived: true,
+            filters: crate::dto::ProjectFilters::default(),
             page: 1,
         },
     )

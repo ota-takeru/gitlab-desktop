@@ -149,6 +149,36 @@ pub enum MergeRequestState {
     Merged,
 }
 
+/// The project list's conditions beyond the search word, membership and archived projects.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFilters {
+    /// The projects this user contributed to, which GitLab lists without any
+    /// other condition than the order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contributor_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_access_level: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topics: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub starred: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_after: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+}
+
 /// Read operations supported by the GitLab REST adapter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -203,6 +233,8 @@ pub enum Query {
         search: String,
         membership: bool,
         include_archived: bool,
+        #[serde(flatten)]
+        filters: ProjectFilters,
         page: u32,
     },
     Mrs {
@@ -658,6 +690,7 @@ mod tests {
             search: "demo".to_owned(),
             membership: true,
             include_archived: false,
+            filters: ProjectFilters::default(),
             page: 1,
         })
         .unwrap();

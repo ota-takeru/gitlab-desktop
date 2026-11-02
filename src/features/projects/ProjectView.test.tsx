@@ -47,7 +47,7 @@ describe('ProjectView', () => {
       return emptyResult
     })
     render(<ProjectView onOpenProject={vi.fn()} />)
-    const search = screen.getByRole('textbox', { name: 'プロジェクトを検索' })
+    const search = screen.getByRole('combobox', { name: 'プロジェクトを検索' })
 
     fireEvent.change(search, { target: { value: 'platform' } })
     expect(seen.at(-1)).toMatchObject({ search: '' })
@@ -131,19 +131,71 @@ describe('ProjectView', () => {
 
   it('keeps its conditions when it is left and opened again, and clears them back to the defaults', () => {
     const view = render(<ProjectView onOpenProject={vi.fn()} />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'プロジェクトを検索' }), { target: { value: 'platform' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'プロジェクトを検索' }), { target: { value: 'platform' } })
     fireEvent.submit(screen.getByRole('button', { name: '検索' }).closest('form') as HTMLFormElement)
     fireEvent.click(screen.getByRole('switch', { name: 'アーカイブ済みを含める' }))
     view.unmount()
 
     render(<ProjectView onOpenProject={vi.fn()} />)
-    expect(screen.getByRole('textbox', { name: 'プロジェクトを検索' })).toHaveValue('platform')
+    expect(screen.getByRole('combobox', { name: 'プロジェクトを検索' })).toHaveValue('platform')
     expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: true, search: 'platform' }), { keepPrevious: true })
     expect(screen.getByText(/適用中の条件: 検索語「platform」 · 参加中のみ · アーカイブ済みを含む/u)).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: '条件をクリア' })[0])
     expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ includeArchived: false, membership: true, page: 1, search: '' }), { keepPrevious: true })
     expect(screen.queryByRole('button', { name: '条件をクリア' })).not.toBeInTheDocument()
+  })
+
+  it('adds conditions from the search field as tags, and removes them with their ✕', () => {
+    render(<ProjectView onOpenProject={vi.fn()} />)
+    const search = screen.getByRole('combobox', { name: 'プロジェクトを検索' })
+
+    fireEvent.click(search)
+    fireEvent.click(within(screen.getByRole('menu', { name: '追加できる条件' })).getByRole('menuitem', { name: '公開範囲' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '公開範囲の条件' })).getByRole('menuitem', { name: '内部' }))
+    fireEvent.click(search)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'トピック' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'プロジェクトのトピック' }), { target: { value: 'rust, desktop' } })
+    fireEvent.click(screen.getByRole('button', { name: '適用' }))
+    fireEvent.click(search)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'スター済み' }))
+
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ kind: 'projects', starred: true, topics: ['rust', 'desktop'], visibility: 'internal' }), { keepPrevious: true })
+    const tags = screen.getByRole('group', { name: '適用中の条件' })
+    expect(within(tags).getByText('公開範囲: 内部')).toBeInTheDocument()
+    expect(within(tags).getByText('トピック: rust,desktop')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('トピックの条件を外す'))
+    expect(queryMock.mock.lastCall?.[1]).not.toHaveProperty('topics')
+    expect(within(tags).queryByText('トピック: rust,desktop')).not.toBeInTheDocument()
+  })
+
+  it('lists a contributor\'s projects alone, without the search word and conditions GitLab cannot combine with them', () => {
+    render(<ProjectView onOpenProject={vi.fn()} />)
+    const search = screen.getByRole('combobox', { name: 'プロジェクトを検索' })
+    fireEvent.change(search, { target: { value: 'platform' } })
+    fireEvent.submit(screen.getByRole('button', { name: '検索' }).closest('form') as HTMLFormElement)
+    fireEvent.click(search)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'スター済み' }))
+
+    fireEvent.click(search)
+    fireEvent.click(screen.getByRole('menuitem', { name: '関わったユーザー' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '関わったユーザーの条件' })).getByRole('button', { name: '自分' }))
+
+    const query = queryMock.mock.lastCall?.[1]
+    expect(query).toMatchObject({ contributorId: '42', kind: 'projects', search: '' })
+    expect(query).not.toHaveProperty('starred')
+    expect(within(screen.getByRole('group', { name: '適用中の条件' })).getByText('関わったユーザー: Reviewer')).toBeInTheDocument()
+    expect(search).toHaveValue('')
+    expect(search).toHaveAttribute('readonly')
+    expect(screen.getByRole('switch', { name: '参加中のプロジェクトだけ' })).toBeDisabled()
+    expect(screen.getByRole('switch', { name: 'アーカイブ済みを含める' })).toBeDisabled()
+    fireEvent.click(search)
+    expect(screen.queryByRole('menu', { name: '追加できる条件' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('関わったユーザーの条件を外す'))
+    expect(queryMock.mock.lastCall?.[1]).not.toHaveProperty('contributorId')
+    expect(screen.getByRole('switch', { name: 'アーカイブ済みを含める' })).toBeEnabled()
   })
 
   it('names rows with their path, moves between them by keyboard, and retries a failed refresh', () => {
