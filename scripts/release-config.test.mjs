@@ -7,7 +7,8 @@ import { test } from 'node:test'
 import { createReleaseConfig, UPDATER_ENDPOINT } from './release-config.mjs'
 import { readProjectVersions, validateReleaseTag } from './release-guard.mjs'
 import { decideRelease, isDocumentationOnly, isOutsideApplication } from './release-main.mjs'
-import { createUpdaterManifest, writeReleaseAssets } from './updater-manifest.mjs'
+import { formatReleaseNotes } from './release-notes.mjs'
+import { createUpdaterManifest, releaseBody, writeReleaseAssets } from './updater-manifest.mjs'
 import { nextVersion, writeProjectVersion } from './version-bump.mjs'
 
 test('project versions stay in lockstep', () => {
@@ -116,10 +117,28 @@ test('the updater manifest points both Windows keys at the uploaded installer', 
   const platform = { signature: 'c2lnbmF0dXJl', url: 'https://github.com/ota-takeru/gitlab-desktop/releases/download/v0.7.0/GitLab.Desktop_0.7.0_x64-setup.exe' }
   deepEqual(manifest, {
     version: '0.7.0',
+    notes: '',
     pub_date: '2026-10-13T08:55:37.051Z',
     platforms: { 'windows-x86_64': platform, 'windows-x86_64-nsis': platform },
   })
   throws(() => createUpdaterManifest({ version: '0.7.0', assetName: 'a.exe', signature: ' ', pubDate: '' }), /signature is empty/)
+})
+
+test('release notes list the shipped commits and leave out version and project-only commits', () => {
+  strictEqual(formatReleaseNotes([
+    { subject: 'Show unread notifications on the app icon', paths: ['src/lib/appBadge.ts', 'src/lib/appBadge.test.ts'] },
+    { subject: 'Keep ESLint out of local agent worktrees', paths: ['eslint.config.js'] },
+    { subject: 'Release v0.19.0', paths: ['package.json'] },
+    { subject: 'Take a mention candidate with Tab', paths: ['src/features/mergeRequests/Mention.tsx'] },
+  ]), '- Show unread notifications on the app icon\n- Take a mention candidate with Tab')
+  strictEqual(formatReleaseNotes([{ subject: 'Describe the release', paths: ['docs/distribution.md'] }]), '')
+})
+
+test('the updater manifest and the GitHub Release carry the release notes', () => {
+  const manifest = createUpdaterManifest({ version: '0.7.0', assetName: 'a.exe', signature: 'c2ln', pubDate: 'now', notes: '- Fix a\n' })
+  strictEqual(manifest.notes, '- Fix a')
+  strictEqual(releaseBody('- Fix a'), '## Changes\n\n- Fix a\n\nSigned Windows NSIS installer and auto-update metadata.')
+  strictEqual(releaseBody(''), 'Signed Windows NSIS installer and auto-update metadata.')
 })
 
 test('release assets use the names GitHub gives uploaded files', () => {
@@ -129,7 +148,7 @@ test('release assets use the names GitHub gives uploaded files', () => {
     writeFileSync(installer, 'installer')
     writeFileSync(`${installer}.sig`, 'c2lnbmF0dXJl')
     const output = join(root, 'out')
-    strictEqual(writeReleaseAssets(installer, output, '0.7.0', 'now'), 'GitLab.Desktop_0.7.0_x64-setup.exe')
+    strictEqual(writeReleaseAssets(installer, output, '0.7.0', 'now', ''), 'GitLab.Desktop_0.7.0_x64-setup.exe')
     deepEqual(readdirSync(output).sort(), ['GitLab.Desktop_0.7.0_x64-setup.exe', 'GitLab.Desktop_0.7.0_x64-setup.exe.sig', 'latest.json'])
     const manifest = JSON.parse(readFileSync(join(output, 'latest.json'), 'utf8'))
     strictEqual(manifest.platforms['windows-x86_64'].url.endsWith('/v0.7.0/GitLab.Desktop_0.7.0_x64-setup.exe'), true)

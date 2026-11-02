@@ -9,6 +9,8 @@ import { UpdatePanel, UpdateSidebarButton } from './UpdatePanel'
 const { invokeMock, flushMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), flushMock: vi.fn() }))
 vi.mock('../features/mergeRequests/useComposerBuffer', () => ({ composerTargetName: () => ({}), flushComposerBuffers: flushMock, listUnsafeComposerTargets: () => [{ iid: '12', inputs: ['返信'], projectId: '3', projectPath: 'group/app', title: 'ログイン修正' }] }))
 
+vi.mock('../lib/releaseNotes', async (importOriginal) => ({ ...await importOriginal<typeof import('../lib/releaseNotes')>(), CURRENT_RELEASE_NOTES: '- 通知をアイコンに表示\n- メンション候補を Tab で選択' }))
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
   isTauri: () => Boolean(window.__TAURI_INTERNALS__ ?? window.__TAURI__),
@@ -62,7 +64,7 @@ describe('UpdatePanel', () => {
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('check_app_update'))
     expect(await screen.findByText('v0.2.0')).toBeInTheDocument()
-    expect(screen.getByText('改善と修正')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'v0.2.0 の変更内容' })).getByRole('listitem')).toHaveTextContent('改善と修正')
 
     fireEvent.click(screen.getByRole('button', { name: '再起動して更新' }))
 
@@ -99,6 +101,14 @@ describe('UpdatePanel', () => {
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('check_app_update'))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'アプリの更新' })).not.toBeInTheDocument())
+  })
+
+  it('lists the changes of the running version', async () => {
+    invokeMock.mockImplementation((command: string) => Promise.resolve(command === 'runtime_info' ? { appVersion: '0.1.0' } : { configured: true, version: null, notes: null }))
+    renderPanel(true)
+
+    const notes = await screen.findByRole('region', { name: 'v0.1.0 の変更内容' })
+    expect(within(notes).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['通知をアイコンに表示', 'メンション候補を Tab で選択'])
   })
 
   it('keeps available updates and their install guard actionable in notification-only mode', async () => {

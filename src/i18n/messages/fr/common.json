@@ -67,6 +67,7 @@
   "update.currentVersion": "Version actuelle {version}",
   "update.lastChecked": "Dernière vérification",
   "update.lastCheckedNever": "Dernière vérification : jamais",
+  "update.changesIn": "Modifications de {version}",
   "update.downloadReady": "Téléchargée · redémarrez pour mettre à jour",
   "update.downloading": "Téléchargement en arrière-plan… (sans installation)",
   "update.checkFailed": "Impossible de rechercher des mises à jour.",

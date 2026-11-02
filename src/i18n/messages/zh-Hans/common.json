@@ -67,6 +67,7 @@
   "update.currentVersion": "当前版本 {version}",
   "update.lastChecked": "上次检查",
   "update.lastCheckedNever": "上次检查：从未",
+  "update.changesIn": "{version} 的更改",
   "update.downloadReady": "已下载 · 重启以更新",
   "update.downloading": "正在后台下载…（不会安装）",
   "update.checkFailed": "无法检查更新。",

@@ -67,6 +67,7 @@
   "update.currentVersion": "Текущая версия {version}",
   "update.lastChecked": "Последняя проверка",
   "update.lastCheckedNever": "Последняя проверка: никогда",
+  "update.changesIn": "Изменения в {version}",
   "update.downloadReady": "Загружено · перезапустите для обновления",
   "update.downloading": "Загрузка в фоне… (без установки)",
   "update.checkFailed": "Не удалось проверить обновления.",

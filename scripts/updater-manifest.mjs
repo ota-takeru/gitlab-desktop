@@ -5,16 +5,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { RELEASE_REPOSITORY } from './release-config.mjs'
 import { readProjectVersions } from './release-guard.mjs'
 
-/** The GitHub Release text. `latest.json` carries no notes, so the app shows its own update message in the reader's language. */
-export const RELEASE_NOTES = 'Signed Windows NSIS installer and auto-update metadata.'
+const ASSETS_NOTE = 'Signed Windows NSIS installer and auto-update metadata.'
+
+/** The GitHub Release text: the changes from `latest.json`, then what the assets are. */
+export function releaseBody(notes) {
+  return notes?.trim() ? `## Changes\n\n${notes.trim()}\n\n${ASSETS_NOTE}` : ASSETS_NOTE
+}
 
 /** GitHub stores uploaded assets with spaces replaced by dots, so the updater URL must use that name. */
 export function releaseAssetName(fileName) {
   return fileName.replaceAll(' ', '.')
 }
 
-/** The `latest.json` the updater reads from the latest GitHub Release. */
-export function createUpdaterManifest({ version, assetName, signature, pubDate }) {
+/** The `latest.json` the updater reads from the latest GitHub Release; the app shows its `notes` before updating. */
+export function createUpdaterManifest({ version, assetName, signature, pubDate, notes = '' }) {
   if (!signature.trim()) throw new Error('The installer signature is empty')
   const platform = {
     signature: signature.trim(),
@@ -22,6 +26,7 @@ export function createUpdaterManifest({ version, assetName, signature, pubDate }
   }
   return {
     version,
+    notes: notes.trim(),
     pub_date: pubDate,
     platforms: {
       'windows-x86_64': platform,
@@ -31,13 +36,13 @@ export function createUpdaterManifest({ version, assetName, signature, pubDate }
 }
 
 /** Copies the installer and its signature under their release names and writes `latest.json` beside them. */
-export function writeReleaseAssets(installerPath, outputDir, version, pubDate = new Date().toISOString()) {
+export function writeReleaseAssets(installerPath, outputDir, version, pubDate = new Date().toISOString(), notes = process.env.VITE_RELEASE_NOTES ?? '') {
   const assetName = releaseAssetName(basename(installerPath))
   const signature = readFileSync(`${installerPath}.sig`, 'utf8')
   mkdirSync(outputDir, { recursive: true })
   copyFileSync(installerPath, join(outputDir, assetName))
   copyFileSync(`${installerPath}.sig`, join(outputDir, `${assetName}.sig`))
-  const manifest = createUpdaterManifest({ version, assetName, signature, pubDate })
+  const manifest = createUpdaterManifest({ version, assetName, signature, pubDate, notes })
   writeFileSync(join(outputDir, 'latest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   return assetName
 }

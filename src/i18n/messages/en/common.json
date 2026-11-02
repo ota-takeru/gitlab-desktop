@@ -67,6 +67,7 @@
   "update.currentVersion": "Current version {version}",
   "update.lastChecked": "Last checked",
   "update.lastCheckedNever": "Last checked: never",
+  "update.changesIn": "Changes in {version}",
   "update.downloadReady": "Downloaded · restart to update",
   "update.downloading": "Downloading in the background… (not installing)",
   "update.checkFailed": "Couldn't check for updates.",

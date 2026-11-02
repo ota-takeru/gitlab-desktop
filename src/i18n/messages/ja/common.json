@@ -67,6 +67,7 @@
   "update.currentVersion": "現在のバージョン {version}",
   "update.lastChecked": "最終確認",
   "update.lastCheckedNever": "最終確認 未確認",
+  "update.changesIn": "{version} の変更内容",
   "update.downloadReady": "ダウンロード済み · 再起動して更新できます",
   "update.downloading": "バックグラウンドでダウンロード中…（インストールはしません）",
   "update.checkFailed": "更新を確認できませんでした。",
