@@ -462,14 +462,15 @@ it('switches a project screen between its MRs and branches, and shows the MRs of
 
   fireEvent.click(await screen.findByRole('button', { name: 'feature/searchのMRを表示' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject&sourceBranch=feature%2Fsearch&state=all'))
-  expect(screen.getByRole('tab', { name: 'MR' })).toHaveAttribute('aria-selected', 'true')
+  // A list opened for the first time shows a frame later; the branches stay until then.
+  await waitFor(() => expect(screen.getByRole('tab', { name: 'MR' })).toHaveAttribute('aria-selected', 'true'))
   expect(screen.getByText('ブランチ: feature/search')).toBeInTheDocument()
 
   // Choosing MR again returns to all the project's MRs.
   fireEvent.click(screen.getByRole('tab', { name: 'MR' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject'))
   // The branch's MRs stay mounted for a quick return, hidden.
-  expect(screen.getByText('ブランチ: feature/search')).not.toBeVisible()
+  await waitFor(() => expect(screen.getByText('ブランチ: feature/search')).not.toBeVisible())
 })
 
 it('keeps the account, theme and connection in one settings entry', async () => {

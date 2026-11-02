@@ -79,7 +79,8 @@ import { useLoadedMergeRequestNotifications } from './todoCache'
 import { appendComposerBuffer, clearComposerBuffer, createComposerBackendKey, createComposerBufferKey, moveComposerBuffer, rememberComposerTarget, restoreComposerBuffer, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
 import { ChangesTab } from './MergeRequestChangesTab'
 import { DraftList, type DraftStatus } from './DraftList'
-import { LoadingPanel } from './LoadingPanel'
+import { LoadingSkeleton } from './LoadingPanel'
+import { useFadeAfterLoading } from './useFadeAfterLoading'
 import { DescriptionPanel, OverviewTab } from './MergeRequestOverviewTab'
 import { Bar, Row } from '../../components/Row'
 
@@ -1042,6 +1043,7 @@ function DiscussionTab({ settled, focusNoteId, onFocusNoteDone, projectId, iid, 
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
   const [filter, setFilter] = useState<DiscussionFilter>('all')
+  const threadsFade = useFadeAfterLoading(loading && !discussions.length)
   // While a new comment is sent, the composer keeps its place on screen and the comment appears above it,
   // instead of pushing the composer down. The place is released once React has shown the refreshed threads.
   const composerRef = useRef<HTMLDivElement | null>(null)
@@ -1081,8 +1083,8 @@ function DiscussionTab({ settled, focusNoteId, onFocusNoteDone, projectId, iid, 
       threads={<>
         {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
         {discussionError && discussions.length ? <Alert severity="warning">{t('mergeRequest.detail.discussionRefreshFailed', { error: discussionError.message })}</Alert> : null}
-        {loading && !discussions.length ? <LoadingPanel label={t('mergeRequest.detail.discussionLoading')} /> : null}
-        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList settled={settled} filter={filter} onFilterChange={setFilter} focusNoteId={focusNoteId} onFocusNoteDone={onFocusNoteDone} onUploadAttachment={onUploadAttachment} projectId={projectId} iid={iid} headSha={headSha} reactions={reactions} editingNoteId={editingNoteId} mentionParticipants={mentionParticipants} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
+        {loading && !discussions.length ? <LoadingSkeleton label={t('mergeRequest.detail.discussionLoading')} variant="discussion" /> : null}
+        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <Box sx={threadsFade}><DiscussionList settled={settled} filter={filter} onFilterChange={setFilter} focusNoteId={focusNoteId} onFocusNoteDone={onFocusNoteDone} onUploadAttachment={onUploadAttachment} projectId={projectId} iid={iid} headSha={headSha} reactions={reactions} editingNoteId={editingNoteId} mentionParticipants={mentionParticipants} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /></Box> : null}
       </>}
     />
   )

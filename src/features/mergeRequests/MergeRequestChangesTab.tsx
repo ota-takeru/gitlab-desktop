@@ -17,7 +17,8 @@ import type { ThreadActions } from './DiffThreads'
 import { DiffViewer } from './DiffViewer'
 import type { ReviewedFileContext } from './useReviewedFiles'
 import type { SuggestionActions } from './SuggestionBlock'
-import { LoadingPanel } from './LoadingPanel'
+import { LoadingSkeleton } from './LoadingPanel'
+import { useFadeAfterLoading } from './useFadeAfterLoading'
 import { currentLocale, translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
 import { Row } from '../../components/Row'
@@ -40,6 +41,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
   const compareFrom = versions.compareFrom
   const showingLocal = Boolean(local?.active)
   const showTimeline = !commitsError || commits.length > 0
+  const diffsFade = useFadeAfterLoading(changesLoading && !diffs.length)
   // The commit row stays in view under the MR header; the diff's own sticky rows start below it.
   const rootRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -64,9 +66,9 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
       {changesTruncated ? <Alert severity="warning">{t('review.changes.truncated')}</Alert> : null}
       {changesError && !diffs.length ? <Alert severity="error">{t('review.changes.diffError', { message: changesError.message })}</Alert> : null}
       {changesError && diffs.length ? <Alert severity="warning">{t('review.changes.diffStale', { message: changesError.message })}</Alert> : null}
-      {changesLoading && !diffs.length ? <LoadingPanel label={t('review.changes.loading')} /> : null}
+      {changesLoading && !diffs.length ? <LoadingSkeleton label={t('review.changes.loading')} variant="changes" /> : null}
       {!changesLoading && !changesError && compareFrom && !diffs.length ? <Typography color="textSecondary" role="status" variant="body2">{t('review.changes.noChangesSinceVersion')}</Typography> : null}
-      {(!changesLoading || diffs.length) && (!changesError || diffs.length) ? <DiffViewer threadActions={threadActions} pendingDrafts={pendingDrafts} lineComposer={lineComposer} discussionHeadSha={discussionHeadSha} discussions={discussions} discussionsIncomplete={discussionsIncomplete} onOpenDiscussion={onOpenDiscussion} reviewContext={!changesLoading && !changesError ? reviewContext : undefined} key={selectedCommit ?? (compareFrom ? `version:${compareFrom}` : 'mr')} allowComments={allowComments} diffs={diffs} fileContent={fileResult.data?.content} fileLoading={fileResult.loading} fileSource={fileSource} onComment={onComment} onSelectFile={onSelectFile} onViewChange={onViewChange} selectedFile={selectedFile} selectedPosition={selectedPosition} suggestionActions={suggestionActions} view={fileView} /> : null}
+      {(!changesLoading || diffs.length) && (!changesError || diffs.length) ? <Box sx={diffsFade}><DiffViewer threadActions={threadActions} pendingDrafts={pendingDrafts} lineComposer={lineComposer} discussionHeadSha={discussionHeadSha} discussions={discussions} discussionsIncomplete={discussionsIncomplete} onOpenDiscussion={onOpenDiscussion} reviewContext={!changesLoading && !changesError ? reviewContext : undefined} key={selectedCommit ?? (compareFrom ? `version:${compareFrom}` : 'mr')} allowComments={allowComments} diffs={diffs} fileContent={fileResult.data?.content} fileLoading={fileResult.loading} fileSource={fileSource} onComment={onComment} onSelectFile={onSelectFile} onViewChange={onViewChange} selectedFile={selectedFile} selectedPosition={selectedPosition} suggestionActions={suggestionActions} view={fileView} /></Box> : null}
       {fileResult.error ? <Alert severity="error">{t('review.changes.fileError', { message: fileResult.error.message })}</Alert> : null}
       </>}
       </Stack>
