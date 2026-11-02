@@ -808,7 +808,7 @@ function chunkSize(height: number): React.CSSProperties {
 }
 
 /** East Asian wide characters, which take about 1.7 columns of the monospace code font. */
-const WIDE_CHARACTER = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u
+const WIDE_CHARACTER = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/u
 
 /** Lines `text` wraps into in a code cell `columns` characters wide, after `lead` columns before it; one while the width is unknown. */
 function wrappedLines(text: string, columns: number, lead = 0): number {
