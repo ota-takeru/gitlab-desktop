@@ -231,6 +231,10 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
   const extensions = useMemo(() => [...createRichMarkdownExtensions(placeholder), MentionHighlight], [placeholder])
   const editorProps = useMemo<EditorOptions['editorProps']>(() => ({
     attributes: { 'aria-label': label, 'aria-multiline': 'true', role: 'textbox' },
+    // ProseMirror counts clicks itself within 500ms and 10px, so a double-click right after placing the caret counts
+    // as a triple-click and selects the whole paragraph, every line of it. The browser selects by the system's count:
+    // a word on a double-click, the clicked line on a triple-click.
+    handleDOMEvents: { mousedown: (_view, event) => event.detail >= 2 },
     handleKeyDown: (view, event) => {
       if (callbacksRef.current.onKeyDown?.(event)) return true
       if (moveUpPastLeadingBreak(view, event)) return true
