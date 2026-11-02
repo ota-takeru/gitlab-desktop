@@ -11,6 +11,7 @@ import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
+import { keyframes } from '@mui/material/styles'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
@@ -134,6 +135,8 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const [collapsedThreads, setCollapsedThreads] = useState<Record<string, boolean>>({})
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
   const [pendingJumpNoteId, setPendingJumpNoteId] = useState<string | null>(null)
+  // The comment a jump landed on, lit for a moment so the reader sees which one it is.
+  const [flash, setFlash] = useState<{ noteId: string; at: number } | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const restoreScrollRef = useRef<{ element: HTMLElement; top: number; left: number } | null>(null)
   const anchorRef = useRef<ScrollAnchor | null>(null)
@@ -237,6 +240,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         // The view moved without a scroll event yet; the next run must keep this position, not the one before the jump.
         if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current)
         setPendingJumpNoteId(null)
+        setFlash({ noteId: pendingJumpNoteId, at: Date.now() })
         restoreScrollRef.current = null
         return
       }
@@ -252,6 +256,13 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     const anchor = anchorRef.current
     if (host && listRef.current && anchor) restoreAnchor(host, listRef.current, anchor)
   }, [collapsedThreads, expandedReplies, filter, notePages, pendingJumpNoteId, visibleDiscussions, older?.loading, older?.hasOlder, older?.error])
+
+  useEffect(() => {
+    if (!flash) return
+    // Shown again after being hidden, a highlight that has run its time is not lit again.
+    const timer = setTimeout(() => setFlash(null), Math.max(0, flash.at + FLASH_MS - Date.now()))
+    return () => clearTimeout(timer)
+  }, [flash])
 
   const updatePreservingScroll = (update: () => void): void => {
     restoreScrollRef.current = captureScrollPosition(listRef.current)
@@ -395,6 +406,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                 disabled={disabled}
                 divided={index > 0}
                 editBufferKey={editing === row.note.id ? noteEditBufferKey?.(row.note) ?? JSON.stringify({ noteEdit: row.note.id }) : null}
+                flash={flash?.noteId === row.note.id}
                 key={row.note.id}
                 mentionParticipants={mentionParticipants}
                 note={row.note}
@@ -434,6 +446,9 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
 
 const noAwards: readonly AwardEmoji[] = []
 
+const FLASH_MS = 2000
+const flashFade = keyframes`from { opacity: 0.2; } to { opacity: 0; }`
+
 interface NoteItemProps {
   awards?: readonly AwardEmoji[]
   confirm: ReturnType<typeof useConfirm>
@@ -444,6 +459,8 @@ interface NoteItemProps {
   editedAt?: string | null
   /** Where the edit's text is kept while this comment is being edited; null otherwise. */
   editBufferKey: string | null
+  /** Lit for a moment after a jump landed on this comment. */
+  flash: boolean
   mentionParticipants?: GitLabUser[]
   note: Note
   onDelete: (note: Note) => Promise<boolean>
@@ -458,7 +475,7 @@ interface NoteItemProps {
 }
 
 /** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
-const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, editedAt, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, editedAt, flash, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
   const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
@@ -483,6 +500,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
   return (
     <Box
       component="li"
+      data-flash={flash || undefined}
       data-note-id={note.id}
       ref={itemRef}
       tabIndex={-1}
@@ -499,6 +517,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
         '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` },
         '&:hover .note-actions, &:focus-within .note-actions': { opacity: 1 },
         '&::before': unread ? { bgcolor: 'primary.main', bottom: 0, content: '""', left: 0, position: 'absolute', top: 0, width: 3 } : undefined,
+        '&::after': flash ? { animation: `${flashFade} ${FLASH_MS}ms ease-out forwards`, bgcolor: 'primary.main', content: '""', inset: 0, pointerEvents: 'none', position: 'absolute', '@media (prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.12 } } : undefined,
       }}
     >
       <Box sx={firstLine(6)}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>

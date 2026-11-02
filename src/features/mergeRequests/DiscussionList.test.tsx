@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '@mui/material/styles'
 
@@ -365,6 +365,32 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(document.activeElement).toHaveAttribute('data-note-id', 'chronologically-latest')
   })
 
+  it('lights the comment a jump lands on for a moment, moving to the next one jumped to', () => {
+    vi.useFakeTimers()
+    try {
+      const discussions = [
+        createDiscussion([createNote('older', otherUser, { createdAt: '2026-01-01T00:00:00.000Z' })], 'discussion-older'),
+        createDiscussion([createNote('newest', otherUser, { createdAt: '2026-02-01T00:00:00.000Z' })], 'discussion-newest'),
+      ]
+      const { container } = renderList(discussions, { unreadNoteIds: ['older'] })
+      const lit = () => [...container.querySelectorAll('[data-flash]')].map((item) => item.getAttribute('data-note-id'))
+      expect(lit()).toEqual([])
+
+      fireEvent.click(screen.getByRole('button', { name: /未読へ/ }))
+      expect(lit()).toEqual(['older'])
+      act(() => vi.advanceTimersByTime(1000))
+      fireEvent.click(screen.getByRole('button', { name: '最新へ' }))
+      expect(lit()).toEqual(['newest'])
+
+      act(() => vi.advanceTimersByTime(1999))
+      expect(lit()).toEqual(['newest'])
+      act(() => vi.advanceTimersByTime(1))
+      expect(lit()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('marks every loaded note read, including other note pages and collapsed resolved threads', () => {
     const notes = Array.from({ length: 61 }, (_, index) => createNote(`read-${index + 1}`, otherUser))
     const resolvedNotes = [
@@ -574,6 +600,7 @@ describe('DiscussionList code beside line comments', () => {
     view.rerender(list([linked, ...newer], { ...older, hasOlder: false }))
     await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'linked'))
+    expect(document.activeElement).toHaveAttribute('data-flash', 'true')
   })
 
   it('stops looking for a linked comment that is not among all the threads', async () => {
