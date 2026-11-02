@@ -75,7 +75,8 @@ export function useMentionSuggestions({ disabled = false, editorRef, enabled, pa
         setActiveIndex((current) => (current - 1 + candidates.length) % candidates.length)
         return true
       }
-      if (event.key === 'Enter' && !event.ctrlKey && !event.shiftKey) {
+      // Tab takes the candidate too, so typing goes on after it without reaching for Enter.
+      if ((event.key === 'Enter' || event.key === 'Tab') && !event.ctrlKey && !event.shiftKey) {
         event.preventDefault()
         insert(candidates[activeIndex] ?? candidates[0])
         return true
