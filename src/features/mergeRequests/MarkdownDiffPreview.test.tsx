@@ -34,4 +34,14 @@ describe('MarkdownDiffPreview', () => {
     expect(within(preview).queryByText('text already present')).not.toBeInTheDocument()
     expect(within(preview).queryByLabelText(/^削除/u)).not.toBeInTheDocument()
   })
+
+  it('renders an edited table row as a table under its header', () => {
+    const parsed = parseDiff('@@ -3,3 +3,3 @@\n | a | 1 |\n | b | 2 |\n-| c | 3 |\n+| c | 30 |\n', 'docs/README.md', 'docs/README.md')
+    if (parsed.status !== 'valid') throw new Error('invalid diff')
+    render(<ThemeProvider theme={createAppTheme('light')}><MarkdownDiffPreview layout="unified" lines={parsed.lines} source={{ content: '| Name | Value |\n| --- | --- |\n| a | 1 |\n| b | 2 |\n| c | 30 |\n', diffLines: parsed.lines }} /></ThemeProvider>)
+    const newPart = screen.getByRole('region', { name: '追加 5行' })
+    expect(within(newPart).getByRole('columnheader', { name: 'Name' })).toBeInTheDocument()
+    expect(within(newPart).getByRole('cell', { name: '30' })).toBeInTheDocument()
+    expect(within(newPart).queryByRole('cell', { name: 'a' })).not.toBeInTheDocument()
+  })
 })

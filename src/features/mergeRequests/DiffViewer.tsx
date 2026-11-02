@@ -38,9 +38,10 @@ import type { HistoryCursor } from './lineHistory'
 import { LineHistoryView } from './LineHistoryView'
 import { ChangeMarker } from './ChangeMarker'
 import { changeMarkerStyles } from './changeMarkerStyles'
-import { MarkdownDiffPreview } from './MarkdownDiffPreview'
+import { FetchedMarkdownDiffPreview, MarkdownDiffPreview } from './MarkdownDiffPreview'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
+import { markdownDiffNeedsFile } from './markdownDiff'
 import { annotateFullFile, filePageStart, firstChangedFileLine, type FullFileDiffAnnotations, type RemovedFileLines } from './fullFileAnnotations'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
@@ -344,6 +345,10 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     sessionId: sourceSessionId,
     shown: gapShown,
   } : undefined, [expandGap, fileContent, gapQuery, gapReadable, gapShown, gapsExpandable, language, sourceSessionId])
+  // A rendered Markdown edit reads the lines before it (a table header, an open fence) from the whole new file,
+  // which is read only when the diff does not show them.
+  const markdownSource = useMemo(() => parsed.status === 'valid' ? { content: fileContent, diffLines: parsed.lines } : undefined, [fileContent, parsed])
+  const markdownNeedsFile = useMemo(() => renderedMarkdownDiff && parsed.status === 'valid' && typeof fileContent !== 'string' && markdownDiffNeedsFile(rows, parsed.lines), [fileContent, parsed, renderedMarkdownDiff, rows])
 
   const navigateSearch = (direction: -1 | 1) => {
     if (searchMatches.length === 0) return
@@ -517,7 +522,9 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const blameSelection = chosenRange ? chosenLineRange(displayLines.slice(chosenRange[0], chosenRange[1] + 1)) : undefined
   const firstRows = wholePageKey === diffKey ? rows.length : Math.max(selectedLineIndex, currentSearchMatch, chosenRange?.[1] ?? -1) - diffOffset + 1
   const diffContent = renderedMarkdownDiff
-    ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}><MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} /></MarkdownLinkProvider>
+    ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{markdownNeedsFile && gapQuery && sourceSessionId && !selectedDiff?.deletedFile
+      ? <FetchedMarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} query={gapQuery} sessionId={sourceSessionId} source={markdownSource} />
+      : <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} source={markdownSource} />}</MarkdownLinkProvider>
     : layout === 'split'
     ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={rows} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
     : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={rows} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
