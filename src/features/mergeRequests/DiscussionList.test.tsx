@@ -431,6 +431,19 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(screen.getByRole('button', { name: '未解決' })).toBeDisabled()
   })
 
+  it('offers older discussions below a thread read on its own, between it and the loaded ones', () => {
+    const discussions = [createDiscussion([createNote('linked-note', otherUser)], 'linked'), createDiscussion([createNote('newest-page-note', otherUser)], 'newest')]
+    render(
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} detachedDiscussionId="linked" discussions={discussions} older={{ error: null, hasOlder: true, limitReached: false, loading: false, onLoad: vi.fn(), onRetry: vi.fn() }} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>,
+    )
+    const [linked, newest] = screen.getAllByRole('article')
+    const load = screen.getByRole('button', { name: '以前の議論を読み込む' })
+    expect(linked.compareDocumentPosition(load) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(newest.compareDocumentPosition(load) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
   it('offers older discussions above the loaded ones and reports loading, errors and the limit', () => {
     const discussions = [createDiscussion([createNote('newest-page-note', otherUser)], 'newest')]
     const onLoad = vi.fn()

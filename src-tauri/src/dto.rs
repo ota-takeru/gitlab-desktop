@@ -168,6 +168,8 @@ pub struct ProjectFilters {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub owned: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub starred: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_after: Option<String>,
@@ -351,6 +353,13 @@ pub enum Query {
         project_path: String,
         iid: String,
         since_note_id: String,
+    },
+    /// The thread holding one comment, read on its own so a comment linked from
+    /// a notification shows before the pages between it and the newest are read.
+    NoteDiscussion {
+        project_id: String,
+        iid: String,
+        note_id: String,
     },
     /// One page of the merge request's pipelines, newest first.
     MrPipelines {

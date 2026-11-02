@@ -135,6 +135,7 @@
   "query.invalidUpdatedDate": "合并请求的更新日期无效。",
   "query.jobUnsupported": "无法以此方式读取作业详情。",
   "query.noteAwardsUnsupported": "无法以此方式读取评论的回应。",
+  "query.noteDiscussionUnsupported": "无法以此方式读取评论所在的讨论串。",
   "query.searchTooLong": "搜索内容过长。",
   "query.templatesUnsupported": "无法以这种方式读取模板。",
   "queue.busy": "等待中的请求过多。",

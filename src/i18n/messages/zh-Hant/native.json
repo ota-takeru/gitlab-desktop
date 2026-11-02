@@ -135,6 +135,7 @@
   "query.invalidUpdatedDate": "合併請求的更新日期無效。",
   "query.jobUnsupported": "無法以此方式讀取作業詳細資料。",
   "query.noteAwardsUnsupported": "無法以此方式讀取留言的回應。",
+  "query.noteDiscussionUnsupported": "無法以此方式讀取留言所在的討論串。",
   "query.searchTooLong": "搜尋內容過長。",
   "query.templatesUnsupported": "無法以這種方式讀取範本。",
   "queue.busy": "等待中的請求過多。",

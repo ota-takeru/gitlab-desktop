@@ -16,7 +16,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
 import { edgeRow } from '../../components/edges'
@@ -90,6 +90,8 @@ interface DiscussionListProps {
   suggestionActions?: SuggestionActions
   /** A comment a link named (`#note_<id>`), shown once loaded; older pages load until it is. */
   focusNoteId?: string
+  /** A thread read on its own, older than the others; the older pages between are loaded below it. */
+  detachedDiscussionId?: string
   /** The named comment was shown, or is not among the comments. */
   onFocusNoteDone?: () => void
   /** Uploads a file pasted into an edit and returns its Markdown. */
@@ -122,7 +124,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, filter: filterProp, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFilterChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, detachedDiscussionId, discussions, disabled = false, editingNoteId, filter: filterProp, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFilterChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
@@ -299,6 +301,17 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     else focusDone()
   }, [canLoadOlder, focusDiscussion, focusDone, focusJump, focusNoteId, loadingOlder])
 
+  // The older pages are loaded where they belong: above the threads read, or below a thread read on its own.
+  const detachedShown = visibleDiscussions.some(({ discussion }) => discussion.id === detachedDiscussionId)
+  const olderRow = older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (
+    <Row spacing={1} sx={{ justifyContent: 'center', minHeight: 32 }}>
+      {older.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('review.discussion.older.loading')}</Typography>
+        : older.error ? <><Typography color="error" variant="caption">{t('review.discussion.older.error', { message: older.error })}</Typography><Button onClick={older.onRetry}>{t('review.discussion.older.retry')}</Button></>
+          : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>{t('review.discussion.older.load')}</Button>
+            : <Typography color="textSecondary" variant="caption">{t('review.discussion.older.limit')}</Typography>}
+    </Row>
+  ) : null
+
   return (
     <Stack ref={listRef} spacing={1.5} sx={{ overflowAnchor: 'none' }}>
       <Stack direction={{ sm: 'row', xs: 'column' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 0.5, ...edgeRow }}>
@@ -322,14 +335,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">{t('review.discussion.markRead')}</Button> : null}
         </Row>
       </Stack>
-      {older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (
-        <Row spacing={1} sx={{ justifyContent: 'center', minHeight: 32 }}>
-          {older.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('review.discussion.older.loading')}</Typography>
-            : older.error ? <><Typography color="error" variant="caption">{t('review.discussion.older.error', { message: older.error })}</Typography><Button onClick={older.onRetry}>{t('review.discussion.older.retry')}</Button></>
-              : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>{t('review.discussion.older.load')}</Button>
-                : <Typography color="textSecondary" variant="caption">{t('review.discussion.older.limit')}</Typography>}
-        </Row>
-      ) : null}
+      {detachedShown ? null : olderRow}
       {visibleDiscussions.map(({ discussion, notes }) => {
         const canResolve = notes.some((note) => note.resolvable)
         const resolved = canResolve && notes.filter((note) => note.resolvable).every((note) => note.resolved)
@@ -352,7 +358,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const firstNote = notes[0]
         const threadLabel = positionLabel ?? t('review.discussion.threadLabel', { author: firstNote?.author.name ?? '' })
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
-        return (
+        const thread = (
           // A thread skipped out of view keeps the height it was last laid out at; one added since takes an estimate
           // until shown, and the anchor above keeps the thread being read still when that changes.
           <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, containIntrinsicSize: 'auto 240px', minWidth: 0, overflow: 'clip', '[data-skip-offscreen="true"] > &': { contentVisibility: 'auto' } }}>
@@ -437,6 +443,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
             </Row> : null}
           </Box>
         )
+        return discussion.id === detachedDiscussionId && olderRow ? <Fragment key={discussion.id}>{thread}{olderRow}</Fragment> : thread
       })}
       {commentDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">{t('review.discussion.empty')}</Typography></Paper> : null}
       {commentDiscussions.length > 0 && filteredDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">{t('review.discussion.noMatch')}</Typography></Paper> : null}

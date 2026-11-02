@@ -75,6 +75,8 @@ export interface ProjectQuery {
   minAccessLevel?: number
   topics?: string[]
   language?: string
+  /** Only the projects the user owns. */
+  owned?: true
   starred?: true
   lastActivityAfter?: string
   lastActivityBefore?: string
@@ -289,6 +291,18 @@ export interface NoteAwardsQuery {
   sinceNoteId: string
 }
 
+/**
+ * The thread holding one comment, read on its own so a comment linked from a
+ * notification shows before the pages between it and the newest are read.
+ * Null when GitLab does not say which thread it is or it is another MR's.
+ */
+export interface NoteDiscussionQuery {
+  kind: 'noteDiscussion'
+  projectId: string
+  iid: string
+  noteId: string
+}
+
 /** One user's emoji reaction; `name` is GitLab's emoji name such as `thumbsup`. */
 export interface AwardEmoji {
   name: string
@@ -383,6 +397,7 @@ export type GitLabQuery =
   | MrApprovalsQuery
   | MrAwardsQuery
   | NoteAwardsQuery
+  | NoteDiscussionQuery
   | MrPipelinesQuery
   | PipelineQuery
   | PipelineJobsQuery
@@ -609,6 +624,7 @@ export type QueryData =
   | MergeRequest
   | Diff[]
   | Discussion[]
+  | Discussion
   | Commit[]
   | Draft[]
   | FileContent
@@ -911,6 +927,7 @@ export type GitLabQueryData<Q extends GitLabQuery> =
                 : Q extends MrApprovalsQuery ? MrApproval[]
                 : Q extends MrAwardsQuery ? AwardEmoji[]
                 : Q extends NoteAwardsQuery ? NoteAwards[]
+                : Q extends NoteDiscussionQuery ? Discussion | null
                 : Q extends MrPipelinesQuery ? Pipeline[]
                 : Q extends PipelineQuery ? Pipeline
                 : Q extends PipelineJobsQuery ? PipelineJob[]

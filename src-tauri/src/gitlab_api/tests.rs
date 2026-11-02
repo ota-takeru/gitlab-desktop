@@ -412,6 +412,7 @@ fn project_search_sends_its_conditions() {
                 min_access_level: Some(40),
                 topics: Some(vec!["rust".to_owned(), "desktop".to_owned()]),
                 language: Some("TypeScript".to_owned()),
+                owned: true,
                 starred: true,
                 last_activity_after: Some("2026-10-01T00:00:00.000Z".to_owned()),
                 order_by: Some("name".to_owned()),
@@ -434,6 +435,7 @@ fn project_search_sends_its_conditions() {
         params.get("with_programming_language").unwrap(),
         "TypeScript"
     );
+    assert_eq!(params.get("owned").unwrap(), "true");
     assert_eq!(params.get("starred").unwrap(), "true");
     assert_eq!(
         params.get("last_activity_after").unwrap(),
@@ -2170,6 +2172,70 @@ fn comment_reactions_read_back_from_the_newest_page_to_the_oldest_shown_comment(
             .unwrap_err()
             .code,
         "INVALID_INPUT"
+    );
+}
+
+#[test]
+fn a_comments_thread_is_named_by_graphql_and_read_through_rest() {
+    let sha = "a".repeat(40);
+    let named = format!(
+        r#"{{"data":{{"note":{{"discussion":{{"id":"gid://gitlab/Discussion/{sha}"}}}}}}}}"#
+    );
+    let thread = format!(
+        r#"{{"id":"{sha}","individual_note":false,"notes":[{{"id":77,"body":"reply","author":{{"id":7,"username":"alice","name":"Alice"}},"created_at":"2026-10-01T09:00:00Z","system":false}}]}}"#
+    );
+    let fixture = Fixture::new(vec![
+        response("200 OK", &named, ""),
+        response("200 OK", &thread, ""),
+    ]);
+    let query = Query::NoteDiscussion {
+        project_id: "42".to_owned(),
+        iid: "9".to_owned(),
+        note_id: "77".to_owned(),
+    };
+    let result = runtime()
+        .block_on(fetch(&Client::new(), &fixture.url(), &query))
+        .unwrap();
+    assert_eq!(result.data["id"], sha.as_str());
+    assert_eq!(result.data["notes"][0]["id"], "77");
+    let requests = fixture.requests.lock().unwrap();
+    assert!(requests[0].starts_with("POST /api/graphql "));
+    assert_eq!(
+        graphql_body(&requests[0])["variables"]["id"],
+        "gid://gitlab/Note/77"
+    );
+    assert!(requests[1].starts_with(&format!(
+        "GET /api/v4/projects/42/merge_requests/9/discussions/{sha} "
+    )));
+    drop(requests);
+
+    // A comment GitLab does not find, or whose thread is another MR's, has no thread here.
+    let fixture = Fixture::new(vec![response("200 OK", r#"{"data":{"note":null}}"#, "")]);
+    let result = runtime()
+        .block_on(fetch(&Client::new(), &fixture.url(), &query))
+        .unwrap();
+    assert!(result.data.is_null());
+    let fixture = Fixture::new(vec![
+        response("200 OK", &named, ""),
+        response("404 Not Found", "{}", ""),
+    ]);
+    let result = runtime()
+        .block_on(fetch(&Client::new(), &fixture.url(), &query))
+        .unwrap();
+    assert!(result.data.is_null());
+
+    // A GitLab without the field answers with errors only.
+    let fixture = Fixture::new(vec![response(
+        "200 OK",
+        r#"{"errors":[{"message":"Field 'note' doesn't exist"}]}"#,
+        "",
+    )]);
+    assert_eq!(
+        runtime()
+            .block_on(fetch(&Client::new(), &fixture.url(), &query))
+            .unwrap_err()
+            .code,
+        "UNSUPPORTED"
     );
 }
 

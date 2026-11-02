@@ -36,6 +36,8 @@ const detailMocks = vi.hoisted(() => {
     refreshKinds: [] as unknown[],
     /** A refresh that never comes back, as a slow network read. */
     holdRefresh: false,
+    /** The thread a linked comment is in, read on its own. */
+    linkedDiscussion: null as unknown,
     applyConfirmedMock: vi.fn(),
     discussions: { 1: [discussion] } as Record<number, typeof discussion[]>,
     flushComposerBuffersMock: vi.fn(),
@@ -130,6 +132,7 @@ vi.mock('../shared/useGitLabQuery', async () => {
     else if (query?.kind === 'approvals') data = []
     else if (query?.kind === 'mrAwards') data = detailMocks.mrAwards
     else if (query?.kind === 'noteAwards') data = detailMocks.noteAwards
+    else if (query?.kind === 'noteDiscussion') data = detailMocks.linkedDiscussion
     else if (query?.kind === 'mrPipelines') data = []
     else if (query?.kind === 'mrVersions') data = detailMocks.versions
     else if (query?.kind === 'versionCompare') data = [detailMocks.diff]
@@ -785,6 +788,23 @@ describe('MergeRequestDetail header, results and pending review', () => {
     render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail focusNote={{ noteId: '1002' }} initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onNoteFocused={onNoteFocused} onTabChange={vi.fn()} tab="discussion" /></ThemeProvider></QueryClientProvider>)
     await waitFor(() => expect(onNoteFocused).toHaveBeenCalled())
     expect(detailMocks.refreshKinds).toContain('discussions')
+  })
+
+  it('shows the older thread of a linked comment read on its own first, without walking the pages back to it', async () => {
+    detailMocks.holdRefresh = true
+    detailMocks.linkedDiscussion = { id: 'discussion-old', individualNote: false, notes: [
+      { id: '500', body: '古いスレッド', author: { id: '99', name: 'Colleague', username: 'colleague' }, createdAt: '2025-12-01T00:00:00.000Z', system: false, resolvable: false, resolved: false, position: null },
+      { id: '501', body: '古いスレッドへの返信', author: { id: '99', name: 'Colleague', username: 'colleague' }, createdAt: '2026-04-05T00:00:00.000Z', system: false, resolvable: false, resolved: false, position: null },
+    ] }
+    onTestFinished(() => { detailMocks.holdRefresh = false; detailMocks.linkedDiscussion = null })
+    const onNoteFocused = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail focusNote={{ noteId: '501' }} initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onNoteFocused={onNoteFocused} onTabChange={vi.fn()} tab="discussion" /></ThemeProvider></QueryClientProvider>)
+    expect(await screen.findByText('古いスレッドへの返信')).toBeInTheDocument()
+    await waitFor(() => expect(onNoteFocused).toHaveBeenCalled())
+    expect(detailMocks.queryCalls).toContainEqual({ iid: '120', kind: 'noteDiscussion', noteId: '501', projectId: '7' })
+    const [first] = screen.getAllByRole('article')
+    expect(first).toHaveAttribute('data-discussion-id', 'discussion-old')
   })
 
   it('copies the MR link from the header', async () => {

@@ -178,6 +178,9 @@ pub(super) fn build_query_url(
                 }
             }
             add_optional_param(&mut params, "with_programming_language", &filters.language);
+            if filters.owned {
+                params.push(("owned".to_owned(), "true".to_owned()));
+            }
             if filters.starred {
                 params.push(("starred".to_owned(), "true".to_owned()));
             }
@@ -543,6 +546,13 @@ pub(super) fn build_query_url(
                 "コメントのリアクションはこの方法では取得できません。",
             )
             .key("native.query.noteAwardsUnsupported"))
+        }
+        Query::NoteDiscussion { .. } => {
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                "コメントのスレッドはこの方法では取得できません。",
+            )
+            .key("native.query.noteDiscussionUnsupported"))
         }
         Query::MrPipelines {
             project_id,

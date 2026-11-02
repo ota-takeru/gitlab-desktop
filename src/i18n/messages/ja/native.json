@@ -135,6 +135,7 @@
   "query.invalidUpdatedDate": "MRの更新日の指定が正しくありません。",
   "query.jobUnsupported": "ジョブの情報はこの方法では取得できません。",
   "query.noteAwardsUnsupported": "コメントのリアクションはこの方法では取得できません。",
+  "query.noteDiscussionUnsupported": "コメントのスレッドはこの方法では取得できません。",
   "query.searchTooLong": "検索条件が長すぎます。",
   "query.templatesUnsupported": "テンプレートはこの方法では取得できません。",
   "queue.busy": "処理待ちが多すぎます。",

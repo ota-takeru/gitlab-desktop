@@ -135,6 +135,7 @@
   "query.invalidUpdatedDate": "The merge request update date is not valid.",
   "query.jobUnsupported": "Job details can't be read this way.",
   "query.noteAwardsUnsupported": "Comment reactions can't be read this way.",
+  "query.noteDiscussionUnsupported": "A comment's thread can't be read this way.",
   "query.searchTooLong": "The search is too long.",
   "query.templatesUnsupported": "Templates can't be read this way.",
   "queue.busy": "Too many requests are waiting.",

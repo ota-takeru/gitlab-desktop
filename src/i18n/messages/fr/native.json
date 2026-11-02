@@ -135,6 +135,7 @@
   "query.invalidUpdatedDate": "La date de mise à jour de la requête de fusion n’est pas valide.",
   "query.jobUnsupported": "Les détails du job ne peuvent pas être lus de cette façon.",
   "query.noteAwardsUnsupported": "Les réactions aux commentaires ne peuvent pas être lues de cette façon.",
+  "query.noteDiscussionUnsupported": "Le fil d'un commentaire ne peut pas être lu de cette façon.",
   "query.searchTooLong": "La recherche est trop longue.",
   "query.templatesUnsupported": "Les modèles ne peuvent pas être lus de cette façon.",
   "queue.busy": "Trop de requêtes sont en attente.",

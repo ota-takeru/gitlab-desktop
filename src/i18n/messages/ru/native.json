@@ -135,6 +135,7 @@
   "query.invalidUpdatedDate": "Недопустимая дата обновления запроса на слияние.",
   "query.jobUnsupported": "Сведения о задании нельзя прочитать таким способом.",
   "query.noteAwardsUnsupported": "Реакции на комментарии нельзя прочитать таким способом.",
+  "query.noteDiscussionUnsupported": "Ветку комментария нельзя прочитать таким способом.",
   "query.searchTooLong": "Поисковый запрос слишком длинный.",
   "query.templatesUnsupported": "Шаблоны нельзя прочитать таким способом.",
   "queue.busy": "Ожидает слишком много запросов.",

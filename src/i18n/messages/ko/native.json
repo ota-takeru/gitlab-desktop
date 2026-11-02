@@ -135,6 +135,7 @@
   "query.invalidUpdatedDate": "머지 리퀘스트 업데이트 날짜가 올바르지 않습니다.",
   "query.jobUnsupported": "이 방법으로는 작업 세부 정보를 읽을 수 없습니다.",
   "query.noteAwardsUnsupported": "이 방법으로는 댓글 반응을 읽을 수 없습니다.",
+  "query.noteDiscussionUnsupported": "이 방법으로는 댓글의 스레드를 읽을 수 없습니다.",
   "query.searchTooLong": "검색어가 너무 깁니다.",
   "query.templatesUnsupported": "템플릿은 이 방법으로 읽을 수 없습니다.",
   "queue.busy": "대기 중인 요청이 너무 많습니다.",

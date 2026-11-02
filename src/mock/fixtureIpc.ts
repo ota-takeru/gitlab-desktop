@@ -215,6 +215,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'mr': return find(request).mergeRequest
       case 'discussions': return find(request).discussions
       case 'notes': return find(request).discussions.flatMap((discussion) => discussion.notes)
+      case 'noteDiscussion': return find(request).discussions.find((discussion) => discussion.notes.some((note) => note.id === request.noteId)) ?? null
       case 'commits': return find(request).commits.map(({ createdAt, id, title }) => ({ createdAt, committedAt: createdAt, id, title }))
       case 'drafts': return drafts.get(keyOf(request)) ?? []
       case 'diffs': return find(request).diffs
