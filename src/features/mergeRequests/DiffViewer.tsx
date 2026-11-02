@@ -696,6 +696,9 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRan
     return chunkRanges(lines.length).map(([from, to]) => ({ lines: lines.slice(from, to), skipped: skipped.slice(from, to), start: startIndex + from, tokens: tokens.slice(from, to) }))
   }, [lines, startIndex, tokens])
   const shown = useProgressiveCount(pieces, firstRows)
+  // The prefix and the space after it take two columns of the code cell.
+  const columns = useCodeColumns(scrollRef, '.diff-code', `unified:${blameEnabled}`)
+  const heights = useMemo(() => pieces.map((piece) => piece.lines.reduce((sum, line, index) => sum + wrappedLines(line.text, columns, 2) * ROW_HEIGHT + (piece.skipped[index].count > 0 ? GAP_HEIGHT : 0), 0)), [columns, pieces])
   // Rows are plain elements styled from this one block: a page holds up to
   // DIFF_PAGE_SIZE rows, and per-row styled components dominate render time.
   return (
@@ -721,7 +724,9 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRan
     })}>
       {lines.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
       <div className="diff-rows" onMouseOver={allowComments ? dragOver(selection) : undefined}>
-        {pieces.slice(0, shown).map((piece) => {
+        {pieces.map((piece, pieceIndex) => {
+          // A piece still to come holds its estimated room, so the page keeps its length while it fills in.
+          if (pieceIndex >= shown) return <div key={piece.start} style={{ height: heights[pieceIndex] }} />
           const end = piece.start + piece.lines.length - 1
           const hasMatch = searchMatchIndices.size > 0 && piece.lines.some((_, index) => searchMatchIndices.has(piece.start + index))
           const hasThreads = Boolean(threadView) && piece.lines.some((line) => lineHasThreads(line, threadView))
@@ -732,6 +737,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRan
             chosenFrom={chosenRange && chosenRange[1] >= piece.start && chosenRange[0] <= end ? Math.max(chosenRange[0], piece.start) : -1}
             chosenTo={chosenRange && chosenRange[1] >= piece.start && chosenRange[0] <= end ? Math.min(chosenRange[1], end) : -1}
             gapExpansion={piece.skipped.some((gap) => gap.count > 0) ? gapExpansion : undefined}
+            height={heights[pieceIndex]}
             key={piece.start}
             lines={piece.lines}
             searchMatchIndices={hasMatch ? searchMatchIndices : NO_MATCHES}
@@ -750,7 +756,7 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRan
 }
 
 /** A piece of a unified page; it renders again only when what it shows changes. */
-const UnifiedRows = memo(function UnifiedRows({ activeSearchMatch, allowComments, blameEnabled, chosenFrom, chosenTo, gapExpansion, lines, searchMatchIndices, searchTerm, selectedPosition, selection, skipped, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenFrom: number; chosenTo: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; searchMatchIndices: ReadonlySet<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; skipped: DiffGapInfo[]; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+const UnifiedRows = memo(function UnifiedRows({ activeSearchMatch, allowComments, blameEnabled, chosenFrom, chosenTo, gapExpansion, height, lines, searchMatchIndices, searchTerm, selectedPosition, selection, skipped, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenFrom: number; chosenTo: number; gapExpansion?: GapExpansion; height: number; lines: ParsedLine[]; searchMatchIndices: ReadonlySet<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; skipped: DiffGapInfo[]; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const t = useT()
   // Opened unchanged lines: plain context rows, outside paging and search.
   const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
@@ -761,7 +767,7 @@ const UnifiedRows = memo(function UnifiedRows({ activeSearchMatch, allowComments
     </div>
     <LineThreads line={line} view={threadView} />
   </Fragment>)
-  return <div className="diff-chunk" data-threads={threadView ? 'true' : undefined} style={chunkSize(lines.length)}>
+  return <div className="diff-chunk" data-threads={threadView ? 'true' : undefined} style={chunkSize(height)}>
     {lines.map((line, index) => {
       const isSelectedPosition = matchesPosition(line, selectedPosition)
       const position = linePosition(line)
@@ -788,15 +794,66 @@ const UnifiedRows = memo(function UnifiedRows({ activeSearchMatch, allowComments
 const ROW_CHUNK = 50
 /** Pieces rendered with the page at once; the rest follow in the background. */
 const FIRST_CHUNKS = 3
-/** A rendered row is at least this tall; an off-screen piece holds this much room until it has been laid out once. */
+/** One line of code is this tall; an off-screen piece holds the room its lines are estimated to wrap into until it has been laid out once. */
 const ROW_HEIGHT = 20
+/** The row that stands for omitted lines (`DiffGap`). */
+const GAP_HEIGHT = 24
 const NO_MATCHES: ReadonlySet<number> = new Set()
 
 /** Pieces without threads skip their layout and paint while off screen; a thread's editor or menus are never clipped. */
 const chunkStyles = { '& .diff-chunk:not([data-threads])': { contentVisibility: 'auto' } }
 
-function chunkSize(rows: number): React.CSSProperties {
-  return { containIntrinsicSize: `auto ${rows * ROW_HEIGHT}px` }
+function chunkSize(height: number): React.CSSProperties {
+  return { containIntrinsicSize: `auto ${height}px` }
+}
+
+/** East Asian wide characters, which take about 1.7 columns of the monospace code font. */
+const WIDE_CHARACTER = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u
+
+/** Lines `text` wraps into in a code cell `columns` characters wide, after `lead` columns before it; one while the width is unknown. */
+function wrappedLines(text: string, columns: number, lead = 0): number {
+  if (columns <= 0) return 1
+  let width = lead
+  for (const char of text) width += char === '\t' ? 8 : WIDE_CHARACTER.test(char) ? 1.7 : 1
+  return Math.max(1, Math.ceil(width / columns))
+}
+
+/** Columns measured last per layout, so a newly opened file estimates its rows from the start. */
+const measuredColumns = new Map<string, number>()
+
+/**
+ * How many characters fit on a line of the code cells matching `selector` inside `ref`, measured once rows are
+ * laid out and again when the view is resized; 0 until known.
+ */
+function useCodeColumns(ref: React.RefObject<HTMLDivElement | null>, selector: string, layoutKey: string): number {
+  const [columns, setColumns] = useState(() => measuredColumns.get(layoutKey) ?? 0)
+  useLayoutEffect(() => {
+    const root = ref.current
+    if (!root) return
+    const measure = () => {
+      const cell = root.querySelector<HTMLElement>(selector)
+      if (!cell) return
+      // The probe takes the code font from the view around it.
+      const probe = document.createElement('span')
+      probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre'
+      probe.textContent = '0'.repeat(100)
+      root.appendChild(probe)
+      const characterWidth = probe.getBoundingClientRect().width / 100
+      probe.remove()
+      const style = getComputedStyle(cell)
+      const width = cell.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      if (!(characterWidth > 0) || !(width > 0)) return
+      const next = Math.max(1, Math.floor(width / characterWidth))
+      measuredColumns.set(layoutKey, next)
+      startTransition(() => setColumns(next))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [layoutKey, ref, selector])
+  return columns
 }
 
 function chunkRanges(length: number): Array<[number, number]> {
@@ -926,6 +983,8 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange
   // A split row holds one or two lines, so the pieces needed at once are counted in rows that reach `firstRows`.
   const lastFirstLine = startIndex + firstRows - 1
   const shown = useProgressiveCount(pieces, firstRows > 0 ? rows.findIndex((row) => (row.leftIndex ?? -1) >= lastFirstLine || (row.rightIndex ?? -1) >= lastFirstLine) + 1 : 0)
+  const columns = useCodeColumns(scrollRef, '.split-code', `split:${blameEnabled}`)
+  const heights = useMemo(() => pieces.map((piece) => piece.reduce((sum, row) => sum + Math.max(row.left ? wrappedLines(row.left.text, columns) : 1, row.right ? wrappedLines(row.right.text, columns) : 1) * ROW_HEIGHT + (row.gap && row.gap.count > 0 ? GAP_HEIGHT : 0), 0)), [columns, pieces])
   const inRow = (row: SplitRow, index: number) => row.leftIndex === index || row.rightIndex === index
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
@@ -951,7 +1010,8 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange
       ...chunkStyles,
     })} onMouseOver={allowComments ? dragOver(selection) : undefined}>
       {rows.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
-      {pieces.slice(0, shown).map((piece) => {
+      {pieces.map((piece, pieceIndex) => {
+        if (pieceIndex >= shown) return <div key={piece[0].key} style={{ height: heights[pieceIndex] }} />
         const indices = piece.flatMap((row) => [row.leftIndex, row.rightIndex]).filter((index): index is number => index !== undefined)
         const from = Math.min(...indices)
         const to = Math.max(...indices)
@@ -965,6 +1025,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange
           chosenFrom={chosen ? Math.max(chosenRange[0], from) : -1}
           chosenTo={chosen ? Math.min(chosenRange[1], to) : -1}
           gapExpansion={piece.some((row) => row.gap && row.gap.count > 0) ? gapExpansion : undefined}
+          height={heights[pieceIndex]}
           key={piece[0].key}
           rows={piece}
           searchMatchIndices={hasMatch ? searchMatchIndices : NO_MATCHES}
@@ -981,7 +1042,7 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange
 }
 
 /** A piece of a split page; it renders again only when what it shows changes. */
-const SplitRows = memo(function SplitRows({ activeSearchMatch, allowComments, blameEnabled, chosenFrom, chosenTo, gapExpansion, rows, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenFrom: number; chosenTo: number; gapExpansion?: GapExpansion; rows: SplitRow[]; searchMatchIndices: ReadonlySet<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+const SplitRows = memo(function SplitRows({ activeSearchMatch, allowComments, blameEnabled, chosenFrom, chosenTo, gapExpansion, height, rows, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenFrom: number; chosenTo: number; gapExpansion?: GapExpansion; height: number; rows: SplitRow[]; searchMatchIndices: ReadonlySet<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const t = useT()
   const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
     // Context rows offer one comment action, on the new side, with both line numbers.
@@ -1017,7 +1078,7 @@ const SplitRows = memo(function SplitRows({ activeSearchMatch, allowComments, bl
       <LineThreads line={line} view={threadView} />
     </Fragment>
   })
-  return <div className="diff-chunk" data-threads={threadView ? 'true' : undefined} style={chunkSize(rows.length)}>
+  return <div className="diff-chunk" data-threads={threadView ? 'true' : undefined} style={chunkSize(height)}>
     {rows.map((row) => {
       const selected = Boolean(selectedPosition && ((row.left && matchesPosition(row.left, selectedPosition)) || (row.right && matchesPosition(row.right, selectedPosition))))
       const activeSearch = row.leftIndex === activeSearchMatch || row.rightIndex === activeSearchMatch
