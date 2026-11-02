@@ -37,8 +37,10 @@ export interface DiscussionWindow {
   retryOlder: () => void
   /** Refreshes the newest page; resolves once its new threads arrive (or after REFRESH_WAIT_MS), so a posted comment shows before its text leaves the composer. */
   refreshLatest: () => Promise<void>
-  /** Refreshes every loaded page, while the window is active. */
-  refreshAll: () => void
+  /** Refreshes every loaded page, while the window is active; resolves as refreshLatest does. */
+  refreshAll: () => Promise<void>
+  /** A loaded page is being read, so a comment not found yet may still arrive. */
+  reading: boolean
   /** Refreshes the page holding the discussion (and the newest page for new threads); resolves as refreshLatest does. */
   refreshDiscussion: (discussionId: string | null) => Promise<void>
   /** Renders the page observers; keep it mounted while discussions should stay live. */
@@ -111,6 +113,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
       low,
       observed,
       olderError: fixedLow !== null && low < newestPage ? lowState?.error ?? null : null,
+      reading: observed.some((page) => store.get(page)?.loading || store.get(page)?.refreshing),
       ready,
       total,
     }
@@ -141,7 +144,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
     })
   }, [store])
   const refreshLatest = useCallback(() => refreshPage(state.latestPage), [refreshPage, state.latestPage])
-  const refreshAll = useCallback(() => { if (active) for (const page of state.observed) store.get(page)?.refresh() }, [active, state.observed, store])
+  const refreshAll = useCallback(async () => { if (active) await Promise.all(state.observed.map(refreshPage)) }, [active, refreshPage, state.observed])
   const refreshDiscussion = useCallback(async (discussionId: string | null) => {
     const holder = discussionId ? store.entries().find(([page, value]) => page >= state.low && value.data?.some((discussion) => discussion.id === discussionId)) : undefined
     await Promise.all([holder && holder[0] !== state.latestPage ? refreshPage(holder[0]) : undefined, refreshPage(state.latestPage)])
@@ -165,6 +168,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
     loadingOlder: state.loadingOlder,
     observers,
     olderError: state.olderError,
+    reading: state.reading,
     ready: state.ready,
     refreshAll,
     refreshDiscussion,

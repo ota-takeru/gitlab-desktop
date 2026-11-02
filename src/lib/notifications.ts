@@ -7,8 +7,9 @@ export async function enableDesktopNotifications(): Promise<boolean> {
   if (await isPermissionGranted()) return true
   return await requestPermission() === 'granted'
 }
-export async function notifyWorkspace(body: string): Promise<void> {
+/** Shows a notification; a click on it brings the app forward and opens `url`, a GitLab page on the connected instance. */
+export async function notifyWorkspace(body: string, url?: string): Promise<void> {
   if (!isTauri()) return
   if (!await isPermissionGranted()) return
-  await invoke('plugin:notification|notify', { options: { title: 'GitLab Desktop', body } })
+  await invoke('plugin:notification|notify', { options: { title: 'GitLab Desktop', body, ...(url ? { extra: { url } } : {}) } })
 }

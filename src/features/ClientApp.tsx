@@ -563,7 +563,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             <MergeRequestTabs collapsed={navCollapsed} onOpen={openMergeRequestRef} selected={selected} />
           </Box>
           {/* Notifications are not a place: they open over the page, from beside the settings. */}
-          <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref) => openMergeRequestRef(ref, 'discussion')} onOpenChange={foldForNotifications} /></List>
+          <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref, noteId) => openMergeRequestTarget(ref, { tab: 'discussion', ...(noteId ? { noteId } : {}) })} onOpenChange={foldForNotifications} /></List>
           <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>

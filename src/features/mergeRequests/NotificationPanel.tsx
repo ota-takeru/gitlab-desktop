@@ -89,7 +89,7 @@ function useActivityNotifications(session: GitLabSession | null, read: boolean, 
  * The stack opens beside `navigationWidth`, the width the navigation settles at
  * (a peeked navigation folds as the stack opens), level with the button's foot.
  */
-export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpenChange }: { collapsed: boolean; navigationWidth: number; onOpen: (ref: MrRef) => void; onOpenChange?: (open: boolean) => void }) {
+export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpenChange }: { collapsed: boolean; navigationWidth: number; onOpen: (ref: MrRef, noteId?: string) => void; onOpenChange?: (open: boolean) => void }) {
   const t = useT()
   const { session } = useConnection()
   const [button, setButton] = useState<HTMLElement | null>(null)
@@ -130,7 +130,7 @@ export function NotificationNavItem({ collapsed, navigationWidth, onOpen, onOpen
       slotProps={{ paper: { 'aria-label': t('mrList.notifications.title'), role: 'dialog', sx: { display: 'flex', flexDirection: 'column', maxHeight: 'min(560px, calc(100vh - 32px))', ml: 1, width: 380 } } }}
       transformOrigin={{ horizontal: 'left', vertical: 'bottom' }}
     >
-      {session ? <NotificationStack onOpen={(ref) => { close(); onOpen(ref) }} sessionId={session.id} /> : null}
+      {session ? <NotificationStack onOpen={(ref, noteId) => { close(); onOpen(ref, noteId) }} sessionId={session.id} /> : null}
     </Popover>
   </>
 }
@@ -140,6 +140,12 @@ type NotificationEntry = { todo: GitLabTodo; activity?: undefined } | { todo?: u
 
 function entryOf(entry: NotificationEntry): GitLabTodo | MergeRequestActivity {
   return entry.todo ?? entry.activity
+}
+
+/** The comment a notification is about: a mention's, or a comment event's own. */
+function entryNoteId(entry: NotificationEntry): string | null {
+  if (entry.todo) return todoNoteId(entry.todo)
+  return entry.activity.kind === 'comment' ? entry.activity.id : null
 }
 
 /** The notifications of one MR, newest first; a mention per comment would otherwise fill the stack with one MR. */
@@ -193,7 +199,7 @@ function todosQuery(page: number, read: boolean): TodosQuery {
   return read ? { kind: 'todos', page, done: true } : { kind: 'todos', page }
 }
 
-function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void; sessionId: string }) {
+function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef, noteId?: string) => void; sessionId: string }) {
   const t = useT()
   const queryClient = useQueryClient()
   const notify = useNotify()
@@ -235,16 +241,18 @@ function NotificationStack({ onOpen, sessionId }: { onOpen: (ref: MrRef) => void
   const loadMore = nextPage !== null && !loadingMore && !last?.error && morePages + 1 < MAX_PAGES ? () => setMorePages((count) => count + 1) : undefined
   const scrollRef = useRef<HTMLDivElement>(null)
   // Opening a notification reads it, with the others of its MR: the MR opens at once and the reads are sent behind it.
+  // It opens at the oldest comment among them (entries are newest first), so the new ones read downwards.
   const open = (group: NotificationGroup) => {
     const { iid, projectId } = entryOf(group.entries[0])
-    if (read) { onOpen({ iid, projectId }); return }
+    const noteId = group.entries.map(entryNoteId).filter((id) => id !== null).at(-1)
+    if (read) { onOpen({ iid, projectId }, noteId); return }
     markActivityRead(workspace, group.entries.flatMap((entry) => entry.activity ? [entry.activity] : []))
     void (async () => {
       const read: string[] = []
       for (const entry of group.entries) if (entry.todo && await markNotificationRead(notify, sessionId, entry.todo, false)) read.push(entry.todo.id)
       forgetDoneTodos(queryClient, sessionId, read)
     })()
-    onOpen({ iid, projectId })
+    onOpen({ iid, projectId }, noteId)
   }
   // Every page, not only those scrolled to. Each read goes under its MR's write record, so a failed
   // or unknown one never hides the others; the list is reloaded once at the end.

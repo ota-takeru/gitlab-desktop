@@ -5,12 +5,21 @@
  */
 export function gitLabUrlFromDeepLink(link: string, instanceUrl: string): string | null {
   let parsed: URL
+  try {
+    parsed = new URL(link)
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'gitlab-desktop:' || parsed.hostname !== 'open') return null
+  return gitLabUrlOnInstance(parsed.searchParams.get('url') ?? '', instanceUrl)
+}
+
+/** `url` when it is an HTTPS page on the connected instance, such as the page a notification names. */
+export function gitLabUrlOnInstance(url: string, instanceUrl: string): string | null {
   let target: URL
   let instance: URL
   try {
-    parsed = new URL(link)
-    if (parsed.protocol !== 'gitlab-desktop:' || parsed.hostname !== 'open') return null
-    target = new URL(parsed.searchParams.get('url') ?? '')
+    target = new URL(url)
     instance = new URL(instanceUrl)
   } catch {
     return null

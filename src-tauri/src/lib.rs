@@ -442,6 +442,29 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
+            // A click on a notification brings the window forward and opens the GitLab page the
+            // notification names; the page checks that it is on the connected instance.
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let handle = app.handle().clone();
+                app.notification().on_action(move |performed| {
+                    if performed.action_id() != "tap" {
+                        return;
+                    }
+                    let Some(window) = handle.get_webview_window("main") else {
+                        return;
+                    };
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                    if let Some(url) = performed
+                        .notification()
+                        .and_then(|notification| notification.extra().get("url"))
+                        .and_then(|url| url.as_str())
+                    {
+                        let _ = window.emit("notification-clicked", url);
+                    }
+                })?;
+            }
             let state = app
                 .path()
                 .app_data_dir()

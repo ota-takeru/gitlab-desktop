@@ -586,6 +586,22 @@ describe('DiscussionList code beside line comments', () => {
     await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
   })
 
+  it('waits for pages being read again before giving up on a linked comment', async () => {
+    const onFocusNoteDone = vi.fn()
+    const list = (discussions: ReturnType<typeof createDiscussion>[], reading: boolean) => (
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={discussions} focusNoteId="fresh" older={{ error: null, hasOlder: false, limitReached: false, loading: false, reading, onLoad: vi.fn(), onRetry: vi.fn() }} onDelete={vi.fn()} onEdit={vi.fn()} onFocusNoteDone={onFocusNoteDone} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>
+    )
+    const cached = [createDiscussion([createNote('other', otherUser)])]
+    const view = render(list(cached, true))
+    expect(onFocusNoteDone).not.toHaveBeenCalled()
+
+    view.rerender(list([...cached, createDiscussion([createNote('fresh', otherUser)], 'fresh-thread')], false))
+    await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'fresh'))
+  })
+
   it('uploads an image pasted into an edit and puts its Markdown in the text', async () => {
     const owned = createNote('owned', currentUser, { body: '元の本文' })
     const file = new File(['image'], 'clipboard.png', { type: 'image/png' })

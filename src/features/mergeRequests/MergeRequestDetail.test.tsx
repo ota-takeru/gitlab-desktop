@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
@@ -237,6 +237,32 @@ describe('BufferedReviewComposer', () => {
     detailMocks.useComposerBufferMock.mockReturnValue({ body: 'ota@example.com に連絡済み', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
     rerender(<BufferedReviewComposer bufferKey="composer-key" onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSetReviewers={onSetReviewers} onSubmitComment={async () => true} />)
     expect(screen.queryByRole('button', { name: 'レビュアーを設定' })).not.toBeInTheDocument()
+  })
+
+  it('reads the MR again from GitLab when it opens, even when its data was just read', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    const reads: string[] = []
+    const keyOf = (projectId: string, iid: string) => ['gitlab', detailMocks.session.id, JSON.stringify({ kind: 'discussions', projectId, iid, page: 1 })]
+    const Reader = ({ projectId, iid }: { projectId: string; iid: string }) => {
+      useQuery({ queryKey: keyOf(projectId, iid), queryFn: async () => { reads.push(`${projectId}:${iid}`); return reads.length } })
+      return null
+    }
+    const { projectId, iid } = detailMocks.mergeRequest
+    client.setQueryData(keyOf(projectId, iid), 0)
+    client.setQueryData(keyOf(projectId, `${iid}0`), 0)
+
+    render(
+      <QueryClientProvider client={client}>
+        <ThemeProvider theme={createAppTheme('dark')}>
+          <Reader iid={iid} projectId={projectId} />
+          <Reader iid={`${iid}0`} projectId={projectId} />
+          <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    )
+
+    // Only this MR's reads, though fresh; another MR's are left alone.
+    await waitFor(() => expect(reads).toEqual([`${projectId}:${iid}`]))
   })
 
   it('wires read-only MR discussion, unread marking, position navigation, and mention lookup', async () => {

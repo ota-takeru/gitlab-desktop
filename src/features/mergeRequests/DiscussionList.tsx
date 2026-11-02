@@ -112,6 +112,8 @@ export interface OlderDiscussions {
   loading: boolean
   limitReached: boolean
   error: string | null
+  /** A loaded page is being read, so a linked comment not found yet may still arrive. */
+  reading?: boolean
   onLoad: () => void
   onRetry: () => void
 }
@@ -273,7 +275,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const focusJump = useStableCallback(jumpToNote)
   const focusDiscussion = focusNoteId ? discussions.find((discussion) => discussion.notes.some((note) => note.id === focusNoteId)) : undefined
   const canLoadOlder = Boolean(older?.hasOlder && !older.error)
-  const loadingOlder = Boolean(older?.loading)
+  const loadingOlder = Boolean(older?.loading || older?.reading)
   useEffect(() => {
     if (!focusNoteId) return
     if (focusDiscussion) {
@@ -281,7 +283,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
       if (!note.system) focusJump({ discussion: focusDiscussion, note })
       focusDone()
     } else if (loadingOlder) {
-      // Wait for the page being read.
+      // Wait for the page being read, which may be one shown from the cache that lacks the comment.
     } else if (canLoadOlder) olderRef.current?.onLoad()
     else focusDone()
   }, [canLoadOlder, focusDiscussion, focusDone, focusJump, focusNoteId, loadingOlder])
