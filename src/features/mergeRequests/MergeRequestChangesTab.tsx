@@ -9,7 +9,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { frame } from '../../components/hairline'
 import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import type { Commit, Diff, Discussion, Draft, MrVersion, Position } from '../../types/gitlab'
@@ -39,11 +39,27 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
   const t = useT()
   const compareFrom = versions.compareFrom
   const showingLocal = Boolean(local?.active)
+  const showTimeline = !commitsError || commits.length > 0
+  // The commit row stays in view under the MR header; the diff's own sticky rows start below it.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const timelineRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const timeline = timelineRef.current
+    if (!root) return
+    const update = () => root.style.setProperty('--commit-timeline-height', `${timeline?.offsetHeight ?? 0}px`)
+    update()
+    if (!timeline || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(timeline)
+    return () => observer.disconnect()
+  }, [showTimeline])
   return (
-    <Stack spacing={1.5}>
+    <Stack ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)' }}>
       {commitsError && !commits.length ? <Alert severity="error">{t('review.changes.commitsError', { message: commitsError.message })}</Alert> : null}
       {commitsError && commits.length ? <Alert severity="warning">{t('review.changes.commitsStale', { message: commitsError.message })}</Alert> : null}
-      {!commitsError || commits.length ? <CommitTimeline baseSha={compareBaseSha} commits={commits} compareFrom={compareFrom} local={local} headSha={discussionHeadSha} loading={commitsLoading} nextPage={commitNextPage} onNextPage={onNextCommitPage} onPrevPage={onPrevCommitPage} onSelect={onSelectCommit} page={commitPage} selected={selectedCommit} versionPicker={<VersionPicker versions={versions} />} /> : null}
+      {showTimeline ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: 'var(--mr-header-height)', zIndex: 2 }}><CommitTimeline baseSha={compareBaseSha} commits={commits} compareFrom={compareFrom} local={local} headSha={discussionHeadSha} loading={commitsLoading} nextPage={commitNextPage} onNextPage={onNextCommitPage} onPrevPage={onPrevCommitPage} onSelect={onSelectCommit} page={commitPage} selected={selectedCommit} versionPicker={<VersionPicker versions={versions} />} /></Box> : null}
+      <Stack spacing={1.5} sx={{ '--detail-header-height': 'calc(var(--mr-header-height) + var(--commit-timeline-height, 0px))' }}>
       {showingLocal ? local?.content : <>
       {changesTruncated ? <Alert severity="warning">{t('review.changes.truncated')}</Alert> : null}
       {changesError && !diffs.length ? <Alert severity="error">{t('review.changes.diffError', { message: changesError.message })}</Alert> : null}
@@ -54,6 +70,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
       {fileResult.error ? <Alert severity="error">{t('review.changes.fileError', { message: fileResult.error.message })}</Alert> : null}
       {changeNextPage !== null || changePage > 1 ? <Row spacing={0.5} sx={{ justifyContent: 'flex-end' }}><Button aria-label={t('review.changes.page.previous')} disabled={changePage <= 1} onClick={onPrevChangePage} size="small">{t('review.diff.page.previous')}</Button><Typography color="textSecondary" variant="caption">{t('review.changes.page.current', { page: changePage })}</Typography><Button aria-label={t('review.changes.page.next')} disabled={changeNextPage === null} onClick={onNextChangePage} size="small">{t('review.diff.page.next')}</Button></Row> : null}
       </>}
+      </Stack>
     </Stack>
   )
 }
