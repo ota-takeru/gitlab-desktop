@@ -43,6 +43,7 @@ import { localeNames, supportedLocales, systemLocale, type LocalePreference } fr
 import { useLocalePreference, useT } from '../i18n/useT'
 import { clearLocalDrafts } from '../lib/localDrafts'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
+import type { UnsentTarget } from '../lib/windowSafety'
 import type { GitLabCommandError, GitLabSnapshot, MergeRequest, Project } from '../types/gitlab'
 import type { ColorMode, ColorPreference } from './colorMode'
 import { reportGitLabConnectivity, resetGitLabConnectivity, useGitLabConnectivity } from './connectivity'
@@ -456,6 +457,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     openMergeRequestRef(ref, target?.tab)
   }
   const openGitLabPage = useCallback((location: GitLabPageLocation) => navigate(location.route, location.params), [navigate])
+  // The update confirmation goes to the screen holding unsent work: the MR, or the settings for the access token.
+  const openUnsent = (target: UnsentTarget) => { if (target.kind === 'settings') navigate('settings'); else openMergeRequestRef({ iid: target.iid, projectId: target.projectId }) }
   const openMarkdownLink = useOpenMarkdownLink(openMergeRequestTarget, (user) => navigate('user', { username: user.username }), openGitLabPage)
   useDeepLinks(openMarkdownLink, session?.instanceUrl)
   const changeUserTab = (tab: UserTab) => {
@@ -564,7 +567,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           </Box>
           {/* Notifications are not a place: they open over the page, from beside the settings. */}
           <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref, noteId) => openMergeRequestTarget(ref, { tab: 'discussion', ...(noteId ? { noteId } : {}) })} onOpenChange={foldForNotifications} /></List>
-          <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} />
+          <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} onOpenUnsent={openUnsent} />
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>
             <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ ...hairline('top'), color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
@@ -589,7 +592,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
               <Box component="main" sx={{ flex: 1, overflow: 'auto' }}>
-                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><SettingsView autoInstallAllowed={autoInstallAllowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onShowShortcuts={() => setShortcutsOpen(true)} /></Box>
+                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><SettingsView autoInstallAllowed={autoInstallAllowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onOpenUnsent={openUnsent} onShowShortcuts={() => setShortcutsOpen(true)} /></Box>
               </Box>
             ) : null}
             {!waitingForSessionRestore && route !== 'settings' && awaitingReauth ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}>
@@ -636,7 +639,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
       </Box>
       {/* Update notices live in the bar, in a slot of fixed height, so the page never shifts. */}
       <ConnectionStatusBar awaitingReauth={awaitingReauth} trailing={<>
-        <UpdatePanel autoInstallAllowed={autoInstallAllowed} notificationOnly />
+        <UpdatePanel autoInstallAllowed={autoInstallAllowed} notificationOnly onOpenUnsent={openUnsent} />
         <AppVersionLabel />
       </>} />
     </Box>
@@ -791,7 +794,7 @@ function AppVersionLabel() {
   return <Typography aria-label={t('app.version', { version })} color="textSecondary" noWrap sx={{ flexShrink: 0 }} variant="caption">v{version}</Typography>
 }
 
-function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceChange, onShowShortcuts }: ColorPreferenceProps & { autoInstallAllowed: boolean; onShowShortcuts: () => void }) {
+function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceChange, onOpenUnsent, onShowShortcuts }: ColorPreferenceProps & { autoInstallAllowed: boolean; onOpenUnsent: (target: UnsentTarget) => void; onShowShortcuts: () => void }) {
   const { session } = useConnection()
   const t = useT()
   return <Box>
@@ -810,7 +813,7 @@ function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceCh
     <SettingsSection description={t('settings.language.description')} id="settings-language" title={t('settings.language.title')}><LanguageSettings /></SettingsSection>
     <SettingsSection description={t('settings.workspace.description')} id="settings-workspace" title={t('settings.workspace.title')}><WorkspaceSettings /></SettingsSection>
     {session ? <SettingsSection description={t('settings.local.description')} id="settings-local" title={t('settings.local.title')}><ScanFolders sessionId={session.id} userId={session.user.id} /></SettingsSection> : null}
-    <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} /></SettingsSection>
+    <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} onOpenUnsent={onOpenUnsent} /></SettingsSection>
     <SettingsSection description={t('settings.shortcuts.description')} id="settings-shortcuts" title={t('settings.shortcuts.title')}>
       <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
         <Typography color="textSecondary" variant="body2">{t('settings.shortcuts.hint')}</Typography>

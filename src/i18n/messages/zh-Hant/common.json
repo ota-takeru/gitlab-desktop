@@ -54,7 +54,7 @@
   "update.check": "檢查更新",
   "update.restartAndUpdate": "重新啟動以更新",
   "update.installHint": "將您的輸入內容儲存在此裝置上，然後重新啟動以套用更新。",
-  "update.waitingForSafeState": "在您的輸入內容儲存或捨棄，且等待中的發布確認完成後，即可更新。",
+  "update.unsentMessage": "以下畫面有未送出的輸入、編輯中的內容或結果未確認的操作。「重新啟動以更新」會將輸入儲存在此裝置上，並在重新啟動後還原（結果未確認的操作紀錄會保留）。",
   "update.navLabel": "更新至 v{version}",
   "update.navAriaLabel": "重新啟動並更新至 v{version}",
   "update.navTooltip": "{label} · {hint}",

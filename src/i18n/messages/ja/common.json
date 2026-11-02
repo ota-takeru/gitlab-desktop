@@ -54,7 +54,7 @@
   "update.check": "更新を確認",
   "update.restartAndUpdate": "再起動して更新",
   "update.installHint": "入力を端末に保存してから再起動し、更新を適用します。",
-  "update.waitingForSafeState": "入力の保存または破棄と送信処理の確認が済むと更新できます。",
+  "update.unsentMessage": "次の画面に未送信の入力、編集中の内容、または結果未確認の操作があります。「再起動して更新」は入力を端末に保存し、再起動後に復元します（結果未確認の操作の記録は残ります）。",
   "update.navLabel": "v{version} に更新",
   "update.navAriaLabel": "再起動して v{version} に更新",
   "update.navTooltip": "{label} · {hint}",

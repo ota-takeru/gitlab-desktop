@@ -330,7 +330,6 @@ function CatalogFrameParts() {
                 <ClientNavItem collapsed={false} expanded={false} icon={<NotificationBellIcon count={3} withCount={false} />} label="通知" onClick={() => undefined} selected={false} title="通知 3件" trailing={<NotificationCount count={3} />} />
                 <ClientNavItem collapsed={false} expanded icon={<NotificationBellIcon count={0} />} label="通知" onClick={() => undefined} selected title="通知" />
                 <UpdateNavButton collapsed={false} onClick={() => undefined} version="0.8.0" />
-                <UpdateNavButton collapsed={false} disabledReason="入力の保存または破棄と送信処理の確認が済むと更新できます。" onClick={() => undefined} version="0.8.0" />
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', borderTop: 1, borderColor: 'divider', color: 'text.secondary', minHeight: 40, mt: 1, px: 1 }}>
                   <UserAvatar id="a" name="Reviewer" size={24} />
                   <Typography color="inherit" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">@reviewer</Typography>

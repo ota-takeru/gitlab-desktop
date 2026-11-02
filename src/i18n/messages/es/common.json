@@ -54,7 +54,7 @@
   "update.check": "Buscar actualizaciones",
   "update.restartAndUpdate": "Reiniciar para actualizar",
   "update.installHint": "Guarda lo que has escrito en este dispositivo y reinicia para aplicar la actualización.",
-  "update.waitingForSafeState": "Podrás actualizar cuando lo que has escrito se haya guardado o descartado y las publicaciones pendientes estén confirmadas.",
+  "update.unsentMessage": "Estas pantallas tienen texto sin enviar, ediciones en curso u operaciones cuyo resultado no se ha confirmado. «Reiniciar para actualizar» guarda lo que has escrito en este dispositivo y lo restaura tras el reinicio (se conservan los registros de las operaciones sin confirmar).",
   "update.navLabel": "Actualizar a v{version}",
   "update.navAriaLabel": "Reiniciar y actualizar a v{version}",
   "update.navTooltip": "{label} · {hint}",

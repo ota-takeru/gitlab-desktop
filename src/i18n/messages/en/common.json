@@ -54,7 +54,7 @@
   "update.check": "Check for updates",
   "update.restartAndUpdate": "Restart to update",
   "update.installHint": "Saves your input on this device, then restarts to apply the update.",
-  "update.waitingForSafeState": "You can update once your input is saved or discarded and pending posts are confirmed.",
+  "update.unsentMessage": "These screens have unsent input, edits in progress, or operations whose result is unconfirmed. “Restart to update” saves your input on this device and restores it after the restart (records of unconfirmed operations are kept).",
   "update.navLabel": "Update to v{version}",
   "update.navAriaLabel": "Restart and update to v{version}",
   "update.navTooltip": "{label} · {hint}",

@@ -54,7 +54,7 @@
   "update.check": "업데이트 확인",
   "update.restartAndUpdate": "다시 시작하여 업데이트",
   "update.installHint": "입력 내용을 이 기기에 저장한 후 다시 시작하여 업데이트를 적용합니다.",
-  "update.waitingForSafeState": "입력 내용을 저장하거나 삭제하고 대기 중인 게시가 확인되면 업데이트할 수 있습니다.",
+  "update.unsentMessage": "다음 화면에 보내지 않은 입력, 편집 중인 내용 또는 결과가 확인되지 않은 작업이 있습니다. \"다시 시작하여 업데이트\"는 입력 내용을 이 기기에 저장하고 다시 시작한 뒤 복원합니다(결과가 확인되지 않은 작업의 기록은 남습니다).",
   "update.navLabel": "v{version}(으)로 업데이트",
   "update.navAriaLabel": "다시 시작하여 v{version}(으)로 업데이트",
   "update.navTooltip": "{label} · {hint}",

@@ -1,12 +1,13 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../theme'
+import { FeedbackProvider } from './Feedback'
 import { UpdatePanel, UpdateSidebarButton } from './UpdatePanel'
 
 const { invokeMock, flushMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), flushMock: vi.fn() }))
-vi.mock('../features/mergeRequests/useComposerBuffer', () => ({ flushComposerBuffers: flushMock }))
+vi.mock('../features/mergeRequests/useComposerBuffer', () => ({ composerTargetName: () => ({}), flushComposerBuffers: flushMock, listUnsafeComposerTargets: () => [{ iid: '12', inputs: ['返信'], projectId: '3', projectPath: 'group/app', title: 'ログイン修正' }] }))
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
@@ -149,7 +150,7 @@ describe('UpdatePanel', () => {
     expect(invokeMock).toHaveBeenCalledTimes(2)
   })
 
-  it('never installs or restarts by itself, and waits for a safe state before the user can', async () => {
+  it('never installs or restarts by itself, and keeps the install action available while unsent work holds the app back', async () => {
     vi.useFakeTimers()
     invokeMock.mockResolvedValue({ configured: true, version: '0.2.0', notes: null })
     const panel = renderPanel(true)
@@ -160,8 +161,40 @@ describe('UpdatePanel', () => {
     expect(invokeMock).not.toHaveBeenCalledWith('install_app_update')
 
     panel.rerender(<ThemeProvider theme={createAppTheme('dark')}><UpdatePanel autoInstallAllowed={false} /></ThemeProvider>)
-    expect(screen.getByRole('button', { name: '再起動して更新' })).toBeDisabled()
-    expect(screen.getByText(/入力の保存または破棄と送信処理の確認が済むと更新できます/u)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '再起動して更新' })).toBeEnabled()
+    expect(invokeMock).not.toHaveBeenCalledWith('install_app_update')
+  })
+
+  it('names the screens with unsent work and installs only after the user confirms', async () => {
+    invokeMock.mockResolvedValue({ configured: true, version: '0.2.0', notes: null, downloaded: true })
+    render(<ThemeProvider theme={createAppTheme('dark')}><FeedbackProvider><UpdatePanel autoInstallAllowed={false} /></FeedbackProvider></ThemeProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: '再起動して更新' }))
+    const dialog = await screen.findByRole('dialog', { name: '未送信の内容があります' })
+    expect(dialog).toHaveTextContent('group/app !12 ログイン修正')
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(flushMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalledWith('install_app_update')
+
+    fireEvent.click(screen.getByRole('button', { name: '再起動して更新' }))
+    fireEvent.click(within(await screen.findByRole('dialog', { name: '未送信の内容があります' })).getByRole('button', { name: '再起動して更新' }))
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('install_app_update'))
+    expect(flushMock).toHaveBeenCalled()
+  })
+
+  it('goes to a screen the confirmation names, closing it without installing', async () => {
+    invokeMock.mockResolvedValue({ configured: true, version: '0.2.0', notes: null, downloaded: true })
+    const onOpenUnsent = vi.fn()
+    render(<ThemeProvider theme={createAppTheme('dark')}><FeedbackProvider><UpdateSidebarButton collapsed={false} onOpenUnsent={onOpenUnsent} /></FeedbackProvider></ThemeProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: '再起動して v0.2.0 に更新' }))
+    const dialog = await screen.findByRole('dialog', { name: '未送信の内容があります' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'group/app !12 ログイン修正' }))
+
+    expect(onOpenUnsent).toHaveBeenCalledWith({ iid: '12', kind: 'mergeRequest', projectId: '3' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(invokeMock).not.toHaveBeenCalledWith('install_app_update')
   })
 
   it('downloads a found update in the background and only installs on a click', async () => {
@@ -285,11 +318,16 @@ describe('UpdatePanel', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: '再起動して v0.2.0 に更新' })).not.toBeInTheDocument())
   })
 
-  it('keeps the sidebar button visible but disabled until the window is safe to restart', async () => {
+  it('keeps the sidebar button clickable while unsent work holds the app back, asking before it installs', async () => {
     invokeMock.mockResolvedValue({ configured: true, version: '0.2.0', notes: null, downloaded: true })
-    render(<ThemeProvider theme={createAppTheme('dark')}><UpdateSidebarButton collapsed /></ThemeProvider>)
+    render(<ThemeProvider theme={createAppTheme('dark')}><FeedbackProvider><UpdateSidebarButton collapsed /></FeedbackProvider></ThemeProvider>)
 
-    expect(await screen.findByRole('button', { name: '再起動して v0.2.0 に更新' })).toBeDisabled()
+    const button = await screen.findByRole('button', { name: '再起動して v0.2.0 に更新' })
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    const dialog = await screen.findByRole('dialog', { name: '未送信の内容があります' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '再起動して更新' }))
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('install_app_update'))
   })
 
   it('hides the sidebar button when the app is current', async () => {

@@ -523,7 +523,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   // Writes to an MR you neither wrote, are assigned to nor review are asked once more, so a wrong MR is not changed by mistake.
   const outsider = Boolean(session && mergeRequest && !isInvolved(mergeRequest, session.user.id))
   const withOutsideNote = useCallback((options: ConfirmOptions): ConfirmOptions => outsider
-    ? { ...options, message: <><Box component="span" sx={{ color: 'warning.main', display: 'block', mb: options.message ? 1 : 0 }}>{t('mergeRequest.outsider.note')}</Box>{options.message}</> }
+    ? { ...options, message: (cancel) => <><Box component="span" sx={{ color: 'warning.main', display: 'block', mb: options.message ? 1 : 0 }}>{t('mergeRequest.outsider.note')}</Box>{typeof options.message === 'function' ? options.message(cancel) : options.message}</> }
     : options, [outsider, t])
   // Stable: it is the confirm of the ConfirmScope around the memoized header actions.
   const confirmWithOutsideNote = useCallback(async (options: ConfirmOptions) => {

@@ -19,10 +19,14 @@ let guardWriteTail: Promise<void> = Promise.resolve()
 let closeRequest: Promise<void> | null = null
 let beforeUnloadRegistered = false
 
+/** Where an unsent place is: an MR, or the settings for the access token. */
+export type UnsentTarget = { kind: 'mergeRequest'; projectId: string; iid: string } | { kind: 'settings' }
+
 /** One place listed in the confirmation: the screen, and what in it is not sent. */
 export interface CloseItem {
   name: string
   detail?: string
+  target?: UnsentTarget
 }
 
 export interface CloseConfirmation {
@@ -175,25 +179,25 @@ async function closeWindow(): Promise<void> {
  * Each place holding unsent work: 「group/project !12 タイトル」 with what in it (新しいコメント, 説明の編集...),
  * then how many more there are. Typed text comes from the inputs; edits and writes from what holds the window.
  */
-function unsentItems(): CloseItem[] | undefined {
-  const places = new Map<string, { name: string; details: string[] }>()
-  const add = (key: string, name: string, detail: string) => {
-    const place = places.get(key) ?? { details: [], name }
+export function unsentItems(): CloseItem[] | undefined {
+  const places = new Map<string, { name: string; details: string[]; target: UnsentTarget }>()
+  const add = (key: string, name: string, detail: string, target: UnsentTarget) => {
+    const place = places.get(key) ?? { details: [], name, target }
     if (!place.details.includes(detail)) place.details.push(detail)
     places.set(key, place)
   }
   const mergeRequestName = (projectId: string, iid: string, label: { projectPath?: string; title?: string }) => [`${label.projectPath || translate('common.closeProtection.project', { id: projectId })} !${iid}`, label.title].filter(Boolean).join(' ')
   for (const target of listUnsafeComposerTargets()) {
-    for (const input of target.inputs) add(`mr:${target.projectId}:${target.iid}`, mergeRequestName(target.projectId, target.iid, target), input)
+    for (const input of target.inputs) add(`mr:${target.projectId}:${target.iid}`, mergeRequestName(target.projectId, target.iid, target), input, { iid: target.iid, kind: 'mergeRequest', projectId: target.projectId })
   }
   for (const source of latestSources) {
     const description = /^description-edit:[^:]*:([1-9]\d*):([1-9]\d*)$/u.exec(source)
     const write = /^review:[^:]*:([1-9]\d*):([1-9]\d*):/u.exec(source)
     const [, projectId, iid] = description ?? write ?? []
-    if (projectId && iid) add(`mr:${projectId}:${iid}`, mergeRequestName(projectId, iid, composerTargetName(projectId, iid)), description ? translate('common.closeProtection.descriptionEdit') : translate('common.closeProtection.pendingOperation'))
-    else if (source === 'pat-form') add('settings', translate('common.closeProtection.settings'), translate('common.closeProtection.accessToken'))
+    if (projectId && iid) add(`mr:${projectId}:${iid}`, mergeRequestName(projectId, iid, composerTargetName(projectId, iid)), description ? translate('common.closeProtection.descriptionEdit') : translate('common.closeProtection.pendingOperation'), { iid, kind: 'mergeRequest', projectId })
+    else if (source === 'pat-form') add('settings', translate('common.closeProtection.settings'), translate('common.closeProtection.accessToken'), { kind: 'settings' })
   }
   if (!places.size) return undefined
-  const items = [...places.values()].map(({ details, name }) => ({ detail: details.join(translate('common.list.separator')), name }))
+  const items = [...places.values()].map(({ details, name, target }) => ({ detail: details.join(translate('common.list.separator')), name, target }))
   return items.length > MAX_LISTED_TARGETS ? [...items.slice(0, MAX_LISTED_TARGETS), { name: translate('common.closeProtection.more', { count: items.length - MAX_LISTED_TARGETS }) }] : items
 }

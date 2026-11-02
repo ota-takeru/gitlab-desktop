@@ -54,7 +54,7 @@
   "update.check": "Rechercher des mises à jour",
   "update.restartAndUpdate": "Redémarrer pour mettre à jour",
   "update.installHint": "Enregistre votre saisie sur cet appareil, puis redémarre pour appliquer la mise à jour.",
-  "update.waitingForSafeState": "Vous pourrez mettre à jour une fois votre saisie enregistrée ou supprimée et les publications en attente confirmées.",
+  "update.unsentMessage": "Ces écrans contiennent une saisie non envoyée, des modifications en cours ou des opérations dont le résultat n’est pas confirmé. « Redémarrer pour mettre à jour » enregistre votre saisie sur cet appareil et la restaure après le redémarrage (l’historique des opérations non confirmées est conservé).",
   "update.navLabel": "Mettre à jour vers v{version}",
   "update.navAriaLabel": "Redémarrer et mettre à jour vers v{version}",
   "update.navTooltip": "{label} · {hint}",

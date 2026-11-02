@@ -54,7 +54,7 @@
   "update.check": "检查更新",
   "update.restartAndUpdate": "重启以更新",
   "update.installHint": "先将你的输入保存在此设备上，然后重启以应用更新。",
-  "update.waitingForSafeState": "在你的输入已保存或丢弃，且待处理的发布已确认后即可更新。",
+  "update.unsentMessage": "以下界面有未发送的输入、正在编辑的内容或结果未确认的操作。“重启以更新”会将输入保存在此设备上，并在重启后恢复（结果未确认的操作记录会保留）。",
   "update.navLabel": "更新到 v{version}",
   "update.navAriaLabel": "重启并更新到 v{version}",
   "update.navTooltip": "{label} · {hint}",

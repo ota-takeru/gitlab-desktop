@@ -54,7 +54,7 @@
   "update.check": "Nach Updates suchen",
   "update.restartAndUpdate": "Neu starten und aktualisieren",
   "update.installHint": "Speichert Ihre Eingaben auf diesem Gerät und startet dann neu, um das Update anzuwenden.",
-  "update.waitingForSafeState": "Sie können aktualisieren, sobald Ihre Eingaben gespeichert oder verworfen und ausstehende Beiträge bestätigt sind.",
+  "update.unsentMessage": "Diese Ansichten enthalten nicht gesendete Eingaben, laufende Bearbeitungen oder Vorgänge mit unbestätigtem Ergebnis. „Neu starten und aktualisieren“ speichert Ihre Eingaben auf diesem Gerät und stellt sie nach dem Neustart wieder her (Aufzeichnungen unbestätigter Vorgänge bleiben erhalten).",
   "update.navLabel": "Auf v{version} aktualisieren",
   "update.navAriaLabel": "Neu starten und auf v{version} aktualisieren",
   "update.navTooltip": "{label} · {hint}",
