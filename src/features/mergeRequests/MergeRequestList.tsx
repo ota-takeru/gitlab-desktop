@@ -765,7 +765,7 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
       sections[approval ? done ? 1 : 0 : approvalPending(mergeRequest) ? 2 : 3][1].push(mergeRequest)
     }
     items = sections.filter(([label, rows]) => rows.length > 0 || label === waitingLabel || label === doneLabel).flatMap(([label, rows]) => [
-      <Box component="li" key={`section:${label}`} role="presentation" sx={{ contentVisibility: 'visible' }}>
+      <Box component="li" key={`section:${label}`} sx={{ contentVisibility: 'visible' }}>
         <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', ...hairline('bottom'), display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{t('mrList.sections.heading', { count: rows.length, label })}</Typography>
       </Box>,
       ...rows.map(row),
