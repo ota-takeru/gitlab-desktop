@@ -34,6 +34,8 @@ const detailMocks = vi.hoisted(() => {
     openUrlMock: vi.fn(async () => undefined),
     queryGitLabMock: vi.fn(),
     refreshKinds: [] as unknown[],
+    /** A refresh that never comes back, as a slow network read. */
+    holdRefresh: false,
     applyConfirmedMock: vi.fn(),
     discussions: { 1: [discussion] } as Record<number, typeof discussion[]>,
     flushComposerBuffersMock: vi.fn(),
@@ -136,7 +138,7 @@ vi.mock('../shared/useGitLabQuery', async () => {
       error: null,
       loading: false,
       refreshing: false,
-      refresh: () => { if (query) { detailMocks.refreshKinds.push(query.kind); setFetchedAt((current) => current + 1) } },
+      refresh: () => { if (query) { detailMocks.refreshKinds.push(query.kind); if (!detailMocks.holdRefresh) setFetchedAt((current) => current + 1) } },
       snapshot: query ? { data, source: 'network', nextPage: query.kind === 'diffs' && detailMocks.diffPages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt } : null,
       stale: false,
     }
@@ -773,6 +775,16 @@ describe('MergeRequestDetail header, results and pending review', () => {
     renderDetail('discussion')
     fireEvent.click(await screen.findByRole('button', { name: '更新' }))
     expect(detailMocks.refreshKinds).toEqual(expect.arrayContaining(['mr', 'approvals', 'drafts', 'discussions']))
+  })
+
+  it('goes to a linked comment already shown without waiting for the pages to be read again', async () => {
+    detailMocks.holdRefresh = true
+    onTestFinished(() => { detailMocks.holdRefresh = false })
+    const onNoteFocused = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail focusNote={{ noteId: '1002' }} initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onNoteFocused={onNoteFocused} onTabChange={vi.fn()} tab="discussion" /></ThemeProvider></QueryClientProvider>)
+    await waitFor(() => expect(onNoteFocused).toHaveBeenCalled())
+    expect(detailMocks.refreshKinds).toContain('discussions')
   })
 
   it('copies the MR link from the header', async () => {
