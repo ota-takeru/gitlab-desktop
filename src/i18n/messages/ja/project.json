@@ -55,6 +55,7 @@
   "condition.access": "自分の権限",
   "condition.topics": "トピック",
   "condition.language": "言語",
+  "condition.owned": "自分のプロジェクト",
   "condition.starred": "スター済み",
   "condition.activity": "最終活動日",
   "visibility.public": "公開",

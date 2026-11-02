@@ -11,7 +11,7 @@ import { Row } from '../../components/Row'
 import { useT } from '../../i18n/useT'
 import type { GitLabUser } from '../../types/gitlab'
 import { GroupSearchPicker, UserSearchPicker } from '../mergeRequests/SearchPickers'
-import { ACCESS_NAMES, CONDITION_NAMES, contributorPatch, type ProjectConditionKind, type ProjectFilterValues, VISIBILITY_NAMES } from './projectFilters'
+import { ACCESS_NAMES, CONDITION_NAMES, contributorPatch, isSwitchCondition, type ProjectConditionKind, type ProjectFilterValues, VISIBILITY_NAMES } from './projectFilters'
 
 /**
  * Edits one condition in a popover under its tag or the search field, as the MR
@@ -75,7 +75,7 @@ function EditorBody({ apply, currentUser, kind, values }: { apply: (patch: Parti
     return <GroupSearchPicker ariaLabel={t('project.editor.field', { condition: t(CONDITION_NAMES.group) })} autoFocus label={t(CONDITION_NAMES.group)} onChange={(groupId, groupPath) => { if (groupId) apply({ activityAfter: '', activityBefore: '', groupId, groupPath, language: '' }) }} selectedPath={values.groupPath || undefined} value={values.groupId} />
   }
   if (kind === 'activity') return <ActivityEditor apply={apply} values={values} />
-  if (kind === 'starred') return null
+  if (isSwitchCondition(kind)) return null
   return <TextEditor apply={apply} field={kind} values={values} />
 }
 

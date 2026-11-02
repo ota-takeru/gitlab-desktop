@@ -170,6 +170,20 @@ describe('ProjectView', () => {
     expect(within(tags).queryByText('トピック: rust,desktop')).not.toBeInTheDocument()
   })
 
+  it('lists only the projects the user owns, without a value to choose', () => {
+    render(<ProjectView onOpenProject={vi.fn()} />)
+    const search = screen.getByRole('combobox', { name: 'プロジェクトを検索' })
+
+    fireEvent.click(search)
+    fireEvent.click(screen.getByRole('menuitem', { name: '自分のプロジェクト' }))
+
+    expect(queryMock).toHaveBeenLastCalledWith('session-projects', expect.objectContaining({ kind: 'projects', owned: true }), { keepPrevious: true })
+    expect(within(screen.getByRole('group', { name: '適用中の条件' })).getByText('自分のプロジェクト')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('自分のプロジェクトの条件を外す'))
+    expect(queryMock.mock.lastCall?.[1]).not.toHaveProperty('owned')
+  })
+
   it('lists a contributor\'s projects alone, without the search word and conditions GitLab cannot combine with them', () => {
     render(<ProjectView onOpenProject={vi.fn()} />)
     const search = screen.getByRole('combobox', { name: 'プロジェクトを検索' })

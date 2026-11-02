@@ -55,6 +55,7 @@
   "condition.access": "Mon rôle",
   "condition.topics": "Sujets",
   "condition.language": "Langage",
+  "condition.owned": "Mes projets",
   "condition.starred": "Favoris",
   "condition.activity": "Dernière activité",
   "visibility.public": "Public",

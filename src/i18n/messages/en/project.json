@@ -55,6 +55,7 @@
   "condition.access": "My role",
   "condition.topics": "Topics",
   "condition.language": "Language",
+  "condition.owned": "Owned by me",
   "condition.starred": "Starred",
   "condition.activity": "Last activity",
   "visibility.public": "Public",

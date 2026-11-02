@@ -14,6 +14,7 @@ export interface ProjectFilterValues {
   minAccessLevel: string
   topics: string
   language: string
+  owned: boolean
   starred: boolean
   activityAfter: string
   activityBefore: string
@@ -21,12 +22,12 @@ export interface ProjectFilterValues {
   sort: 'asc' | 'desc'
 }
 
-export const defaultProjectFilters: ProjectFilterValues = { activityAfter: '', activityBefore: '', contributorId: '', contributorName: '', groupId: '', groupPath: '', language: '', minAccessLevel: '', orderBy: 'last_activity_at', sort: 'desc', starred: false, topics: '', visibility: '' }
+export const defaultProjectFilters: ProjectFilterValues = { activityAfter: '', activityBefore: '', contributorId: '', contributorName: '', groupId: '', groupPath: '', language: '', minAccessLevel: '', orderBy: 'last_activity_at', owned: false, sort: 'desc', starred: false, topics: '', visibility: '' }
 
-export type ProjectConditionKind = 'contributor' | 'group' | 'visibility' | 'access' | 'topics' | 'language' | 'starred' | 'activity'
+export type ProjectConditionKind = 'contributor' | 'group' | 'visibility' | 'access' | 'topics' | 'language' | 'owned' | 'starred' | 'activity'
 
 /** In the order 「＋条件を追加」 lists them. */
-const CONDITION_KINDS: readonly ProjectConditionKind[] = ['contributor', 'group', 'visibility', 'access', 'topics', 'language', 'starred', 'activity']
+const CONDITION_KINDS: readonly ProjectConditionKind[] = ['contributor', 'group', 'visibility', 'access', 'topics', 'language', 'owned', 'starred', 'activity']
 
 export const CONDITION_NAMES: Record<ProjectConditionKind, MessageKey> = {
   access: 'project.condition.access',
@@ -34,9 +35,15 @@ export const CONDITION_NAMES: Record<ProjectConditionKind, MessageKey> = {
   contributor: 'project.condition.contributor',
   group: 'project.condition.group',
   language: 'project.condition.language',
+  owned: 'project.condition.owned',
   starred: 'project.condition.starred',
   topics: 'project.condition.topics',
   visibility: 'project.condition.visibility',
+}
+
+/** The conditions with no value to choose: applying one turns it on. */
+export function isSwitchCondition(kind: ProjectConditionKind): kind is 'owned' | 'starred' {
+  return kind === 'owned' || kind === 'starred'
 }
 
 export const VISIBILITY_NAMES: Record<ProjectVisibility, MessageKey> = { internal: 'project.visibility.internal', private: 'project.visibility.private', public: 'project.visibility.public' }
@@ -49,12 +56,12 @@ export const ORDER_NAMES: Record<ProjectOrderBy, MessageKey> = { created_at: 'pr
  */
 export function addableKinds(values: ProjectFilterValues): ProjectConditionKind[] {
   if (values.contributorId) return []
-  return CONDITION_KINDS.filter((kind) => !(kind === 'starred' && values.starred) && !(values.groupId && (kind === 'language' || kind === 'activity')))
+  return CONDITION_KINDS.filter((kind) => !(isSwitchCondition(kind) && values[kind]) && !(values.groupId && (kind === 'language' || kind === 'activity')))
 }
 
 /** Choosing a contributor clears the conditions their list cannot take. */
 export function contributorPatch(contributorId: string, contributorName: string): Partial<ProjectFilterValues> {
-  return { activityAfter: '', activityBefore: '', contributorId, contributorName, groupId: '', groupPath: '', language: '', minAccessLevel: '', starred: false, topics: '', visibility: '' }
+  return { activityAfter: '', activityBefore: '', contributorId, contributorName, groupId: '', groupPath: '', language: '', minAccessLevel: '', owned: false, starred: false, topics: '', visibility: '' }
 }
 
 /** The query fields of the conditions. */
@@ -67,6 +74,7 @@ export function projectFilterQuery(values: ProjectFilterValues): Partial<Project
   if (values.minAccessLevel) query.minAccessLevel = Number(values.minAccessLevel)
   if (topics.length) query.topics = topics
   if (values.language.trim()) query.language = values.language.trim()
+  if (values.owned) query.owned = true
   if (values.starred) query.starred = true
   if (values.activityAfter) query.lastActivityAfter = toGitLabDate(values.activityAfter, false)
   if (values.activityBefore) query.lastActivityBefore = toGitLabDate(values.activityBefore, true)
@@ -82,7 +90,7 @@ export function projectConditionChips(values: ProjectFilterValues): ProjectCondi
   const chips: ProjectConditionChip[] = []
   const add = (kind: ProjectConditionKind, value: string, clear: Partial<ProjectFilterValues>, code?: boolean) => {
     const name = translate(CONDITION_NAMES[kind])
-    chips.push({ clear, code, kind, label: kind === 'starred' ? name : `${name}: ${value}`, name })
+    chips.push({ clear, code, kind, label: isSwitchCondition(kind) ? name : `${name}: ${value}`, name })
   }
   if (values.contributorId) add('contributor', values.contributorName || values.contributorId, { contributorId: '', contributorName: '' })
   if (values.groupId) add('group', values.groupPath || values.groupId, { groupId: '', groupPath: '' }, true)
@@ -91,6 +99,7 @@ export function projectConditionChips(values: ProjectFilterValues): ProjectCondi
   const topics = canonicalLabels(values.topics)
   if (topics) add('topics', topics, { topics: '' })
   if (values.language.trim()) add('language', values.language.trim(), { language: '' })
+  if (values.owned) add('owned', '', { owned: false })
   if (values.starred) add('starred', '', { starred: false })
   if (values.activityAfter || values.activityBefore) add('activity', `${values.activityAfter || '…'} – ${values.activityBefore || '…'}`, { activityAfter: '', activityBefore: '' })
   return chips

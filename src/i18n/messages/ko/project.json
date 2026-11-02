@@ -55,6 +55,7 @@
   "condition.access": "내 권한",
   "condition.topics": "토픽",
   "condition.language": "언어",
+  "condition.owned": "내 프로젝트",
   "condition.starred": "별표",
   "condition.activity": "최근 활동일",
   "visibility.public": "공개",

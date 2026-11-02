@@ -55,6 +55,7 @@
   "condition.access": "Minha função",
   "condition.topics": "Tópicos",
   "condition.language": "Linguagem",
+  "condition.owned": "Meus projetos",
   "condition.starred": "Com estrela",
   "condition.activity": "Última atividade",
   "visibility.public": "Público",

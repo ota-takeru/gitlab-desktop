@@ -55,6 +55,7 @@
   "condition.access": "Моя роль",
   "condition.topics": "Темы",
   "condition.language": "Язык",
+  "condition.owned": "Мои проекты",
   "condition.starred": "Со звездой",
   "condition.activity": "Последняя активность",
   "visibility.public": "Публичный",

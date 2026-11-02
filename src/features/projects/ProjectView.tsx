@@ -43,7 +43,7 @@ import { preferenceScope, readPinnedProjectIds, readRecentProjectIds, writePinne
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useRememberedListState } from './listState'
 import { ProjectConditionEditor } from './ProjectConditions'
-import { addableKinds, CONDITION_NAMES, defaultProjectFilters, ORDER_NAMES, projectConditionChips, projectFilterQuery, type ProjectConditionKind, type ProjectFilterValues } from './projectFilters'
+import { addableKinds, CONDITION_NAMES, defaultProjectFilters, isSwitchCondition, ORDER_NAMES, projectConditionChips, projectFilterQuery, type ProjectConditionKind, type ProjectFilterValues } from './projectFilters'
 import { type ProjectLabel, readProjectLabels, sameProjectLabel, writeProjectLabels } from './projectLabels'
 import { Row } from '../../components/Row'
 
@@ -154,8 +154,8 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
   }
   const chooseSearchOption = (kind: ProjectConditionKind) => {
     setSearchOptions(null)
-    // Starring has no value to choose, so it applies at once.
-    if (kind === 'starred') applyFilters({ starred: true })
+    // Owned and starred have no value to choose, so they apply at once.
+    if (isSwitchCondition(kind)) applyFilters(kind === 'owned' ? { owned: true } : { starred: true })
     else if (searchOptions) setEditing({ anchor: searchOptions.anchor, kind })
   }
 
@@ -200,7 +200,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
                   <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>
                   {/* Each applied condition shows its value as a tag in the field: a tag opens its editor, ✕ removes it. */}
                   {chips.length ? <Box aria-label={t('project.search.applied')} role="group" sx={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%', mr: 0.5, py: 0.5 }}>
-                    {chips.map((chip) => <Chip color="primary" deleteIcon={<CancelRoundedIcon aria-label={t('project.search.removeCondition', { name: chip.name })} />} key={chip.kind} label={chip.label} onClick={chip.kind === 'starred' ? undefined : (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind: chip.kind })} onDelete={() => applyFilters(chip.clear)} size="small" sx={{ fontFamily: chip.code ? 'code.fontFamily' : undefined, maxWidth: '100%' }} variant="outlined" />)}
+                    {chips.map((chip) => <Chip color="primary" deleteIcon={<CancelRoundedIcon aria-label={t('project.search.removeCondition', { name: chip.name })} />} key={chip.kind} label={chip.label} onClick={isSwitchCondition(chip.kind) ? undefined : (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind: chip.kind })} onDelete={() => applyFilters(chip.clear)} size="small" sx={{ fontFamily: chip.code ? 'code.fontFamily' : undefined, maxWidth: '100%' }} variant="outlined" />)}
                   </Box> : null}
                 </>,
                 endAdornment: <InputAdornment position="end"><Tooltip title={t('project.search.submitTooltip')}><IconButton aria-label={t('project.search.submit')} edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,

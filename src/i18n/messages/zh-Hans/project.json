@@ -55,6 +55,7 @@
   "condition.access": "我的角色",
   "condition.topics": "主题",
   "condition.language": "语言",
+  "condition.owned": "我的项目",
   "condition.starred": "已星标",
   "condition.activity": "最近活动",
   "visibility.public": "公开",
