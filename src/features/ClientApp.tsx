@@ -494,6 +494,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }, [queryClient])
   const memoryConstrained = useMemoryPressureReading(releaseUnusedData)
   const selectedHasTab = selectedPinned || Boolean(selected && openTabKeys.includes(mrRefKey(selected)))
+  // A newly opened MR waiting for its saved data, the list still showing in its place.
+  const [mrRevealPending, setMrRevealPending] = useState(false)
 
   const personal = personalQueueFor(listParams, session?.user.id)
   // The personal queues and search share one list screen; chips under its search field switch between them.
@@ -587,7 +589,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           </Dialog>
           <KeyboardShortcutsDialog onClose={closeShortcuts} open={shortcutsOpen} />
           <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestTarget} onOpenPage={openGitLabPage} />
-          <Box key={sessionKey} sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
+          <Box key={sessionKey} sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
             {/* The same pane as the restored screen, so nothing moves when it arrives. */}
             {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
@@ -601,7 +603,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             {!waitingForSessionRestore && !awaitingReauth ? <>
               {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive.
                   Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once. */}
-              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy. */}
                 <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={memoryConstrained ? 1 : 6} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
@@ -616,7 +618,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 </QueryRefreshPolicy>
                 </KeepAlive>
               </Box>
-              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              {/* An MR opened for the first time shows once its saved data is read; the list or the MR before it stays until then. */}
+              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} onRevealPendingChange={setMrRevealPending} revealWhenReady={!memoryConstrained} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
               {/* An MR with a sidebar tab keeps its data while hidden, so switching back shows it at once. */}
               {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab && !memoryConstrained ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute

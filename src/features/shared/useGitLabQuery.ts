@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useQueryRefreshAllowed, useQueryRetention } from './QueryRefreshPolicy'
+import { useScreenReadiness } from '../../components/screenReadinessContext'
 import { translate } from '../../i18n/i18n'
 
 import { cancelGitLabRequest, createRequestId, normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
@@ -118,6 +119,15 @@ export function useGitLabQuery<Q extends GitLabQuery>(
   const snapshot = accessDenied || !query ? null : loaded.data?.snapshot ?? null
   const refetch = loaded.refetch
   const hasQuery = Boolean(sessionId && query)
+
+  // A screen waiting to show (see KeepAlive) stays out of sight until this read has checked the saved data.
+  const holdScreen = useScreenReadiness()
+  const checkKey = hasQuery ? savedDataKey(sessionId ?? '', queryJson) : ''
+  const savedDataChecked = useSyncExternalStore(subscribeToSavedDataChecks, () => checkedSavedData.has(checkKey))
+  const waitingForSavedData = hasQuery && !background && !snapshot && !queryError && loaded.isPending && !savedDataChecked
+  useEffect(() => {
+    if (waitingForSavedData && holdScreen) return holdScreen()
+  }, [holdScreen, waitingForSavedData])
   const refresh = useCallback(() => {
     // Refetching a disabled key would run the query function and store its error under that shared key.
     if (hasQuery) void refetch()
@@ -180,15 +190,19 @@ async function fetchGitLabQuery<Q extends GitLabQuery>(
   signal.addEventListener('abort', cancel, { once: true })
 
   let cached: GitLabSnapshot<GitLabQueryData<Q>> | null = shown
+  const checkKey = savedDataKey(sessionId, JSON.stringify(query))
   try {
     throwIfAborted(signal)
-    if (!shown) try {
-      cached = await queryGitLab({ mode: 'cache', query, requestId, sessionId })
-      throwIfAborted(signal)
-      if (cached) onCached(cached)
-    } catch (caught) {
-      const error = normalizeGitLabError(caught)
-      if (error.code !== 'NOT_FOUND' && isAccessDenied(error)) return { error, snapshot: null }
+    if (!shown) {
+      try {
+        cached = await queryGitLab({ mode: 'cache', query, requestId, sessionId })
+        throwIfAborted(signal)
+        if (cached) onCached(cached)
+      } catch (caught) {
+        const error = normalizeGitLabError(caught)
+        if (error.code !== 'NOT_FOUND' && isAccessDenied(error)) return { error, snapshot: null }
+      }
+      setSavedDataChecked(checkKey, true)
     }
 
     throwIfAborted(signal)
@@ -204,7 +218,29 @@ async function fetchGitLabQuery<Q extends GitLabQuery>(
     }
   } finally {
     signal.removeEventListener('abort', cancel)
+    setSavedDataChecked(checkKey, false)
   }
+}
+
+/** Reads in flight that have checked the saved data, by session and query; the rest still keep a waiting screen out of sight. */
+const checkedSavedData = new Set<string>()
+const savedDataListeners = new Set<() => void>()
+
+function savedDataKey(sessionId: string, queryJson: string): string {
+  return `${sessionId}
+${queryJson}`
+}
+
+function setSavedDataChecked(key: string, checked: boolean): void {
+  if (checkedSavedData.has(key) === checked) return
+  if (checked) checkedSavedData.add(key)
+  else checkedSavedData.delete(key)
+  savedDataListeners.forEach((listener) => listener())
+}
+
+function subscribeToSavedDataChecks(listener: () => void): () => void {
+  savedDataListeners.add(listener)
+  return () => { savedDataListeners.delete(listener) }
 }
 
 function throwIfAborted(signal: AbortSignal): void {

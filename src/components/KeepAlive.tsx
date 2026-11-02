@@ -1,6 +1,7 @@
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { Activity, memo, useState, type ElementType, type ReactNode } from 'react'
+import { Activity, memo, useLayoutEffect, useState, type ElementType, type ReactNode } from 'react'
+import { ScreenReadinessGate } from './ScreenReadiness'
 
 interface KeepAliveProps {
   /** The screen on view; null hides every kept screen. */
@@ -18,6 +19,14 @@ interface KeepAliveProps {
    * changes, e.g. a list under an open MR that only needs to follow which MR is open.
    */
   renderKey?: string
+  /**
+   * A screen shown for the first time builds out of sight, the screen before it still
+   * showing, until its reads have checked the saved data (see ScreenReadinessGate), so
+   * it does not show empty for a moment before data already saved arrives.
+   */
+  revealWhenReady?: boolean
+  /** Whether a new screen is out of sight with no kept screen showing in its place, so the caller shows what was there. */
+  onRevealPendingChange?: (pending: boolean) => void
 }
 
 const noKeys: readonly string[] = []
@@ -31,15 +40,25 @@ interface KeptScreens {
   kept: string
   /** The limit they were last counted with; a lower one drops screens at once. */
   max: number
+  /** The active screen they were last counted with. */
+  active: string | null
+  /** A new active screen still out of sight with `revealWhenReady`, and the screen showing in its place. */
+  pending: string | null
+  previous: string | null
 }
 
-function keptScreens(screens: KeptScreens, activeKey: string | null, max: number, keep: readonly string[]): KeptScreens {
+function keptScreens(screens: KeptScreens, activeKey: string | null, max: number, keep: readonly string[], revealWhenReady: boolean): KeptScreens {
   const kept = new Set(keep)
   let others = 0
   const recent = [...(activeKey === null ? [] : [activeKey]), ...screens.recent.filter((key) => key !== activeKey)]
     .filter((key) => key === activeKey || kept.has(key) || ++others < Math.max(1, max))
   const order = [...screens.order.filter((key) => recent.includes(key)), ...(activeKey === null || screens.order.includes(activeKey) ? [] : [activeKey])]
-  return { kept: keep.join(' '), max, order, recent }
+  if (activeKey === screens.active) return { ...screens, kept: keep.join(' '), max, order, previous: screens.previous !== null && order.includes(screens.previous) ? screens.previous : null, recent }
+  // Another new screen chosen while one waits keeps the screen that was showing.
+  const pending = revealWhenReady && activeKey !== null && !screens.order.includes(activeKey) ? activeKey : null
+  const showing = screens.pending === null ? screens.active : screens.previous
+  const previous = pending !== null && showing !== null && order.includes(showing) ? showing : null
+  return { active: activeKey, kept: keep.join(' '), max, order, pending, previous, recent }
 }
 
 /**
@@ -50,19 +69,30 @@ function keptScreens(screens: KeptScreens, activeKey: string | null, max: number
  * Only the active screen's wrapper carries `data-screen-active="true"`, for
  * document queries that must ignore the hidden ones.
  */
-export function KeepAlive({ activeKey, children, component = 'div', keep = noKeys, max, renderKey, sx }: KeepAliveProps) {
-  const [screens, setScreens] = useState<KeptScreens>({ kept: '', max, order: [], recent: [] })
+export function KeepAlive({ activeKey, children, component = 'div', keep = noKeys, max, onRevealPendingChange, renderKey, revealWhenReady = false, sx }: KeepAliveProps) {
+  // The first screen shows at once: there is nothing before it to keep showing.
+  const [screens, setScreens] = useState<KeptScreens>({ active: activeKey, kept: '', max, order: [], pending: null, previous: null, recent: [] })
   let current = screens
-  if ((activeKey !== null && screens.recent[0] !== activeKey) || screens.kept !== keep.join(' ') || screens.max !== max) {
-    current = keptScreens(screens, activeKey, max, keep)
+  if ((activeKey !== null && screens.recent[0] !== activeKey) || screens.active !== activeKey || screens.kept !== keep.join(' ') || screens.max !== max) {
+    current = keptScreens(screens, activeKey, max, keep, revealWhenReady)
     setScreens(current)
   }
+  const pending = current.pending !== null && current.pending === activeKey
+  const revealPendingAlone = pending && current.previous === null
+  // Before paint, so the caller's screen does not disappear for a frame.
+  useLayoutEffect(() => { onRevealPendingChange?.(revealPendingAlone) }, [onRevealPendingChange, revealPendingAlone])
   return <>{current.order.map((key) => {
     const active = key === activeKey
+    const waiting = pending && active
+    const shown = pending ? key === current.previous : active
+    const reveal = () => setScreens((latest) => latest.pending === key ? { ...latest, pending: null, previous: null } : latest)
     // The wrapper sits outside Activity: React defers updates inside a hidden subtree, the marker must change at once.
-    return <Box component={component} data-screen-active={active ? 'true' : 'false'} key={key} sx={[...(Array.isArray(sx) ? sx : [sx]), !active && { display: 'none' }]}>
-      <Activity mode={active ? 'visible' : 'hidden'}>
-        <LastContent hidden={!active} renderKey={active ? renderKey : undefined}>{active ? children : null}</LastContent>
+    // A waiting screen is laid out at its full size, transparent, so it measures itself and can take focus as when it shows.
+    return <Box component={component} data-screen-active={active ? 'true' : 'false'} key={key} sx={[...(Array.isArray(sx) ? sx : [sx]), !active && !shown && { display: 'none' }, waiting && { inset: 0, opacity: 0, pointerEvents: 'none', position: 'absolute' }]}>
+      <Activity mode={active || shown ? 'visible' : 'hidden'}>
+        <ScreenReadinessGate onReady={reveal} waiting={waiting}>
+          <LastContent hidden={!active} renderKey={active ? renderKey : undefined}>{active ? children : null}</LastContent>
+        </ScreenReadinessGate>
       </Activity>
     </Box>
   })}</>
