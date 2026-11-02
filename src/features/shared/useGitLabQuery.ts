@@ -50,9 +50,11 @@ export function useGitLabQuery<Q extends GitLabQuery>(
      * window is visible, auto refresh is allowed and the last read succeeded.
      */
     refreshIntervalMs?: number | false
+    /** Nothing on screen waits for it (the workspace monitor), so it yields to the screen's reads. */
+    background?: boolean
   } = {},
 ): GitLabQueryState<GitLabQueryData<Q>> {
-  const { refreshIntervalMs } = options
+  const { background = false, refreshIntervalMs } = options
   const queryClient = useQueryClient()
   const autoRefresh = useQueryRefreshAllowed()
   const gcTime = useQueryRetention()
@@ -87,7 +89,7 @@ export function useGitLabQuery<Q extends GitLabQuery>(
       // A refresh of data already on screen goes straight to the network: publishing
       // the older disk copy first would flip the view to 「保存済み」 and back.
       const shown = queryClient.getQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey)?.snapshot ?? null
-      return fetchGitLabQuery(sessionId, query, signal, shown, (snapshot) => {
+      return fetchGitLabQuery(sessionId, query, background, signal, shown, (snapshot) => {
         // Publish the cache hit while the network request is still in flight;
         // observers can render it immediately with `refreshing=true`.
         queryClient.setQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey, { error: null, snapshot })
@@ -177,9 +179,26 @@ export function applyConfirmedGitLabChange<Q extends GitLabQuery>(
     : current)
 }
 
+/**
+ * Reads `query` ahead of the screen that will show it, under the key that screen's
+ * `useGitLabQuery` uses (`query` must have the same fields in the same order), so the
+ * screen opens on it or joins the read in flight. It yields to the screen's reads, and
+ * data still fresh is not read again.
+ */
+export function prefetchGitLabQuery<Q extends GitLabQuery>(queryClient: QueryClient, sessionId: string, query: Q): void {
+  const queryKey = ['gitlab', sessionId, JSON.stringify(query)] as const
+  void queryClient.prefetchQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
+    queryFn: ({ signal }) => fetchGitLabQuery(sessionId, query, true, signal, queryClient.getQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey)?.snapshot ?? null, (snapshot) => {
+      queryClient.setQueryData<LoadedQuery<GitLabQueryData<Q>>>(queryKey, { error: null, snapshot })
+    }),
+    queryKey,
+  })
+}
+
 async function fetchGitLabQuery<Q extends GitLabQuery>(
   sessionId: string,
   query: Q,
+  background: boolean,
   signal: AbortSignal,
   shown: GitLabSnapshot<GitLabQueryData<Q>> | null,
   onCached: (snapshot: GitLabSnapshot<GitLabQueryData<Q>>) => void,
@@ -202,7 +221,7 @@ async function fetchGitLabQuery<Q extends GitLabQuery>(
 
     throwIfAborted(signal)
     try {
-      const fresh = await queryGitLab({ mode: 'network', query, requestId, sessionId })
+      const fresh = await queryGitLab({ background, mode: 'network', query, requestId, sessionId })
       throwIfAborted(signal)
       return { error: null, snapshot: fresh ?? cached }
     } catch (caught) {

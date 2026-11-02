@@ -5,13 +5,19 @@ import type { GitLabGroup, GitLabSession, GitLabUser, MergeRequest, MergeRequest
 import { MergeRequestList } from './MergeRequestList'
 import { buildQuery } from './mergeRequestSearch'
 
-const { openGitLabUrlMock, queryMock } = vi.hoisted(() => ({ openGitLabUrlMock: vi.fn(), queryMock: vi.fn() }))
+const { openGitLabUrlMock, prefetchMock, queryClientFixture, queryMock } = vi.hoisted(() => ({ openGitLabUrlMock: vi.fn(), prefetchMock: vi.fn(), queryClientFixture: {}, queryMock: vi.fn() }))
+
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@tanstack/react-query')>(),
+  useQueryClient: () => queryClientFixture,
+}))
 
 vi.mock('../connections/connectionContext', () => ({
   useConnection: () => ({ session: sessionFixture }),
 }))
 
 vi.mock('../shared/useGitLabQuery', () => ({
+  prefetchGitLabQuery: prefetchMock,
   useGitLabQuery: queryMock,
 }))
 
@@ -733,6 +739,36 @@ describe('MergeRequestList search filters', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByLabelText('!4の概要')).not.toBeInTheDocument()
+  })
+
+  it('reads ahead what an MR opens on once the pointer rests on its row or the keyboard reaches it', () => {
+    vi.useFakeTimers()
+    try {
+      prefetchMock.mockReset()
+      queryMock.mockImplementation((_sessionId: string, query: { kind?: string } | null) => query?.kind === 'mrs'
+        ? { ...emptyResult, data: [createMergeRequest({ title: 'First' }), createMergeRequest({ id: 'mr-4', iid: '4', title: 'Second' })] }
+        : emptyResult)
+      render(<MergeRequestList onOpenMergeRequest={vi.fn()} />)
+      const [first, second] = within(screen.getByRole('list', { name: 'MR検索結果' })).getAllByRole('button', { name: /First|Second/u })
+
+      // Passing over a row reads nothing.
+      fireEvent.pointerOver(first)
+      fireEvent.pointerOver(second)
+      act(() => { vi.advanceTimersByTime(300) })
+      const reads = () => prefetchMock.mock.calls.map(([, sessionId, query]) => `${sessionId}:${JSON.stringify(query)}`)
+      expect(reads()).toEqual([
+        'session-1:{"iid":"4","kind":"mr","projectId":"77"}',
+        'session-1:{"iid":"4","kind":"approvals","projectId":"77"}',
+      ])
+      expect(prefetchMock.mock.calls[0][0]).toBe(queryClientFixture)
+
+      prefetchMock.mockReset()
+      fireEvent.focus(first)
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(reads()[0]).toBe('session-1:{"iid":"3","kind":"mr","projectId":"77"}')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('splits the review queue by whether you approved, using one approvals request for the page', () => {

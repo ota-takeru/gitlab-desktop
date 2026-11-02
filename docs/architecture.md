@@ -184,7 +184,7 @@ A cache that is not fetched returns a miss, distinct from an error. The error DT
 
 A page token is an opaque value bound to the search conditions and the connection session. The app does not trust a value returned by the UI to access an arbitrary URL. GitLab's next URL is also checked to be within the registered origin, base path and API path.
 
-One HTTP client is reused per instance. The initial values are 4 concurrent requests, and 1 per identical key. The request queue also has a limit, and old searches and prefetches are canceled first. For normal JSON the starting points are 5 seconds to connect, 20 seconds overall, and 5 MiB after decompression; large responses get a separate limit.
+One HTTP client is reused per instance. The initial values are 8 concurrent requests (opening an MR's changes reads about seven resources at once, and each waits on GitLab for about half a second), and 1 per identical key. The request queue also has a limit, and old searches and prefetches are canceled first. For normal JSON the starting points are 5 seconds to connect, 20 seconds overall, and 5 MiB after decompression; large responses get a separate limit.
 
 A transient communication failure or some 5xx on a GET is retried up to 2 times with backoff including jitter. The wait deadline for 429 is shared per instance in Rust and is not bypassed by a manual update in the UI. A long Retry-After does not keep a timer for a long time; it returns the time when a retry is possible. 401/403 are not retried. A non-idempotent post is not resent automatically even when the communication result is unknown.
 

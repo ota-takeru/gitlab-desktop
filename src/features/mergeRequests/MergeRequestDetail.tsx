@@ -43,25 +43,26 @@ import { formatFetchedAt, formatMergeRequestState, mergeRequestStateTone, shortS
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import { projectUrlOf } from '../../lib/markdownLinks'
-import type { Approvals, AwardEmoji, Commit, DiffsQuery, Diff, Discussion, Draft, FileQuery, GitLabUser, GitLabAction, GitLabQuery, GitLabSnapshot, ApprovalsQuery, CommitDiffQuery, MergeRequest, MergeRequestQuery, MrAwardsQuery, MrVersion, MrVersionsQuery, Note, NoteAwardsQuery, Position, ReviewResourceQuery, VersionCompareQuery } from '../../types/gitlab'
+import type { Approvals, AwardEmoji, Commit, DiffsQuery, Diff, Discussion, Draft, FileQuery, GitLabUser, GitLabAction, GitLabQuery, GitLabSnapshot, ApprovalsQuery, CommitDiffQuery, MergeRequest, MergeRequestQuery, MrApprovalsQuery, MrAwardsQuery, MrVersion, MrVersionsQuery, Note, NoteAwardsQuery, Position, ReviewResourceQuery, VersionCompareQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
-import { usePersonalWorkspace } from '../shared/personalWorkspace'
+import { mrRefKey, usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useDiscussionWindow } from './useDiscussionWindow'
 import { formatNames } from './mergeActions'
-import { positionAtLatest } from './discussionScroll'
+import { findScrollContainer, positionAtLatest } from './discussionScroll'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
 import { readLoadedDiffPages, useDiscussionCode } from './useDiscussionCode'
-import { DiscussionList, type NoteReactions, type OlderDiscussions } from './DiscussionList'
+import { DiscussionList, type DiscussionFilter, type NoteReactions, type OlderDiscussions } from './DiscussionList'
 import { commentScrollPositions } from './composerBuffers'
 import { diffFileOrder } from './diffFileOrder'
 import { LocalChanges, LocalStatusBadge } from './LocalChanges'
 import { DiscussionLayout } from './DiscussionLayout'
 import { lineKey, threadsByLine } from './diffLineThreads'
 import { isUnresolvedDiscussion } from './discussionStatus'
-import { UnresolvedThreadNav, UnresolvedThreadStepper } from './UnresolvedThreadNav'
+import { ThreadOutline } from './ThreadOutline'
+import { UnresolvedThreadStepper } from './UnresolvedThreadNav'
 import { plainExcerpt } from './discussionText'
 import { MergeRequestPeopleDialog } from './MergeRequestPeopleDialog'
 import { PipelinesTab } from './PipelinesTab'
@@ -101,10 +102,24 @@ export interface MergeRequestDetailProps {
   onNoteFocused?: () => void
 }
 
+/** Whether an approvals batch key names the MR; without a project path every batch may. */
+function holdsMergeRequest(key: string, projectPath: string | null | undefined, iid: string): boolean {
+  if (!projectPath) return true
+  try {
+    return (JSON.parse(key) as MrApprovalsQuery).items.some((item) => item.iid === iid && item.projectPath === projectPath)
+  } catch {
+    return true
+  }
+}
+
 export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.back'), focusNote, initialMergeRequest, onBack, onNoteFocused, onOpenProject, onTabChange, tab }: MergeRequestDetailProps) {
   const t = useT()
   const { session } = useConnection()
-  const workspace = usePersonalWorkspace(session)
+  // The review reads this MR's read comments, its pin and the comment notifications; other writes do not render it again.
+  const workspace = usePersonalWorkspace(session, (data) => {
+    const refKey = mrRefKey(initialMergeRequest)
+    return JSON.stringify([data.reading[refKey]?.read, data.pinned.some((item) => mrRefKey(item) === refKey), data.settings.notifyComments])
+  })
   const sectionRef = useRef<HTMLElement | null>(null)
   const headerRef = useRef<HTMLElement | null>(null)
   useLayoutEffect(() => {
@@ -208,12 +223,15 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const accessDenied = currentResult.error?.code === 'AUTH_REQUIRED' || currentResult.error?.code === 'FORBIDDEN' || currentResult.error?.code === 'NOT_FOUND'
   const mergeRequest = accessDenied ? null : currentResult.data ?? initialMergeRequest
   const mergeRequestHeadSha = mergeRequest?.diffRefs?.headSha
+  // An MR opened from a list has no diff refs until its own read answers, but the
+  // list's head lets the first diff page start beside that read; Rust checks it.
+  const diffHeadSha = mergeRequestHeadSha ?? (mergeRequest?.headSha || undefined)
 
   // A commit's diff or a version comparison is shown read-only: no new line comments, threads or reviewed marks.
   const comparing = Boolean(compareVersion && mergeRequestHeadSha)
   const showingLocal = localChanges && Boolean(mergeRequestHeadSha)
   const readOnlyChanges = Boolean(selectedCommit) || comparing || showingLocal
-  const diffsQuery = useMemo<DiffsQuery | null>(() => activeTab === 'changes' && !selectedCommit && !compareVersion && !showingLocal && mergeRequestHeadSha ? ({ headSha: mergeRequestHeadSha, iid, kind: 'diffs', page: changePage, projectId: resourceId } as DiffsQuery) : null, [activeTab, changePage, compareVersion, iid, resourceId, selectedCommit, showingLocal, mergeRequestHeadSha])
+  const diffsQuery = useMemo<DiffsQuery | null>(() => activeTab === 'changes' && !selectedCommit && !compareVersion && !showingLocal && diffHeadSha ? ({ headSha: diffHeadSha, iid, kind: 'diffs', page: changePage, projectId: resourceId } as DiffsQuery) : null, [activeTab, changePage, compareVersion, iid, resourceId, selectedCommit, showingLocal, diffHeadSha])
   const commitDiffQuery = useMemo<CommitDiffQuery | null>(() => activeTab === 'changes' && selectedCommit ? ({ iid, kind: 'commitDiff', page: changePage, projectId: resourceId, sha: selectedCommit } as CommitDiffQuery) : null, [activeTab, changePage, iid, resourceId, selectedCommit])
   const versionCompareQuery = useMemo<VersionCompareQuery | null>(() => activeTab === 'changes' && !selectedCommit && compareVersion && mergeRequestHeadSha ? { fromSha: compareVersion, iid, kind: 'versionCompare', page: changePage, projectId: resourceId, toSha: mergeRequestHeadSha } : null, [activeTab, changePage, compareVersion, iid, mergeRequestHeadSha, resourceId, selectedCommit])
   const versionsQuery = useMemo<MrVersionsQuery | null>(() => activeTab === 'changes' ? { iid, kind: 'mrVersions', page: 1, projectId: resourceId } : null, [activeTab, iid, resourceId])
@@ -259,6 +277,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const noteAwardsQuery = useMemo<NoteAwardsQuery | null>(() => (activeTab === 'discussion' || activeTab === 'changes') && projectPath && sinceNoteId ? { iid, kind: 'noteAwards', projectPath, sinceNoteId } : null, [activeTab, iid, projectPath, sinceNoteId])
   const noteAwardsResult = useGitLabQuery<NoteAwardsQuery>(session?.id ?? null, noteAwardsQuery)
   const awardsByNote = useMemo(() => new Map((noteAwardsResult.data ?? []).map((entry) => [entry.noteId, entry.awards])), [noteAwardsResult.data])
+  // Read with the reactions, as GitLab's REST notes have no edit time of their own.
+  const editedAtByNote = useMemo(() => noteAwardsResult.data ? new Map(noteAwardsResult.data.map((entry) => [entry.noteId, entry.lastEditedAt ?? null])) : undefined, [noteAwardsResult.data])
   const mrAwardsQuery = useMemo<MrAwardsQuery | null>(() => activeTab === 'overview' ? { iid, kind: 'mrAwards', projectId: resourceId } : null, [activeTab, iid, resourceId])
   const mrAwardsResult = useGitLabQuery<MrAwardsQuery>(session?.id ?? null, mrAwardsQuery)
   const mergeRequestNotifications = useLoadedMergeRequestNotifications(session?.id ?? null, resourceId, iid)
@@ -513,10 +533,11 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   }, [confirm, outsider, t])
 
   const runMutation = mutation.run
-  const runAction = useCallback(async (action: GitLabAction, refresh?: () => void, localDraftKey?: string) => {
+  // A refresh that resolves (the newest discussions page) is waited for, so what was written shows before the action ends.
+  const runAction = useCallback(async (action: GitLabAction, refresh?: () => void | Promise<void>, localDraftKey?: string) => {
     if (!await confirmOutsideWrite()) return false
     const success = await runMutation(action, localDraftKey)
-    if (success) refresh?.()
+    if (success) await refresh?.()
     return success
   }, [confirmOutsideWrite, runMutation])
   // Stable, so the memoized header actions render only when the MR or the lock changes.
@@ -577,7 +598,10 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
 
   const discussionIdForNote = (note: Note) => discussions.find((discussion) => discussion.notes.some((item) => item.id === note.id))?.id ?? null
   const noteEditBufferKey = (note: Note) => createComposerBufferKey(session, resourceId, iid, `edit:${note.id}`)
-  const editNote = (note: Note, body: string) => runAction({ body, iid, kind: 'editNote', noteId: note.id, projectId: resourceId }, () => discussionWindow.refreshDiscussion(discussionIdForNote(note)))
+  const editNote = (note: Note, body: string) => runAction({ body, iid, kind: 'editNote', noteId: note.id, projectId: resourceId }, () => {
+    noteAwardsResult.refresh()
+    return discussionWindow.refreshDiscussion(discussionIdForNote(note))
+  })
   const deleteNote = (note: Note) => runAction({ iid, kind: 'deleteNote', noteId: note.id, projectId: resourceId }, () => discussionWindow.refreshDiscussion(discussionIdForNote(note)))
   const resolveDiscussion = (discussion: Discussion, resolved: boolean) => runAction({ discussionId: discussion.id, iid, kind: 'resolve', projectId: resourceId, resolved }, () => discussionWindow.refreshDiscussion(discussion.id))
   const toggleReaction = (name: string, add: boolean, noteId?: string) => runAction({ iid, kind: add ? 'addAward' : 'removeAward', name, projectId: resourceId, ...(noteId ? { noteId } : {}) }, () => {
@@ -593,7 +617,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     else mrAwardsResult.refresh()
   })
   const reactionsDisabled = !session || mutation.isLocked || mutation.isPending
-  const noteReactions: NoteReactions = { awardsByNote, disabled: reactionsDisabled, onToggle: (note, name, add) => toggleReaction(name, add, note.id) }
+  const noteReactions: NoteReactions = { awardsByNote, editedAtByNote, disabled: reactionsDisabled, onToggle: (note, name, add) => toggleReaction(name, add, note.id) }
   const renderNoteReactions = (note: Note) => <ReactionBar awards={awardsByNote.get(note.id) ?? []} currentUserId={session?.user.id ?? ''} disabled={reactionsDisabled} label={t('mergeRequest.reactions.noteLabel', { name: note.author.name })} onToggle={(name, add) => toggleReaction(name, add, note.id)} />
   // Applying commits to the source branch, so the MR, its diffs and the threads all change.
   const suggestionActions: SuggestionActions | undefined = session ? {
@@ -859,8 +883,8 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     try {
       const success = await mutation.run({ iid, kind, projectId: resourceId, ...(myApproved ? {} : { sha: mergeRequest.headSha }) } as GitLabAction)
       if (success) {
-        // List pages group by approval; let them pick up the change.
-        void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') })
+        // List pages group by approval; the batches holding this MR pick up the change.
+        void queryClient.invalidateQueries({ predicate: (query) => typeof query.queryKey[2] === 'string' && query.queryKey[2].includes('"kind":"mrApprovals"') && holdsMergeRequest(query.queryKey[2], mergeRequest.projectPath, iid) })
         if (approvalsQuery) await refetchQuery(approvalsQuery)
         if (kind === 'approve') notify({ celebrate: true, message: t('mergeRequest.approval.approved', { iid: mergeRequest.iid }), severity: 'success' })
       }
@@ -978,7 +1002,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.reactions.truncated')}</Alert> : null}
         {/* Visited tabs stay mounted, hidden, so switching back shows them at once with their scroll, input and highlighted code. */}
         <Box><KeepAlive activeKey={activeTab} max={4}>
-        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab focusNoteId={discussionViewSettled ? focusNote?.noteId : undefined} onFocusNoteDone={onNoteFocused} projectId={resourceId} templateProjectPath={projectPath ?? undefined} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} mentionParticipants={mentionParticipants} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onAddReviewers={addReviewers} onSaveDraft={saveDraft} onSetReviewers={setReviewers} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
+        {activeTab === 'discussion' ? <Box sx={{ width: '100%' }}><DiscussionTab settled={discussionViewSettled} focusNoteId={discussionViewSettled ? focusNote?.noteId : undefined} onFocusNoteDone={onNoteFocused} projectId={resourceId} templateProjectPath={projectPath ?? undefined} iid={iid} headSha={mergeRequestHeadSha} suggestionActions={suggestionActions} renderCodeContext={renderCodeContext} onUploadAttachment={uploadAttachment} attachmentTargetKey={attachmentScope} composerKey={createComposerBufferKey(session, resourceId, iid, 'new')} replyComposer={replyComposer} currentUserId={session?.user.id ?? ''} discussions={discussions} mentionParticipants={mentionParticipants} unreadNoteIds={unreadNoteIds} onMarkRead={(notes) => workspace.markRead({ projectId: resourceId, iid }, notes)} onOpenPosition={openCommentPosition} discussionError={discussionWindow.error} older={{ error: discussionWindow.olderError?.message ?? null, hasOlder: discussionWindow.hasOlder, limitReached: discussionWindow.limitReached, loading: discussionWindow.loadingOlder, onLoad: discussionWindow.loadOlder, onRetry: discussionWindow.retryOlder }} draftEditBufferKey={draftEditBufferKey} draftEditId={draftEditId} draftError={draftsResult.error} draftLoading={draftsResult.loading} draftNextPage={draftsResult.snapshot?.nextPage ?? null} draftPage={draftPage} draftStatuses={draftStatuses} editingNoteId={editingNoteId} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={setEditingNoteId} onPrevDraftPage={() => setDraftPage((current) => Math.max(1, current - 1))} publishingAll={publishingAll} drafts={drafts} loading={discussionWindow.loading} mutationLocked={mutation.isLocked} mutationPending={mutation.isPending} onDeleteDraft={deleteDraft} onDeleteNote={deleteNote} onEditDraft={editDraft} onEditNote={editNote} onNextDraftPage={() => setDraftPage((current) => current + 1)} onPublishDraft={publishDraft} onPublishAllDrafts={publishAllDrafts} onPublishSelectedDrafts={publishSelectedDrafts} onReply={setReplyDiscussion} onResolve={resolveDiscussion} reactions={noteReactions} onAddReviewers={addReviewers} onSaveDraft={saveDraft} onSetReviewers={setReviewers} onSelectDraft={(id) => setSelectedDrafts((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} onSetDraftEdit={setDraftEditId} onSubmitComment={submitComment} onCancelReply={() => setReplyDiscussion(null)} replyDiscussion={replyDiscussion} selectedDrafts={selectedDrafts} /></Box> : null}
         {activeTab === 'changes' ? <Stack spacing={1}>
         {drafts.length ? <Alert action={<Button color="inherit" onClick={() => setActiveTab('discussion')} size="small">{t('mergeRequest.drafts.publishInDiscussion')}</Button>} severity="info">{t('mergeRequest.drafts.pending', { count: drafts.length })}</Alert> : null}
         <ChangesTab fileSource={session && fileSha ? { projectId: resourceId, sessionId: session.id, sha: fileSha, beforeSha: beforeFileSha, iid } : undefined} threadActions={readOnlyChanges ? undefined : {
@@ -1004,10 +1028,30 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   )
 }
 
-function DiscussionTab({ focusNoteId, onFocusNoteDone, projectId, iid, headSha, suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, mentionParticipants, templateProjectPath, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onAddReviewers, onSetReviewers, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
+function DiscussionTab({ settled, focusNoteId, onFocusNoteDone, projectId, iid, headSha, suggestionActions, renderCodeContext, reactions, onUploadAttachment, attachmentTargetKey, composerKey, replyComposer, currentUserId, mentionParticipants, templateProjectPath, unreadNoteIds, onMarkRead, onOpenPosition, discussionError, older, discussions, draftEditBufferKey, draftEditId, draftError, draftLoading, draftNextPage, draftPage, draftStatuses, drafts, editingNoteId, loading, mutationLocked, mutationPending, noteEditBufferKey, onCancelReply, onDeleteDraft, onDeleteNote, onEditDraft, onEditNote, onEditingNoteChange, onNextDraftPage, onPrevDraftPage, onPublishAllDrafts, onPublishDraft, onPublishSelectedDrafts, onReply, onResolve, onSaveDraft, onSelectDraft, onAddReviewers, onSetReviewers, onSetDraftEdit, onSubmitComment, publishingAll, replyDiscussion, selectedDrafts }: DiscussionTabProps) {
   const t = useT()
   const { session } = useConnection()
   const mutationDisabled = mutationLocked || mutationPending
+  const [filter, setFilter] = useState<DiscussionFilter>('all')
+  // While a new comment is sent, the composer keeps its place on screen and the comment appears above it,
+  // instead of pushing the composer down. The place is released once React has shown the refreshed threads.
+  const composerRef = useRef<HTMLDivElement | null>(null)
+  const composerPinRef = useRef<number | null>(null)
+  const submitFromComposer: typeof onSubmitComment = async (...args) => {
+    composerPinRef.current = composerRef.current?.getBoundingClientRect().top ?? null
+    try {
+      return await onSubmitComment(...args)
+    } finally {
+      globalThis.setTimeout(() => { composerPinRef.current = null }, 0)
+    }
+  }
+  useLayoutEffect(() => {
+    const pinned = composerPinRef.current
+    const composer = composerRef.current
+    const host = composer ? findScrollContainer(composer) : null
+    if (pinned === null || !composer || !host) return
+    host.scrollTop += composer.getBoundingClientRect().top - pinned
+  }, [discussions])
   const openThread = (discussionId: string) => {
     const thread = document.querySelector<HTMLElement>(`[data-discussion-id="${CSS.escape(discussionId)}"]`)
     if (!thread) return
@@ -1017,9 +1061,9 @@ function DiscussionTab({ focusNoteId, onFocusNoteDone, projectId, iid, headSha, 
   return (
     <DiscussionLayout
       composer={(
-        <BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} templateProjectPath={templateProjectPath} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onAddReviewers={onAddReviewers} onSaveDraft={onSaveDraft} onSetReviewers={onSetReviewers} onSubmitComment={onSubmitComment} pending={mutationPending} />
+        <Box ref={composerRef}><BufferedReviewComposer onUploadAttachment={onUploadAttachment} attachmentTargetKey={`${attachmentTargetKey}:${composerKey}`} enableMentions={Boolean(currentUserId)} key={composerKey} mentionParticipants={mentionParticipants} templateProjectPath={templateProjectPath} bufferKey={composerKey} disabled={mutationLocked} onCancelReply={onCancelReply} onClearPosition={() => undefined} onAddReviewers={onAddReviewers} onSaveDraft={onSaveDraft} onSetReviewers={onSetReviewers} onSubmitComment={submitFromComposer} pending={mutationPending} /></Box>
       )}
-      navigator={discussions.length ? <UnresolvedThreadNav discussions={discussions} olderNotLoaded={older.hasOlder} onSelect={openThread} /> : null}
+      navigator={discussions.length ? <ThreadOutline discussions={discussions} filter={filter} olderNotLoaded={older.hasOlder} onSelect={openThread} unreadNoteIds={unreadNoteIds} /> : null}
       side={<>
         {draftError && !drafts.length ? <Alert severity="error">{t('mergeRequest.drafts.loadFailed', { error: draftError.message })}</Alert> : null}
         {draftError && drafts.length ? <Alert severity="warning">{t('mergeRequest.drafts.refreshFailed', { error: draftError.message })}</Alert> : null}
@@ -1029,7 +1073,7 @@ function DiscussionTab({ focusNoteId, onFocusNoteDone, projectId, iid, headSha, 
         {discussionError && !discussions.length ? <Alert severity="error">{discussionError.message}</Alert> : null}
         {discussionError && discussions.length ? <Alert severity="warning">{t('mergeRequest.detail.discussionRefreshFailed', { error: discussionError.message })}</Alert> : null}
         {loading && !discussions.length ? <LoadingPanel label={t('mergeRequest.detail.discussionLoading')} /> : null}
-        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList focusNoteId={focusNoteId} onFocusNoteDone={onFocusNoteDone} onUploadAttachment={onUploadAttachment} projectId={projectId} iid={iid} headSha={headSha} reactions={reactions} editingNoteId={editingNoteId} mentionParticipants={mentionParticipants} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
+        {(!loading || discussions.length) && (!discussionError || discussions.length) ? <DiscussionList settled={settled} filter={filter} onFilterChange={setFilter} focusNoteId={focusNoteId} onFocusNoteDone={onFocusNoteDone} onUploadAttachment={onUploadAttachment} projectId={projectId} iid={iid} headSha={headSha} reactions={reactions} editingNoteId={editingNoteId} mentionParticipants={mentionParticipants} noteEditBufferKey={noteEditBufferKey} onEditingNoteChange={onEditingNoteChange} older={older} renderCodeContext={renderCodeContext} sessionId={session?.id ?? null} unreadNoteIds={unreadNoteIds} onMarkRead={onMarkRead} onOpenPosition={onOpenPosition} replyComposer={replyComposer} replyDiscussionId={replyDiscussion?.id} currentUserId={currentUserId} disabled={mutationDisabled} discussions={discussions} onDelete={onDeleteNote} onEdit={onEditNote} onReply={onReply} onResolve={onResolve} suggestionActions={suggestionActions} /> : null}
       </>}
     />
   )
@@ -1051,6 +1095,8 @@ interface DiscussionTabProps {
   /** The editor of the reply being written in a thread, if any. */
   replyComposer: React.ReactNode
   currentUserId: string
+  /** The discussion has loaded and been placed at its opening position. */
+  settled: boolean
   focusNoteId?: string
   onFocusNoteDone?: () => void
   mentionParticipants: GitLabUser[]

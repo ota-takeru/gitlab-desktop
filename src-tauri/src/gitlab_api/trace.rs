@@ -14,12 +14,14 @@ pub(super) async fn get_trace_tail(
         let response = match client
             .get(url.clone())
             .header(reqwest::header::RANGE, format!("bytes=-{MAX_TRACE_BYTES}"))
+            // A range of a compressed body would be a range of the compressed bytes.
+            .header(reqwest::header::ACCEPT_ENCODING, "identity")
             .send()
             .await
         {
             Ok(response) => response,
             Err(error) => {
-                if retries < MAX_GET_RETRIES {
+                if retries < MAX_GET_RETRIES && !error.is_timeout() {
                     retries += 1;
                     wait_for_get_retry(retries).await;
                     continue;
@@ -64,10 +66,7 @@ pub(super) async fn get_trace_tail(
                 };
                 return Ok((bytes, head_omitted, omitted_lines));
             }
-            Err(error)
-                if matches!(error.code.as_str(), "NETWORK" | "TIMEOUT")
-                    && retries < MAX_GET_RETRIES =>
-            {
+            Err(error) if error.code == "NETWORK" && retries < MAX_GET_RETRIES => {
                 retries += 1;
                 wait_for_get_retry(retries).await;
             }

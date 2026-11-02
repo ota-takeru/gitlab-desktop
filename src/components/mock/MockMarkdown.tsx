@@ -26,6 +26,18 @@ function remarkGitLabEmoji(catalog: EmojiCatalog | null) {
   return () => replace
 }
 
+/** Drops GitLab's image attributes such as `{width=100 height=50}` written right after an image. */
+function remarkGitLabImageAttributes() {
+  const strip = (node: MarkdownNode) => {
+    node.children?.forEach((child, index, siblings) => {
+      const next = siblings[index + 1]
+      if (child.type === 'image' && next?.type === 'text' && next.value) next.value = next.value.replace(/^\{[^{}\n]*\}/, '')
+      strip(child)
+    })
+  }
+  return strip
+}
+
 /** A web link opens through the app (in the default browser, or an MR in the app), never inside the window. */
 function MarkdownAnchor({ children, href }: { children?: ReactNode; href?: string }) {
   const { open } = useMarkdownLinks()
@@ -81,7 +93,7 @@ function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: Markdow
     parsedBodies.set(key, cached)
     return cached
   }
-  const remarkPlugins = [remarkGfm, remarkGitLabEmoji(catalog), remarkGitLabReferences(base)]
+  const remarkPlugins = [remarkGfm, remarkGitLabImageAttributes, remarkGitLabEmoji(catalog),remarkGitLabReferences(base)]
   const urlTransform = (url: string, key: string) => resolveMarkdownUrl(url, base, key)
   // `Markdown` is synchronous and uses no hooks, so its output can be kept and reused.
   const markdownComponents: Components = renderBlame ? {

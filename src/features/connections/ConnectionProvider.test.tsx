@@ -76,6 +76,7 @@ function mockDefaultCommands() {
       return Promise.resolve({ ...gitlabComSession, instanceUrl: url })
     }
     if (command === 'disconnect_gitlab') return Promise.resolve(undefined)
+    if (command === 'verify_session') return Promise.resolve(undefined)
     throw new Error(`Unexpected IPC command: ${command}`)
   })
 }
@@ -107,6 +108,7 @@ describe('GitLab connection IPC and lifecycle', () => {
   it('restores a typed saved session through the Rust IPC command', async () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       throw new Error(`Unexpected IPC command: ${command}`)
     })
 
@@ -122,9 +124,66 @@ describe('GitLab connection IPC and lifecycle', () => {
     expect(screen.getByTestId('error-code')).toHaveTextContent('')
   })
 
+  it('shows a restored session before GitLab confirms its account', async () => {
+    let confirm: (() => void) | undefined
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return new Promise<void>((resolve) => { confirm = resolve })
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+
+    render(
+      <ConnectionProvider>
+        <ConnectionHarness />
+      </ConnectionProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('connected'))
+    expect(invokeMock).toHaveBeenCalledWith('verify_session', { sessionId: gitlabComSession.id })
+    act(() => confirm?.())
+    expect(screen.getByTestId('status')).toHaveTextContent('connected')
+  })
+
+  it('asks to sign in again when GitLab refuses a restored session', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.reject({ code: 'AUTH_REQUIRED', message: 'expired' })
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+
+    render(
+      <ConnectionProvider>
+        <ConnectionHarness />
+      </ConnectionProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('disconnected'))
+    expect(screen.getByTestId('instance-url')).toHaveTextContent('')
+    expect(screen.getByTestId('error-code')).toHaveTextContent('AUTH_REQUIRED')
+  })
+
+  it('leaves a restored session when GitLab answers its check with another failure', async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.reject({ code: 'UNSUPPORTED', message: 'not GitLab' })
+      throw new Error(`Unexpected IPC command: ${command}`)
+    })
+
+    render(
+      <ConnectionProvider>
+        <ConnectionHarness />
+      </ConnectionProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('error'))
+    expect(screen.getByTestId('instance-url')).toHaveTextContent('')
+    expect(screen.getByTestId('error-code')).toHaveTextContent('UNSUPPORTED')
+  })
+
   it('ignores an auth-required event for a different session', async () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       throw new Error(`Unexpected IPC command: ${command}`)
     })
 
@@ -151,6 +210,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     writeSavedSearches(scope, [{ id: 'search-1', label: 'Mine', query: 'is:opened', state: 'opened' }])
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       throw new Error(`Unexpected IPC command: ${command}`)
     })
 
@@ -279,6 +339,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     const busyError = { code: 'BUSY', message: '投稿処理中です。' }
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'disconnect_gitlab') return Promise.reject(busyError)
       throw new Error(`Unexpected command: ${command}`)
     })
@@ -303,6 +364,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     const busyError = { code: 'BUSY', message: '投稿処理中です。' }
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'connect_gitlab') return Promise.reject(busyError)
       throw new Error(`Unexpected command: ${command}`)
     })
@@ -326,6 +388,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     window.addEventListener('gitlab-account-replaced', replacementListener)
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'connect_gitlab') return Promise.resolve(otherAccountSession)
       throw new Error(`Unexpected command: ${command}`)
     })
@@ -352,6 +415,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     const reauthenticatedSession = { ...gitlabComSession, id: 'session-gitlab-com-reauthenticated' }
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'connect_gitlab') return Promise.resolve(reauthenticatedSession)
       throw new Error(`Unexpected command: ${command}`)
     })
@@ -376,6 +440,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     const connectError = { code: 'NETWORK', message: '接続できませんでした。' }
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'connect_gitlab') return Promise.reject(connectError)
       throw new Error(`Unexpected command: ${command}`)
     })
@@ -399,6 +464,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     window.addEventListener('gitlab-account-replaced', replacementListener)
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'disconnect_gitlab') return Promise.resolve(undefined)
       if (command === 'connect_gitlab') return Promise.resolve(otherAccountSession)
       throw new Error(`Unexpected command: ${command}`)
@@ -461,6 +527,7 @@ describe('GitLab connection IPC and lifecycle', () => {
 
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'disconnect_gitlab') return Promise.resolve(undefined)
       throw new Error(`Unexpected IPC command: ${command}`)
     })
@@ -480,6 +547,7 @@ describe('GitLab connection IPC and lifecycle', () => {
   it('requires explicit confirmation before deleting connection data', async () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'disconnect_gitlab') return Promise.resolve(undefined)
       throw new Error(`Unexpected command: ${command}`)
     })
@@ -500,6 +568,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     window.addEventListener('gitlab-explicit-logout', logoutListener)
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'disconnect_gitlab') return Promise.resolve(undefined)
       throw new Error(`Unexpected command: ${command}`)
     })
@@ -520,6 +589,7 @@ describe('GitLab connection IPC and lifecycle', () => {
   it('reconnects an expired account in place with Enter, keeping its instance URL', async () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'reauthenticate_gitlab') return Promise.resolve({ ...gitlabComSession, id: 'session-renewed' })
       throw new Error(`Unexpected IPC command: ${command}`)
     })
@@ -539,6 +609,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     const refusal = '別のユーザーのトークンです。接続中のアカウントのトークンを入力してください。'
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'reauthenticate_gitlab') return Promise.reject({ code: 'INVALID_INPUT', message: refusal })
       throw new Error(`Unexpected IPC command: ${command}`)
     })
@@ -581,6 +652,7 @@ describe('GitLab connection IPC and lifecycle', () => {
   it('opens the token creation page of the connected instance through the same command', async () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'open_token_creation_page') return Promise.resolve(undefined)
       throw new Error(`Unexpected IPC command: ${command}`)
     })
@@ -608,6 +680,7 @@ describe('GitLab connection IPC and lifecycle', () => {
     const storageError = '切断処理の保存に失敗しました。'
     invokeMock.mockImplementation((command: string) => {
       if (command === 'restore_session') return Promise.resolve(gitlabComSession)
+      if (command === 'verify_session') return Promise.resolve(undefined)
       if (command === 'disconnect_gitlab') return Promise.reject({ code: 'STORAGE', message: storageError })
       throw new Error(`Unexpected IPC command: ${command}`)
     })

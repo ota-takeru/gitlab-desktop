@@ -7,6 +7,7 @@ fn main() {
             "list_glab_connections",
             "connect_gitlab_from_glab",
             "restore_session",
+            "verify_session",
             "disconnect_gitlab",
             "query_gitlab",
             "mutate_gitlab",

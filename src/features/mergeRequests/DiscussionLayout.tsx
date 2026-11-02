@@ -15,7 +15,7 @@ const WIDE = '@container (min-width: 1168px)'
  */
 export function DiscussionLayout({ composer, navigator, side, threads }: { composer: ReactNode; navigator?: ReactNode; side: ReactNode; threads: ReactNode }) {
   return (
-    <Box sx={{ containerType: 'inline-size' }}>
+    <Box data-discussion-layout sx={{ containerType: 'inline-size' }}>
       <Box sx={{ columnGap: 3, display: 'grid', gridTemplateAreas: '"threads" "side" "composer"', gridTemplateColumns: 'minmax(0, 1fr)', rowGap: 1, [WIDE]: { gridTemplateAreas: '"threads side" "composer side"', gridTemplateColumns: 'minmax(0, 1fr) 340px', gridTemplateRows: 'auto 1fr' } }}>
         <Stack spacing={1} sx={{ gridArea: 'threads', minWidth: 0 }}>{threads}</Stack>
         <Stack component="aside" spacing={1} sx={{ gridArea: 'side', minWidth: 0, [WIDE]: { alignSelf: 'start', maxHeight: 'calc(100vh - var(--detail-header-height, 0px) - 48px)', overflowY: 'auto', position: 'sticky', top: 'calc(var(--detail-header-height, 0px) + 8px)' } }}>

@@ -51,7 +51,7 @@ import { UpdateNavButton } from '../components/UpdateNavButton'
 import { UserAvatar } from '../components/UserAvatar'
 import { DiscussionLayout } from '../features/mergeRequests/DiscussionLayout'
 import { DiscussionList } from '../features/mergeRequests/DiscussionList'
-import { UnresolvedThreadNav } from '../features/mergeRequests/UnresolvedThreadNav'
+import { ThreadOutline } from '../features/mergeRequests/ThreadOutline'
 import { ReviewComposer } from '../features/mergeRequests/ReviewComposer'
 import { NoteBody } from '../features/mergeRequests/SuggestionBlock'
 import { DiffViewer } from '../features/mergeRequests/DiffViewer'
@@ -231,7 +231,7 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
         <Typography component="h2" variant="h2">レビュー入力と差分</Typography>
         <Typography color="textSecondary" variant="caption">表示サンプルです。GitLabへの取得・投稿は行いません。</Typography>
         <ReviewComposer disabled value="MR全体へのコメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} onUploadAttachment={async () => null} />
-        <DiscussionLayout composer={null} navigator={<UnresolvedThreadNav discussions={[catalogDiscussion]} olderNotLoaded={false} onSelect={() => undefined} />} side={null} threads={<CatalogReplyThread />} />
+        <DiscussionLayout composer={null} navigator={<ThreadOutline discussions={[catalogDiscussion]} filter="all" olderNotLoaded={false} onSelect={() => undefined} unreadNoteIds={[]} />} side={null} threads={<CatalogReplyThread />} />
         <JobLogLines label="ジョブログ（サンプル）" lines={[[{ bold: true, fg: 'cyan', text: 'Preparing the "docker" executor' }], [{ bold: true, fg: 'green', text: '$ npm test' }], [{ text: '  ✓ 12 tests passed' }], [{ fg: 'yellow', text: 'warning: deprecated option' }], [{ bold: true, fg: 'red', text: 'ERROR: Job failed: exit code 1' }]]} />
         <DiffViewer reviewContext={{ instanceUrl: "https://catalog.invalid", userId: "catalog", projectId: "example", mergeRequestIid: "1", revision: "catalog-v1" }} allowComments diffs={[catalogDiff]} lineComposer={{ position: catalogPosition, node: <ReviewComposer disabled inlineTarget suggestionLines={() => null} targetPosition={catalogPosition} value="変更の意図を確認する複数行コメントの表示例です。" onChange={() => undefined} onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => false} onSubmitComment={async () => false} /> }} selectedFile="example.ts" selectedPosition={catalogPosition} view="diff" onComment={() => undefined} onSelectFile={() => undefined} onViewChange={() => undefined} />
         <Box sx={{ maxWidth: 760 }}><NoteBody actions={{ currentUserId: 'catalog', disabled: true, headSha: null, onApply: async () => false }} note={catalogSuggestionNote} /></Box>

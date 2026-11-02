@@ -12,6 +12,7 @@
     "allow-list-glab-connections",
     "allow-connect-gitlab-from-glab",
     "allow-restore-session",
+    "allow-verify-session",
     "allow-disconnect-gitlab",
     "allow-query-gitlab",
     "allow-mutate-gitlab",

@@ -23,7 +23,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import InputAdornment from '@mui/material/InputAdornment'
 import { type Theme } from '@mui/material/styles'
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { hairline, panelFrame } from '../../components/hairline'
 import { gridLine } from '../../theme'
@@ -43,7 +43,7 @@ import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { annotateFullFile, filePageStart, firstChangedFileLine, type FullFileDiffAnnotations, type RemovedFileLines } from './fullFileAnnotations'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
 import { LineThreads, type ThreadActions, type ThreadView } from './DiffThreads'
-import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine } from './diffLineThreads'
+import { fileRowLabel, lineHasThreads, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine, type FileThreadCount } from './diffLineThreads'
 import { highlightLines, languageForPath, type SyntaxToken } from '../../lib/syntaxHighlight'
 import { ignoreWhitespace as ignoreWhitespaceChanges, parseDiff, splitFileLines, type DiffHunk, type ParsedDiff, type ParsedLine } from './diffParser'
 import { positionLines } from './diffLineThreads'
@@ -52,6 +52,7 @@ import { positionIndexRange, rangePosition } from './suggestions'
 import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
 import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
+import { useStableCallback } from '../shared/useStableCallback'
 import { Row } from '../../components/Row'
 
 export const DIFF_PAGE_SIZE = 600
@@ -201,15 +202,16 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const rows = useMemo(() => displayLines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, displayLines])
   const language = displayedPath ? languageForPath(displayedPath) : null
   const rowTokens = useMemo(() => renderedMarkdownDiff ? [] : highlightDiffLines(rows, language), [language, renderedMarkdownDiff, rows])
-  const pageSearchMatches = new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex))
+  const pageSearchMatches = useMemo(() => new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex)), [displayedPath, searchMatches])
   const lineCounts = useMemo(() => ({ added: displayLines.filter((line) => line.kind === 'add').length, removed: displayLines.filter((line) => line.kind === 'remove').length }), [displayLines])
   const commentable = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
   // Folded whitespace changes move lines, so new line comments wait until whitespace is shown again.
   const commentsEnabled = commentable && !whitespaceIgnored
   const lineThreads = useMemo(() => threadsByLine(discussions, selectedDiff, discussionHeadSha), [discussionHeadSha, discussions, selectedDiff])
-  const composer = commentsEnabled && lineComposer ? { key: lineKey(lineComposer.position), node: lineComposer.node, position: lineComposer.position } : undefined
+  const composer = useMemo(() => commentsEnabled && lineComposer ? { key: lineKey(lineComposer.position), node: lineComposer.node, position: lineComposer.position } : undefined, [commentsEnabled, lineComposer])
   const draftsByLine = useMemo(() => pendingDraftsByLine(pendingDrafts, selectedDiff, discussionHeadSha), [discussionHeadSha, pendingDrafts, selectedDiff])
-  const threadView = (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, sessionId: fileSource?.sessionId, suggestionActions, threads: lineThreads.byLine } : undefined
+  const threadSessionId = fileSource?.sessionId
+  const threadView = useMemo(() => (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, sessionId: threadSessionId, suggestionActions, threads: lineThreads.byLine } : undefined, [composer, discussions, draftsByLine, lineThreads.byLine, onOpenDiscussion, parsed.status, suggestionActions, threadActions, threadSessionId])
 
   // Lines chosen for a comment: the open editor's lines, or a range being chosen
   // with Shift+click, Shift+↑/↓ on the 「+」 buttons, or by dragging over the gutter.
@@ -296,8 +298,19 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
       focusAfterRender.current = next
     },
   }
+  // The rows get handlers of one identity that run the latest choice, so a piece of rows renders again only for what it shows.
+  const onLineAction = useStableCallback(lineSelection.onAction)
+  const onLineDragStart = useStableCallback(lineSelection.onDragStart)
+  const onLineDragOver = useStableCallback(lineSelection.onDragOver)
+  const onLineKeyDown = useStableCallback(lineSelection.onKeyDown)
+  const rowSelection = useMemo<RowSelection>(() => ({ onAction: onLineAction, onDragOver: onLineDragOver, onDragStart: onLineDragStart, onKeyDown: onLineKeyDown }), [onLineAction, onLineDragOver, onLineDragStart, onLineKeyDown])
   const pendingRangeLabel = choice && choice.focus !== null ? rangePosition(displayLines, hunks, Math.min(choice.anchor, choice.focus), Math.max(choice.anchor, choice.focus)) : undefined
   const threadCounts = useMemo(() => threadCountsByFile(discussions, diffs), [diffs, discussions])
+  // The file list renders again only when what it shows changes, not for every render of the diff.
+  const threadCount = useCallback((path: string) => threadCounts.get(path), [threadCounts])
+  const { reviewedPaths } = reviewState
+  const isReviewed = useCallback((path: string) => reviewedPaths.has(path), [reviewedPaths])
+  const selectFile = useStableCallback(onSelectFile)
   const reviewedCount = reviewState.reviewedPaths.size
 
   // Unchanged lines between hunks open from the shown version of the file.
@@ -310,14 +323,17 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   // The same query as the whole-file view, so both share one cached read.
   const gapQuery = useMemo<FileQuery | null>(() => sourceProjectId && sourceSha && displayedPath ? { kind: 'file', path: displayedPath, projectId: sourceProjectId, sha: sourceSha } : null, [displayedPath, sourceProjectId, sourceSha])
   const gapsExpandable = Boolean(selectedDiff && !selectedDiff.deletedFile && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid')
-  const gapExpansion: GapExpansion | undefined = gapsExpandable && ((gapQuery && sourceSessionId) || typeof fileContent === 'string') ? {
-    content: gapQuery && sourceSessionId ? undefined : fileContent ?? undefined,
+  const expandGap = useCallback((key: string, shown: number) => setShownGaps((current) => ({ diffKey, shown: new Map(current.diffKey === diffKey ? current.shown : []).set(key, shown) })), [diffKey])
+  const gapShown = shownGaps.diffKey === diffKey ? shownGaps.shown : NO_SHOWN_GAPS
+  const gapReadable = Boolean(gapQuery && sourceSessionId)
+  const gapExpansion = useMemo<GapExpansion | undefined>(() => gapsExpandable && (gapReadable || typeof fileContent === 'string') ? {
+    content: gapReadable ? undefined : fileContent ?? undefined,
     language,
-    onExpand: (key, shown) => setShownGaps((current) => ({ diffKey, shown: new Map(current.diffKey === diffKey ? current.shown : []).set(key, shown) })),
+    onExpand: expandGap,
     query: gapQuery,
     sessionId: sourceSessionId,
-    shown: shownGaps.diffKey === diffKey ? shownGaps.shown : NO_SHOWN_GAPS,
-  } : undefined
+    shown: gapShown,
+  } : undefined, [expandGap, fileContent, gapQuery, gapReadable, gapShown, gapsExpandable, language, sourceSessionId])
 
   const navigateSearch = (direction: -1 | 1) => {
     if (searchMatches.length === 0) return
@@ -459,6 +475,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
       const top = Math.max(0, fileHeaderRef.current?.getBoundingClientRect().bottom ?? 0)
       const visible = fileTopRef.current ? firstVisibleFileLine(fileTopRef.current, top) : null
       restoreDiffAnchor.current = visible ? { path: displayedPath, ...visible } : fileAnchor?.path === displayedPath ? { path: displayedPath, line: fileAnchor.line } : null
+      if (restoreDiffAnchor.current) setWholePageKey(diffKey)
     }
     onViewChange(next)
   }
@@ -477,11 +494,14 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     restoreDiffAnchor.current = null
   }, [diffOffset, displayedPath, layout, renderedMarkdownDiff, view])
 
+  // Rows that must be on screen with the first render: the line shown, the search hit, the chosen lines.
+  const [wholePageKey, setWholePageKey] = useState<string | null>(null)
+  const firstRows = wholePageKey === diffKey ? rows.length : Math.max(selectedLineIndex, currentSearchMatch, chosenRange?.[1] ?? -1) - diffOffset + 1
   const diffContent = renderedMarkdownDiff
     ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}><MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} /></MarkdownLinkProvider>
     : layout === 'split'
-    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
-    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} lines={rows} lineSelection={lineSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={rows} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={rows} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
 
   return (
     <Box ref={rootRef}>
@@ -500,11 +520,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
           {treeShown ? <Box sx={{ ...hairline('bottom'), flexShrink: 0, p: 0.5 }}>{fileSearchField(true)}</Box> : null}
           {/* The rows are buttons, not list items. */}
           <List component="div" disablePadding sx={{ overflowY: 'auto', p: 0.5 }}>
-            {fileListMode === 'tree' ? <DiffFileTree displayedPath={displayedPath} entries={fileSearchMatches} expandAll={Boolean(fileSearch.trim())} fileMark={(diff) => <FileKindMark diff={diff} />} isReviewed={reviewState.isReviewed} onSelect={onSelectFile} threadCount={(path) => threadCounts.get(path)} /> : fileSearchMatches.map(({ diff, path }) => {
-              const { directory, name } = splitPath(path)
-              const kind = diff.tooLarge ? t('review.fileTree.kind.tooLarge') : diff.untracked ? t('review.fileTree.kind.untracked') : diff.newFile ? t('review.fileTree.kind.new') : diff.deletedFile ? t('review.fileTree.kind.deleted') : diff.renamedFile ? t('review.fileTree.kind.renamed', { path: diff.oldPath }) : null
-              return <ListItemButton aria-label={fileRowLabel(path, threadCounts.get(path), reviewState.isReviewed(path))} key={`${diff.oldPath}\0${path}`} onClick={() => onSelectFile(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }} title={path}><ListItemText primary={<Row spacing={1} sx={{ minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography><FileThreadMark count={threadCounts.get(path)} />{reviewState.isReviewed(path) ? <Tooltip title={t('review.fileTree.reviewed')}><DoneRoundedIcon aria-label={t('review.fileTree.reviewed')} color="success" fontSize="small" /></Tooltip> : null}</Row>} secondary={<Typography color="textSecondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton>
-            })}
+            {fileListMode === 'tree' ? <DiffFileTree displayedPath={displayedPath} entries={fileSearchMatches} expandAll={Boolean(fileSearch.trim())} fileMark={fileKindMark} isReviewed={isReviewed} onSelect={selectFile} threadCount={threadCount} /> : <FileList displayedPath={displayedPath} entries={fileSearchMatches} isReviewed={isReviewed} onSelect={selectFile} threadCount={threadCount} />}
             {fileSearchMatches.length === 0 ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="caption">{diffs.length === 0 ? t('review.fileTree.empty') : t('review.fileTree.noMatch')}</Typography></Box> : null}
           </List>
         </Box>
@@ -588,6 +604,18 @@ function isInsideMenu(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null
 }
 
+/** The changed files as a flat list, each with its folder; renders again only when what it shows changes. */
+const FileList = memo(function FileList({ displayedPath, entries, isReviewed, onSelect, threadCount }: { displayedPath: string | null; entries: Array<{ diff: Diff; path: string }>; isReviewed: (path: string) => boolean; onSelect: (path: string) => void; threadCount: (path: string) => FileThreadCount | undefined }) {
+  const t = useT()
+  return <>{entries.map(({ diff, path }) => {
+              const { directory, name } = splitPath(path)
+              const kind = diff.tooLarge ? t('review.fileTree.kind.tooLarge') : diff.untracked ? t('review.fileTree.kind.untracked') : diff.newFile ? t('review.fileTree.kind.new') : diff.deletedFile ? t('review.fileTree.kind.deleted') : diff.renamedFile ? t('review.fileTree.kind.renamed', { path: diff.oldPath }) : null
+              return <ListItemButton aria-label={fileRowLabel(path, threadCount(path), isReviewed(path))} key={`${diff.oldPath}\0${path}`} onClick={() => onSelect(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }} title={path}><ListItemText primary={<Row spacing={1} sx={{ minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography><FileThreadMark count={threadCount(path)} />{isReviewed(path) ? <Tooltip title={t('review.fileTree.reviewed')}><DoneRoundedIcon aria-label={t('review.fileTree.reviewed')} color="success" fontSize="small" /></Tooltip> : null}</Row>} secondary={<Typography color="textSecondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton>
+  })}</>
+})
+
+const fileKindMark = (diff: Diff) => <FileKindMark diff={diff} />
+
 function FileKindMark({ diff }: { diff: Diff }) {
   const [label, color] = diff.untracked ? ['U', 'success.main'] : diff.newFile ? ['A', 'success.main'] : diff.deletedFile ? ['D', 'error.main'] : diff.renamedFile ? ['R', 'info.main'] : ['M', 'warning.main']
   // Drawn from `data-kind`, so the letter is not read as part of the file row's name, which already says the path.
@@ -616,37 +644,35 @@ interface LineSelection {
   onKeyDown: (index: number, event: React.KeyboardEvent) => void
 }
 
+type RowSelection = Omit<LineSelection, 'isChosen'>
+
 /** The 「+」 of a commentable line; it also extends a multi-line choice. A plain element, as a page holds many rows. */
-function lineAction(index: number, label: string, selection: LineSelection) {
+function lineAction(index: number, label: string, selection: RowSelection) {
   return <button aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown" aria-label={label} className="diff-action line-action" data-line-action={index} onClick={(event) => selection.onAction(index, event)} onKeyDown={(event) => selection.onKeyDown(index, event)} onMouseDown={(event) => selection.onDragStart(index, event)} title={translate('review.diff.lineActionTitle')} type="button">+</button>
 }
 
 /** Follows a gutter drag over the rows, which carry their line index. */
-function dragOver(selection: LineSelection) {
+function dragOver(selection: RowSelection) {
   return (event: React.MouseEvent) => {
     const index = (event.target as HTMLElement).closest?.('[data-line-index]')?.getAttribute('data-line-index')
     if (index) selection.onDragOver(Number(index))
   }
 }
 
-function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange, firstRows, gapExpansion, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenRange: [number, number] | null; firstRows: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const t = useT()
-  const skipped = diffGaps(lines, startIndex)
-  // Opened unchanged lines: plain context rows, outside paging and search.
-  const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
-    <div className="diff-row" data-file-anchor={line.newLine} data-kind="context" data-testid="diff-opened-line">
-      {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
-      <span className="diff-gutter"><span className="diff-number">{line.oldLine}</span><span className="diff-number">{line.newLine}</span></span>
-      <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(openedTokens[index] ?? [{ text: line.text }], '')}</span>
-    </div>
-    <LineThreads line={line} view={threadView} />
-  </Fragment>)
+  const pieces = useMemo(() => {
+    const skipped = diffGaps(lines, startIndex)
+    return chunkRanges(lines.length).map(([from, to]) => ({ lines: lines.slice(from, to), skipped: skipped.slice(from, to), start: startIndex + from, tokens: tokens.slice(from, to) }))
+  }, [lines, startIndex, tokens])
+  const shown = useProgressiveCount(pieces, firstRows)
   // Rows are plain elements styled from this one block: a page holds up to
   // DIFF_PAGE_SIZE rows, and per-row styled components dominate render time.
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
       // Long code lines wrap, so the page stays the only scroll.
       '& .diff-rows': { minWidth: 0 },
+      ...chunkStyles,
       '& .blame-cell': { alignItems: 'center', bgcolor: 'surface.list', ...hairline('right'), color: 'text.secondary', display: 'inline-flex', flexShrink: 0, fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', minWidth: 0, overflow: 'hidden', width: 132 },
       '& .blame-action': { background: 'transparent', border: 0, color: 'inherit', cursor: 'pointer', flexShrink: 0, font: 'inherit', fontSize: 'caption.fontSize', padding: '0 4px', textAlign: 'left', whiteSpace: 'nowrap' },
       '& .blame-action:hover, & .blame-action:focus-visible': { color: theme.palette.primary.main, textDecoration: 'underline' },
@@ -667,29 +693,109 @@ function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpans
       '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
     })}>
       {lines.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
-      <div className="diff-rows" onMouseOver={allowComments ? dragOver(lineSelection) : undefined}>
-        {lines.map((line, index) => {
-          const isSelectedPosition = matchesPosition(line, selectedPosition)
-          const position = linePosition(line)
-          const lineIndex = startIndex + index
-          const key = `${lineIndex}-${line.oldLine ?? ''}-${line.newLine ?? ''}`
-          return <Fragment key={key}>
-            {skipped[index].count > 0 ? <DiffGap expansion={gapExpansion} gap={skipped[index]} renderLines={openedRows} /> : null}
-            <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineSelection.isChosen(lineIndex) ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" data-file-anchor={line.newLine} tabIndex={isSelectedPosition ? -1 : undefined}>
-              {blameEnabled ? <BlameCell line={line.kind === 'remove' ? line.oldLine : line.newLine} side={line.kind === 'remove' ? 'old' : 'new'} /> : null}
-              <span className="diff-gutter">
-                <span className="diff-number">{line.oldLine ?? ''}</span>
-                <span className="diff-number">{line.newLine ?? ''}</span>
-                {position && allowComments ? lineAction(lineIndex, t('review.diff.commentOnLine', { path: line.newPath, line: String(line.newLine ?? line.oldLine) }), lineSelection) : null}
-              </span>
-              <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(tokens[index] ?? [{ text: line.text }], searchTerm)}</span>
-            </div>
-            <LineThreads line={line} view={threadView} />
-          </Fragment>
+      <div className="diff-rows" onMouseOver={allowComments ? dragOver(selection) : undefined}>
+        {pieces.slice(0, shown).map((piece) => {
+          const end = piece.start + piece.lines.length - 1
+          const hasMatch = searchMatchIndices.size > 0 && piece.lines.some((_, index) => searchMatchIndices.has(piece.start + index))
+          const hasThreads = Boolean(threadView) && piece.lines.some((line) => lineHasThreads(line, threadView))
+          return <UnifiedRows
+            activeSearchMatch={activeSearchMatch >= piece.start && activeSearchMatch <= end ? activeSearchMatch : -1}
+            allowComments={allowComments}
+            blameEnabled={blameEnabled}
+            chosenFrom={chosenRange && chosenRange[1] >= piece.start && chosenRange[0] <= end ? Math.max(chosenRange[0], piece.start) : -1}
+            chosenTo={chosenRange && chosenRange[1] >= piece.start && chosenRange[0] <= end ? Math.min(chosenRange[1], end) : -1}
+            gapExpansion={piece.skipped.some((gap) => gap.count > 0) ? gapExpansion : undefined}
+            key={piece.start}
+            lines={piece.lines}
+            searchMatchIndices={hasMatch ? searchMatchIndices : NO_MATCHES}
+            searchTerm={hasMatch ? searchTerm : ''}
+            selectedPosition={selectedPosition && piece.lines.some((line) => matchesPosition(line, selectedPosition)) ? selectedPosition : undefined}
+            selection={selection}
+            skipped={piece.skipped}
+            startIndex={piece.start}
+            threadView={hasThreads ? threadView : undefined}
+            tokens={piece.tokens}
+          />
         })}
       </div>
     </Box>
   )
+}
+
+/** A piece of a unified page; it renders again only when what it shows changes. */
+const UnifiedRows = memo(function UnifiedRows({ activeSearchMatch, allowComments, blameEnabled, chosenFrom, chosenTo, gapExpansion, lines, searchMatchIndices, searchTerm, selectedPosition, selection, skipped, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenFrom: number; chosenTo: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; searchMatchIndices: ReadonlySet<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; skipped: DiffGapInfo[]; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+  const t = useT()
+  // Opened unchanged lines: plain context rows, outside paging and search.
+  const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => <Fragment key={`opened-${line.newLine}`}>
+    <div className="diff-row" data-file-anchor={line.newLine} data-kind="context" data-testid="diff-opened-line">
+      {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
+      <span className="diff-gutter"><span className="diff-number">{line.oldLine}</span><span className="diff-number">{line.newLine}</span></span>
+      <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(openedTokens[index] ?? [{ text: line.text }], '')}</span>
+    </div>
+    <LineThreads line={line} view={threadView} />
+  </Fragment>)
+  return <div className="diff-chunk" data-threads={threadView ? 'true' : undefined} style={chunkSize(lines.length)}>
+    {lines.map((line, index) => {
+      const isSelectedPosition = matchesPosition(line, selectedPosition)
+      const position = linePosition(line)
+      const lineIndex = startIndex + index
+      const key = `${lineIndex}-${line.oldLine ?? ''}-${line.newLine ?? ''}`
+      return <Fragment key={key}>
+        {skipped[index].count > 0 ? <DiffGap expansion={gapExpansion} gap={skipped[index]} renderLines={openedRows} /> : null}
+        <div className="diff-row" data-kind={line.kind} data-line-id={isSelectedPosition && selectedPosition ? positionLineId(selectedPosition) : undefined} data-line-index={lineIndex} data-range={allowComments && lineIndex >= chosenFrom && lineIndex <= chosenTo && chosenFrom >= 0 ? 'true' : undefined} data-search-match={searchMatchIndices.has(lineIndex) ? 'true' : undefined} data-search-active={activeSearchMatch === lineIndex ? 'true' : undefined} data-selected={isSelectedPosition ? 'true' : undefined} data-testid="diff-line" data-file-anchor={line.newLine} tabIndex={isSelectedPosition ? -1 : undefined}>
+          {blameEnabled ? <BlameCell line={line.kind === 'remove' ? line.oldLine : line.newLine} side={line.kind === 'remove' ? 'old' : 'new'} /> : null}
+          <span className="diff-gutter">
+            <span className="diff-number">{line.oldLine ?? ''}</span>
+            <span className="diff-number">{line.newLine ?? ''}</span>
+            {position && allowComments ? lineAction(lineIndex, t('review.diff.commentOnLine', { path: line.newPath, line: String(line.newLine ?? line.oldLine) }), selection) : null}
+          </span>
+          <span className="diff-code"><span className="diff-prefix">{line.prefix}</span> {renderCode(tokens[index] ?? [{ text: line.text }], searchTerm)}</span>
+        </div>
+        <LineThreads line={line} view={threadView} />
+      </Fragment>
+    })}
+  </div>
+})
+
+/** Rows rendered as one memoized piece; a piece off screen also skips layout and paint. */
+const ROW_CHUNK = 50
+/** Pieces rendered with the page at once; the rest follow in the background. */
+const FIRST_CHUNKS = 3
+/** A rendered row is at least this tall; an off-screen piece holds this much room until it has been laid out once. */
+const ROW_HEIGHT = 20
+const NO_MATCHES: ReadonlySet<number> = new Set()
+
+/** Pieces without threads skip their layout and paint while off screen; a thread's editor or menus are never clipped. */
+const chunkStyles = { '& .diff-chunk:not([data-threads])': { contentVisibility: 'auto' } }
+
+function chunkSize(rows: number): React.CSSProperties {
+  return { containIntrinsicSize: `auto ${rows * ROW_HEIGHT}px` }
+}
+
+function chunkRanges(length: number): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  for (let from = 0; from < length; from += ROW_CHUNK) ranges.push([from, Math.min(length, from + ROW_CHUNK)])
+  return ranges
+}
+
+/**
+ * How many pieces of a page to render: the first ones (and those holding `firstRows`) at once,
+ * the rest in a transition after, so a long page shows its top without waiting for its end.
+ * A page already rendered keeps all its pieces.
+ */
+function useProgressiveCount<T>(pieces: T[], firstRows: number): number {
+  const wanted = Math.min(pieces.length, Math.max(FIRST_CHUNKS, Math.ceil(firstRows / ROW_CHUNK)))
+  const [progress, setProgress] = useState({ count: wanted, pieces })
+  let count = progress.count
+  if (progress.pieces !== pieces) {
+    count = wanted
+    setProgress({ count, pieces })
+  }
+  count = Math.max(count, wanted)
+  useEffect(() => {
+    if (count < pieces.length) startTransition(() => setProgress({ count: pieces.length, pieces }))
+  }, [count, pieces])
+  return count
 }
 
 type DiffLayout = 'unified' | 'split'
@@ -786,43 +892,14 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
   return rows
 }
 
-function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansion, lineSelection, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; gapExpansion?: GapExpansion; lineSelection: LineSelection; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange, firstRows, gapExpansion, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenRange: [number, number] | null; firstRows: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
   const t = useT()
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
-  const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
-    // Context rows offer one comment action, on the new side, with both line numbers.
-    const showAction = line && allowComments && (line.kind !== 'context' || side === 'new')
-    const position = showAction ? linePosition(line) : undefined
-    const number = side === 'old' ? line?.oldLine : line?.newLine
-    const kind = !line ? 'empty' : line.kind
-    const label = side === 'old' && line?.kind === 'remove'
-      ? t('review.diff.commentOnOldLine', { path: line.oldPath, line: String(line.oldLine) })
-      : line ? t('review.diff.commentOnLine', { path: line.newPath, line: String(line.newLine ?? line.oldLine) }) : ''
-    const chosen = allowComments && lineIndex !== undefined && lineSelection.isChosen(lineIndex)
-    return <>
-      {blameEnabled ? <BlameCell line={number} side={side} /> : null}
-      <span className="split-number" data-kind={kind} data-line-index={line ? lineIndex : undefined} data-range={chosen ? 'true' : undefined} data-side={side}>
-        {number ?? ''}
-        {position && lineIndex !== undefined ? lineAction(lineIndex, label, lineSelection) : null}
-      </span>
-      <span className="split-code" data-kind={kind} data-search-match={lineIndex !== undefined && searchMatchIndices.has(lineIndex) ? 'true' : undefined}>{line && lineIndex !== undefined ? renderCode(tokens[lineIndex - startIndex] ?? [{ text: line.text }], searchTerm) : ''}</span>
-    </>
-  }
-  // Opened unchanged lines: the same text on both sides, outside paging and search.
-  const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => {
-    const code = renderCode(openedTokens[index] ?? [{ text: line.text }], '')
-    return <Fragment key={`opened-${line.newLine}`}>
-      <div className="split-row" data-file-anchor={line.newLine} data-testid="diff-opened-line">
-        {blameEnabled ? <BlameCell line={line.oldLine} side="old" /> : null}
-        <span className="split-number" data-kind="context" data-side="old">{line.oldLine}</span>
-        <span className="split-code" data-kind="context">{code}</span>
-        {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
-        <span className="split-number" data-kind="context" data-side="new">{line.newLine}</span>
-        <span className="split-code" data-kind="context">{code}</span>
-      </div>
-      <LineThreads line={line} view={threadView} />
-    </Fragment>
-  })
+  const pieces = useMemo(() => chunkRanges(rows.length).map(([from, to]) => rows.slice(from, to)), [rows])
+  // A split row holds one or two lines, so the pieces needed at once are counted in rows that reach `firstRows`.
+  const lastFirstLine = startIndex + firstRows - 1
+  const shown = useProgressiveCount(pieces, firstRows > 0 ? rows.findIndex((row) => (row.leftIndex ?? -1) >= lastFirstLine || (row.rightIndex ?? -1) >= lastFirstLine) + 1 : 0)
+  const inRow = (row: SplitRow, index: number) => row.leftIndex === index || row.rightIndex === index
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
       '& .split-row': { display: 'grid', gridTemplateColumns: blameEnabled ? '106px 72px minmax(0, 1fr) 106px 72px minmax(0, 1fr)' : '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 20 },
@@ -847,25 +924,92 @@ function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, gapExpansio
       '& .split-row:hover .diff-action, & .split-row:focus-within .diff-action, & .split-row[data-selected="true"] .diff-action': { opacity: 1 },
       '& .split-number[data-range="true"]': { boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
       '& .diff-gap > span': { position: 'static' },
-    })} onMouseOver={allowComments ? dragOver(lineSelection) : undefined}>
+      ...chunkStyles,
+    })} onMouseOver={allowComments ? dragOver(selection) : undefined}>
       {rows.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
-      {rows.map((row) => {
-        const selected = Boolean(selectedPosition && ((row.left && matchesPosition(row.left, selectedPosition)) || (row.right && matchesPosition(row.right, selectedPosition))))
-        const activeSearch = row.leftIndex === activeSearchMatch || row.rightIndex === activeSearchMatch
-        const hasSearchMatch = (row.leftIndex !== undefined && searchMatchIndices.has(row.leftIndex)) || (row.rightIndex !== undefined && searchMatchIndices.has(row.rightIndex))
-        return <Fragment key={row.key}>
-          {row.gap && row.gap.count > 0 ? <DiffGap expansion={gapExpansion} gap={row.gap} renderLines={openedRows} /> : null}
-          <div className="split-row" data-line-id={selected && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-active={activeSearch ? 'true' : undefined} data-search-match={hasSearchMatch ? 'true' : undefined} data-selected={selected ? 'true' : undefined} data-testid="diff-split-row" data-file-anchor={row.right?.newLine ?? row.left?.newLine} tabIndex={selected ? -1 : undefined}>
-            {cell(row.left, 'old', row.leftIndex)}
-            {cell(row.right, 'new', row.rightIndex)}
-          </div>
-          <LineThreads line={row.left} view={threadView} />
-          {row.right !== row.left ? <LineThreads line={row.right} view={threadView} /> : null}
-        </Fragment>
+      {pieces.slice(0, shown).map((piece) => {
+        const indices = piece.flatMap((row) => [row.leftIndex, row.rightIndex]).filter((index): index is number => index !== undefined)
+        const from = Math.min(...indices)
+        const to = Math.max(...indices)
+        const hasMatch = searchMatchIndices.size > 0 && indices.some((index) => searchMatchIndices.has(index))
+        const hasThreads = Boolean(threadView) && piece.some((row) => lineHasThreads(row.left, threadView) || lineHasThreads(row.right, threadView))
+        const chosen = chosenRange !== null && chosenRange[1] >= from && chosenRange[0] <= to
+        return <SplitRows
+          activeSearchMatch={piece.some((row) => inRow(row, activeSearchMatch)) ? activeSearchMatch : -1}
+          allowComments={allowComments}
+          blameEnabled={blameEnabled}
+          chosenFrom={chosen ? Math.max(chosenRange[0], from) : -1}
+          chosenTo={chosen ? Math.min(chosenRange[1], to) : -1}
+          gapExpansion={piece.some((row) => row.gap && row.gap.count > 0) ? gapExpansion : undefined}
+          key={piece[0].key}
+          rows={piece}
+          searchMatchIndices={hasMatch ? searchMatchIndices : NO_MATCHES}
+          searchTerm={hasMatch ? searchTerm : ''}
+          selectedPosition={selectedPosition && piece.some((row) => (row.left && matchesPosition(row.left, selectedPosition)) || (row.right && matchesPosition(row.right, selectedPosition))) ? selectedPosition : undefined}
+          selection={selection}
+          startIndex={startIndex}
+          threadView={hasThreads ? threadView : undefined}
+          tokens={tokens}
+        />
       })}
     </Box>
   )
 }
+
+/** A piece of a split page; it renders again only when what it shows changes. */
+const SplitRows = memo(function SplitRows({ activeSearchMatch, allowComments, blameEnabled, chosenFrom, chosenTo, gapExpansion, rows, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenFrom: number; chosenTo: number; gapExpansion?: GapExpansion; rows: SplitRow[]; searchMatchIndices: ReadonlySet<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+  const t = useT()
+  const cell = (line: ParsedLine | undefined, side: 'old' | 'new', lineIndex: number | undefined) => {
+    // Context rows offer one comment action, on the new side, with both line numbers.
+    const showAction = line && allowComments && (line.kind !== 'context' || side === 'new')
+    const position = showAction ? linePosition(line) : undefined
+    const number = side === 'old' ? line?.oldLine : line?.newLine
+    const kind = !line ? 'empty' : line.kind
+    const label = side === 'old' && line?.kind === 'remove'
+      ? t('review.diff.commentOnOldLine', { path: line.oldPath, line: String(line.oldLine) })
+      : line ? t('review.diff.commentOnLine', { path: line.newPath, line: String(line.newLine ?? line.oldLine) }) : ''
+    const chosen = allowComments && lineIndex !== undefined && chosenFrom >= 0 && lineIndex >= chosenFrom && lineIndex <= chosenTo
+    return <>
+      {blameEnabled ? <BlameCell line={number} side={side} /> : null}
+      <span className="split-number" data-kind={kind} data-line-index={line ? lineIndex : undefined} data-range={chosen ? 'true' : undefined} data-side={side}>
+        {number ?? ''}
+        {position && lineIndex !== undefined ? lineAction(lineIndex, label, selection) : null}
+      </span>
+      <span className="split-code" data-kind={kind} data-search-match={lineIndex !== undefined && searchMatchIndices.has(lineIndex) ? 'true' : undefined}>{line && lineIndex !== undefined ? renderCode(tokens[lineIndex - startIndex] ?? [{ text: line.text }], searchTerm) : ''}</span>
+    </>
+  }
+  // Opened unchanged lines: the same text on both sides, outside paging and search.
+  const openedRows = (opened: ParsedLine[], openedTokens: SyntaxToken[][]) => opened.map((line, index) => {
+    const code = renderCode(openedTokens[index] ?? [{ text: line.text }], '')
+    return <Fragment key={`opened-${line.newLine}`}>
+      <div className="split-row" data-file-anchor={line.newLine} data-testid="diff-opened-line">
+        {blameEnabled ? <BlameCell line={line.oldLine} side="old" /> : null}
+        <span className="split-number" data-kind="context" data-side="old">{line.oldLine}</span>
+        <span className="split-code" data-kind="context">{code}</span>
+        {blameEnabled ? <BlameCell line={line.newLine} side="new" /> : null}
+        <span className="split-number" data-kind="context" data-side="new">{line.newLine}</span>
+        <span className="split-code" data-kind="context">{code}</span>
+      </div>
+      <LineThreads line={line} view={threadView} />
+    </Fragment>
+  })
+  return <div className="diff-chunk" data-threads={threadView ? 'true' : undefined} style={chunkSize(rows.length)}>
+    {rows.map((row) => {
+      const selected = Boolean(selectedPosition && ((row.left && matchesPosition(row.left, selectedPosition)) || (row.right && matchesPosition(row.right, selectedPosition))))
+      const activeSearch = row.leftIndex === activeSearchMatch || row.rightIndex === activeSearchMatch
+      const hasSearchMatch = (row.leftIndex !== undefined && searchMatchIndices.has(row.leftIndex)) || (row.rightIndex !== undefined && searchMatchIndices.has(row.rightIndex))
+      return <Fragment key={row.key}>
+        {row.gap && row.gap.count > 0 ? <DiffGap expansion={gapExpansion} gap={row.gap} renderLines={openedRows} /> : null}
+        <div className="split-row" data-line-id={selected && selectedPosition ? positionLineId(selectedPosition) : undefined} data-search-active={activeSearch ? 'true' : undefined} data-search-match={hasSearchMatch ? 'true' : undefined} data-selected={selected ? 'true' : undefined} data-testid="diff-split-row" data-file-anchor={row.right?.newLine ?? row.left?.newLine} tabIndex={selected ? -1 : undefined}>
+          {cell(row.left, 'old', row.leftIndex)}
+          {cell(row.right, 'new', row.rightIndex)}
+        </div>
+        <LineThreads line={row.left} view={threadView} />
+        {row.right !== row.left ? <LineThreads line={row.right} view={threadView} /> : null}
+      </Fragment>
+    })}
+  </div>
+})
 
 /** Rows without code (empty split cells, omitted lines): a tone that stays visible on the dark theme too. */
 function quietBand(theme: Theme): string {

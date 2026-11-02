@@ -5,7 +5,8 @@ Working contract for the implementation. Credentials never return over IPC. The 
 ## IPC
 
 - `connect_gitlab({input:{url,token}})` -> Session
-- `restore_session()` -> Session|null (validates saved credential with /user; errors are explicit)
+- `restore_session()` -> Session|null (reads the saved credential without network so stored data shows at once; errors are explicit)
+- `verify_session(sessionId)` -> void (validates the restored credential with /user; a network failure keeps the session, any other failure ends it and clears the account cache)
 - `disconnect_gitlab({sessionId})` -> void; invalidates session and deletes account data and credential
 - `query_gitlab({input:{sessionId,requestId,mode,query}})` -> Snapshot|null, null only for cache miss
 - `mutate_gitlab({input:{sessionId,requestId,action}})` -> void
@@ -30,7 +31,7 @@ Snapshot={data:QueryData,fetchedAt:number UNIX milliseconds,source:'cache'|'netw
 projects: {kind:'projects',search:string,membership:boolean,includeArchived:boolean,page:number}
 mrs: {kind:'mrs',search:string,state:'all'|'opened'|'closed'|'merged',projectId?:string,reviewerId?:string,authorId?:string,updatedAfter?:string,updatedBefore?:string,page:number}
 mr: {kind:'mr',projectId,iid}
-diffs: {kind:'diffs',projectId,iid,headSha:string,page:number}; revision-scoped cache, validate head before and after network retrieval
+diffs: {kind:'diffs',projectId,iid,headSha:string,page:number}; revision-scoped cache, validate head beside the network retrieval and again after it before saving (the page is returned before the second check)
 discussions/commits/drafts: {kind,projectId,iid,page:number}
 commitDiff: {kind:'commitDiff',projectId,iid,sha:string,page:number}
 file: {kind:'file',projectId,path:string,sha:string} -> {content:string} (bounded UTF8 text only)

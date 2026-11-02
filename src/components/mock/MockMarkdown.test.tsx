@@ -19,6 +19,12 @@ describe('local Markdown preview', () => {
     expect(screen.getByRole('link', { name: 'docs' })).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
+  it('hides GitLab image attributes written after an image', () => {
+    const { container } = render(<MockMarkdown body={'![shot](/uploads/a/shot.png){width=640 height=480} 後ろ {keep}'} />)
+    expect(container).toHaveTextContent('[画像: shot · 表示できません] 後ろ {keep}')
+    expect(container).not.toHaveTextContent('width')
+  })
+
   it('links GitLab references and relative links, and opens links through the app', () => {
     const open = vi.fn()
     render(<MarkdownLinkProvider instanceUrl="https://gitlab.example" open={open} projectUrl="https://gitlab.example/team/desktop">

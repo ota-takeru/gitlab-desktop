@@ -280,6 +280,8 @@ export interface AwardEmoji {
 export interface NoteAwards {
   noteId: string
   awards: AwardEmoji[]
+  /** When the body was last edited; null if it never was. */
+  lastEditedAt?: string | null
 }
 
 /** One page of an MR's pipelines, newest first. */

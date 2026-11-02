@@ -4,6 +4,7 @@ import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined'
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
 import ReplyRoundedIcon from '@mui/icons-material/ReplyRounded'
+import UnfoldMoreRoundedIcon from '@mui/icons-material/UnfoldMoreRounded'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -41,8 +42,12 @@ import { useT } from '../../i18n/useT'
 import { Bar, Row } from '../../components/Row'
 
 const NOTES_PER_PAGE = 50
+/** Replies kept in view at the end of a long thread while the ones before them are folded. */
+const LATEST_REPLIES_SHOWN = 3
 /** Thread width from which a line comment's code sits beside its comments. */
 const THREAD_WITH_CODE_WIDE = '@container (min-width: 960px)'
+
+export type DiscussionFilter = 'all' | 'unresolved'
 
 interface DiscussionListProps {
   projectId?: string
@@ -71,6 +76,9 @@ interface DiscussionListProps {
   /** The own comment being edited, when the caller keeps it (so it stays open across tab changes). */
   editingNoteId?: string | null
   onEditingNoteChange?: (noteId: string | null) => void
+  /** Which threads are shown, when the caller keeps it (so the thread outline shows the same ones). */
+  filter?: DiscussionFilter
+  onFilterChange?: (filter: DiscussionFilter) => void
   /** Where an edit's text is kept, like new comments, so it survives leaving the tab. */
   noteEditBufferKey?: (note: Note) => string
   /** People of the MR, offered first when `@` is typed in an edit. */
@@ -85,11 +93,15 @@ interface DiscussionListProps {
   onFocusNoteDone?: () => void
   /** Uploads a file pasted into an edit and returns its Markdown. */
   onUploadAttachment?: (file: File) => Promise<string | null>
+  /** The discussion has loaded and been placed at its opening position. */
+  settled?: boolean
 }
 
 export interface NoteReactions {
   /** Each comment's reactions; an entry keeps its identity while unchanged, so the other comments do not render again. */
   awardsByNote: ReadonlyMap<string, readonly AwardEmoji[]>
+  /** When each comment's body was last edited (null if never), read with the reactions: GitLab's REST updated_at also moves on a reaction or a resolve. */
+  editedAtByNote?: ReadonlyMap<string, string | null>
   disabled: boolean
   /** Keeps one identity, like the other callbacks, so that the comments stay memoized. */
   onToggle: (note: Note, name: string, add: boolean) => Promise<boolean> | void
@@ -107,15 +119,18 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, filter: filterProp, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFilterChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
   const setEditing = onEditingNoteChange ?? setLocalEditingId
   const confirm = useConfirm()
   const [notePages, setNotePages] = useState<Record<string, number>>({})
-  const [filter, setFilter] = useState<'all' | 'unresolved'>('all')
+  const [localFilter, setLocalFilter] = useState<DiscussionFilter>('all')
+  const filter = onFilterChange ? filterProp ?? 'all' : localFilter
+  const setFilter = onFilterChange ?? setLocalFilter
   const [collapsedThreads, setCollapsedThreads] = useState<Record<string, boolean>>({})
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
   const [pendingJumpNoteId, setPendingJumpNoteId] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const restoreScrollRef = useRef<{ element: HTMLElement; top: number; left: number } | null>(null)
@@ -163,6 +178,14 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   useEffect(() => {
     olderRef.current = older
   }, [older])
+
+  // Threads out of view skip styling and layout only after the opening position is set and a frame has recorded
+  // every thread's height, which a skipped one keeps; showing a long discussion again then lays out only what is in view.
+  useEffect(() => {
+    if (!settled) return
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => listRef.current?.setAttribute('data-skip-offscreen', 'true')) })
+    return () => cancelAnimationFrame(frame)
+  }, [settled])
 
   // Track the thread at the top of the view so content inserted above it
   // (older pages, refreshed threads) never moves what the reader is looking at.
@@ -226,7 +249,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     }
     const anchor = anchorRef.current
     if (host && listRef.current && anchor) restoreAnchor(host, listRef.current, anchor)
-  }, [collapsedThreads, filter, notePages, pendingJumpNoteId, visibleDiscussions, older?.loading, older?.hasOlder, older?.error])
+  }, [collapsedThreads, expandedReplies, filter, notePages, pendingJumpNoteId, visibleDiscussions, older?.loading, older?.hasOlder, older?.error])
 
   const updatePreservingScroll = (update: () => void): void => {
     restoreScrollRef.current = captureScrollPosition(listRef.current)
@@ -241,6 +264,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     setFilter(targetFilter)
     setNotePages((current) => ({ ...current, [discussion.id]: Math.floor(Math.max(0, noteIndex) / NOTES_PER_PAGE) + 1 }))
     setCollapsedThreads((current) => ({ ...current, [discussion.id]: false }))
+    setExpandedReplies((current) => ({ ...current, [discussion.id]: true }))
     setPendingJumpNoteId(note.id)
   }
 
@@ -269,7 +293,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           aria-label={t('review.discussion.filter')}
           disabled={paginationDisabled}
           exclusive
-          onChange={(_, value: 'all' | 'unresolved' | null) => {
+          onChange={(_, value: DiscussionFilter | null) => {
             if (!value) return
             updatePreservingScroll(() => setFilter(value))
           }}
@@ -303,7 +327,9 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           ? Math.floor(editingNoteIndex / NOTES_PER_PAGE) + 1
           : clampPage(requestedNotePage, notePageCount)
         const noteStart = (notePage - 1) * NOTES_PER_PAGE
-        const visibleNotes = notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
+        const pageNotes = notes.slice(noteStart, noteStart + NOTES_PER_PAGE)
+        // A long thread shows where it started and its latest replies; unread replies and the one being edited stay in view.
+        const noteRows = expandedReplies[discussion.id] ? pageNotes.map((note) => ({ note })) : foldReplies(pageNotes, (note) => unreadIds.has(note.id) || note.id === editing)
         const containsEditingNote = editingNoteIndex >= 0
         // Resolved threads start collapsed (see unseenThreads); any thread can be folded or opened.
         const replying = discussion.id === replyDiscussionId && Boolean(replyComposer)
@@ -314,7 +340,9 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const threadLabel = positionLabel ?? t('review.discussion.threadLabel', { author: firstNote?.author.name ?? '' })
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
         return (
-          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, minWidth: 0, overflow: 'clip' }}>
+          // A thread skipped out of view keeps the height it was last laid out at; one added since takes an estimate
+          // until shown, and the anchor above keeps the thread being read still when that changes.
+          <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, containIntrinsicSize: 'auto 240px', minWidth: 0, overflow: 'clip', '[data-skip-offscreen="true"] > &': { contentVisibility: 'auto' } }}>
             {isThreadCollapsible(notes) ? (
               <Bar spacing={1} sx={{ ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, px: 1.5, py: 0.5 }}>
                 <Row spacing={1} sx={{ flex: '1 1 auto', minWidth: 0 }}>
@@ -348,16 +376,26 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                 every thread starts and the code on their right, kept in view while reading. */}
             {codeContext ? <Box sx={{ ...hairline('bottom'), minWidth: 0, [THREAD_WITH_CODE_WIDE]: { alignSelf: 'start', '&::after': { borderWidth: '0 0 0 1px' }, gridColumn: 2, gridRow: 1, position: 'sticky', top: 'calc(var(--detail-header-height, 0px) + 8px)' } }}>{codeContext}</Box> : null}
             <Box component="ol" sx={{ listStyle: 'none', m: 0, minWidth: 0, p: 0, [THREAD_WITH_CODE_WIDE]: { gridColumn: 1, gridRow: 1 } }}>
-              {visibleNotes.map((note, index) => <NoteItem
-                awards={reactions?.awardsByNote.get(note.id)}
+              {noteRows.map((row, index) => 'hidden' in row ? (
+                <Box component="li" key={`fold-${row.hidden[0].id}`} sx={{ ...hairline('top', { position: false }), px: 1, py: 0.5 }}>
+                  <Button
+                    // The first reply shown takes the focus the button had.
+                    onClick={() => updatePreservingScroll(() => { setExpandedReplies((current) => ({ ...current, [discussion.id]: true })); setPendingJumpNoteId(row.hidden[0].id) })}
+                    size="small"
+                    startIcon={<UnfoldMoreRoundedIcon />}
+                  >{t('review.discussion.hiddenReplies', { count: row.hidden.length })}</Button>
+                </Box>
+              ) : <NoteItem
+                awards={reactions?.awardsByNote.get(row.note.id)}
+                editedAt={reactions?.editedAtByNote ? reactions.editedAtByNote.get(row.note.id) ?? null : row.note.updatedAt !== row.note.createdAt ? row.note.updatedAt : null}
                 confirm={confirm}
                 currentUserId={currentUserId}
                 disabled={disabled}
                 divided={index > 0}
-                editBufferKey={editing === note.id ? noteEditBufferKey?.(note) ?? JSON.stringify({ noteEdit: note.id }) : null}
-                key={note.id}
+                editBufferKey={editing === row.note.id ? noteEditBufferKey?.(row.note) ?? JSON.stringify({ noteEdit: row.note.id }) : null}
+                key={row.note.id}
                 mentionParticipants={mentionParticipants}
-                note={note}
+                note={row.note}
                 onDelete={deleteNote}
                 onEdit={editNote}
                 onToggleReaction={reactions ? toggleReaction : undefined}
@@ -366,7 +404,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                 sessionId={sessionId}
                 setEditing={setEditing}
                 suggestionActions={noteSuggestionActions}
-                unread={unreadIds.has(note.id)}
+                unread={unreadIds.has(row.note.id)}
               />)}
             </Box>
             </Box></Box> : null}
@@ -400,6 +438,8 @@ interface NoteItemProps {
   currentUserId: string
   disabled: boolean
   divided: boolean
+  /** When the body was last edited; null if it never was. */
+  editedAt?: string | null
   /** Where the edit's text is kept while this comment is being edited; null otherwise. */
   editBufferKey: string | null
   mentionParticipants?: GitLabUser[]
@@ -416,7 +456,7 @@ interface NoteItemProps {
 }
 
 /** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
-const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, editedAt, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
   const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
@@ -467,7 +507,8 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
             <Typography color="textSecondary" sx={{ overflowWrap: 'anywhere' }} variant="caption">@{note.author.username}</Typography>
             {own ? <Typography color="textSecondary" variant="caption">{t('review.note.own')}</Typography> : null}
             <RelativeTime value={note.createdAt} />
-            {note.updatedAt && note.updatedAt !== note.createdAt ? <Typography color="textSecondary" variant="caption">{t('review.note.edited')}</Typography> : null}
+            {/* GitLab keeps created_at on an edit, so the edit's own time is shown beside it. */}
+            {editedAt ? <RelativeTime prefix={t('review.note.edited')} value={editedAt} /> : null}
             {unread ? <Typography color="primary" sx={{ fontWeight: 600 }} variant="caption">{t('review.note.unread')}</Typography> : null}
           </Row>
           {own && !note.system ? (
@@ -596,6 +637,28 @@ function captureScrollPosition(root: HTMLElement | null): { element: HTMLElement
 }
 
 /** Threads (line comments, resolvable or with replies) can be folded; a single plain comment cannot. */
+/**
+ * Folds the replies between a thread's first comment and its latest ones. A comment `keep` picks stays in view and
+ * splits the fold; a single reply is shown rather than folded.
+ */
+function foldReplies(notes: Note[], keep: (note: Note) => boolean): ({ note: Note } | { hidden: Note[] })[] {
+  const rows: ({ note: Note } | { hidden: Note[] })[] = []
+  let hidden: Note[] = []
+  const flush = () => {
+    if (hidden.length > 1) rows.push({ hidden })
+    else rows.push(...hidden.map((note) => ({ note })))
+    hidden = []
+  }
+  notes.forEach((note, index) => {
+    if (index === 0 || index >= notes.length - LATEST_REPLIES_SHOWN || keep(note)) {
+      flush()
+      rows.push({ note })
+    } else hidden.push(note)
+  })
+  flush()
+  return rows
+}
+
 function isThreadCollapsible(notes: Note[]): boolean {
   return notes.length > 1 || notes.some((note) => note.resolvable || note.position)
 }

@@ -35,8 +35,9 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FocusEvent, KeyboardEvent, MouseEvent, ReactNode, RefObject } from 'react'
+import type { FocusEvent, KeyboardEvent, MouseEvent, PointerEvent, ReactNode, RefObject } from 'react'
 
 import { hairline, panelFrame } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
@@ -49,12 +50,12 @@ import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
 import { translate, type MessageKey } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
-import type { GitLabCommandError, GitLabUser, MergeRequest, MergeRequestsQuery, MrApproval, MrApprovalsQuery } from '../../types/gitlab'
+import type { ApprovalsQuery, GitLabCommandError, GitLabUser, MergeRequest, MergeRequestsQuery, MrApproval, MrApprovalsQuery } from '../../types/gitlab'
 import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, writeSavedSearches } from '../shared/preferences'
-import { useGitLabQuery } from '../shared/useGitLabQuery'
+import { prefetchGitLabQuery, useGitLabQuery } from '../shared/useGitLabQuery'
 import { usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
 import { listTitle } from './listTitle'
 import { MergeRequestPreview, type PointerSpot } from './MergeRequestPreview'
@@ -701,11 +702,23 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
     const users = approvedBy.get(`${mergeRequest.projectPath}!${mergeRequest.iid}`)
     return users ? rowApproval(users.includes(currentUserId), users.length) : null
   }
+  // A row the pointer rests on or the keyboard reaches reads what its MR opens on.
+  const queryClient = useQueryClient()
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const prefetchSoon = useCallback((mergeRequest: MergeRequest | undefined) => {
+    globalThis.clearTimeout(prefetchTimer.current)
+    if (mergeRequest) prefetchTimer.current = globalThis.setTimeout(() => prefetchMergeRequest(queryClient, sessionId, mergeRequest), PREFETCH_DELAY_MS)
+  }, [queryClient, sessionId])
+  useEffect(() => () => globalThis.clearTimeout(prefetchTimer.current), [])
+  const hoveredRow = useRef<string | undefined>(undefined)
   // The rows are memoized: their handlers stay the same functions and reach the latest props here.
-  const latest = useRef({ approvalOf, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, personalWorkspace })
-  useEffect(() => { latest.current = { approvalOf, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, personalWorkspace } })
+  const latest = useRef({ approvalOf, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, personalWorkspace, prefetchSoon })
+  useEffect(() => { latest.current = { approvalOf, onFocusRow, onOpenMergeRequest, onOpenPipeline, onPreview, personalWorkspace, prefetchSoon } })
   const handlers = useMemo<RowHandlers>(() => ({
-    focus: (mergeRequest) => latest.current.onFocusRow({ approval: approvalText(latest.current.approvalOf(mergeRequest), mergeRequest.state), mergeRequest }),
+    focus: (mergeRequest) => {
+      latest.current.prefetchSoon(mergeRequest)
+      latest.current.onFocusRow({ approval: approvalText(latest.current.approvalOf(mergeRequest), mergeRequest.state), mergeRequest })
+    },
     open: (mergeRequest) => latest.current.onOpenMergeRequest(mergeRequest),
     openPipeline: (url) => latest.current.onOpenPipeline(url),
     preview: (mergeRequest, closeAt) => latest.current.onPreview({ approval: approvalText(latest.current.approvalOf(mergeRequest), mergeRequest.state), closeAt, mergeRequest }),
@@ -729,6 +742,14 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
     showProject={showProject}
   />
   const mergeRequests = pages.flat()
+  const rowsById = new Map(mergeRequests.map((mergeRequest) => [`${mergeRequest.projectId}-${mergeRequest.iid}`, mergeRequest]))
+  const prefetchHovered = (event: PointerEvent<HTMLElement>) => {
+    const id = (event.target as Element).closest('[data-mr-id]')?.getAttribute('data-mr-id')
+    if (id !== hoveredRow.current) {
+      hoveredRow.current = id ?? undefined
+      prefetchSoon(id ? rowsById.get(id) : undefined)
+    }
+  }
   const loaders = pageKeys.map((itemsKey) => itemsKey ? <MergeRequestApprovalsLoader itemsKey={itemsKey} key={itemsKey} onChange={reportApprovals} sessionId={sessionId} /> : null)
   // The queues group once the first page's approvals are known; until then, or when they fail, the list stays flat.
   // Both are one list with the section headings among the rows, so rows keep their elements (and focus) when grouping starts or they move.
@@ -753,8 +774,18 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
   return <>
     {loaders}
     {approvalsError && !grouped ? <Typography color="textSecondary" component="div" sx={{ px: paneGutter, py: 1 }} variant="caption">{t('mrList.results.approvalsError', { error: approvalsError.message })}</Typography> : null}
-    <Box aria-label={t('mrList.results.aria')} component="ul" onKeyDown={moveListRowFocus} role="list" sx={rowListSx}>{items}</Box>
+    <Box aria-label={t('mrList.results.aria')} component="ul" onKeyDown={moveListRowFocus} onPointerLeave={() => { hoveredRow.current = undefined; prefetchSoon(undefined) }} onPointerOver={prefetchHovered} role="list" sx={rowListSx}>{items}</Box>
   </>
+}
+
+/** How long the pointer rests on a row before its MR is read ahead; passing over rows reads nothing. */
+const PREFETCH_DELAY_MS = 250
+
+/** The reads every opened MR makes whichever tab it opens on, keyed as MergeRequestDetail keys them. */
+function prefetchMergeRequest(queryClient: QueryClient, sessionId: string, mergeRequest: MergeRequest) {
+  const { iid, projectId } = mergeRequest
+  prefetchGitLabQuery(queryClient, sessionId, { iid, kind: 'mr' as const, projectId })
+  prefetchGitLabQuery(queryClient, sessionId, { iid, kind: 'approvals', projectId } as ApprovalsQuery)
 }
 
 const rowApprovals = new Map<string, RowApproval>()

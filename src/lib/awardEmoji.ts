@@ -36,12 +36,14 @@ let loading: Promise<EmojiCatalog> | null = null
 export function loadEmojiCatalog(): Promise<EmojiCatalog> {
   loading ??= import('./emojiData.json').then(({ default: data }) => {
     const rows = data.emoji as EmojiRow[]
+    const byName = new Map(rows.map((row) => [row[0], row[1]]))
     const choices: EmojiChoice[] = []
     for (const row of rows) {
-      if (row.length === 5) choices.push({ category: row[2], emoji: row[1], label: row[3], name: row[0], words: row[4] })
+      // GitLab's list gives a few names twice (man_in_tuxedo, beetle, cricket); the picker offers the one the name shows as.
+      if (row.length === 5 && byName.get(row[0]) === row[1]) choices.push({ category: row[2], emoji: row[1], label: row[3], name: row[0], words: row[4] })
     }
     catalog = {
-      byName: new Map(rows.map((row) => [row[0], row[1]])),
+      byName,
       choiceByName: new Map(choices.map((choice) => [choice.name, choice])),
       choices,
     }
