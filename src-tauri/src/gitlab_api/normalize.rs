@@ -346,6 +346,7 @@ pub(super) fn normalize_merge_request(value: &Value) -> Result<Value, AppError> 
         "updatedAt": string_field(value, "updated_at"),
         "headSha": if head_sha.is_empty() { Value::Null } else { Value::String(head_sha) },
         "diffRefs": diff_refs.unwrap_or(Value::Null),
+        "changesCount": value.get("changes_count").and_then(Value::as_str),
         "projectPath": project_path,
         "draft": bool_field(value, "draft"),
         "labels": labels,
