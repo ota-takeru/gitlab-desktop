@@ -14,7 +14,7 @@ test('preview README on project overview', async ({ page }, testInfo) => {
   await expect(project).toBeVisible()
   await project.click()
   await expect(page.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByText('READMEプレビュー · README.md')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'README.md' })).toBeVisible()
   await expect(page.getByText('主な機能')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('01-project-readme.png'), animations: 'disabled' })
 })

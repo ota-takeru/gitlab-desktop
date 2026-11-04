@@ -203,6 +203,8 @@
   "link.projectNotFound": "无法获取项目。",
   "link.openFailed": "无法打开链接：{message}",
   "richMarkdown.image": "[图片：{alt}]",
+  "richMarkdown.imageLoading": "[图片：{alt} · 加载中]",
+  "richMarkdown.imageUnavailable": "[图片：{alt} · 无法显示]",
   "richMarkdown.noAlt": "无描述",
   "richMarkdown.linkPrompt": "链接 URL",
   "markdownReview.removedLabel": "已从上一版本中删除，第 {lines} 行",

@@ -42,6 +42,7 @@ import { StateIcon } from '../../components/StateIcon'
 import { StatusPill } from '../../components/StatusPill'
 import { translate } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
+import { isEditableTarget, isInsideMenu } from '../../lib/eventTargets'
 import { formatFetchedAt, formatMergeRequestState, mergeRequestStateTone, shortSha } from '../../lib/format'
 import { uploadGitLabAttachment } from '../../lib/attachments'
 import { createRequestId, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
@@ -579,7 +580,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const openCommentPosition = (target: Position) => {
     setViewPosition(isPositionCurrent(target, mergeRequest) ? target : undefined)
     setPositionError(isPositionCurrent(target, mergeRequest) ? null : t('mergeRequest.position.outdatedComment'))
-    setSelectedCommit(null); setCompareVersion(null); setFileView('diff')
+    setLocalChanges(false); setSelectedCommit(null); setCompareVersion(null); setFileView('diff')
     setSelectedFile(target.newPath || target.oldPath)
     setPendingFileTarget(target.newPath || target.oldPath)
     setActiveTab('changes')
@@ -1346,11 +1347,3 @@ function sortByLine(byLine: Map<string, Discussion[]>): Discussion[] {
   return [...byLine.entries()].sort(([left], [right]) => Number(left.slice(2)) - Number(right.slice(2))).flatMap(([, threads]) => threads)
 }
 
-/** An open menu or listbox owns letter keys (MUI only consumes letters that match an item). */
-function isInsideMenu(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
-}

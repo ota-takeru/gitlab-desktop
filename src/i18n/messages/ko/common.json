@@ -203,6 +203,8 @@
   "link.projectNotFound": "프로젝트를 가져올 수 없습니다.",
   "link.openFailed": "링크를 열 수 없습니다: {message}",
   "richMarkdown.image": "[이미지: {alt}]",
+  "richMarkdown.imageLoading": "[이미지: {alt} · 불러오는 중]",
+  "richMarkdown.imageUnavailable": "[이미지: {alt} · 표시할 수 없음]",
   "richMarkdown.noAlt": "설명 없음",
   "richMarkdown.linkPrompt": "링크 URL",
   "markdownReview.removedLabel": "이전 버전에서 삭제됨, {lines}행",

@@ -3,6 +3,9 @@ export type GitLabPage =
   | { kind: 'project' | 'branches' | 'mrs'; path: string }
   /** A folder or file; `rest` is the ref followed by the path, split by GitLab's `/`, since a ref can contain `/`. */
   | { kind: 'tree' | 'blob'; path: string; rest: string[] }
+  | { kind: 'commit'; path: string; sha: string }
+  /** A branch's history; a URL with a path after the ref does not mark where the ref ends and opens in the browser. */
+  | { kind: 'commits'; path: string; ref: string }
 
 // First path segments that are GitLab's own pages, never a namespace.
 const RESERVED = new Set(['-', 'admin', 'api', 'assets', 'dashboard', 'explore', 'groups', 'help', 'oauth', 'profile', 'projects', 'search', 'snippets', 'uploads', 'users'])
@@ -32,5 +35,7 @@ export function parseGitLabPageUrl(input: string, instanceUrl: string): GitLabPa
   if (page === 'branches' && !rest.length) return { kind: 'branches', path }
   if (page === 'merge_requests' && !rest.length) return { kind: 'mrs', path }
   if ((page === 'tree' || page === 'blob') && rest.length >= (page === 'blob' ? 2 : 1)) return { kind: page, path, rest }
+  if (page === 'commit' && rest.length === 1 && /^[0-9a-f]{40}([0-9a-f]{24})?$/u.test(rest[0])) return { kind: 'commit', path, sha: rest[0] }
+  if (page === 'commits' && rest.length === 1) return { kind: 'commits', path, ref: rest[0] }
   return null
 }

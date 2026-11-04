@@ -1,6 +1,7 @@
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { Activity, memo, useLayoutEffect, useState, type ElementType, type ReactNode } from 'react'
+import { fadeInSx } from './paneSx'
 import { ScreenReadinessGate } from './ScreenReadiness'
 
 interface KeepAliveProps {
@@ -88,7 +89,8 @@ export function KeepAlive({ activeKey, children, component = 'div', keep = noKey
     const reveal = () => setScreens((latest) => latest.pending === key ? { ...latest, pending: null, previous: null } : latest)
     // The wrapper sits outside Activity: React defers updates inside a hidden subtree, the marker must change at once.
     // A waiting screen is laid out at its full size, transparent, so it measures itself and can take focus as when it shows.
-    return <Box component={component} data-screen-active={active ? 'true' : 'false'} key={key} sx={[...(Array.isArray(sx) ? sx : [sx]), !active && !shown && { display: 'none' }, waiting && { inset: 0, opacity: 0, pointerEvents: 'none', position: 'absolute' }]}>
+    // A screen coming back from display: none starts the fade again, so every switch fades in.
+    return <Box component={component} data-screen-active={active ? 'true' : 'false'} key={key} sx={[...(Array.isArray(sx) ? sx : [sx]), !active && !shown && { display: 'none' }, waiting && { inset: 0, opacity: 0, pointerEvents: 'none', position: 'absolute' }, active && !waiting && fadeInSx]}>
       <Activity mode={active || shown ? 'visible' : 'hidden'}>
         <ScreenReadinessGate onReady={reveal} waiting={waiting}>
           <LastContent hidden={!active} renderKey={active ? renderKey : undefined}>{active ? children : null}</LastContent>

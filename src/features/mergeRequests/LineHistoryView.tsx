@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useT } from '../../i18n/useT'
 import { formatAbsoluteTime, shortSha } from '../../lib/format'
+import { useMarkdownLinks } from '../../components/markdownLinksContext'
 import { commitUrl, normalizeGitLabError, openGitLabUrl, queryGitLab } from '../../lib/gitlab'
 import type { BlameQuery, CommitDiffQuery, CommitMergeRequestsQuery, GitLabQuery, GitLabQueryData } from '../../types/gitlab'
 import { hairline } from '../../components/hairline'
@@ -204,6 +205,8 @@ function StepDetail({ onEditRange, projectId, projectUrl, sessionId, step }: { o
   const t = useT()
   const relatedQuery = useMemo<CommitMergeRequestsQuery>(() => ({ kind: 'commitMergeRequests', projectId, sha: step.commit.commitId }), [projectId, step.commit.commitId])
   const related = useGitLabQuery(sessionId, relatedQuery)
+  // A commit's URL opens its screen in the app, where links open in place.
+  const { open: openInApp } = useMarkdownLinks()
   const [openError, setOpenError] = useState<string | null>(null)
   const open = (url: string) => {
     setOpenError(null)
@@ -214,7 +217,7 @@ function StepDetail({ onEditRange, projectId, projectUrl, sessionId, step }: { o
     <Typography color="textSecondary" variant="caption"><Box component="span" sx={{ fontFamily: 'code.fontFamily' }}>{shortSha(step.commit.commitId)}</Box> · {step.commit.authorName || t('review.blame.unknownAuthor')} · {step.commit.committedAt ? formatAbsoluteTime(step.commit.committedAt) : t('review.blame.unknownTime')}</Typography>
     <Typography color="textSecondary" sx={{ fontFamily: 'code.fontFamily', overflowWrap: 'anywhere' }} variant="caption">{t('review.history.where', { path: step.path, start: String(step.range.start), end: String(step.range.end) })}</Typography>
     <Row spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-      {projectUrl ? <Button onClick={() => open(commitUrl(projectUrl, step.commit.commitId))} size="small" variant="outlined">{t('review.blame.openCommit')}</Button> : null}
+      {projectUrl ? <Button onClick={() => { const url = commitUrl(projectUrl, step.commit.commitId); if (openInApp) openInApp(url); else open(url) }} size="small" variant="outlined">{t(openInApp ? 'review.blame.showCommit' : 'review.blame.openCommit')}</Button> : null}
       <Button onClick={onEditRange} size="small">{t('review.history.editRange')}</Button>
     </Row>
     {related.data?.length ? <Stack sx={{ alignItems: 'flex-start' }}>

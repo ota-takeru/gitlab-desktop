@@ -329,6 +329,7 @@
   "blame.historyRun": "이 커밋의 {start}–{end}행",
   "blame.historySelected": "선택한 {start}–{end}행",
   "blame.openCommit": "GitLab에서 커밋 열기",
+  "blame.showCommit": "커밋 보기",
   "blame.failed": "불러오지 못했습니다. 클릭하여 다시 시도",
   "history.label": "{path}의 줄 기록",
   "history.title": "{start}–{end}행의 기록",

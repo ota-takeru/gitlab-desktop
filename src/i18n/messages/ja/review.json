@@ -329,6 +329,7 @@
   "blame.historyRun": "このコミットの{start}〜{end}行",
   "blame.historySelected": "選択中の{start}〜{end}行",
   "blame.openCommit": "GitLabでコミットを開く",
+  "blame.showCommit": "コミットを表示",
   "blame.failed": "取得に失敗しました。クリックで再試行します",
   "history.label": "{path} の行の履歴",
   "history.title": "{start}〜{end}行目の履歴",

@@ -196,6 +196,9 @@ export interface FileQuery {
 
 export interface BlameQuery { kind: 'blame'; projectId: string; path: string; sha: string; startLine: number; endLine: number }
 export interface CommitMergeRequestsQuery { kind: 'commitMergeRequests'; projectId: string; sha: string }
+/** A repository's commits, newest first; without `ref`, those of the default branch. */
+export interface RepositoryCommitsQuery { kind: 'repositoryCommits'; projectId: string; ref?: string; path?: string; page: number }
+export interface RepositoryCommitQuery { kind: 'repositoryCommit'; projectId: string; sha: string }
 
 /** `parentIds` is missing in blame stored before the app kept it. */
 export interface BlameBlock { commitId: string; title: string; authorName: string; committedAt: string; lines: string[]; parentIds?: string[] }
@@ -391,6 +394,8 @@ export type GitLabQuery =
   | FileQuery
   | BlameQuery
   | CommitMergeRequestsQuery
+  | RepositoryCommitsQuery
+  | RepositoryCommitQuery
   | TreeQuery
   | BlobQuery
   | ApprovalsQuery
@@ -587,6 +592,9 @@ export interface Discussion {
 export interface Commit {
   id: string
   title: string
+  /** The whole message; absent in older cached records. */
+  message?: string
+  authorName?: string
   /** Fallback for older cached records. */
   createdAt: string
   /** Git's committer timestamp, which may differ from the creation/author date. */
@@ -626,6 +634,7 @@ export type QueryData =
   | Discussion[]
   | Discussion
   | Commit[]
+  | Commit
   | Draft[]
   | FileContent
   | BlameBlock[]
@@ -921,6 +930,8 @@ export type GitLabQueryData<Q extends GitLabQuery> =
             : Q extends FileQuery ? FileContent
               : Q extends BlameQuery ? BlameBlock[]
               : Q extends CommitMergeRequestsQuery ? AssociatedMergeRequest[]
+              : Q extends RepositoryCommitsQuery ? Commit[]
+              : Q extends RepositoryCommitQuery ? Commit
               : Q extends TreeQuery ? TreeEntry[]
               : Q extends BlobQuery ? FileContent
               : Q extends ApprovalsQuery ? Approvals

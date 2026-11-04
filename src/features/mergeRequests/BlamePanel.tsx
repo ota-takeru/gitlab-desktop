@@ -7,6 +7,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { useMarkdownLinks } from '../../components/markdownLinksContext'
 import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import { commitUrl, openGitLabUrl } from '../../lib/gitlab'
 import type { BlameBlock, BlameQuery, CommitMergeRequestsQuery } from '../../types/gitlab'
@@ -56,6 +57,8 @@ export function BlameProvider({ beforeSha, children, enabled = true, newPath, ol
   sha: string
 }) {
   const t = useT()
+  // A commit's URL opens its screen in the app, where links open in place.
+  const { open: openInApp } = useMarkdownLinks()
   // Windows in the order they were asked for; the earliest are read first.
   const [wanted, setWanted] = useState<string[]>([])
   const wantedKeys = useRef(new Set<string>())
@@ -175,7 +178,7 @@ export function BlameProvider({ beforeSha, children, enabled = true, newPath, ol
             {commitRun && commitRun.end > commitRun.start ? <Button onClick={() => followFrom(commitRun)} size="small" variant="outlined">{t('review.blame.historyRun', { start: String(commitRun.start), end: String(commitRun.end) })}</Button> : null}
             {chosen ? <Button onClick={() => followFrom(chosen)} size="small" variant="outlined">{t('review.blame.historySelected', { start: String(chosen.start), end: String(chosen.end) })}</Button> : null}
           </Stack> : null}
-          {projectUrl ? <Button onClick={() => open(commitUrl(projectUrl, selection.block.commitId))} size="small" sx={{ alignSelf: 'flex-start' }}>{t('review.blame.openCommit')}</Button> : null}
+          {projectUrl ? <Button onClick={() => { const url = commitUrl(projectUrl, selection.block.commitId); if (openInApp) { setSelection(null); openInApp(url) } else open(url) }} size="small" sx={{ alignSelf: 'flex-start' }}>{t(openInApp ? 'review.blame.showCommit' : 'review.blame.openCommit')}</Button> : null}
           <Divider />
           <Typography color="textSecondary" variant="caption">{t('review.blame.relatedMrs')}</Typography>
           {related.loading && !related.data ? <Typography variant="caption">{t('review.blame.loading')}</Typography> : null}

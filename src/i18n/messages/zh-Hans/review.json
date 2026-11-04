@@ -329,6 +329,7 @@
   "blame.historyRun": "此提交的第 {start}–{end} 行",
   "blame.historySelected": "所选的第 {start}–{end} 行",
   "blame.openCommit": "在 GitLab 中打开提交",
+  "blame.showCommit": "查看提交",
   "blame.failed": "加载失败，点击重试",
   "history.label": "{path} 的行历史",
   "history.title": "第 {start}–{end} 行的历史",

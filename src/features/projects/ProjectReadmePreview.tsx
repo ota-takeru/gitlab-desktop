@@ -7,7 +7,7 @@ import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { useT } from '../../i18n/useT'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
-import { FullFileView } from '../mergeRequests/DiffViewer'
+import { FullFileView } from '../mergeRequests/FullFileView'
 import type { BlobQuery, Project, TreeQuery } from '../../types/gitlab'
 import { chooseReadmeFile } from './readmeFiles'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
@@ -26,7 +26,7 @@ export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { proj
   const repository = readme ? { projectId: project.id, path: readme.path } : undefined
   const markdown = Boolean(readme && (isMarkdownFilePath(readme.name) || /^readme$/iu.test(readme.name)))
   return <Box aria-label={t('project.readme.label', { project: project.name })} component="section" sx={{ px: 1 }}>
-    <Typography sx={{ fontWeight: 600, mb: 1 }} variant="subtitle2">{readme ? t('project.readme.titleWithFile', { file: readme.name }) : t('project.readme.title')}</Typography>
+    <Typography component="h2" sx={{ fontWeight: 600, mb: 1 }} variant="subtitle1">{readme ? readme.name : t('project.overview.readme')}</Typography>
     {tree.loading || readme && blob.loading ? <Typography color="textSecondary" variant="body2">{t('project.readme.loading')}</Typography> : null}
     {tree.error ? <Alert severity="warning">{t('project.readme.listFailed', { message: tree.error.message })}</Alert> : null}
     {readme && blob.error ? <Alert severity="warning">{t('project.readme.loadFailed', { message: blob.error.message })}</Alert> : null}

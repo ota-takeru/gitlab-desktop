@@ -203,6 +203,8 @@
   "link.projectNotFound": "プロジェクトを取得できませんでした。",
   "link.openFailed": "リンクを開けませんでした: {message}",
   "richMarkdown.image": "[画像: {alt}]",
+  "richMarkdown.imageLoading": "[画像: {alt} · 読み込み中]",
+  "richMarkdown.imageUnavailable": "[画像: {alt} · 表示できません]",
   "richMarkdown.noAlt": "説明なし",
   "richMarkdown.linkPrompt": "リンク先のURL",
   "markdownReview.removedLabel": "変更前の削除 {lines}行",

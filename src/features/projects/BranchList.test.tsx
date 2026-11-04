@@ -95,3 +95,13 @@ it('keeps the search of each project when its branches are opened again', () => 
   expect(screen.getByRole('textbox', { name: 'ブランチを検索' })).toHaveValue('feat')
   expect(queryMock).toHaveBeenLastCalledWith('session-1', { kind: 'branches', page: 1, projectId: '7', search: 'feat' }, { keepPrevious: true })
 })
+
+it('offers a branch\'s history as a row action, apart from its MRs', () => {
+  const onShowHistory = vi.fn()
+  const onShowMergeRequests = vi.fn()
+  render(<BranchList onShowHistory={onShowHistory} onShowMergeRequests={onShowMergeRequests} projectId="7" projectName="group/project" />)
+
+  fireEvent.click(screen.getByRole('button', { name: 'feature/searchの変更履歴を表示' }))
+  expect(onShowHistory).toHaveBeenCalledWith('feature/search')
+  expect(onShowMergeRequests).not.toHaveBeenCalled()
+})

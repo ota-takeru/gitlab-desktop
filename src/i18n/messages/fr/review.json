@@ -329,6 +329,7 @@
   "blame.historyRun": "Lignes {start}–{end} de ce commit",
   "blame.historySelected": "Lignes sélectionnées {start}–{end}",
   "blame.openCommit": "Ouvrir le commit sur GitLab",
+  "blame.showCommit": "Afficher le commit",
   "blame.failed": "Échec du chargement. Cliquez pour réessayer",
   "history.label": "Historique des lignes de {path}",
   "history.title": "Historique des lignes {start}–{end}",

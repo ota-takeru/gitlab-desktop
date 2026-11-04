@@ -471,6 +471,44 @@ pub(super) fn build_query_url(
                 vec![("per_page".to_owned(), "20".to_owned())],
             )
         }
+        Query::RepositoryCommits {
+            project_id,
+            git_ref,
+            path,
+            page,
+        } => {
+            validate_id(project_id, "projectId")?;
+            validate_page(*page)?;
+            let mut params = vec![
+                ("page".to_owned(), page.to_string()),
+                ("per_page".to_owned(), PER_PAGE.to_string()),
+            ];
+            if let Some(git_ref) = git_ref {
+                validate_ref(git_ref)?;
+                params.push(("ref_name".to_owned(), git_ref.clone()));
+            }
+            if let Some(path) = path {
+                validate_path(path)?;
+                params.push(("path".to_owned(), path.clone()));
+            }
+            (
+                endpoint(api_base, &["projects", project_id, "repository", "commits"])?,
+                ResponseKind::Commits,
+                params,
+            )
+        }
+        Query::RepositoryCommit { project_id, sha } => {
+            validate_id(project_id, "projectId")?;
+            validate_sha(sha, "sha")?;
+            (
+                endpoint(
+                    api_base,
+                    &["projects", project_id, "repository", "commits", sha],
+                )?,
+                ResponseKind::Commit,
+                Vec::new(),
+            )
+        }
         Query::Tree {
             project_id,
             git_ref,

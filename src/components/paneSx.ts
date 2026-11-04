@@ -8,7 +8,7 @@ export const delayedRevealSx = {
   animation: 'gitlab-delayed-reveal 0s linear 200ms both',
 } as const
 
-/** Content that replaces a placeholder fades in over a moment, so the placeholder does not cut to it. */
+/** A screen that comes into view, or content that replaces a placeholder, fades in over a moment instead of cutting to it. */
 export const fadeInSx = {
   '@keyframes gitlab-fade-in': { from: { opacity: 0 }, to: { opacity: 1 } },
   animation: 'gitlab-fade-in 150ms ease-out',

@@ -329,6 +329,7 @@
   "blame.historyRun": "Zeilen {start}–{end} aus diesem Commit",
   "blame.historySelected": "Ausgewählte Zeilen {start}–{end}",
   "blame.openCommit": "Commit in GitLab öffnen",
+  "blame.showCommit": "Commit anzeigen",
   "blame.failed": "Laden fehlgeschlagen. Zum Wiederholen klicken",
   "history.label": "Zeilenverlauf von {path}",
   "history.title": "Verlauf der Zeilen {start}–{end}",

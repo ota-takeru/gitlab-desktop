@@ -1848,6 +1848,78 @@ fn normalizes_blame_and_associated_merge_requests() {
 }
 
 #[test]
+fn repository_commits_filter_by_branch_and_path() {
+    let base = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let (url, kind) = build_query_url(
+        &base,
+        &Query::RepositoryCommits {
+            project_id: "7".to_owned(),
+            git_ref: Some("feature/x".to_owned()),
+            path: Some("src/foo bar.ts".to_owned()),
+            page: 2,
+        },
+    )
+    .unwrap();
+    assert!(matches!(kind, ResponseKind::Commits));
+    assert_eq!(url.path(), "/api/v4/projects/7/repository/commits");
+    let params: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(params["ref_name"], "feature/x");
+    assert_eq!(params["path"], "src/foo bar.ts");
+    assert_eq!(params["page"], "2");
+    let (url, _) = build_query_url(
+        &base,
+        &Query::RepositoryCommits {
+            project_id: "7".to_owned(),
+            git_ref: None,
+            path: None,
+            page: 1,
+        },
+    )
+    .unwrap();
+    assert!(!url.as_str().contains("ref_name"));
+    assert!(!url.as_str().contains("path="));
+    assert!(build_query_url(
+        &base,
+        &Query::RepositoryCommits {
+            project_id: "7".to_owned(),
+            git_ref: None,
+            path: Some("../secret".to_owned()),
+            page: 1,
+        },
+    )
+    .is_err());
+}
+
+#[test]
+fn repository_commit_keeps_message_and_author() {
+    let base = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let sha = "a".repeat(40);
+    let (url, kind) = build_query_url(
+        &base,
+        &Query::RepositoryCommit {
+            project_id: "7".to_owned(),
+            sha: sha.clone(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(kind, ResponseKind::Commit));
+    assert_eq!(
+        url.path(),
+        format!("/api/v4/projects/7/repository/commits/{sha}")
+    );
+    let commit = normalize_commit(&json!({
+        "id": sha,
+        "title": "Subject",
+        "message": "Subject\n\nBody",
+        "author_name": "Ann",
+        "created_at": "2026-11-01T00:00:00Z",
+    }))
+    .unwrap();
+    assert_eq!(commit["message"], "Subject\n\nBody");
+    assert_eq!(commit["authorName"], "Ann");
+}
+
+#[test]
 fn blame_query_restricts_range_and_encodes_paths() {
     let base = Url::parse("https://gitlab.example/api/v4/").unwrap();
     let query = Query::Blame {

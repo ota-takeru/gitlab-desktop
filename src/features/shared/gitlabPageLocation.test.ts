@@ -22,6 +22,8 @@ beforeEach(() => {
 it('opens a project on its overview, branches and MR list', async () => {
   expect(await resolveGitLabPage('s', { kind: 'project', path: 'team/desktop' }, always)).toEqual({ route: 'overview', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl } })
   expect(await resolveGitLabPage('s', { kind: 'branches', path: 'team/desktop' }, always)).toEqual({ route: 'branches', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl } })
+  expect(await resolveGitLabPage('s', { kind: 'commit', path: 'team/desktop', sha: 'a'.repeat(40) }, always)).toEqual({ route: 'history', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl, sha: 'a'.repeat(40) } })
+  expect(await resolveGitLabPage('s', { kind: 'commits', path: 'team/desktop', ref: 'main' }, always)).toEqual({ route: 'history', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl, ref: 'main' } })
   expect(await resolveGitLabPage('s', { kind: 'mrs', path: 'team/desktop' }, always)).toEqual({ route: 'mrs', params: { projectId: '42', projectName: 'Desktop', projectUrl: project.webUrl, state: 'opened' } })
 })
 
