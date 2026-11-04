@@ -19,11 +19,10 @@ export interface CurrentDiffs {
  * file as it was at the commented commit when the diff cannot show them.
  */
 export function DiscussionCode({ current, position, projectId, sessionId }: { current: CurrentDiffs | null; position: Position; projectId: string; sessionId: string }) {
-  const t = useT()
   const diff = current?.find(position.newPath || position.oldPath)
   const excerpt = useMemo(() => diff && !diff.tooLarge ? diffExcerpt(diff, position) : null, [diff, position])
   if (excerpt) return <DiffExcerpt lines={excerpt.lines} target={excerpt.target} />
-  if (current?.searching) return <CodeMessage>{t('review.code.loading')}</CodeMessage>
+  if (current?.searching) return <CodeLoading />
   return <FileExcerpt outdated={!current} position={position} projectId={projectId} sessionId={sessionId} />
 }
 
@@ -77,7 +76,7 @@ function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: b
   const lines = useMemo(() => result.data ? splitFileLines(result.data.content) : null, [result.data])
   if (!query) return null
   if (result.error && !lines) return <CodeMessage>{t('review.code.error', { message: result.error.message })}</CodeMessage>
-  if (!lines) return <CodeMessage>{t('review.code.loading')}</CodeMessage>
+  if (!lines) return <CodeLoading />
   if (line < 1 || line > lines.length) return <CodeMessage>{t('review.code.lineMissing')}</CodeMessage>
   const start = Math.max(1, line - LINES_BEFORE)
   const end = Math.min(lines.length, line + LINES_AFTER)
@@ -97,6 +96,12 @@ function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: b
       })}
     </Box>
   </Box>
+}
+
+/** Holds a full excerpt's height, so the code arriving does not push away the place the discussion opened at. */
+function CodeLoading() {
+  const t = useT()
+  return <Box sx={{ minHeight: (LINES_BEFORE + 1 + LINES_AFTER) * 20 }}><CodeMessage>{t('review.code.loading')}</CodeMessage></Box>
 }
 
 function CodeMessage({ children }: { children: ReactNode }) {
