@@ -87,3 +87,17 @@ it('explains a missing folder instead of showing an empty one', () => {
 
   expect(screen.getByRole('alert')).toHaveTextContent('フォルダが見つかりません')
 })
+
+it('leads from a folder or a file to its history, but not from the top of the repository', () => {
+  const onShowHistory = vi.fn()
+  const { rerender } = render(<CodeBrowser location={{ path: '' }} onNavigate={vi.fn()} onShowHistory={onShowHistory} projectId="7" projectName="group/project" />)
+  expect(screen.queryByRole('button', { name: 'このフォルダーの履歴' })).toBeNull()
+
+  rerender(<CodeBrowser location={{ path: 'docs' }} onNavigate={vi.fn()} onShowHistory={onShowHistory} projectId="7" projectName="group/project" />)
+  fireEvent.click(screen.getByRole('button', { name: 'このフォルダーの履歴' }))
+  expect(onShowHistory).toHaveBeenLastCalledWith('docs')
+
+  rerender(<CodeBrowser location={{ file: { path: 'docs/README.md', sha: blobSha }, path: 'docs' }} onNavigate={vi.fn()} onShowHistory={onShowHistory} projectId="7" projectName="group/project" />)
+  fireEvent.click(screen.getByRole('button', { name: 'このファイルの履歴' }))
+  expect(onShowHistory).toHaveBeenLastCalledWith('docs/README.md')
+})

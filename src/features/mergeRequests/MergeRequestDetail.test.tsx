@@ -654,6 +654,25 @@ describe('suggestions and versions', () => {
     expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
   })
 
+  it('leaves the local view when a comment opens its place in the MR diff', async () => {
+    localMocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/project', projectPath: 'group/project' })
+    localMocks.getLocalChanges.mockResolvedValue({ aheadCount: 1, branch: 'feature', comparedSha: 'head-abc', containsMrHead: true, diffs: [{ ...detailMocks.diff, diff: '@@ -1,2 +1,3 @@\n line one\n line two\n+local line\n' }], localHead: 'c'.repeat(40), repositoryPath: 'C:/repos/project', truncated: false, untrackedCount: 2, untrackedIncluded: 0, untrackedMore: false })
+    localMocks.getLocalStatus.mockResolvedValue({ aheadCount: 1, branch: 'feature', changedCount: 0, containsMrHead: true, countMore: false, localHead: 'c'.repeat(40), mrHeadPresent: true, untrackedCount: 2 })
+    // The detail keeps its own tab here, so the test can go from the changes to the discussion and back.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} /></ThemeProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('tab', { name: '変更' }))
+    const local = { name: 'ローカルの変更未コミット2 · 未push1' }
+    fireEvent.click(await screen.findByRole('button', local, { timeout: 5_000 }))
+    expect(await screen.findByText('local line', undefined, { timeout: 5_000 })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
+    fireEvent.click(await screen.findByRole('button', { name: '差分へ移動: src/example.ts:2' }, { timeout: 5_000 }))
+
+    expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' }, { timeout: 5_000 })).toBeInTheDocument()
+    expect(screen.getByRole('button', local)).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('shows the linked clone against the MR head read-only, without loading the MR diff', async () => {
     localMocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/project', projectPath: 'group/project' })
     localMocks.getLocalChanges.mockResolvedValue({ aheadCount: 1, branch: 'feature', comparedSha: 'head-abc', containsMrHead: true, diffs: [{ ...detailMocks.diff, diff: '@@ -1,2 +1,3 @@\n line one\n line two\n+local line\n' }], localHead: 'c'.repeat(40), repositoryPath: 'C:/repos/project', truncated: false, untrackedCount: 2, untrackedIncluded: 0, untrackedMore: false })

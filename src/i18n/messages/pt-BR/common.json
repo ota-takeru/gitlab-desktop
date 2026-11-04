@@ -203,6 +203,8 @@
   "link.projectNotFound": "Não foi possível obter o projeto.",
   "link.openFailed": "Não foi possível abrir o link: {message}",
   "richMarkdown.image": "[Imagem: {alt}]",
+  "richMarkdown.imageLoading": "[Imagem: {alt} · carregando]",
+  "richMarkdown.imageUnavailable": "[Imagem: {alt} · indisponível]",
   "richMarkdown.noAlt": "sem descrição",
   "richMarkdown.linkPrompt": "URL do link",
   "markdownReview.removedLabel": "Removido da versão anterior, linhas {lines}",

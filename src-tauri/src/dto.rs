@@ -319,6 +319,20 @@ pub enum Query {
         project_id: String,
         sha: String,
     },
+    /// A repository's commits, newest first; without `ref`, those of the default branch.
+    RepositoryCommits {
+        project_id: String,
+        #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+        git_ref: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        page: u32,
+    },
+    /// One commit of a repository, without its diff.
+    RepositoryCommit {
+        project_id: String,
+        sha: String,
+    },
     /// One folder of a repository; without `ref`, GitLab lists the default branch.
     Tree {
         project_id: String,

@@ -329,6 +329,7 @@
   "blame.historyRun": "Строки {start}–{end} из этого коммита",
   "blame.historySelected": "Выбранные строки {start}–{end}",
   "blame.openCommit": "Открыть коммит в GitLab",
+  "blame.showCommit": "Показать коммит",
   "blame.failed": "Не удалось загрузить. Нажмите, чтобы повторить",
   "history.label": "История строк {path}",
   "history.title": "История строк {start}–{end}",

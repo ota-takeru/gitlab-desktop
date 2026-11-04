@@ -3,13 +3,14 @@ import { ThemeProvider } from '@mui/material/styles'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 
+import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { createAppTheme } from '../../theme'
-import { FullFileView } from './DiffViewer'
+import { FullFileView } from './FullFileView'
 import { BlameCell, BlameProvider } from './BlamePanel'
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }))
 vi.mock('../shared/useGitLabQuery', () => ({ useGitLabQuery: queryMock }))
-vi.mock('../../lib/gitlab', () => ({ openGitLabUrl: vi.fn() }))
+vi.mock('../../lib/gitlab', () => ({ commitUrl: (projectUrl: string, sha: string) => `${projectUrl}/-/commit/${sha}`, openGitLabUrl: vi.fn() }))
 
 const newSha = 'a'.repeat(40)
 const oldSha = 'b'.repeat(40)
@@ -167,6 +168,19 @@ it('opens the history of the clicked line, of its commit\'s lines, or of the cho
   fireEvent.click(screen.getByRole('button', { name: /2行のBlame: bbbbbbbb/ }))
   fireEvent.click(screen.getByRole('button', { name: '選択中の2〜9行' }))
   expect(onHistory).toHaveBeenLastCalledWith({ path: 'old.ts', range: { start: 2, end: 9 }, sha: oldSha })
+})
+
+it('shows the commit in the app where links open in place, and closes the popover', () => {
+  const open = vi.fn()
+  render(<MarkdownLinkProvider open={open}>
+    <BlameProvider beforeSha={oldSha} newPath="new.ts" oldPath="old.ts" projectId="7" projectUrl="https://gitlab.example/x" sessionId="session1" sha={newSha}>
+      <BlameCell line={2} side="old" />
+    </BlameProvider>
+  </MarkdownLinkProvider>)
+  fireEvent.click(screen.getByRole('button', { name: /2行のBlame: bbbbbbbb/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'コミットを表示' }))
+  expect(open).toHaveBeenCalledWith(`https://gitlab.example/x/-/commit/${oldSha}`)
+  expect(screen.queryByRole('dialog', { name: 'Blameの詳細' })).not.toBeInTheDocument()
 })
 
 it('names the commit on every line, and marks only where a run starts', () => {

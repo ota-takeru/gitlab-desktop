@@ -693,6 +693,13 @@ it('leaves Ctrl+K and Esc to the composer and lists the shortcuts with ?', async
     fireEvent.keyDown(window, { key: '?' })
     const dialog = await screen.findByRole('dialog', { name: 'キーボードショートカット' })
     expect(within(dialog).getByText('すべてのMRを検索')).toBeInTheDocument()
+
+    // An open dialog owns the keyboard: nothing moves underneath it or opens over it.
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'k' })
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'o' })
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 20))
+    expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7')
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
   } finally {
     comment.remove()
     toolbar.remove()

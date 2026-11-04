@@ -41,6 +41,7 @@ import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
 import { setLocalePreference, translate, type MessageKey } from '../i18n/i18n'
 import { localeNames, supportedLocales, systemLocale, type LocalePreference } from '../i18n/locales'
 import { useLocalePreference, useT } from '../i18n/useT'
+import { isEditableTarget, isInsideMenu } from '../lib/eventTargets'
 import { clearLocalDrafts } from '../lib/localDrafts'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { UnsentTarget } from '../lib/windowSafety'
@@ -60,6 +61,7 @@ import { WindowCloseProtection } from '../components/WindowCloseProtection'
 import { MergeRequestList } from './mergeRequests/MergeRequestList'
 import { BranchList } from './projects/BranchList'
 import { CodeBrowser, type CodeLocation } from './projects/CodeBrowser'
+import { CommitHistory, type HistoryLocation } from './projects/CommitHistory'
 import { ProjectView } from './projects/ProjectView'
 import { ProjectOverview } from './projects/ProjectOverview'
 import { WorkspaceSettings } from './connections/WorkspaceSettings'
@@ -117,7 +119,7 @@ function writeLayoutPreference(key: string, value: boolean): void {
   }
 }
 
-type ClientRoute = 'projects' | 'overview' | 'mrs' | 'branches' | 'code' | 'settings' | 'user'
+type ClientRoute = 'projects' | 'overview' | 'mrs' | 'history' | 'branches' | 'code' | 'settings' | 'user'
 /**
  * The MR list's own conditions: the search of all MRs, or one condition on the connected user,
  * switched with the chips under the search field. Notifications open from their own button in the sidebar.
@@ -367,9 +369,16 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
       const modifier = event.ctrlKey || event.metaKey
       // Text input keeps its own keys: Ctrl+K in a comment must not leave the MR.
       const editing = isEditableTarget(event.target)
-      if (modifier && !editing && session && event.key.toLowerCase() === 'o') { event.preventDefault(); setOpenUrlDialog(true); return }
+      // An open dialog or menu owns the keyboard, so nothing opens over it or moves underneath it.
+      const covered = isInsideMenu(event.target) || document.querySelector('[role="dialog"]') !== null
+      if (modifier && !editing && session && event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        if (!covered) setOpenUrlDialog(true)
+        return
+      }
       if (modifier && !editing && session && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        if (covered) return
         // Ctrl+K searches all MRs; "/" searches within the list on screen.
         if (searchingAllMrs && !selected) {
           globalThis.dispatchEvent(new Event('gitlab-focus-project-search'))
@@ -380,7 +389,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
         globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0)
         return
       }
-      if (event.defaultPrevented || modifier || event.altKey || editing || isInsideMenu(event.target) || document.querySelector('[role="dialog"]')) return
+      if (event.defaultPrevented || modifier || event.altKey || editing || covered) return
       if (event.key === '?') {
         event.preventDefault()
         setShortcutsOpen(true)
@@ -507,7 +516,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }, [hubTab, listParams, route])
   const mergeRequest = openedMergeRequest?.sessionKey === sessionKey ? openedMergeRequest.mergeRequest : null
   // Each list keeps its own mounted screen, so returning to it is immediate.
-  const listScreenKey = route === 'mrs' || route === 'user' ? `${route}:${listMount.key}` : route === 'overview' || route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
+  const listScreenKey = route === 'mrs' || route === 'user' ? `${route}:${listMount.key}` : route === 'overview' || route === 'history' || route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
   // Kept screens get the refresh policy inside their own content, so a hidden one does not render again when it changes.
   const refreshAllowed = useQueryRefreshAllowed()
   // Only the first restore at startup: a later connect attempt keeps the form on screen.
@@ -521,24 +530,32 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
   }
   // Opening by URL is a one-off action of the MR list, beside its title.
   const hubActions = hubTab ? <Tooltip title={t('app.openUrl.tooltip')}><IconButton aria-label={t('app.openUrl.label')} onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
-  // A project's screen shows its name over tabs for its MRs, its branches and its code.
-  const projectTab = route === 'overview' || route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
+  // A project's screen shows its name over tabs for its MRs, its history, its code and its branches.
+  const projectTab = route === 'overview' || route === 'history' || route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
+  const projectBase = { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) }
   const projectNavigation = projectTab ? <PaneNavigation
     heading={<Tooltip title={params.projectName ?? ''}><Typography component="div" noWrap sx={{ flexShrink: 1, minWidth: 0 }} variant="h1">{params.projectName}</Typography></Tooltip>}
-    tabs={<Tabs aria-label={t('project.tabs.label')} onChange={(_, value: 'overview' | 'mrs' | 'branches' | 'code') => navigate(value, { projectId: params.projectId, projectName: params.projectName, ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) })} scrollButtons={false} value={projectTab} variant="scrollable">
+    tabs={<Tabs aria-label={t('project.tabs.label')} onChange={(_, value: 'overview' | 'mrs' | 'history' | 'branches' | 'code') => navigate(value, {
+      projectId: params.projectId,
+      projectName: params.projectName,
+      ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}),
+      // History and code read the same branch, so moving between them keeps it.
+      ...((value === 'history' || value === 'code') && (route === 'history' || route === 'code') && params.ref ? { ref: params.ref } : {}),
+    })} scrollButtons={false} value={projectTab} variant="scrollable">
       {/* Choosing MR again, e.g. after a branch's MRs, returns to all the project's MRs. */}
       <Tab label={t('project.tabs.overview')} value="overview" />
       <Tab label={t('project.tabs.mergeRequests')} onClick={() => { if (projectTab === 'mrs' && Object.keys(listParams).some((key) => key !== 'projectId' && key !== 'projectName')) navigate('mrs', { projectId: params.projectId, projectName: params.projectName }) }} value="mrs" />
-      <Tab label={t('project.tabs.branches')} value="branches" />
+      <Tab label={t('project.tabs.history')} value="history" />
       <Tab label={t('project.tabs.code')} value="code" />
+      <Tab label={t('project.tabs.branches')} value="branches" />
     </Tabs>}
   /> : undefined
   const hubBackLabel = hubTabs.find((tab) => tab.value === hubTab)?.backLabel
-  const backLabel = route === 'user' ? t('app.back.user', { username: params.username }) : (route === 'overview' || route === 'branches' || route === 'code') && params.projectName ? t('app.back.named', { name: params.projectName }) : hubBackLabel ? t(hubBackLabel) : route === 'mrs' && params.projectName ? t('app.back.named', { name: params.projectName }) : route === 'projects' ? t('app.back.projects') : t('app.back.list')
+  const backLabel = route === 'user' ? t('app.back.user', { username: params.username }) : (route === 'overview' || route === 'history' || route === 'branches' || route === 'code') && params.projectName ? t('app.back.named', { name: params.projectName }) : hubBackLabel ? t(hubBackLabel) : route === 'mrs' && params.projectName ? t('app.back.named', { name: params.projectName }) : route === 'projects' ? t('app.back.projects') : t('app.back.list')
 
   // Places only; one-off actions such as opening a URL sit beside the search box.
   // An open MR is marked by its tab below, not by these places.
-  const projectsSelected = !selected && (route === 'projects' || route === 'overview' || route === 'branches' || route === 'code' || (route === 'mrs' && hubTab === null))
+  const projectsSelected = !selected && (route === 'projects' || route === 'overview' || route === 'history' || route === 'branches' || route === 'code' || (route === 'mrs' && hubTab === null))
 
   return (
     <MemoryPressure value={memoryConstrained}>
@@ -611,11 +628,12 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
-                {route === 'overview' && session ? <ProjectOverview instanceUrl={session.instanceUrl} key={params.projectId} navigation={projectNavigation} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} projectUrl={params.projectUrl} sessionId={session.id} /> : null}
+                {route === 'overview' && session ? <ProjectOverview instanceUrl={session.instanceUrl} key={params.projectId} navigation={projectNavigation} onOpenCommit={(sha) => navigate('history', { ...projectBase, sha })} onOpenMergeRequest={openMergeRequestRef} onShowHistory={() => navigate('history', projectBase)} onShowMergeRequests={() => navigate('mrs', projectBase)} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} projectUrl={params.projectUrl} sessionId={session.id} /> : null}
                 {route === 'user' ? <UserView initialParams={listParams} onOpenMergeRequest={openMergeRequest} onOpenProject={openProject} onOpenProjectId={openProjectId} onSearchStateChange={updateMergeRequestLocation} onTabChange={changeUserTab} recentMrId={recentMrId} selected={selected} username={params.username} /> : null}
                 {route === 'mrs' ? <MergeRequestList actions={hubActions} key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
-                {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
-                {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
+                {route === 'history' ? <CommitHistory key={params.projectId} location={historyLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('history', { ...projectBase, ...historyParams(next) })} onOpenMergeRequest={openMergeRequestRef} projectId={params.projectId} projectName={projectBase.projectName} projectUrl={params.projectUrl} /> : null}
+                {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowHistory={(ref) => navigate('history', { ...projectBase, ref })} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
+                {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} onShowHistory={(path) => navigate('history', { ...projectBase, ...historyParams({ path, ref: params.ref }) })} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
                 </AppErrorBoundary>
                 </QueryRefreshPolicy>
                 </KeepAlive>
@@ -969,7 +987,7 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   // The former pinned list became the sidebar's pinned tabs; its links show the history.
   // The former pinned list and history are covered by the sidebar's tabs; their links start the MR list.
   // So do links to the former To-Do place, now the notification button.
-  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'overview' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' || routeValue === 'user' ? routeValue : null
+  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'overview' || routeValue === 'mrs' || routeValue === 'history' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' || routeValue === 'user' ? routeValue : null
   if (route === 'user' && !params.username) { route = start.route; params = start.params }
   if (routeValue === 'mr' && params.projectId && params.iid) {
     // Older links opened a full-page detail; show it over the list the MR list starts with.
@@ -979,7 +997,7 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   if (!route) {
     route = hasSession ? start.route : 'settings'
     params = hasSession ? start.params : {}
-  } else if ((route === 'overview' || route === 'branches' || route === 'code') && !params.projectId) {
+  } else if ((route === 'overview' || route === 'history' || route === 'branches' || route === 'code') && !params.projectId) {
     route = 'projects'
     params = {}
   }
@@ -988,6 +1006,15 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
     params = {}
   }
   return { params, raw, route }
+}
+
+/** The history's place, kept in the URL so Back returns to the list a commit was opened from. */
+function historyLocation(params: Record<string, string>): HistoryLocation {
+  return { ...(params.ref ? { ref: params.ref } : {}), ...(params.path ? { path: params.path } : {}), ...(/^[0-9a-f]{40}([0-9a-f]{24})?$/u.test(params.sha ?? '') ? { sha: params.sha } : {}) }
+}
+
+function historyParams(next: HistoryLocation): Record<string, string> {
+  return { ...(next.ref ? { ref: next.ref } : {}), ...(next.path ? { path: next.path } : {}), ...(next.sha ? { sha: next.sha } : {}) }
 }
 
 /** The code browser's place, kept in the URL so Back returns to the folder a file was opened from. */
@@ -1043,11 +1070,3 @@ function isInsideControlGroup(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-composer], [role="toolbar"], [role="menu"], [role="menubar"], [role="listbox"], form') !== null
 }
 
-/** An open menu or listbox owns letter keys (MUI only consumes letters that match an item). */
-function isInsideMenu(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
-}

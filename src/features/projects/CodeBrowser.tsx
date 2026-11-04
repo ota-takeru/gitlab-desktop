@@ -3,14 +3,11 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
-import MenuItem from '@mui/material/MenuItem'
-import Select from '@mui/material/Select'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useMemo, useState, type ReactNode } from 'react'
@@ -31,7 +28,9 @@ import { useConnection } from '../connections/connectionContext'
 import { BlameProvider } from '../mergeRequests/BlamePanel'
 import type { HistoryCursor } from '../mergeRequests/lineHistory'
 import { LineHistoryView } from '../mergeRequests/LineHistoryView'
-import { FullFileView } from '../mergeRequests/DiffViewer'
+import { BranchSelect } from './BranchSelect'
+import { FullFileView } from '../mergeRequests/FullFileView'
+import { ProjectFetchAlerts } from './ProjectFetchAlerts'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { Row } from '../../components/Row'
 
@@ -48,7 +47,7 @@ export interface CodeLocation {
  * A project's repository, one folder at a time; a file opens in place with
  * line numbers and highlighting. Read only, and fetched only when shown.
  */
-export function CodeBrowser({ location, navigation, onNavigate, projectId, projectName, projectUrl }: { location: CodeLocation; navigation?: ReactNode; onNavigate: (next: CodeLocation) => void; projectId: string; projectName: string; projectUrl?: string }) {
+export function CodeBrowser({ location, navigation, onNavigate, onShowHistory, projectId, projectName, projectUrl }: { location: CodeLocation; navigation?: ReactNode; onNavigate: (next: CodeLocation) => void; /** Shows the commits of the folder or file on screen. */ onShowHistory?: (path: string) => void; projectId: string; projectName: string; projectUrl?: string }) {
   const { session } = useConnection()
   const t = useT()
   const { file, path, ref } = location
@@ -78,10 +77,6 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
   const segments = path ? path.split('/') : []
   const openFolder = (folder: string) => onNavigate({ path: folder, ref })
   const entries = sortEntries(tree.data ?? [])
-  // The branch list is the 30 most recently updated; a branch chosen earlier stays selectable.
-  const branchNames = (branches.data ?? []).map((branch) => branch.name)
-  const defaultBranch = branches.data?.find((branch) => branch.default)?.name
-  if (ref && !branchNames.includes(ref)) branchNames.unshift(ref)
   // Blame needs the commit the file was read at: the branch's latest, when the listing has it.
   const blameSha = branches.data?.find((branch) => ref ? branch.name === ref : branch.default)?.commit?.id
   const fileKey = file ? `${ref ?? ''}\n${file.path}\n${file.sha}` : ''
@@ -91,22 +86,12 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
   return (
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader
-        actions={<>{canBlame ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>{t('review.diff.blame')}</Button> : null}<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={shown.loading || shown.refreshing} onClick={shown.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip></>}
+        actions={<>{onShowHistory && (file || path) ? <Button onClick={() => onShowHistory(file?.path ?? path)} size="small">{t(file ? 'project.history.ofFile' : 'project.history.ofFolder')}</Button> : null}{canBlame ? <Button aria-pressed={blameOpen} onClick={() => setBlameOpen((value) => !value)} size="small" variant={blameOpen ? 'contained' : 'outlined'}>{t('review.diff.blame')}</Button> : null}<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={shown.loading || shown.refreshing} onClick={shown.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip></>}
         navigation={navigation}
         title={t('project.code.title', { project: projectName })}
       >
         <Row spacing={1} sx={{ minWidth: 0 }}>
-          <Select
-            aria-label={t('project.code.branch')}
-            displayEmpty
-            onChange={(event) => onNavigate({ path: '', ...(event.target.value ? { ref: event.target.value } : {}) })}
-            renderValue={(value) => value || (defaultBranch ? t('project.code.defaultBranchNamed', { branch: defaultBranch }) : t('project.code.defaultBranch'))}
-            sx={{ flexShrink: 0, fontFamily: 'code.fontFamily', maxWidth: 240, typography: 'body2' }}
-            value={ref ?? ''}
-          >
-            <MenuItem value="">{defaultBranch ? t('project.code.defaultBranchNamed', { branch: defaultBranch }) : t('project.code.defaultBranch')}</MenuItem>
-            {branchNames.filter((name) => name !== defaultBranch).map((name) => <MenuItem key={name} sx={{ fontFamily: 'code.fontFamily' }} value={name}>{name}</MenuItem>)}
-          </Select>
+          <BranchSelect branches={branches.data} onChange={(next) => onNavigate({ path: '', ...(next ? { ref: next } : {}) })} value={ref} />
           <Breadcrumbs aria-label={t('project.code.location')} maxItems={6} sx={{ minWidth: 0, typography: 'body2' }}>
             {segments.length || file ? <Link component="button" onClick={() => openFolder('')} type="button" underline="hover">{projectName}</Link> : <Typography color="textPrimary" variant="body2">{projectName}</Typography>}
             {segments.map((segment, index) => {
@@ -125,8 +110,7 @@ export function CodeBrowser({ location, navigation, onNavigate, projectId, proje
           : tree.data && !tree.previous ? <>{t('project.code.count', { count: entries.length })}{page > 1 || tree.snapshot?.nextPage != null ? ` · ${t('project.status.page', { page })}` : ''}{freshness}</> : tree.loading || tree.previous ? t('project.code.loading') : null}
       </PaneStatus>
       <Box aria-busy={!file && tree.previous} sx={paneResultsSx(!file && tree.previous)}>
-        {shown.error && !shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>{t('project.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{errorMessage(shown.error, Boolean(file), path)}</Alert> : null}
-        {shown.error && shown.data ? <Alert action={<Button color="inherit" onClick={shown.refresh}>{t('project.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('project.code.refreshFailed', { message: shown.error.message })}</Alert> : null}
+        <ProjectFetchAlerts error={shown.error} failed={shown.error ? errorMessage(shown.error, Boolean(file), path) : ''} hasData={Boolean(shown.data)} onRetry={shown.refresh} refreshFailed={t('project.code.refreshFailed', { message: shown.error?.message ?? '' })} />
         {file
           ? shown.error && !shown.data ? null : <>
             {historyStart ? <LineHistoryView closeLabel={t('review.history.closeFile')} key={JSON.stringify(historyStart)} onClose={() => setHistory(null)} onRestart={(start) => setHistory({ fileKey, start })} projectId={projectId} projectUrl={projectUrl} sessionId={session.id} start={historyStart} /> : null}

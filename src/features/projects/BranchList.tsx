@@ -1,5 +1,6 @@
 import AltRouteRoundedIcon from '@mui/icons-material/AltRouteRounded'
 import CallMergeRoundedIcon from '@mui/icons-material/CallMergeRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
@@ -14,7 +15,7 @@ import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { hairline } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
@@ -29,15 +30,17 @@ import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import type { BranchesQuery, GitLabBranch } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
+import { ProjectFetchAlerts } from './ProjectFetchAlerts'
+import { useFocusSearchShortcut } from '../shared/useFocusSearchShortcut'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useRememberedListState } from './listState'
 import { Row } from '../../components/Row'
 
 /**
  * Branches of one project, recently updated first. A row shows the MRs whose
- * source is that branch; opening the branch on GitLab is a row action.
+ * source is that branch; its history and opening it on GitLab are row actions.
  */
-export function BranchList({ navigation, onShowMergeRequests, projectId, projectName }: { navigation?: ReactNode; onShowMergeRequests: (branch: string) => void; projectId: string; projectName: string }) {
+export function BranchList({ navigation, onShowHistory, onShowMergeRequests, projectId, projectName }: { navigation?: ReactNode; onShowHistory?: (branch: string) => void; onShowMergeRequests: (branch: string) => void; projectId: string; projectName: string }) {
   const { session } = useConnection()
   const t = useT()
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -48,11 +51,7 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
   const query = useMemo<BranchesQuery>(() => ({ kind: 'branches', page, projectId, search }), [page, projectId, search])
   const result = useGitLabQuery(session?.id ?? null, session ? query : null, { keepPrevious: true })
 
-  useEffect(() => {
-    const focus = () => searchInputRef.current?.focus()
-    globalThis.addEventListener('gitlab-focus-project-search', focus)
-    return () => globalThis.removeEventListener('gitlab-focus-project-search', focus)
-  }, [])
+  useFocusSearchShortcut(searchInputRef)
 
   const openInGitLab = async (url: string) => {
     if (!session) return
@@ -97,20 +96,22 @@ export function BranchList({ navigation, onShowMergeRequests, projectId, project
       </PaneHeader>
       <PaneStatus announcement={result.data && !result.previous ? t('project.branches.announcement', { count: result.data.length, page }) : null}>{result.data && !result.previous ? <>{t('project.status.fetched', { count: result.data.length })}{page > 1 || result.snapshot?.nextPage != null ? ` · ${t('project.status.page', { page })}` : ''}{freshness}</> : result.loading || result.previous ? t('project.branches.loading') : null}</PaneStatus>
       <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
-        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('project.status.refreshFailed', { message: result.error.message })}</Alert> : null}
+        <ProjectFetchAlerts error={result.error} failed={result.error?.message ?? ''} hasData={Boolean(result.data)} onRetry={result.refresh} refreshFailed={t('project.status.refreshFailed', { message: result.error?.message ?? '' })} />
         {openError ? <Alert onClose={() => setOpenError(null)} severity="error" sx={{ m: 1.5 }}>{t('project.branches.openFailed', { message: openError })}</Alert> : null}
         {result.data && result.data.length === 0 ? <PaneEmpty description={search ? t('project.branches.appliedSearch', { search }) : t('project.branches.empty.description')} icon={<AltRouteRoundedIcon fontSize="inherit" />} title={search ? t('project.branches.noMatch.title') : t('project.branches.empty.title')}>{search ? <Button onClick={clearSearch} variant="outlined">{t('project.branches.clearSearch')}</Button> : null}</PaneEmpty> : null}
-        {result.data?.length ? <Box aria-label={t('project.branches.label')} component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((branch) => <BranchRow branch={branch} key={branch.name} onOpenInGitLab={openInGitLab} onShowMergeRequests={onShowMergeRequests} />)}</Box> : null}
+        {result.data?.length ? <Box aria-label={t('project.branches.label')} component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>{result.data.map((branch) => <BranchRow branch={branch} key={branch.name} onOpenInGitLab={openInGitLab} onShowHistory={onShowHistory} onShowMergeRequests={onShowMergeRequests} />)}</Box> : null}
       </Box>
       {result.data && (page > 1 || result.snapshot?.nextPage != null) ? <Box sx={{ ...hairline('top'), px: 1, py: 0.5 }}><Pager disabled={result.refreshing} hasNext={result.snapshot?.nextPage != null} hasPrevious={page > 1} onNext={() => setConditions({ page: result.snapshot!.nextPage! })} onPrevious={() => setConditions({ page: Math.max(1, page - 1) })} page={page} /></Box> : null}
     </Box>
   )
 }
 
-function BranchRow({ branch, onOpenInGitLab, onShowMergeRequests }: { branch: GitLabBranch; onOpenInGitLab: (url: string) => Promise<void>; onShowMergeRequests: (branch: string) => void }) {
+function BranchRow({ branch, onOpenInGitLab, onShowHistory, onShowMergeRequests }: { branch: GitLabBranch; onOpenInGitLab: (url: string) => Promise<void>; onShowHistory?: (branch: string) => void; onShowMergeRequests: (branch: string) => void }) {
   const t = useT()
-  const actions = branch.webUrl ? <Tooltip title={t('project.branches.openInGitLab')}><IconButton aria-label={t('project.branches.openNamedInGitLab', { branch: branch.name })} onClick={() => void onOpenInGitLab(branch.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : undefined
+  const actions = <>
+    {onShowHistory ? <Tooltip title={t('project.branches.showHistory')}><IconButton aria-label={t('project.branches.showHistoryNamed', { branch: branch.name })} onClick={() => onShowHistory(branch.name)}><HistoryRoundedIcon /></IconButton></Tooltip> : null}
+    {branch.webUrl ? <Tooltip title={t('project.branches.openInGitLab')}><IconButton aria-label={t('project.branches.openNamedInGitLab', { branch: branch.name })} onClick={() => void onOpenInGitLab(branch.webUrl)}><LaunchRoundedIcon /></IconButton></Tooltip> : null}
+  </>
   return <ListRow actions={actions} ariaLabel={t('project.branches.showMergeRequests', { branch: branch.name })} leading={<AltRouteRoundedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />} onOpen={() => onShowMergeRequests(branch.name)}>
     <Row spacing={1} sx={{ minWidth: 0 }}>
       {/* The name takes only its own width, so its marks and time follow it instead of the row's far edge. */}

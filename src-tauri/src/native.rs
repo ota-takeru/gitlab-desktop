@@ -913,7 +913,12 @@ impl NativeState {
                     // An empty repository or a deleted branch or folder is 404
                     // too. The screen still hides a 404 answer's saved copy.
                     let expected_missing = error.code == "NOT_FOUND"
-                        && matches!(input.query, Query::JobTrace { .. } | Query::Tree { .. });
+                        && matches!(
+                            input.query,
+                            Query::JobTrace { .. }
+                                | Query::Tree { .. }
+                                | Query::RepositoryCommits { .. }
+                        );
                     if !expected_missing {
                         self.record_error(&session, &error, Some(key.clone()))
                             .await?;

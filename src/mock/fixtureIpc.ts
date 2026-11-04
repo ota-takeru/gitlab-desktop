@@ -226,6 +226,24 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'commitMergeRequests': return data.mergeRequests.map(({ mergeRequest }) => mergeRequest)
         .filter((mr) => mr.projectId === request.projectId && mr.headSha === request.sha)
         .map((mr) => ({ iid: mr.iid, projectId: mr.projectId, state: mr.state, title: mr.title, webUrl: mr.webUrl }))
+      case 'repositoryCommits': {
+        // The repository's history is the commits of its fixture MRs; a source branch has its MR's only.
+        const items = data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === request.projectId)
+        const onBranch = items.filter(({ mergeRequest }) => mergeRequest.sourceBranch === request.ref)
+        return request.page > 1 ? [] : (onBranch.length ? onBranch : items)
+          .flatMap(({ commits, mergeRequest }) => commits.map((commit) => ({ authorName: mergeRequest.author.name, commit })))
+          .filter(({ commit }, index, all) => all.findIndex((other) => other.commit.id === commit.id) === index)
+          .filter(({ commit }) => !request.path || commit.diffs.some((diff) => [diff.newPath, diff.oldPath].some((path) => path === request.path || path.startsWith(`${request.path}/`))))
+          .sort((left, right) => right.commit.createdAt.localeCompare(left.commit.createdAt))
+          .map(({ authorName, commit: { createdAt, id, parentIds, title } }) => ({ authorName, committedAt: createdAt, createdAt, id, message: title, parentIds, title }))
+      }
+      case 'repositoryCommit': {
+        const item = data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === request.projectId).find(({ commits }) => commits.some((commit) => commit.id === request.sha))
+        const commit = item?.commits.find((candidate) => candidate.id === request.sha)
+        if (!item || !commit) return notFound()
+        const { createdAt, id, parentIds, title } = commit
+        return { authorName: item.mergeRequest.author.name, committedAt: createdAt, createdAt, id, message: title, parentIds, title }
+      }
       case 'file': {
         const content = data.mergeRequests.find((item) => item.mergeRequest.projectId === request.projectId && request.path in item.files)?.files[request.path]
         return content === undefined ? notFound() : { content }

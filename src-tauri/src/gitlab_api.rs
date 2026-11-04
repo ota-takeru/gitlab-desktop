@@ -93,6 +93,7 @@ enum ResponseKind {
     Diffs,
     Discussions,
     Commits,
+    Commit,
     Blame,
     CommitMergeRequests,
     Drafts,

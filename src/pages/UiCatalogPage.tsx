@@ -22,15 +22,17 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
+import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { ClientNavItem } from '../components/ClientNavItem'
+import { ConditionSearchField } from '../components/ConditionSearchField'
 import { useConfirm, useNotify } from '../components/feedbackContext'
 import { AppErrorFallback } from '../components/AppErrorBoundary'
 import { LabelChip } from '../components/LabelChip'
@@ -38,6 +40,7 @@ import { ListRow } from '../components/ListRow'
 import { MergeRequestStateGlyph, MergeRequestStateIcon } from '../components/MergeRequestStateIcon'
 import { Kbd, PaneEmpty, PaneHeader, PaneNavigation, PaneStatus } from '../components/Pane'
 import { Pager } from '../components/Pager'
+import { PillSelect } from '../components/PillSelect'
 import { PipelineStatus } from '../components/PipelineStatus'
 import { RelativeTime } from '../components/RelativeTime'
 import { ReactionBar } from '../components/ReactionBar'
@@ -158,6 +161,8 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
         </CardContent>
       </Card>
 
+      <SearchFieldSamples />
+
       <Card component="section" id="catalog-page-parts">
         <CardContent sx={{ p: 2.5 }}>
           <Stack spacing={2}>
@@ -254,6 +259,41 @@ export function UiCatalogPage({ section }: { section?: string } = {}) {
 
       <CatalogFrameParts />
     </Stack>
+  )
+}
+
+function SearchFieldSamples() {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [word, setWord] = useState('')
+  const [order, setOrder] = useState('updated_at')
+  return (
+    <Card component="section" id="catalog-search-field">
+      <CardContent sx={{ p: 2.5 }}>
+        <Stack spacing={2}>
+          <Typography component="h2" variant="h2">Search field</Typography>
+          <ConditionSearchField
+            appliedLabel="適用中の条件"
+            inputRef={inputRef}
+            label="検索"
+            menu={{ id: 'catalog-search-options', label: '条件', onChoose: () => undefined, options: [{ kind: 'author', label: '作成者' }, { kind: 'label', label: 'ラベル' }], title: '条件を追加' }}
+            onChange={setWord}
+            placeholder="検索"
+            submitLabel="検索する"
+            submitTooltip="Enter で検索"
+            tags={[{ key: 'project', label: 'sample/project' }, { key: 'author', label: '作成者: 検証ユーザー', onRemove: () => undefined, removeLabel: '作成者を外す' }]}
+            value={word}
+          />
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <PillSelect aria-label="並び順" onChange={(event) => setOrder(event.target.value)} value={order}>
+              <MenuItem value="updated_at">更新日</MenuItem>
+              <MenuItem value="created_at">作成日</MenuItem>
+            </PillSelect>
+            <TextField placeholder="size small" />
+            <TextField placeholder="size dense" size="dense" />
+          </Stack>
+        </Stack>
+      </CardContent>
+    </Card>
   )
 }
 

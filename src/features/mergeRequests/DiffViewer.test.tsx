@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAppTheme } from '../../theme'
 import type { Diff, Position } from '../../types/gitlab'
 import { scopedKey } from '../shared/preferences'
-import { DIFF_PAGE_SIZE, FILE_PAGE_SIZE, DiffViewer, FullFileView } from './DiffViewer'
+import { DIFF_PAGE_SIZE, FILE_PAGE_SIZE } from './diffShared'
+import { DiffViewer } from './DiffViewer'
+import { FullFileView } from './FullFileView'
 import { setFileReviewed, type ReviewedFileContext } from './useReviewedFiles'
 
 function renderViewer(diff: Diff, options: { fileContent?: string | null; selectedPosition?: Position; view?: 'diff' | 'file' } = {}) {

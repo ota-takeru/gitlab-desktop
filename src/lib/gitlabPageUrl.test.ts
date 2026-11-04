@@ -11,6 +11,11 @@ describe('GitLab page URLs', () => {
     expect(page('/team/desktop/-/branches')).toEqual({ kind: 'branches', path: 'team/desktop' })
     expect(page('/team/desktop/-/merge_requests')).toEqual({ kind: 'mrs', path: 'team/desktop' })
     expect(page('/team/desktop/-/tree/main')).toEqual({ kind: 'tree', path: 'team/desktop', rest: ['main'] })
+    expect(page(`/team/desktop/-/commit/${'a'.repeat(40)}`)).toEqual({ kind: 'commit', path: 'team/desktop', sha: 'a'.repeat(40) })
+    expect(page('/team/desktop/-/commits/main')).toEqual({ kind: 'commits', path: 'team/desktop', ref: 'main' })
+    // A short SHA, and a path after the ref, stay GitLab's pages.
+    expect(page('/team/desktop/-/commit/abc123')).toBeNull()
+    expect(page('/team/desktop/-/commits/main/src')).toBeNull()
     expect(page('/team/desktop/-/blob/feature/x/src/a%20b.ts?ref_type=heads#L3')).toEqual({ kind: 'blob', path: 'team/desktop', rest: ['feature', 'x', 'src', 'a b.ts'] })
   })
 

@@ -4,7 +4,7 @@ import type { TreeEntry } from '../../types/gitlab'
 
 /** The app screen for a GitLab project page. */
 export interface GitLabPageLocation {
-  route: 'overview' | 'branches' | 'mrs' | 'code'
+  route: 'overview' | 'branches' | 'mrs' | 'code' | 'history'
   params: Record<string, string>
 }
 
@@ -47,6 +47,8 @@ export async function resolveGitLabPage(sessionId: string, page: GitLabPage, isC
   if (page.kind === 'project') return { route: 'overview', params: base }
   if (page.kind === 'branches') return { route: 'branches', params: base }
   if (page.kind === 'mrs') return { route: 'mrs', params: { ...base, state: 'opened' } }
+  if (page.kind === 'commit') return { route: 'history', params: { ...base, sha: page.sha } }
+  if (page.kind === 'commits') return { route: 'history', params: { ...base, ref: page.ref } }
   if (page.kind !== 'tree' && page.kind !== 'blob') return null
   const { kind, rest } = page
   for (let split = 1; split <= Math.min(rest.length - (kind === 'blob' ? 1 : 0), MAX_REF_PARTS); split += 1) {

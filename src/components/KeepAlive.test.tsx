@@ -48,11 +48,13 @@ describe('revealWhenReady', () => {
     rerender(view('b', true))
     expect(screenOf(container, 'a')).not.toHaveStyle({ display: 'none' })
     expect(screenOf(container, 'b')).toHaveStyle({ opacity: '0', position: 'absolute' })
+    expect(screenOf(container, 'b')).not.toHaveStyle({ animation: 'gitlab-fade-in 150ms ease-out' })
 
     rerender(view('b', false))
     act(() => { vi.advanceTimersToNextFrame() })
     expect(screenOf(container, 'a')).toHaveStyle({ display: 'none' })
     expect(screenOf(container, 'b')).not.toHaveStyle({ opacity: '0' })
+    expect(screenOf(container, 'b')).toHaveStyle({ animation: 'gitlab-fade-in 150ms ease-out' })
   })
 
   it('shows a held screen after a second at most', () => {

@@ -5,6 +5,7 @@ import { memo, useEffect, useRef, useState, type ReactElement, type ReactNode } 
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { useT } from '../../i18n/useT'
 import { emojiForName, useEmojiCatalog, type EmojiCatalog } from '../../lib/awardEmoji'
 import { remarkGitLabReferences, resolveMarkdownUrl, type MarkdownLinkBase } from '../../lib/markdownLinks'
 import { useMarkdownLinks } from '../markdownLinksContext'
@@ -50,8 +51,9 @@ function MarkdownAnchor({ children, href }: { children?: ReactNode; href?: strin
 function MarkdownImage({ alt, src }: { alt?: string; src?: string }) {
   const { sessionId } = useMarkdownLinks()
   const { data, ready } = useGitLabImage(sessionId, src)
+  const t = useT()
   if (data) return <GridImage alt={alt ?? ''} src={data} />
-  return <Typography component="span" color="textSecondary" variant="caption">[画像: {alt || '説明なし'} · {sessionId && src && !ready ? '読み込み中' : '表示できません'}]</Typography>
+  return <Typography component="span" color="textSecondary" variant="caption">{t(sessionId && src && !ready ? 'common.richMarkdown.imageLoading' : 'common.richMarkdown.imageUnavailable', { alt: alt || t('common.richMarkdown.noAlt') })}</Typography>
 }
 
 function GridImage({ alt, src }: { alt: string; src: string }) {

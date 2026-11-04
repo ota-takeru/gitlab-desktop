@@ -1,3 +1,4 @@
+import Fade from '@mui/material/Fade'
 import { alpha, createTheme, type PaletteMode } from '@mui/material/styles'
 
 import { frame, hairline, panelFrame } from './components/hairline'
@@ -93,6 +94,20 @@ declare module '@mui/material/Typography' {
   interface TypographyPropsVariantOverrides {
     code: true
     iconCount: true
+  }
+}
+
+declare module '@mui/material/InputBase' {
+  interface InputBasePropsSizeOverrides {
+    /** 28px, for fields in a toolbar. */
+    dense: true
+  }
+}
+
+declare module '@mui/material/TextField' {
+  interface TextFieldPropsSizeOverrides {
+    /** 28px, for fields in a toolbar. */
+    dense: true
   }
 }
 
@@ -413,7 +428,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         },
       },
       MuiTooltip: {
-        defaultProps: { disableInteractive: true, enterDelay: 350 },
+        defaultProps: { disableInteractive: true, enterDelay: 350, slots: { transition: Fade } },
         styleOverrides: {
           tooltip: { backgroundColor: palette.tooltip, ...frame({ color: palette.borderStrong }), color: '#eef1f5', fontSize: '0.75rem', fontWeight: 400, lineHeight: gridLine(4), padding: '4px 8px' },
         },
@@ -526,9 +541,12 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             '&.MuiInputBase-sizeSmall .MuiSelect-select': { height: 20, lineHeight: '20px', minHeight: 0 },
             '&.MuiInputBase-multiline.MuiInputBase-sizeSmall': { paddingBottom: 6, paddingTop: 6 },
           },
-          // A small field or select is 32px, the height of the buttons beside it. MUI marks the size only on the
-          // root, so it is read from the owner state; a field's own sx (a dense toolbar field) still wins.
-          input: ({ ownerState }) => ownerState.size === 'small' && !ownerState.multiline ? { height: 20, lineHeight: '20px', paddingBottom: 6, paddingTop: 6 } : {},
+          // A small field or select is 32px, the height of the buttons beside it, and a dense one is 28px, for
+          // toolbars. MUI marks the size only on the root, so it is read from the owner state.
+          input: ({ ownerState }) => {
+            const inset = ownerState.multiline ? undefined : ownerState.size === 'small' ? 6 : ownerState.size === 'dense' ? 4 : undefined
+            return inset === undefined ? {} : { height: 20, lineHeight: '20px', paddingBottom: inset, paddingTop: inset }
+          },
         },
       },
       MuiInputLabel: {
@@ -540,12 +558,16 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         styleOverrides: { inputRoot: { '&.MuiInputBase-sizeSmall .MuiAutocomplete-input': { paddingBottom: 0, paddingTop: 0 } } },
       },
       // Menus and popovers otherwise take a height-based "auto" time, which grows with long menus.
+      // Overlays fade in place; MUI's default also scales them from their anchor.
       MuiPopover: {
-        defaultProps: { transitionDuration: { enter: 160, exit: 100 } },
+        defaultProps: { slots: { transition: Fade }, transitionDuration: { enter: 160, exit: 100 } },
       },
       MuiMenu: {
-        defaultProps: { transitionDuration: { enter: 160, exit: 100 } },
+        defaultProps: { slots: { transition: Fade }, transitionDuration: { enter: 160, exit: 100 } },
         styleOverrides: { paper: { ...frame({ color: palette.border }), boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.12)}` } },
+      },
+      MuiSnackbar: {
+        defaultProps: { slots: { transition: Fade } },
       },
       MuiMenuItem: {
         styleOverrides: { root: { fontSize: '0.8125rem', minHeight: 32, [forcedColors]: { '&.Mui-selected': selectedOutline } } },
