@@ -77,6 +77,8 @@ it('reads the first diff page when the commented file is not loaded yet', () => 
 
   expect(queryMock).toHaveBeenCalledWith('s1', { headSha: head, iid: '3', kind: 'diffs', page: 1, projectId: '7' })
   expect(screen.getByRole('status')).toHaveTextContent('コードを読み込み中…')
+  // A full excerpt's height, so the code arriving does not move the place the discussion opened at.
+  expect(screen.getByRole('status').parentElement).toHaveStyle({ minHeight: '140px' })
 })
 
 it('shows an outdated comment in the file as it was at the commented commit', () => {
