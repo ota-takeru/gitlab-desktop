@@ -299,6 +299,25 @@ it('keeps the list mounted and only toggles the selection parameter when opening
   expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('unsent draft')
 })
 
+it('takes the list out of the flow while an MR waits to show, so the MR never lays out narrow beside it', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => {
+    if (query?.kind === 'mrs') return { ...emptyQueryResult(), data: [mergeRequestFixture], snapshot: snapshot([mergeRequestFixture]) }
+    if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    return emptyQueryResult()
+  })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+  const row = await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list')
+  // The MR shows a frame after its reads settle: without frames it stays waiting.
+  const frames = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0)
+  fireEvent.click(row)
+  await waitFor(() => expect(document.querySelector('[data-list-pane]')).toHaveStyle({ position: 'absolute' }))
+  expect(document.querySelector('[data-list-pane]')).toBeVisible()
+  frames.mockRestore()
+  await waitFor(() => expect(document.querySelector('[data-list-pane]')).not.toBeVisible(), { timeout: 2000 })
+})
+
 it('returns to the list through history, so Back does not reopen the MR', async () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
