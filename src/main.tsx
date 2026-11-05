@@ -1,3 +1,5 @@
+// First, so the language files load while the other modules evaluate.
+import { localeReady } from './i18n/boot'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import CssBaseline from '@mui/material/CssBaseline'
@@ -6,7 +8,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import App from './App'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { readColorPreference, resolveColorMode } from './features/colorMode'
-import { currentLocale, initializeLocale, subscribeToLocale } from './i18n/i18n'
+import { currentLocale, subscribeToLocale } from './i18n/i18n'
 import { isTauri, setTextLanguage } from './lib/runtime'
 import { createAppTheme } from './theme'
 
@@ -26,8 +28,7 @@ const ignoreReactError = () => undefined
 const syncTextLanguage = () => { if (isTauri()) setTextLanguage(currentLocale()).catch(() => undefined) }
 subscribeToLocale(syncTextLanguage)
 
-// The app opens even if no language could load.
-void initializeLocale().catch(() => undefined).then(() => createRoot(rootElement, {
+void localeReady.then(() => createRoot(rootElement, {
   onCaughtError: ignoreReactError,
   onRecoverableError: ignoreReactError,
   onUncaughtError: ignoreReactError,

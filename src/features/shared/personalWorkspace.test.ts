@@ -164,6 +164,18 @@ describe('personal workspace pins and recents', () => {
     expect(new Set(data.recent.map(({ projectId, iid }) => `${projectId}:${iid}`)).size).toBe(30)
     expect(data.recent[0]).toEqual(duplicateRef)
   })
+
+  it('does not render its readers again for a recorded visit, only for what they show', () => {
+    let renders = 0
+    const { result } = renderHook(() => { renders += 1; return usePersonalWorkspace(session) })
+    const before = renders
+    act(() => result.current.recordRecent(ref))
+    expect(readWorkspace(scope).recent).toEqual([ref])
+    expect(renders).toBe(before)
+    act(() => result.current.togglePinned(ref))
+    expect(renders).toBeGreaterThan(before)
+    expect(result.current.pinned).toEqual([ref])
+  })
 })
 
 describe('open tabs', () => {

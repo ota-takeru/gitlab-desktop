@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import type { Discussion, GitLabCommandError, GitLabSnapshot } from '../../types/gitlab'
 import { DiscussionPageObserver } from './DiscussionPageObserver'
 import { PageStore } from './discussionPageStore'
+import { useStoreInTransition } from '../shared/useStoreInTransition'
 
 /** GitLab returns discussions oldest first, 30 per page; at most this many pages stay loaded. */
 export const MAX_DISCUSSION_PAGES = 10
@@ -57,7 +58,7 @@ export interface DiscussionWindow {
  */
 export function useDiscussionWindow(sessionId: string | null, projectId: string, iid: string, active: boolean): DiscussionWindow {
   const [store] = useState(() => new PageStore())
-  const version = useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion)
+  const version = useStoreInTransition(store.subscribe, store.getVersion)
   const [fixedLow, setFixedLow] = useState<number | null>(null)
 
   const state = useMemo(() => {

@@ -1,7 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { Discussion, GitLabSnapshot } from '../../types/gitlab'
 import { mergeDiscussionPages } from './discussionPaging'
+import { useStoreInTransition } from '../shared/useStoreInTransition'
 
 /**
  * Subscribes to the query cache for useSyncExternalStore. The cache notifies
@@ -36,7 +37,7 @@ export function useDiscussionPages(sessionId: string | null, projectId: string, 
     try { const query = JSON.parse(queryKey[2]); return query.kind === 'discussions' && query.projectId === projectId && query.iid === iid && query.page <= 10 } catch { return false }
   }
   const getSnapshot = () => client.getQueryCache().findAll({ predicate: (query) => matches(query.queryKey) }).map((query) => `${query.queryHash}:${query.state.dataUpdateCount}`).join('|')
-  const version = useSyncExternalStore(useQueryCacheSubscription(), getSnapshot, getSnapshot)
+  const version = useStoreInTransition(useQueryCacheSubscription(), getSnapshot)
   return useMemo(() => {
     const pages: Record<number, Discussion[]> = {}
     for (const [queryKey, result] of client.getQueriesData<{ snapshot: GitLabSnapshot<Discussion[]> | null }>({ predicate: (query) => matches(query.queryKey) })) {

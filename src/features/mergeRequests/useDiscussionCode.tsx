@@ -1,10 +1,11 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 
 import type { Diff, DiffsQuery, Discussion, GitLabSnapshot, Position } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { DiscussionCode, type CurrentDiffs } from './DiscussionCode'
 import { useQueryCacheSubscription } from './useDiscussionPages'
+import { useStoreInTransition } from '../shared/useStoreInTransition'
 
 /** Diff pages read to find commented files; GitLab returns 30 files per page. */
 const MAX_DIFF_PAGES = 10
@@ -60,7 +61,7 @@ function useLoadedDiffPages(sessionId: string | null, projectId: string, iid: st
   const client = useQueryClient()
   const matches = useCallback((queryKey: readonly unknown[]) => isDiffPageKey(queryKey, sessionId, projectId, iid, headSha), [headSha, iid, projectId, sessionId])
   const getVersion = useCallback(() => client.getQueryCache().findAll({ predicate: (query) => matches(query.queryKey) }).map((query) => `${query.queryHash}:${query.state.dataUpdateCount}`).join('|'), [client, matches])
-  const version = useSyncExternalStore(useQueryCacheSubscription(), getVersion, getVersion)
+  const version = useStoreInTransition(useQueryCacheSubscription(), getVersion)
   return useMemo(() => readLoadedDiffPages(client, sessionId, projectId, iid, headSha), [client, headSha, iid, projectId, sessionId, version]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
