@@ -205,6 +205,7 @@
   "richMarkdown.image": "[Bild: {alt}]",
   "richMarkdown.imageLoading": "[Bild: {alt} · wird geladen]",
   "richMarkdown.imageUnavailable": "[Bild: {alt} · nicht verfügbar]",
+  "richMarkdown.diagramUnavailable": "Das Diagramm kann nicht gezeichnet werden; stattdessen wird die Quelle angezeigt.",
   "richMarkdown.noAlt": "keine Beschreibung",
   "richMarkdown.linkPrompt": "Link-URL",
   "markdownReview.removedLabel": "Aus der vorherigen Version entfernt, Zeilen {lines}",
