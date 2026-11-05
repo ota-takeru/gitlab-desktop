@@ -28,6 +28,11 @@ function renderViewer(diff: Diff, options: { fileContent?: string | null; select
   )
 }
 
+/** A file row's name starts with its path; its line counts and state follow. */
+function fileRow(path: string): RegExp {
+  return new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&')}(、|$)`, 'u')
+}
+
 function makeDiff(diff: string, oldPath = 'src/example.ts', newPath = oldPath): Diff {
   return { oldPath, newPath, diff, newFile: oldPath === '/dev/null', deletedFile: newPath === '/dev/null', renamedFile: oldPath !== newPath, tooLarge: false, collapsed: false }
 }
@@ -51,7 +56,7 @@ describe('DiffViewer', () => {
     expect(screen.getByText('src/example.ts')).toBeInTheDocument()
     expect(screen.getByText('example.ts')).toBeInTheDocument()
     // The file list is shown only in wide containers; it still marks the displayed file.
-    expect(screen.getByRole('button', { hidden: true, name: 'src/example.ts' })).toHaveClass('Mui-selected')
+    expect(screen.getByRole('button', { hidden: true, name: fileRow('src/example.ts') })).toHaveClass('Mui-selected')
   })
 
   it('compares old and new side by side, pairs changed lines and comments on the chosen side', () => {
@@ -111,7 +116,39 @@ describe('DiffViewer', () => {
     expect(screen.getByText('⋯ 変更のない2行')).toBeInTheDocument()
     expect(screen.getByText('⋯ 変更のない15行')).toBeInTheDocument()
     expect(screen.getAllByTestId('diff-line')).toHaveLength(5)
+    // Once for the file on screen and once for the totals, as this is the only file.
+    expect(screen.getAllByLabelText('追加2行、削除1行')).toHaveLength(2)
+  })
+
+  it('totals the changed lines of every file and says which files it could not count', () => {
+    const omitted = { ...makeDiff('', 'src/huge.ts'), tooLarge: true }
+    renderMany([makeDiff('@@ -1 +1,2 @@\n-a\n+b\n+c\n', 'src/one.ts'), makeDiff('@@ -1,2 +1 @@\n-a\n-b\n+c\n', 'src/two.ts'), omitted])
+    expect(screen.getByText('3ファイル変更')).toBeInTheDocument()
+    expect(screen.getByLabelText('追加3行、削除3行')).toBeInTheDocument()
+    expect(screen.getByText('差分のない1ファイルは行数に含みません')).toBeInTheDocument()
+    expect(screen.getByRole('button', { hidden: true, name: 'src/two.ts、追加1行、削除2行' })).toBeInTheDocument()
+    // A count of nothing would not be true of a file whose diff is not here.
+    expect(screen.getByRole('button', { hidden: true, name: 'src/huge.ts' })).toBeInTheDocument()
+  })
+
+  it('counts folded whitespace changes as unchanged in the totals too', () => {
+    localStorage.setItem('gitlab-desktop:diff-ignore-whitespace', 'true')
+    renderMany([makeDiff('@@ -1,2 +1,2 @@\n-a\n-b\n+ a\n+c\n', 'src/one.ts'), makeDiff('@@ -1 +1,2 @@\n a\n+b\n', 'src/two.ts')])
     expect(screen.getByLabelText('追加2行、削除1行')).toBeInTheDocument()
+  })
+
+  it('keeps long lines on one line when wrapping is off, and remembers the choice', () => {
+    const view = renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n'))
+    const toggle = screen.getByRole('button', { hidden: true, name: '長い行を折り返す' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(getComputedStyle(view.container.querySelector('.diff-code') as HTMLElement).whiteSpace).toBe('pre-wrap')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(getComputedStyle(view.container.querySelector('.diff-code') as HTMLElement).whiteSpace).toBe('pre')
+    expect(localStorage.getItem('gitlab-desktop:diff-wrap-lines')).toBe('false')
+    view.unmount()
+    renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n'))
+    expect(screen.getByRole('button', { hidden: true, name: '長い行を折り返す' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('shows every line of a long diff without paging', () => {
@@ -237,9 +274,9 @@ describe('DiffViewer', () => {
 
     const navigation = screen.getByRole('navigation', { hidden: true })
     fireEvent.change(screen.getByRole('textbox', { name: 'ファイル名を検索' }), { target: { value: 'src/feature/' } })
-    expect(within(navigation).getByRole('button', { name: 'src/feature/a.ts', hidden: true })).toBeInTheDocument()
-    expect(within(navigation).getByRole('button', { name: 'src/feature/b.ts', hidden: true })).toBeInTheDocument()
-    expect(within(navigation).queryByRole('button', { name: 'src/other.ts', hidden: true })).not.toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: fileRow('src/feature/a.ts'), hidden: true })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: fileRow('src/feature/b.ts'), hidden: true })).toBeInTheDocument()
+    expect(within(navigation).queryByRole('button', { name: fileRow('src/other.ts'), hidden: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '次の一致ファイル' }))
     expect(screen.getByText('src/feature/b.ts')).toBeInTheDocument()
 
@@ -262,14 +299,14 @@ describe('DiffViewer', () => {
     expect(within(navigation).getByRole('button', { name: 'フォルダ docs', hidden: true })).toBeInTheDocument()
     fireEvent.click(feature)
     expect(feature).toHaveAttribute('aria-expanded', 'false')
-    expect(within(navigation).queryByRole('button', { name: 'src/feature/a.ts', hidden: true })).not.toBeInTheDocument()
+    expect(within(navigation).queryByRole('button', { name: fileRow('src/feature/a.ts'), hidden: true })).not.toBeInTheDocument()
     // The folder of the shown file stays open.
     fireEvent.click(within(navigation).getByRole('button', { name: 'フォルダ docs', hidden: true }))
-    expect(within(navigation).getByRole('button', { name: 'docs/readme.md', hidden: true })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: fileRow('docs/readme.md'), hidden: true })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '一覧表示', hidden: true }))
     expect(within(navigation).queryByRole('button', { name: /^フォルダ/u, hidden: true })).not.toBeInTheDocument()
-    expect(within(navigation).getByRole('button', { name: 'src/feature/a.ts', hidden: true })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: fileRow('src/feature/a.ts'), hidden: true })).toBeInTheDocument()
     expect(localStorage.getItem('gitlab-desktop:diff-file-list')).toBe('list')
   })
 

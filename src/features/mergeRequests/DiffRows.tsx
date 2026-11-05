@@ -40,7 +40,7 @@ function dragOver(selection: RowSelection) {
   }
 }
 
-export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange, firstRows, gapExpansion, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenRange: [number, number] | null; firstRows: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange, firstRows, gapExpansion, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens, wrap }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenRange: [number, number] | null; firstRows: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][]; wrap: boolean }) {
   const t = useT()
   const pieces = useMemo(() => {
     const skipped = diffGaps(lines, startIndex)
@@ -50,12 +50,15 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
   const pieceTokens = useMemo(() => chunkRanges(lines.length).map(([from, to]) => tokens.slice(from, to)), [lines.length, tokens])
   const shown = useProgressiveCount(pieces, firstRows)
   // The prefix and the space after it take two columns of the code cell.
-  const columns = useCodeColumns(scrollRef, '.diff-code', `unified:${blameEnabled}`)
+  const measured = useCodeColumns(scrollRef, '.diff-code', `unified:${blameEnabled}:${wrap}`)
+  const columns = wrap ? measured : 0
   const heights = useMemo(() => pieces.map((piece) => piece.lines.reduce((sum, line, index) => sum + wrappedLines(line.text, columns, 2) * ROW_HEIGHT + (piece.skipped[index].count > 0 ? GAP_HEIGHT : 0), 0)), [columns, pieces])
+  // The rows off screen are not laid out, so their width comes from their text. The rows on screen can still widen it.
+  const longest = useMemo(() => wrap ? 0 : longestLine(lines) + 2, [lines, wrap])
   // Rows are plain elements styled from this one block: a file can hold many
   // thousands of rows, and per-row styled components dominate render time.
   return (
-    <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
+    <Box ref={scrollRef} sx={[(theme) => ({ ...diffBaseStyles(theme),
       // Long code lines wrap, so the page stays the only scroll.
       '& .diff-rows': { minWidth: 0 },
       ...chunkStyles,
@@ -74,9 +77,16 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
       '& .diff-code': { color: theme.palette.text.primary, flex: 1, minWidth: 0, overflowWrap: 'anywhere', paddingRight: '24px', whiteSpace: 'pre-wrap' },
       '& .diff-row[data-kind="add"] .diff-prefix': { color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
-    })}>
+    }), !wrap && ((theme) => ({
+      ...unwrappedStyles,
+      '& .diff-rows': { width: 'max-content' },
+      // The line numbers stay in view over the code scrolling beneath them, so the tint of chosen lines must not let it show through.
+      '& .diff-gutter': { left: 0, position: 'sticky', zIndex: 1 },
+      '& .diff-row[data-range="true"] .diff-gutter': { backgroundColor: 'var(--row-bg)', boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}, inset 0 0 0 100px ${theme.palette.action.selected}` },
+      '& .diff-code': { flex: '1 0 auto', overflowWrap: 'normal', whiteSpace: 'pre' },
+    }))]}>
       {lines.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
-      <div className="diff-rows" onMouseOver={allowComments ? dragOver(selection) : undefined}>
+      <div className="diff-rows" onMouseOver={allowComments ? dragOver(selection) : undefined} style={wrap ? undefined : { minWidth: `max(100%, calc(${longest}ch + ${(blameEnabled ? 106 : 0) + UNIFIED_GUTTER_WIDTH}px))` }}>
         {pieces.map((piece, pieceIndex) => {
           // A piece still to come holds its estimated room, so the page keeps its length while it fills in.
           if (pieceIndex >= shown) return <div key={piece.start} style={{ height: heights[pieceIndex] }} />
@@ -160,8 +170,37 @@ const NO_MATCHES: ReadonlySet<number> = new Set()
 /** Pieces without threads skip their layout and paint while off screen; a thread's editor or menus are never clipped. */
 const chunkStyles = { '& .diff-chunk:not([data-threads])': { contentVisibility: 'auto' } }
 
+/**
+ * With long lines kept on one line, the view scrolls sideways by itself. A thread under a line stays as wide as
+ * the view and in place, so its text is not spread over the width of the longest line.
+ */
+const unwrappedStyles = {
+  // The view is the scroll a comment editor's toolbar sticks in now, so the page's sticky rows above must not push it down.
+  '--composer-sticky-top': '0px',
+  containerType: 'inline-size',
+  overflowX: 'auto',
+  '& .diff-threads': { boxSizing: 'border-box', left: 0, position: 'sticky', width: '100cqw' },
+}
+
+/** The two line numbers, the comment button and the space after the code in a unified row. */
+const UNIFIED_GUTTER_WIDTH = 138
+
+/** One height for a piece off screen; no width, which would widen a view that sizes itself to its rows. */
 function chunkSize(height: number): React.CSSProperties {
-  return { containIntrinsicSize: `auto ${height}px` }
+  return { containIntrinsicSize: `auto 0px auto ${height}px` }
+}
+
+/** Columns of the widest line. A wide character counts as two here, as a line that is too short would be cut off. */
+function longestLine(lines: Array<ParsedLine | undefined>): number {
+  let longest = 0
+  for (const line of lines) if (line) longest = Math.max(longest, textColumns(line.text, 2))
+  return longest
+}
+
+function textColumns(text: string, wideColumns: number): number {
+  let width = 0
+  for (const char of text) width += char === '\t' ? 8 : WIDE_CHARACTER.test(char) ? wideColumns : 1
+  return width
 }
 
 /** East Asian wide characters, which take about 1.7 columns of the monospace code font. */
@@ -170,9 +209,7 @@ const WIDE_CHARACTER = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uF
 /** Lines `text` wraps into in a code cell `columns` characters wide, after `lead` columns before it; one while the width is unknown. */
 function wrappedLines(text: string, columns: number, lead = 0): number {
   if (columns <= 0) return 1
-  let width = lead
-  for (const char of text) width += char === '\t' ? 8 : WIDE_CHARACTER.test(char) ? 1.7 : 1
-  return Math.max(1, Math.ceil(width / columns))
+  return Math.max(1, Math.ceil((lead + textColumns(text, 1.7)) / columns))
 }
 
 /** Columns measured last per layout, so a newly opened file estimates its rows from the start. */
@@ -286,18 +323,21 @@ function buildSplitRows(lines: ParsedLine[], startIndex: number): SplitRow[] {
   return rows
 }
 
-export function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange, firstRows, gapExpansion, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenRange: [number, number] | null; firstRows: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][] }) {
+export function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chosenRange, firstRows, gapExpansion, lines, scrollRef, searchMatchIndices, searchTerm, selectedPosition, selection, startIndex, threadView, tokens, wrap }: { activeSearchMatch: number; allowComments: boolean; blameEnabled: boolean; chosenRange: [number, number] | null; firstRows: number; gapExpansion?: GapExpansion; lines: ParsedLine[]; scrollRef: React.RefObject<HTMLDivElement | null>; searchMatchIndices: Set<number>; searchTerm: string; selectedPosition?: Position; selection: RowSelection; startIndex: number; threadView?: ThreadView; tokens: SyntaxToken[][]; wrap: boolean }) {
   const t = useT()
   const rows = useMemo(() => buildSplitRows(lines, startIndex), [lines, startIndex])
   const pieces = useMemo(() => chunkRanges(rows.length).map(([from, to]) => rows.slice(from, to)), [rows])
   // A split row holds one or two lines, so the pieces needed at once are counted in rows that reach `firstRows`.
   const lastFirstLine = startIndex + firstRows - 1
   const shown = useProgressiveCount(pieces, firstRows > 0 ? rows.findIndex((row) => (row.leftIndex ?? -1) >= lastFirstLine || (row.rightIndex ?? -1) >= lastFirstLine) + 1 : 0)
-  const columns = useCodeColumns(scrollRef, '.split-code', `split:${blameEnabled}`)
+  const measured = useCodeColumns(scrollRef, '.split-code', `split:${blameEnabled}:${wrap}`)
+  const columns = wrap ? measured : 0
+  // Each row is its own grid, so both sides take the width of their widest line to stay in line with the other rows.
+  const sideWidths = useMemo(() => wrap ? null : { left: longestLine(rows.map((row) => row.left)) + 3, right: longestLine(rows.map((row) => row.right)) + 3 }, [rows, wrap])
   const heights = useMemo(() => pieces.map((piece) => piece.reduce((sum, row) => sum + Math.max(row.left ? wrappedLines(row.left.text, columns) : 1, row.right ? wrappedLines(row.right.text, columns) : 1) * ROW_HEIGHT + (row.gap && row.gap.count > 0 ? GAP_HEIGHT : 0), 0)), [columns, pieces])
   const inRow = (row: SplitRow, index: number) => row.leftIndex === index || row.rightIndex === index
   return (
-    <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
+    <Box ref={scrollRef} sx={[(theme) => ({ ...diffBaseStyles(theme),
       '& .split-row': { display: 'grid', gridTemplateColumns: blameEnabled ? '106px 72px minmax(0, 1fr) 106px 72px minmax(0, 1fr)' : '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 20 },
       ...blameCellStyles(theme),
       '& .split-row .blame-cell': { width: 106 },
@@ -318,7 +358,14 @@ export function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chos
       '& .split-number[data-range="true"]': { boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
       '& .diff-gap > span': { position: 'static' },
       ...chunkStyles,
-    })} onMouseOver={allowComments ? dragOver(selection) : undefined}>
+    }), sideWidths ? {
+      ...unwrappedStyles,
+      '& .split-row': { gridTemplateColumns: `${blameEnabled ? '106px ' : ''}72px minmax(${sideWidths.left}ch, 1fr) ${blameEnabled ? '106px ' : ''}72px minmax(${sideWidths.right}ch, 1fr)` },
+      '& .split-code': { overflowWrap: 'normal', whiteSpace: 'pre' },
+      // Opened unchanged lines are not in the width of the sides, so a long one wraps rather than being cut off.
+      '& [data-testid="diff-opened-line"] .split-code': { overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' },
+      '& .diff-chunk': { minWidth: `calc(${sideWidths.left + sideWidths.right}ch + ${blameEnabled ? 356 : 144}px)` },
+    } : false]} onMouseOver={allowComments ? dragOver(selection) : undefined}>
       {rows.length === 0 ? <Typography color="textSecondary" sx={{ fontFamily: 'fontFamily', p: 2 }} variant="body2">{t('review.diff.empty')}</Typography> : null}
       {pieces.map((piece, pieceIndex) => {
         if (pieceIndex >= shown) return <div key={piece[0].key} style={{ height: heights[pieceIndex] }} />

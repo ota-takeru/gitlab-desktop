@@ -33,7 +33,7 @@ export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { proj
     {tree.error ? <Alert severity="warning">{t('project.readme.listFailed', { message: tree.error.message })}</Alert> : null}
     {readme && blob.error ? <Alert severity="warning">{t('project.readme.loadFailed', { message: blob.error.message })}</Alert> : null}
     {tree.data && !readme ? <Typography color="textSecondary" variant="body2">{tree.snapshot?.nextPage ? t('project.readme.notInFirstPage') : t('project.readme.none')}</Typography> : null}
-    {blob.data && markdown ? <MarkdownLinkProvider instanceUrl={instanceUrl} projectUrl={project.webUrl} repository={repository} sessionId={sessionId}><MockMarkdown body={blob.data.content} size="body1" /></MarkdownLinkProvider> : null}
+    {blob.data && markdown ? <MarkdownLinkProvider instanceUrl={instanceUrl} projectUrl={project.webUrl} repository={repository} sessionId={sessionId}><Box sx={{ pl: 3 }}><MockMarkdown body={blob.data.content} size="body1" /></Box></MarkdownLinkProvider> : null}
     {blob.data && !markdown ? <Suspense fallback={null}><FullFileView content={blob.data.content} language="text" loading={false} /></Suspense> : null}
   </Box>
 }

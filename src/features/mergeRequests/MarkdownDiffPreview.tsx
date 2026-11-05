@@ -66,7 +66,8 @@ function ChangedFragment({ blameEnabled, kind, side }: { blameEnabled: boolean; 
     bgcolor: removed ? theme.palette.diff?.deletedBackground : theme.palette.diff?.addedBackground,
     ...hairline('left', { color: removed ? 'error.main' : 'success.main', width: 3 }),
     minWidth: 0,
-    px: 1.5,
+    pl: 3,
+    pr: 1.5,
     py: 1,
   })}>
     <Row spacing={1} sx={{ flexWrap: 'wrap', mb: 0.5 }}>

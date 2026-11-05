@@ -38,14 +38,14 @@ describe('DiffViewer review flow', () => {
     render(<Harness diffs={[makeDiff(change, 'src/a.ts'), makeDiff(change, 'src/b.ts'), makeDiff(change, 'src/c.ts')]} discussions={[thread('t1', 'src/a.ts', false), thread('t2', 'src/a.ts', true), thread('t3', 'src/b.ts', true)]} />)
 
     const navigation = screen.getByRole('navigation', { hidden: true })
-    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/a.ts、スレッド2件（未解決1件）' })).toBeInTheDocument()
-    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/b.ts、スレッド1件（すべて解決済み）' })).toBeInTheDocument()
-    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/c.ts' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/a.ts、追加1行、削除1行、スレッド2件（未解決1件）' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/b.ts、追加1行、削除1行、スレッド1件（すべて解決済み）' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/c.ts、追加1行、削除1行' })).toBeInTheDocument()
     expect(within(navigation).getByRole('img', { hidden: true, name: 'スレッド2件（未解決1件）' })).toHaveAttribute('data-unresolved', 'true')
     expect(within(navigation).getByRole('img', { hidden: true, name: 'スレッド1件（すべて解決済み）' })).not.toHaveAttribute('data-unresolved')
 
     fireEvent.click(screen.getByRole('button', { hidden: true, name: '一覧表示' }))
-    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/a.ts、スレッド2件（未解決1件）' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { hidden: true, name: 'src/a.ts、追加1行、削除1行、スレッド2件（未解決1件）' })).toBeInTheDocument()
   })
 
   it('counts reviewed files and opens the next unreviewed file after marking one', () => {
@@ -59,7 +59,7 @@ describe('DiffViewer review flow', () => {
     // The reviewed b.ts is skipped.
     expect(shownPath(container)).toBe('src/c.ts')
     expect(screen.getByText('確認済み 2/3')).toBeInTheDocument()
-    expect(within(screen.getByRole('navigation', { hidden: true })).getByRole('button', { hidden: true, name: 'src/a.ts、確認済み' })).toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { hidden: true })).getByRole('button', { hidden: true, name: 'src/a.ts、追加1行、削除1行、確認済み' })).toBeInTheDocument()
 
     // With nothing left to review, and when unmarking, the file stays.
     fireEvent.click(screen.getByRole('button', { name: '確認済みにする' }))

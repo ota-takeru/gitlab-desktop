@@ -15,13 +15,15 @@ import { useT } from '../../i18n/useT'
 import type { Diff } from '../../types/gitlab'
 import { fileRowLabel, threadLabel, type FileThreadCount } from './diffLineThreads'
 import { buildFileTree, type FileEntry, type TreeNode } from './diffFileOrder'
+import type { DiffLineCounts } from './diffParser'
+import { LineCounts } from './diffShared'
 
 
 /**
  * Changed files as a folder tree, as in GitLab's file browser: folders first,
  * and a folder with only one folder inside shows as one row (`src/features`).
  */
-export const DiffFileTree = memo(function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isReviewed, onSelect, threadCount }: { displayedPath: string | null; entries: FileEntry[]; expandAll: boolean; fileMark: (diff: Diff) => ReactNode; isReviewed: (path: string) => boolean; onSelect: (path: string) => void; threadCount?: (path: string) => FileThreadCount | undefined }) {
+export const DiffFileTree = memo(function DiffFileTree({ displayedPath, entries, expandAll, fileMark, isReviewed, lineCounts, onSelect, threadCount }: { displayedPath: string | null; entries: FileEntry[]; expandAll: boolean; fileMark: (diff: Diff) => ReactNode; isReviewed: (path: string) => boolean; /** Null for a file whose diff GitLab left out. */ lineCounts?: ReadonlyMap<string, DiffLineCounts | null>; onSelect: (path: string) => void; threadCount?: (path: string) => FileThreadCount | undefined }) {
   const t = useT()
   const tree = useMemo(() => buildFileTree(entries), [entries])
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
@@ -52,9 +54,11 @@ export const DiffFileTree = memo(function DiffFileTree({ displayedPath, entries,
       const selected = path === displayedPath
       const threads = threadCount?.(path)
       const reviewed = isReviewed(path)
-      rows.push(<ListItemButton aria-label={fileRowLabel(path, threads, reviewed)} key={`f:${diff.oldPath}\0${path}`} onClick={() => onSelect(path)} selected={selected} sx={{ gap: 1, pl: indent + 0.5, pr: 1, py: 0.25 }} title={diff.renamedFile ? `${diff.oldPath} → ${path}` : path}>
+      const lines = lineCounts?.get(path)
+      rows.push(<ListItemButton aria-label={fileRowLabel(path, threads, reviewed, lines)} key={`f:${diff.oldPath}\0${path}`} onClick={() => onSelect(path)} selected={selected} sx={{ gap: 1, pl: indent + 0.5, pr: 1, py: 0.25 }} title={diff.renamedFile ? `${diff.oldPath} → ${path}` : path}>
         {fileMark(diff)}
         <Typography noWrap sx={{ flex: 1, fontWeight: selected ? 600 : 400, minWidth: 0 }} variant="body2">{node.name}</Typography>
+        {lines ? <LineCounts {...lines} /> : null}
         <FileThreadMark count={threads} />
         {reviewed ? <Tooltip title={t('review.fileTree.reviewed')}><DoneRoundedIcon aria-label={t('review.fileTree.reviewed')} color="success" fontSize="small" /></Tooltip> : null}
       </ListItemButton>)
