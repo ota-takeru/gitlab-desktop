@@ -24,6 +24,7 @@ const NOT_SHIPPED = [
   /^\.github\//u,
   /^(?:vitest|playwright)\.config\.ts$/u,
   /^eslint\.config\.(?:js|mjs|ts)$/u,
+  /^scripts\/(?:pr-land|ui-check|ui-rebaseline)\.mjs$/u,
 ]
 
 /** Whether every changed file is one the released application does not contain. */

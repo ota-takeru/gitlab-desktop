@@ -31,7 +31,11 @@ for (const theme of themes) {
         await open(page, `/#foundation/catalog?theme=${theme}`)
         const sections = page.locator('[id^="catalog-"]')
         await expect(sections.first()).toBeVisible()
-        const ids = await sections.evaluateAll((elements) => elements.map((element) => element.id))
+        // A section taller than the window is captured scrolled, where a sticky bar would cover its neighbours' text in a different place per run.
+        const ids = await sections.evaluateAll((elements) => elements.map((element) => {
+          element.querySelectorAll<HTMLElement>('*').forEach((inner) => { if (getComputedStyle(inner).position === 'sticky') inner.style.position = 'static' })
+          return element.id
+        }))
         for (const id of ids) {
           await expect.soft(page.locator(`#${id}`)).toHaveScreenshot(`${id.replace(/^catalog-/u, '')}-${suffix}.png`)
         }
