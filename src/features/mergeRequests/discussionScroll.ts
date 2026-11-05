@@ -83,6 +83,17 @@ export function captureAnchor(host: HTMLElement, root: ParentNode): ScrollAnchor
   return null
 }
 
+/** The discussion of the first thread under a diff line that is on screen, below the header. */
+export function firstDiffThreadInView(host: HTMLElement, root: ParentNode): string | null {
+  const top = contentTop(host)
+  const bottom = host.getBoundingClientRect().bottom
+  for (const element of root.querySelectorAll<HTMLElement>('[data-diff-thread]')) {
+    const rect = element.getBoundingClientRect()
+    if (rect.bottom > top && rect.top < bottom) return element.dataset.diffThread ?? null
+  }
+  return null
+}
+
 export function restoreAnchor(host: HTMLElement, root: ParentNode, anchor: ScrollAnchor): void {
   const thread = Array.from(root.querySelectorAll<HTMLElement>('[data-discussion-id]')).find((item) => item.dataset.discussionId === anchor.id)
   if (!thread) return

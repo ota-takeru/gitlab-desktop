@@ -58,6 +58,7 @@ export interface SyntaxToken {
 
 /** Above this size a page is shown without highlighting so scrolling stays responsive. */
 const MAX_HIGHLIGHT_CHARACTERS = 200_000
+const HIGHLIGHT_RUN_CHARACTERS = 50_000
 
 /** Extensions that highlight.js does not register as aliases. */
 const EXTRA_LANGUAGES: Record<string, string> = {
@@ -160,4 +161,24 @@ export function highlightLines(lines: readonly string[], language: string | null
   // Keep one entry per input line even if the output ended early.
   while (result.length < lines.length) result.push([])
   return result.slice(0, lines.length)
+}
+
+/**
+ * Splits lines into ranges small enough to highlight between frames. Each range is parsed on its
+ * own, so a string or comment spanning two ranges can show wrong colours up to the end of the later one.
+ */
+export function highlightRuns(lines: readonly string[]): Array<[number, number]> {
+  const runs: Array<[number, number]> = []
+  let start = 0
+  let characters = 0
+  lines.forEach((line, index) => {
+    if (index > start && characters + line.length + 1 > HIGHLIGHT_RUN_CHARACTERS) {
+      runs.push([start, index])
+      start = index
+      characters = 0
+    }
+    characters += line.length + 1
+  })
+  if (start < lines.length) runs.push([start, lines.length])
+  return runs
 }

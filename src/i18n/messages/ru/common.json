@@ -205,6 +205,7 @@
   "richMarkdown.image": "[Изображение: {alt}]",
   "richMarkdown.imageLoading": "[Изображение: {alt} · загрузка]",
   "richMarkdown.imageUnavailable": "[Изображение: {alt} · недоступно]",
+  "richMarkdown.diagramUnavailable": "Не удалось построить диаграмму, поэтому показан её исходный код.",
   "richMarkdown.noAlt": "без описания",
   "richMarkdown.linkPrompt": "URL ссылки",
   "markdownReview.removedLabel": "Удалено из предыдущей версии, строки {lines}",

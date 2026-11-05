@@ -52,8 +52,8 @@ import { useConnection } from '../connections/connectionContext'
 import { mrRefKey, usePersonalWorkspace } from '../shared/personalWorkspace'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useDiscussionWindow } from './useDiscussionWindow'
-import { formatNames } from './mergeActions'
-import { findScrollContainer, positionAtLatest } from './discussionScroll'
+import { formatNames, mergeReadiness } from './mergeActions'
+import { captureAnchor, findScrollContainer, firstDiffThreadInView, positionAtLatest } from './discussionScroll'
 import { useAutoUpdateSafety } from '../shared/autoUpdateSafetyContext'
 import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { applyConfirmedGitLabChange, useGitLabQuery } from '../shared/useGitLabQuery'
@@ -85,6 +85,7 @@ import { DraftList, type DraftStatus } from './DraftList'
 import { LoadingSkeleton } from './LoadingPanel'
 import { useFadeAfterLoading } from './useFadeAfterLoading'
 import { DescriptionPanel, OverviewTab } from './MergeRequestOverviewTab'
+import { diffFileAnchor, diffPageUrl, discussionPageUrl, pipelinesPageUrl } from './mergeRequestLocation'
 import { Bar, Row } from '../../components/Row'
 
 export type ReviewTab = 'discussion' | 'changes' | 'overview' | 'pipelines'
@@ -152,6 +153,9 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const lineOpenerRef = useRef<HTMLElement | null>(null)
   // A diff thread in another file reached with N / P, focused once its file is shown.
   const pendingDiffThread = useRef<{ id: string; path: string } | null>(null)
+  // The pipeline or job the pipelines tab shows; only the "open in GitLab" button reads it.
+  const shownPipelineUrl = useRef<string | null>(null)
+  const setShownPipelineUrl = useCallback((url: string | null) => { shownPipelineUrl.current = url }, [])
   const [descriptionEdit, setDescriptionEdit] = useState<{ body: string; expected: string } | null>(null)
   const [replyDiscussion, setReplyDiscussion] = useState<Discussion | null>(null)
   // The description shown beside the discussion (D); leaving the discussion closes it.
@@ -742,6 +746,26 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
       notify({ message: t('mergeRequest.detail.openFailed', { error: normalizeGitLabError(caught).message }), severity: 'error' })
     }
   }
+  /** GitLab's address of what the review shows now: the comment or file in view, the commit, the pipeline. */
+  const shownGitLabUrl = async () => {
+    const webUrl = mergeRequest.webUrl
+    const section = sectionRef.current
+    const host = findScrollContainer(section)
+    if (activeTab === 'discussion') {
+      const anchor = section && host ? captureAnchor(host, section) : null
+      return discussionPageUrl(webUrl, anchor?.noteId ?? discussions.find((discussion) => discussion.id === anchor?.id)?.notes[0]?.id)
+    }
+    if (activeTab === 'pipelines') return pipelinesPageUrl(webUrl, shownPipelineUrl.current)
+    if (activeTab !== 'changes') return webUrl
+    // The local clone's changes are not on GitLab, which shows the MR's own diff instead.
+    if (showingLocal) return diffPageUrl(webUrl, {})
+    const target = { commit: selectedCommit, compareFrom: comparing ? compareVersion : null }
+    // A comment is on the versions GitLab shows by default.
+    const threadId = !target.commit && !target.compareFrom && section && host ? firstDiffThreadInView(host, section) : null
+    const noteId = discussions.find((discussion) => discussion.id === threadId)?.notes[0]?.id
+    if (noteId) return diffPageUrl(webUrl, { ...target, noteId })
+    return diffPageUrl(webUrl, { ...target, fileAnchor: selectedDiff ? await diffFileAnchor(selectedDiff.newPath || selectedDiff.oldPath) : null })
+  }
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(mergeRequest.webUrl)
@@ -886,6 +910,10 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const approvedBy = approvals && Array.isArray(approvals.approvedBy) ? approvals.approvedBy : noUsers
   const myApproved = approvedBy.some((user) => user.id === session?.user.id)
   const approvalDisabled = mutation.isLocked || mutation.isPending || Boolean(approvalWriting) || !mergeRequest.headSha || approvalsResult.loading || !approvals || Boolean(approvalsResult.error)
+  const isReviewer = Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))
+  // One primary action in the header: a reviewer approves first, then the MR is ready to merge.
+  const readiness = mergeReadiness(mergeRequest)
+  const mergePrimary = (readiness.canMerge || readiness.canAutoMerge) && (myApproved || !isReviewer)
   const peopleDisabled = mutation.isLocked || mutation.isPending
   const missingReviewers = Boolean(mergeRequest && !mergeRequest.reviewers?.length)
   const setReviewers = missingReviewers ? () => setPeopleEditor('reviewers') : undefined
@@ -990,23 +1018,24 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     <MarkdownLinkProvider projectUrl={projectUrlOf(mergeRequest.webUrl)} sessionId={session?.id}>
     <Box component="section" ref={sectionRef} sx={{ minHeight: '100%', width: '100%' }}>
       <Box component="header" data-sticky-header="true" ref={headerRef} sx={{ bgcolor: 'background.default', ...hairline('bottom', { position: false }), position: 'sticky', px: 2, pt: 1.5, top: 0, zIndex: 2 }}>
-        <Bar spacing={0.5} sx={{ minHeight: 32 }}>
+        <Bar spacing={0.5} sx={{ flexWrap: 'wrap', justifyContent: 'flex-end', minHeight: 32, rowGap: 0.5 }}>
           {onBack ? <Tooltip title={`${backLabel} (Esc)`}><IconButton aria-label={backLabel} onClick={onBack}><ArrowBackRoundedIcon /></IconButton></Tooltip> : null}
-          <Row spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+          {/* Left: where this MR is and the icon tools for this page. Right: labelled actions. */}
+          <Row spacing={0.5} sx={{ flex: '1 1 280px', minWidth: 0 }}>
             <Tooltip title={mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}><Button color="inherit" onClick={onOpenProject} sx={{ color: 'text.secondary', fontWeight: 400, minHeight: 24, minWidth: 0, px: 1 }}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mergeRequest.projectPath || t('mergeRequest.common.projectFallback', { id: mergeRequest.projectId })}</Box></Button></Tooltip>
             <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="body2">!{mergeRequest.iid}</Typography>
+            <Tooltip title={t('mergeRequest.detail.copyLink')}><IconButton aria-label={t('mergeRequest.detail.copyLink')} onClick={() => void copyLink()}><LinkRoundedIcon /></IconButton></Tooltip>
+            <Tooltip title={t('mergeRequest.common.openInGitLab')}><IconButton aria-label={t('mergeRequest.common.openInGitLab')} onClick={() => void shownGitLabUrl().then(openInGitLab)}><LaunchRoundedIcon /></IconButton></Tooltip>
+            <Tooltip title={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')}><IconButton aria-label={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid }, tabMeta ?? undefined)}>{pinnedNow ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
+            <Tooltip title={refreshing ? t('mergeRequest.common.refreshing') : t('mergeRequest.detail.refreshTooltip')}><span><IconButton aria-label={t('mergeRequest.detail.refresh')} disabled={refreshing} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
             {currentResult.stale ? <Tooltip title={t('mergeRequest.detail.staleTooltip')}><Typography color="textSecondary" noWrap sx={{ flexShrink: 0, pl: 0.5 }} variant="caption">{t('mergeRequest.common.savedAt', { time: formatFetchedAt(currentResult.snapshot?.fetchedAt) })}</Typography></Tooltip> : null}
           </Row>
-          <Tooltip title={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')}><IconButton aria-label={pinnedNow ? t('mergeRequest.common.unpin') : t('mergeRequest.common.pin')} color={pinnedNow ? 'primary' : 'default'} onClick={() => workspace.togglePinned({ projectId: resourceId, iid }, tabMeta ?? undefined)}>{pinnedNow ? <PushPinIcon /> : <PushPinOutlinedIcon />}</IconButton></Tooltip>
-          <Tooltip title={refreshing ? t('mergeRequest.common.refreshing') : t('mergeRequest.detail.refreshTooltip')}><span><IconButton aria-label={t('mergeRequest.detail.refresh')} disabled={refreshing} onClick={refreshAll}><RefreshRoundedIcon /></IconButton></span></Tooltip>
-          <Tooltip title={t('mergeRequest.common.openInGitLab')}><IconButton aria-label={t('mergeRequest.common.openInGitLab')} onClick={() => void openInGitLab()}><LaunchRoundedIcon /></IconButton></Tooltip>
-          <Tooltip title={t('mergeRequest.detail.copyLink')}><IconButton aria-label={t('mergeRequest.detail.copyLink')} onClick={() => void copyLink()}><LinkRoundedIcon /></IconButton></Tooltip>
-          {session && mergeRequestNotifications[0] ? <Tooltip title={mergeRequestNotifications.length > 1 ? t('mergeRequest.detail.markOneRead', { count: mergeRequestNotifications.length }) : t('mergeRequest.detail.markRead')}><Box component="span" sx={{ pl: 1 }}><MarkNotificationReadButton sessionId={session.id} todo={mergeRequestNotifications[0]} /></Box></Tooltip> : null}
-          <Box sx={{ pl: 1 }}>
-            {approvalsResult.error && !approvalWriting ? <Tooltip title={t('mergeRequest.approval.loadFailed', { error: approvalsResult.error.message })}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? t('mergeRequest.approval.retrying') : t('mergeRequest.approval.retry')}</Button></span></Tooltip>
-              : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? t('mergeRequest.approval.approving') : approvalWriting === 'unapprove' ? t('mergeRequest.approval.revoking') : approvalsResult.loading && !approvals ? t('mergeRequest.common.checking') : myApproved ? t('mergeRequest.approval.revoke') : t('mergeRequest.approval.approve')}</Button>}
-          </Box>
-          <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={Boolean(mergeRequest.reviewers?.some((user) => user.id === session?.user.id))} mergeRequest={mergeRequest} onRefresh={refreshCurrent} onRun={runHeaderAction} /></ConfirmScope>
+          <Row spacing={1} sx={{ flexShrink: 0 }}>
+            {session && mergeRequestNotifications[0] ? <Tooltip title={mergeRequestNotifications.length > 1 ? t('mergeRequest.detail.markOneRead', { count: mergeRequestNotifications.length }) : t('mergeRequest.detail.markRead')}><span><MarkNotificationReadButton sessionId={session.id} todo={mergeRequestNotifications[0]} /></span></Tooltip> : null}
+            {mergeRequest.state !== 'opened' ? null : approvalsResult.error && !approvalWriting ? <Tooltip title={t('mergeRequest.approval.loadFailed', { error: approvalsResult.error.message })}><span><Button disabled={retryingApprovals} onClick={() => void retryApprovals()} startIcon={<RefreshRoundedIcon />} variant="outlined">{retryingApprovals ? t('mergeRequest.approval.retrying') : t('mergeRequest.approval.retry')}</Button></span></Tooltip>
+              : <Button disabled={approvalDisabled} onClick={() => void toggleApproval()} startIcon={myApproved ? <UndoRoundedIcon /> : <CheckRoundedIcon />} variant={myApproved || mergePrimary ? 'outlined' : 'contained'}>{approvalWriting === 'approve' ? t('mergeRequest.approval.approving') : approvalWriting === 'unapprove' ? t('mergeRequest.approval.revoking') : approvalsResult.loading && !approvals ? t('mergeRequest.common.checking') : myApproved ? t('mergeRequest.approval.revoke') : t('mergeRequest.approval.approve')}</Button>}
+            <ConfirmScope confirm={confirmWithOutsideNote}><MergeRequestActions disabled={peopleDisabled} isReviewer={isReviewer} mergePrimary={mergePrimary} mergeRequest={mergeRequest} onRefresh={refreshCurrent} onRun={runHeaderAction} /></ConfirmScope>
+          </Row>
         </Bar>
         <MergeRequestSummary approvedBy={approvedBy} mergeRequest={mergeRequest} myApproved={myApproved} onCopyHeadSha={copyHeadSha} onEditPeople={setPeopleEditor} peopleDisabled={peopleDisabled} />
         {peopleEditor ? <MergeRequestPeopleDialog current={mergeRequest[peopleEditor] ?? []} disabled={peopleDisabled} label={peopleEditor === 'assignees' ? t('mergeRequest.people.assignees') : t('mergeRequest.people.reviewers')} onClose={() => setPeopleEditor(null)} onSave={(users) => setPeople(peopleEditor, users)} open participants={mentionParticipants} /> : null}
@@ -1051,7 +1080,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
           {mrAwardsResult.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('mergeRequest.reactions.loading')}</Typography> : null}
           {mrAwardsResult.error ? <Typography color={mrAwardsResult.data ? 'textSecondary' : 'error'} variant="caption">{mrAwardsResult.data ? t('mergeRequest.reactions.refreshFailed', { error: mrAwardsResult.error.message }) : t('mergeRequest.reactions.loadFailed', { error: mrAwardsResult.error.message })}</Typography> : null}
         </Stack>} /> : null}
-        {activeTab === 'pipelines' ? <ConfirmScope confirm={confirmWithOutsideNote}><PipelinesTab disabled={mutation.isLocked || mutation.isPending} iid={iid} onOpenUrl={(url) => void openInGitLab(url)} onRunAction={(action) => runAction(action)} projectId={resourceId} sessionId={session?.id ?? null} /></ConfirmScope> : null}
+        {activeTab === 'pipelines' ? <ConfirmScope confirm={confirmWithOutsideNote}><PipelinesTab disabled={mutation.isLocked || mutation.isPending} iid={iid} onOpenUrl={(url) => void openInGitLab(url)} onRunAction={(action) => runAction(action)} onShownUrlChange={setShownPipelineUrl} projectId={resourceId} sessionId={session?.id ?? null} /></ConfirmScope> : null}
         </KeepAlive></Box>
         {activeTab === 'discussion' && descriptionOpen ? <DescriptionPanel description={mergeRequest.description} mergeRequest={mergeRequest} onClose={closeDescription} onEdit={() => { setActiveTab('overview'); if (!mutation.isLocked && !mutation.isPending) setDescriptionEdit({ body: mergeRequest.description ?? '', expected: mergeRequest.description ?? '' }) }} /> : null}
         {discussionWindow.observers}

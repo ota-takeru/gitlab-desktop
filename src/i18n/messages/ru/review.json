@@ -47,7 +47,7 @@
   "diff.viewToggle": "Переключение между diff и всем файлом",
   "diff.view.diff": "Diff",
   "diff.view.file": "Весь файл",
-  "diff.search.hint": "Поиск по показанной странице diff. Другие страницы не учитываются.",
+  "diff.search.hint": "Поиск по всем загруженным diff.",
   "diff.search.placeholder": "Поиск в diff",
   "diff.search.previousTooltip": "Предыдущий результат",
   "diff.search.previous": "Предыдущий результат поиска в diff",

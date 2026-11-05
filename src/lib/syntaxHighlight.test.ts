@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { highlightLines, languageForPath } from './syntaxHighlight'
+import { highlightLines, highlightRuns, languageForPath } from './syntaxHighlight'
 
 describe('syntaxHighlight', () => {
   it('picks the language from the file extension', () => {
@@ -40,6 +40,18 @@ describe('syntaxHighlight', () => {
     expect(tokens.map((line) => line.map((token) => token.text).join(''))).toEqual(lines)
     expect(tokens[0][0]).toEqual({ className: 'hljs-keyword', text: 'const' })
     expect(tokens[1]).toEqual([{ className: 'hljs-comment', text: 'still comment */' }])
+  })
+
+  it('splits long text into runs that cover every line once', () => {
+    const lines = Array.from({ length: 5_000 }, () => 'x'.repeat(49))
+    const runs = highlightRuns(lines)
+
+    expect(runs.length).toBe(5)
+    expect(runs[0][0]).toBe(0)
+    expect(runs.at(-1)?.[1]).toBe(5_000)
+    runs.slice(1).forEach(([start], index) => expect(start).toBe(runs[index][1]))
+    expect(highlightRuns([])).toEqual([])
+    expect(highlightRuns(['y'.repeat(60_000), 'z'])).toEqual([[0, 1], [1, 2]])
   })
 
   it('returns plain text for unknown languages', () => {

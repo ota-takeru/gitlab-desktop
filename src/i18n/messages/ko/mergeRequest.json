@@ -186,7 +186,6 @@
   "menu.rebase": "리베이스",
   "menu.behind": "{count, plural, other {대상보다 커밋 #개 뒤처짐}}",
   "menu.requestChanges": "변경 요청",
-  "menu.requestChangesReviewerOnly": "리뷰어일 때 사용할 수 있습니다",
   "menu.editTitle": "제목 편집…",
   "menu.editLabels": "라벨 편집…",
   "menu.changeMilestone": "마일스톤 변경…",

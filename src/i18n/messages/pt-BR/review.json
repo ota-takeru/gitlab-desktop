@@ -47,7 +47,7 @@
   "diff.viewToggle": "Alternar entre diff e arquivo inteiro",
   "diff.view.diff": "Diff",
   "diff.view.file": "Arquivo inteiro",
-  "diff.search.hint": "Pesquisa a página do diff exibida. Outras páginas não são incluídas.",
+  "diff.search.hint": "Pesquisa todos os diffs carregados.",
   "diff.search.placeholder": "Pesquisar no diff",
   "diff.search.previousTooltip": "Resultado anterior",
   "diff.search.previous": "Resultado de pesquisa anterior no diff",

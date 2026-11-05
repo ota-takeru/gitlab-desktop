@@ -15,6 +15,8 @@ import { grid } from '../../theme'
 import type { FullFileDiffAnnotations } from '../../features/mergeRequests/fullFileAnnotations'
 import { useGitLabImage } from '../../features/shared/useGitLabImage'
 import { alignTop } from '../rows'
+import { mermaidSource } from '../../lib/mermaidDiagram'
+import { MarkdownMermaid } from './MarkdownMermaid'
 
 interface MarkdownNode { type: string; value?: string; children?: MarkdownNode[] }
 
@@ -85,6 +87,10 @@ const components: Components = {
   a: ({ href, children }) => <MarkdownAnchor href={href}>{children}</MarkdownAnchor>,
   img: ({ alt, src }) => <MarkdownImage alt={alt} src={src} />,
   code: ({ children }) => <Typography component="code" variant="code" sx={{ fontSize: 'inherit', whiteSpace: 'pre-wrap' }}>{children}</Typography>,
+  pre: ({ node, ...props }) => {
+    const source = mermaidSource(node)
+    return source === null ? <pre {...props} /> : <MarkdownMermaid {...props} source={source} />
+  },
   // A wide or long table scrolls by itself, so its scrollbars stay beside it and the text around it stays put.
   table: (props) => <div data-table-scroll><table {...{ ...props, node: undefined }} /></div>,
   td: ({ node, ...props }) => <td {...props} data-short-cell={isShortCell(node)} />,
