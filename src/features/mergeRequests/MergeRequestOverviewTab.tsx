@@ -25,7 +25,7 @@ import { TemplateMenu } from './TemplateMenu'
 import { useAttachmentPaste } from './useAttachmentPaste'
 import { Row } from '../../components/Row'
 
-export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, onUploadAttachment, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; onUploadAttachment?: (file: File) => Promise<string | null>; reactions?: React.ReactNode }) {
+export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, description, descriptionEdit, editDisabled, mergePanel, mergeRequest, onCancelEdit, onChangeEdit, onRerequestReview, onSaveEdit, onStartEdit, onUploadAttachment, reactions }: { approvedBy: GitLabUser[]; approvalsError: Error | null; approvalsLoading: boolean; description: string; descriptionEdit: { body: string; expected: string } | null; editDisabled: boolean; mergePanel?: React.ReactNode; mergeRequest: MergeRequest; onCancelEdit: () => void; onChangeEdit: (body: string) => void; onRerequestReview: (user: GitLabUser) => void; onSaveEdit: () => void; onStartEdit: () => void; onUploadAttachment?: (file: File) => Promise<string | null>; reactions?: React.ReactNode }) {
   const t = useT()
   const confirm = useConfirm()
   const { session } = useConnection()
@@ -47,7 +47,7 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
     [t('mergeRequest.overview.labels'), labels],
     [t('mergeRequest.overview.milestone'), milestoneText(mergeRequest)],
   ]
-  return <Box sx={{ display: 'grid', gap: 4, gridTemplateColumns: { lg: 'minmax(0, 1fr) 280px', xs: '1fr' }, maxWidth: 1200 }}>
+  return <>{mergePanel}<Box sx={{ display: 'grid', gap: 4, gridTemplateColumns: { lg: 'minmax(0, 1fr) 280px', xs: '1fr' }, maxWidth: 1200 }}>
     <Box sx={{ minWidth: 0 }}>
       <Row sx={{ mb: 1 }}>
         <Typography color="textSecondary" sx={{ flex: 1 }} variant="overline">{t('mergeRequest.overview.description')}</Typography>
@@ -68,7 +68,7 @@ export function OverviewTab({ approvedBy, approvalsError, approvalsLoading, desc
     <Box component="dl" sx={{ alignContent: 'start', display: 'grid', gap: 1.5, m: 0, pt: 1 }}>
       {rows.map(([label, value]) => <Box key={label}><Typography color="textSecondary" component="dt" variant="caption">{label}</Typography><Typography component="dd" sx={{ m: 0, overflowWrap: 'anywhere' }} variant="body2">{value}</Typography></Box>)}
     </Box>
-  </Box>
+  </Box></>
 }
 
 /** The MR's labels as chips, or なし. */

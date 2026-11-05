@@ -5,46 +5,58 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import Radio from '@mui/material/Radio'
-import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
 
 import { useConfirm, useNotify } from '../../components/feedbackContext'
 import { LabelChip } from '../../components/LabelChip'
-import { PipelineStatus } from '../../components/PipelineStatus'
-import { StateIcon } from '../../components/StateIcon'
 import { useT } from '../../i18n/useT'
 import { shortSha } from '../../lib/format'
-import type { GitLabAction, GitLabLabel, LabelsQuery, MergeRequest, Milestone, MilestonesQuery, ProjectLookupQuery } from '../../types/gitlab'
+import type { GitLabAction, GitLabLabel, LabelsQuery, MergeRequest, Milestone, MilestonesQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { canRebase, mergeReadiness, titleWithDraft } from './mergeActions'
-import { Row } from '../../components/Row'
 
 /** After a rebase is accepted, the MR is read again this often while GitLab works on it. */
 const REBASE_POLL_MS = 5_000
 /** A rebase still running after this many reads is left to the normal refresh. */
 const REBASE_POLL_LIMIT = 12
 
-type Editor = 'merge' | 'title' | 'labels' | 'milestone' | null
+type Editor = 'title' | 'labels' | 'milestone' | null
+
+export interface MergeOptions {
+  sha: string
+  autoMerge: boolean
+  squash: boolean
+  removeSourceBranch: boolean
+  mergeCommitMessage?: string
+}
+
+/** The writes the merge panel starts here, so they share this menu's confirmation and a rebase is followed from any tab. */
+export interface MergeRequestActionsHandle {
+  cancelAutoMerge: () => Promise<void>
+  merge: (options: MergeOptions) => Promise<boolean>
+  rebase: () => Promise<void>
+  toggleDraft: () => Promise<void>
+}
 
 export interface MergeRequestActionsProps {
   mergeRequest: MergeRequest
+  /** Brings the merge panel into view. */
+  onOpenMerge: () => void
+  ref?: Ref<MergeRequestActionsHandle>
   /** Writes are locked or one is in flight. */
   disabled: boolean
   /** The current user is a reviewer of this MR. */
@@ -56,12 +68,12 @@ export interface MergeRequestActionsProps {
 
 /**
  * The MR's secondary operations in one menu beside the header's primary
- * action: merge, auto-merge, rebase, request changes, title, Draft, labels,
+ * action: the way to the merge panel, auto-merge, rebase, request changes, title, Draft, labels,
  * milestone and close/reopen. Each write is sent once with what the user saw,
  * so GitLab refuses it when the MR changed meanwhile.
  */
 /** Memoized: the MR page renders on every file or tab switch, the actions only when the MR or the lock changes. */
-export const MergeRequestActions = memo(function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefresh, onRun }: MergeRequestActionsProps) {
+export const MergeRequestActions = memo(function MergeRequestActions({ disabled, isReviewer, mergeRequest, onOpenMerge, onRefresh, onRun, ref }: MergeRequestActionsProps) {
   const t = useT()
   const confirm = useConfirm()
   const notify = useNotify()
@@ -72,13 +84,14 @@ export const MergeRequestActions = memo(function MergeRequestActions({ disabled,
   const opened = mergeRequest.state === 'opened'
   const readiness = mergeReadiness(mergeRequest)
   const busy = disabled || working
-  const ref = { iid: mergeRequest.iid, projectId: mergeRequest.projectId }
+  const target = { iid: mergeRequest.iid, projectId: mergeRequest.projectId }
 
   // A rebase runs in GitLab's background; the MR is read again only while it
   // is shown and only a bounded number of times.
   const [rebasePolls, setRebasePolls] = useState<number | null>(null)
   const refreshRef = useRef(onRefresh)
-  useEffect(() => { refreshRef.current = onRefresh })
+  const latestHeadRef = useRef(mergeRequest.headSha)
+  useEffect(() => { refreshRef.current = onRefresh; latestHeadRef.current = mergeRequest.headSha })
   useEffect(() => {
     if (rebasePolls === null) return
     // The first read after the rebase was accepted may still show the state before it.
@@ -117,35 +130,50 @@ export const MergeRequestActions = memo(function MergeRequestActions({ disabled,
       message: closing ? t('mergeRequest.state.closeMessage') : t('mergeRequest.state.reopenMessage'),
       title: closing ? t('mergeRequest.state.closeTitle', { iid: mergeRequest.iid }) : t('mergeRequest.state.reopenTitle', { iid: mergeRequest.iid }),
     })) return
-    await run({ ...ref, kind: 'setState', stateEvent }, closing ? t('mergeRequest.state.closed') : t('mergeRequest.state.reopened'))
+    await run({ ...target, kind: 'setState', stateEvent }, closing ? t('mergeRequest.state.closed') : t('mergeRequest.state.reopened'))
   }
   const cancelAutoMerge = async () => {
     if (!await confirm({ confirmLabel: t('mergeRequest.autoMerge.cancel'), message: t('mergeRequest.autoMerge.cancelMessage'), title: t('mergeRequest.autoMerge.cancelTitle') })) return
-    await run({ ...ref, kind: 'cancelAutoMerge' }, t('mergeRequest.autoMerge.canceled'))
+    await run({ ...target, kind: 'cancelAutoMerge' }, t('mergeRequest.autoMerge.canceled'))
   }
   const rebase = async () => {
     if (!mergeRequest.headSha) return
     if (!await confirm({ confirmLabel: t('mergeRequest.rebase.confirm'), message: t('mergeRequest.rebase.message', { sha: shortSha(mergeRequest.headSha), source: mergeRequest.sourceBranch, target: mergeRequest.targetBranch }), title: t('mergeRequest.rebase.title') })) return
-    if (await run({ ...ref, kind: 'rebase', sha: mergeRequest.headSha }, t('mergeRequest.rebase.started'))) setRebasePolls(0)
+    if (await run({ ...target, kind: 'rebase', sha: mergeRequest.headSha }, t('mergeRequest.rebase.started'))) setRebasePolls(0)
   }
   const toggleDraft = async () => {
     if (!await confirm(mergeRequest.draft
       ? { confirmLabel: t('mergeRequest.draft.markReady'), message: t('mergeRequest.draft.readyMessage'), title: t('mergeRequest.draft.readyTitle', { iid: mergeRequest.iid }) }
       : { confirmLabel: t('mergeRequest.draft.markDraft'), message: t('mergeRequest.draft.draftMessage'), title: t('mergeRequest.draft.draftTitle', { iid: mergeRequest.iid }) })) return
-    await run({ ...ref, expectedTitle: mergeRequest.title, kind: 'setTitle', title: titleWithDraft(mergeRequest.title, !mergeRequest.draft) }, mergeRequest.draft ? t('mergeRequest.draft.markedReady') : t('mergeRequest.draft.markedDraft'))
+    await run({ ...target, expectedTitle: mergeRequest.title, kind: 'setTitle', title: titleWithDraft(mergeRequest.title, !mergeRequest.draft) }, mergeRequest.draft ? t('mergeRequest.draft.markedReady') : t('mergeRequest.draft.markedDraft'))
   }
   const requestChanges = async () => {
     if (!mergeRequest.projectPath) return
     if (!await confirm({ confirmLabel: t('mergeRequest.requestChanges.confirm'), message: t('mergeRequest.requestChanges.message'), title: t('mergeRequest.requestChanges.title') })) return
-    await run({ ...ref, kind: 'requestChanges', projectPath: mergeRequest.projectPath }, t('mergeRequest.requestChanges.done'))
+    await run({ ...target, kind: 'requestChanges', projectPath: mergeRequest.projectPath }, t('mergeRequest.requestChanges.done'))
   }
+  const merge = async (options: MergeOptions) => {
+    const noted = [options.removeSourceBranch ? t('mergeRequest.mergeDialog.removeSourceBranch') : null, options.squash ? t('mergeRequest.mergeDialog.squash') : null].filter((label) => label !== null)
+    if (!await confirm({
+      confirmLabel: options.autoMerge ? t('mergeRequest.mergeDialog.submitAuto') : t('mergeRequest.mergeDialog.submit'),
+      message: [`${mergeRequest.sourceBranch} → ${mergeRequest.targetBranch}`, t('mergeRequest.mergeDialog.headNote', { sha: shortSha(options.sha) }), ...noted].map((line) => <div key={line}>{line}</div>),
+      title: t('mergeRequest.mergeDialog.title', { iid: mergeRequest.iid }),
+    })) return false
+    // A head that moved while the confirmation was open is not the one the user just agreed to.
+    if (latestHeadRef.current !== options.sha) {
+      notify({ message: t('mergeRequest.mergePanel.headChanged'), severity: 'warning' })
+      return false
+    }
+    return run({ ...target, kind: 'merge', ...options }, options.autoMerge ? t('mergeRequest.mergeDialog.autoMergeSet') : t('mergeRequest.mergeDialog.merged'), !options.autoMerge)
+  }
+  useImperativeHandle(ref, () => ({ cancelAutoMerge, merge, rebase, toggleDraft }))
 
   return (
     <>
       <Tooltip title={t('mergeRequest.menu.more')}><span><IconButton aria-controls={menuAnchor ? menuId : undefined} aria-expanded={menuAnchor ? 'true' : undefined} aria-haspopup="menu" aria-label={t('mergeRequest.menu.more')} disabled={busy} onClick={(event) => setMenuAnchor(event.currentTarget)}><MoreVertRoundedIcon /></IconButton></span></Tooltip>
       <Menu anchorEl={menuAnchor} anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }} id={menuId} onClose={() => setMenuAnchor(null)} open={Boolean(menuAnchor)} transformOrigin={{ horizontal: 'right', vertical: 'top' }}>
         {opened ? [
-          <MenuItem key="merge" onClick={() => choose(() => setEditor('merge'))}><ListItemText primary={t('mergeRequest.menu.merge')} secondary={readiness.summary} /></MenuItem>,
+          <MenuItem key="merge" onClick={() => choose(onOpenMerge)}><ListItemText primary={t('mergeRequest.menu.merge')} secondary={readiness.summary} /></MenuItem>,
           mergeRequest.autoMerge ? <MenuItem key="cancel-auto" onClick={() => choose(() => void cancelAutoMerge())}>{t('mergeRequest.autoMerge.cancel')}</MenuItem> : null,
           canRebase(mergeRequest) ? <MenuItem key="rebase" onClick={() => choose(() => void rebase())}><ListItemText primary={t('mergeRequest.menu.rebase')} secondary={mergeRequest.divergedCommitsCount ? t('mergeRequest.menu.behind', { count: mergeRequest.divergedCommitsCount }) : undefined} /></MenuItem> : null,
           <MenuItem disabled={!isReviewer || !mergeRequest.projectPath} key="request-changes" onClick={() => choose(() => void requestChanges())}><ListItemText primary={t('mergeRequest.menu.requestChanges')} secondary={isReviewer ? undefined : t('mergeRequest.menu.requestChangesReviewerOnly')} /></MenuItem>,
@@ -159,102 +187,19 @@ export const MergeRequestActions = memo(function MergeRequestActions({ disabled,
         {opened ? <MenuItem onClick={() => choose(() => void setState('close'))} sx={{ color: 'error.main' }}>{t('mergeRequest.menu.close')}</MenuItem> : null}
         {mergeRequest.state === 'closed' ? <MenuItem onClick={() => choose(() => void setState('reopen'))}>{t('mergeRequest.menu.reopen')}</MenuItem> : null}
       </Menu>
-      {editor === 'merge' ? <MergeDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onMerge={(options) => run({ ...ref, kind: 'merge', ...options }, options.autoMerge ? t('mergeRequest.mergeDialog.autoMergeSet') : t('mergeRequest.mergeDialog.merged'), !options.autoMerge)} /> : null}
-      {editor === 'title' ? <TitleDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(title, expectedTitle) => run({ ...ref, expectedTitle, kind: 'setTitle', title }, t('mergeRequest.titleDialog.saved'))} /> : null}
-      {editor === 'labels' ? <LabelsDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(addLabels, removeLabels) => run({ ...ref, addLabels, kind: 'setLabels', removeLabels }, t('mergeRequest.labelsDialog.saved'))} /> : null}
-      {editor === 'milestone' ? <MilestoneDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(milestoneId, expectedMilestoneId) => run({ ...ref, expectedMilestoneId, kind: 'setMilestone', milestoneId }, t('mergeRequest.milestoneDialog.saved'))} /> : null}
+      {editor === 'title' ? <TitleDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(title, expectedTitle) => run({ ...target, expectedTitle, kind: 'setTitle', title }, t('mergeRequest.titleDialog.saved'))} /> : null}
+      {editor === 'labels' ? <LabelsDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(addLabels, removeLabels) => run({ ...target, addLabels, kind: 'setLabels', removeLabels }, t('mergeRequest.labelsDialog.saved'))} /> : null}
+      {editor === 'milestone' ? <MilestoneDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(milestoneId, expectedMilestoneId) => run({ ...target, expectedMilestoneId, kind: 'setMilestone', milestoneId }, t('mergeRequest.milestoneDialog.saved'))} /> : null}
     </>
   )
 })
 
-/** The merge state in the header's information line, for open MRs. */
-export function MergeStatusText({ mergeRequest }: { mergeRequest: MergeRequest }) {
+/** The merge state in the header's information line, for open MRs; it leads to the merge panel. */
+export function MergeStatusText({ mergeRequest, onOpen }: { mergeRequest: MergeRequest; onOpen: () => void }) {
   if (mergeRequest.state !== 'opened') return null
   const readiness = mergeReadiness(mergeRequest)
-  const icon = readiness.tone === 'success' ? <CheckCircleOutlineRoundedIcon fontSize="inherit" /> : readiness.tone === 'warning' ? <WarningAmberRoundedIcon fontSize="inherit" /> : <InfoOutlinedIcon fontSize="inherit" />
-  // The icon tells mergeable, blocked and waiting apart at a glance; the reason is the tooltip.
-  return <StateIcon icon={icon} label={readiness.summary} tone={readiness.tone === 'success' ? 'success' : readiness.tone === 'warning' ? 'warning' : 'neutral'} />
-}
-
-interface MergeOptions {
-  sha: string
-  autoMerge: boolean
-  squash: boolean
-  removeSourceBranch: boolean
-  mergeCommitMessage?: string
-}
-
-function MergeDialog({ disabled, mergeRequest, onClose, onMerge }: { disabled: boolean; mergeRequest: MergeRequest; onClose: () => void; onMerge: (options: MergeOptions) => Promise<boolean> }) {
-  const t = useT()
-  const titleId = useId()
-  const { session } = useConnection()
-  // The head the user is shown when the dialog opens is the one merged.
-  const [sha] = useState(mergeRequest.headSha)
-  const readiness = mergeReadiness(mergeRequest)
-  const [autoMerge, setAutoMerge] = useState(readiness.canAutoMerge)
-  const [removeSourceBranch, setRemoveSourceBranch] = useState(Boolean(mergeRequest.forceRemoveSourceBranch || mergeRequest.shouldRemoveSourceBranch))
-  const [squashChoice, setSquashChoice] = useState(Boolean(mergeRequest.squashOnMerge))
-  const [message, setMessage] = useState('')
-  const [saving, setSaving] = useState(false)
-  const projectQuery = useMemo<ProjectLookupQuery | null>(() => mergeRequest.projectPath ? { kind: 'project', path: mergeRequest.projectPath } : null, [mergeRequest.projectPath])
-  const project = useGitLabQuery<ProjectLookupQuery>(session?.id ?? null, projectQuery)
-  const squashOption = project.data?.squashOption
-  // GitLab applies only `squash: true`, so a squash the MR or project already asks for cannot be turned off here.
-  const squashFixed = squashOption === 'always' || squashOption === 'never' || (squashOption !== undefined && mergeRequest.squashOnMerge === true)
-  const squash = squashOption === 'always' ? true : squashOption === 'never' ? false : squashChoice
-  const squashPending = project.loading && !project.data
-  const headChanged = mergeRequest.headSha !== sha
-  const allowed = autoMerge ? readiness.canAutoMerge : readiness.canMerge
-  const busy = disabled || saving
-
-  const submit = async () => {
-    if (busy || !sha || headChanged || !allowed) return
-    setSaving(true)
-    try {
-      const ok = await onMerge({ autoMerge, removeSourceBranch, sha, squash, ...(message.trim() ? { mergeCommitMessage: message } : {}) })
-      if (ok) onClose()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog aria-labelledby={titleId} fullWidth maxWidth="sm" onClose={saving ? undefined : onClose} open>
-      <DialogTitle id={titleId}>{t('mergeRequest.mergeDialog.title', { iid: mergeRequest.iid })}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-          <Alert severity={readiness.tone}>{readiness.summary}</Alert>
-          <Row spacing={1} sx={{ flexWrap: 'wrap' }}>
-            <Typography color="textSecondary" sx={{ fontFamily: 'code.fontFamily' }} variant="caption">{mergeRequest.sourceBranch} → {mergeRequest.targetBranch}</Typography>
-            {sha ? <Typography color="textSecondary" variant="caption">{t('mergeRequest.mergeDialog.head', { sha: shortSha(sha) })}</Typography> : null}
-            {mergeRequest.pipeline ? <PipelineStatus status={mergeRequest.pipeline.status} /> : null}
-          </Row>
-          {headChanged ? <Alert severity="warning">{t('mergeRequest.mergeDialog.headChanged')}</Alert> : null}
-          {readiness.canAutoMerge ? (
-            <RadioGroup aria-label={t('mergeRequest.mergeDialog.method')} onChange={(event) => setAutoMerge(event.target.value === 'auto')} value={autoMerge ? 'auto' : 'now'}>
-              <FormControlLabel control={<Radio size="small" />} disabled={busy} label={t('mergeRequest.mergeDialog.auto')} value="auto" />
-              <FormControlLabel control={<Radio size="small" />} disabled={busy || !readiness.canMerge} label={t('mergeRequest.mergeDialog.now')} value="now" />
-            </RadioGroup>
-          ) : null}
-          <FormControlLabel control={<Checkbox checked={removeSourceBranch} disabled={busy} onChange={(event) => setRemoveSourceBranch(event.target.checked)} size="small" />} label={t('mergeRequest.mergeDialog.removeSourceBranch')} />
-          <Stack>
-            <FormControlLabel control={<Checkbox checked={squash} disabled={busy || squashFixed || squashPending} onChange={(event) => setSquashChoice(event.target.checked)} size="small" />} label={t('mergeRequest.mergeDialog.squash')} />
-            <Typography color="textSecondary" sx={{ pl: 4 }} variant="caption">{squashPending ? t('mergeRequest.mergeDialog.squashChecking')
-              : squashOption === 'always' ? t('mergeRequest.mergeDialog.squashAlways')
-                : squashOption === 'never' ? t('mergeRequest.mergeDialog.squashNever')
-                  : squashFixed ? t('mergeRequest.mergeDialog.squashRequested')
-                    : project.error ? t('mergeRequest.mergeDialog.squashUnknown') : t('mergeRequest.mergeDialog.squashHint')}</Typography>
-          </Stack>
-          <TextField disabled={busy} label={t('mergeRequest.mergeDialog.message')} minRows={2} multiline onChange={(event) => setMessage(event.target.value)} placeholder={t('mergeRequest.mergeDialog.messagePlaceholder')} size="small" value={message} />
-          <Typography color="textSecondary" variant="caption">{sha ? t('mergeRequest.mergeDialog.headNote', { sha: shortSha(sha) }) : t('mergeRequest.mergeDialog.headNoteNoSha')}</Typography>
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button disabled={saving} onClick={onClose}>{t('mergeRequest.common.cancel')}</Button>
-        <Button disabled={busy || !sha || headChanged || !allowed} onClick={() => void submit()} variant="contained">{saving ? t('mergeRequest.mergeDialog.sending') : autoMerge ? t('mergeRequest.mergeDialog.submitAuto') : t('mergeRequest.mergeDialog.submit')}</Button>
-      </DialogActions>
-    </Dialog>
-  )
+  const icon = readiness.tone === 'success' ? <CheckCircleOutlineRoundedIcon color="success" /> : readiness.tone === 'warning' ? <WarningAmberRoundedIcon color="warning" /> : <InfoOutlinedIcon />
+  return <Button onClick={onOpen} startIcon={icon} variant="quiet">{readiness.summary}</Button>
 }
 
 function TitleDialog({ disabled, mergeRequest, onClose, onSave }: { disabled: boolean; mergeRequest: MergeRequest; onClose: () => void; onSave: (title: string, expectedTitle: string) => Promise<boolean> }) {

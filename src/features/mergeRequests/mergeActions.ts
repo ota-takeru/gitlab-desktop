@@ -73,6 +73,29 @@ export function canRebase(mergeRequest: MergeRequest): boolean {
     && (mergeRequest.detailedMergeStatus === 'need_rebase' || (mergeRequest.divergedCommitsCount ?? 0) > 0)
 }
 
+/** The one step the merge panel offers next to what stops a merge. */
+export type MergeResolution = 'approve' | 'markReady' | 'openDiscussion' | 'openInGitLab' | 'openPipelines' | 'rebase'
+
+/** What can be done in the client about a status; every other blocking status is settled in GitLab. */
+const statusResolutions: Record<string, MergeResolution> = {
+  ci_must_pass: 'openPipelines',
+  ci_still_running: 'openPipelines',
+  discussions_not_resolved: 'openDiscussion',
+  draft_status: 'markReady',
+  need_rebase: 'rebase',
+  not_approved: 'approve',
+  requested_changes: 'openDiscussion',
+  security_policy_pipeline_check: 'openPipelines',
+}
+
+/** The step that removes what stops this user merging, or null when there is none to take. */
+export function mergeResolution(mergeRequest: MergeRequest): MergeResolution | null {
+  if (mergeRequest.state !== 'opened' || mergeRequest.autoMerge || mergeRequest.rebaseInProgress || mergeRequest.canMerge !== true) return null
+  const status = mergeRequest.detailedMergeStatus
+  if (status === 'mergeable' || (status && transientStatuses.has(status))) return null
+  return (status && statusResolutions[status]) || 'openInGitLab'
+}
+
 // GitLab treats these title prefixes as Draft, in any letter case.
 const draftPrefix = /^\s*(?:\[draft\]|\(draft\)|draft:)\s*/iu
 
