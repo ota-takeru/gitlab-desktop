@@ -6,8 +6,6 @@ import { gridLine } from '../../theme'
 import type { Position } from '../../types/gitlab'
 import type { ParsedLine } from './diffParser'
 
-export const DIFF_PAGE_SIZE = 600
-
 export const FILE_PAGE_SIZE = 1000
 
 /** Rows without code (empty split cells, omitted lines): a tone that stays visible on the dark theme too. */

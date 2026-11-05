@@ -56,13 +56,17 @@ const base: MergeRequest = {
   webUrl: 'https://gitlab.example/group/app/-/merge_requests/3',
 }
 
-function renderActions(mergeRequest: MergeRequest, onRun = vi.fn<(action: GitLabAction) => Promise<boolean>>(async () => true), isReviewer = true) {
+function renderActions(mergeRequest: MergeRequest, onRun = vi.fn<(action: GitLabAction) => Promise<boolean>>(async () => true), isReviewer = true, mergePrimary = false) {
   const onRefresh = vi.fn(() => { mocks.refreshes += 1 })
   const onOpenMerge = vi.fn()
   const handle = createRef<MergeRequestActionsHandle>()
-  const element = (next: MergeRequest) => <ThemeProvider theme={createAppTheme('light')}><MergeRequestActions disabled={false} isReviewer={isReviewer} mergeRequest={next} onOpenMerge={onOpenMerge} onRefresh={onRefresh} onRun={onRun} ref={handle} /></ThemeProvider>
+  const element = (next: MergeRequest) => <ThemeProvider theme={createAppTheme('light')}><MergeRequestActions disabled={false} isReviewer={isReviewer} mergePrimary={mergePrimary} mergeRequest={next} onOpenMerge={onOpenMerge} onRefresh={onRefresh} onRun={onRun} ref={handle} /></ThemeProvider>
   const view = render(element(mergeRequest))
   return { handle, onOpenMerge, onRefresh, onRun, rerender: (next: MergeRequest) => view.rerender(element(next)) }
+}
+
+function clickButton(name: RegExp | string) {
+  fireEvent.click(screen.getByRole('button', { name }))
 }
 
 function openMenuItem(name: RegExp | string) {
@@ -78,9 +82,9 @@ describe('MergeRequestActions', () => {
     globalThis.confirm = vi.fn(() => true)
   })
 
-  it('leads to the merge panel from the menu and from the header status', () => {
+  it('leads to the merge panel from the header button and from the header status', () => {
     const { onOpenMerge } = renderActions({ ...base, detailedMergeStatus: 'draft_status' })
-    openMenuItem(/マージ…/)
+    clickButton('マージ…')
     expect(onOpenMerge).toHaveBeenCalledTimes(1)
     const onOpen = vi.fn()
     render(<ThemeProvider theme={createAppTheme('light')}><MergeStatusText mergeRequest={{ ...base, detailedMergeStatus: 'draft_status' }} onOpen={onOpen} /></ThemeProvider>)
@@ -114,7 +118,7 @@ describe('MergeRequestActions', () => {
 
   it('cancels auto-merge after confirmation', async () => {
     const { onRun } = renderActions({ ...base, autoMerge: true })
-    openMenuItem('自動マージを取り消す')
+    clickButton('自動マージを取り消す')
     await waitFor(() => expect(onRun).toHaveBeenCalledWith({ iid: '3', kind: 'cancelAutoMerge', projectId: '7' }))
   })
 
@@ -164,9 +168,8 @@ describe('MergeRequestActions', () => {
 
   it('offers reopen for a closed MR and no merge', async () => {
     const { onRun } = renderActions({ ...base, state: 'closed' })
-    fireEvent.click(screen.getByRole('button', { name: 'その他の操作' }))
-    expect(screen.queryByRole('menuitem', { name: /マージ…/ })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'MRを再オープン…' }))
+    expect(screen.queryByRole('button', { name: 'マージ…' })).not.toBeInTheDocument()
+    clickButton('MRを再オープン…')
     await waitFor(() => expect(onRun).toHaveBeenCalledWith({ iid: '3', kind: 'setState', projectId: '7', stateEvent: 'reopen' }))
   })
 
@@ -222,15 +225,33 @@ describe('MergeRequestActions', () => {
 
   it('requests changes only for a reviewer', async () => {
     const { onRun } = renderActions(base)
-    openMenuItem('変更を要求')
+    clickButton('変更を要求')
     await waitFor(() => expect(onRun).toHaveBeenCalledWith({ iid: '3', kind: 'requestChanges', projectId: '7', projectPath: 'group/app' }))
   })
 
-  it('explains why a non-reviewer cannot request changes', () => {
+  it('does not offer request changes to a non-reviewer', () => {
     renderActions(base, undefined, false)
+    expect(screen.queryByRole('button', { name: '変更を要求' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'その他の操作' }))
-    const item = screen.getByRole('menuitem', { name: /変更を要求/ })
-    expect(item).toHaveAttribute('aria-disabled', 'true')
-    expect(item).toHaveTextContent('レビュアーに指定されている場合に使えます')
+    expect(screen.queryByRole('menuitem', { name: '変更を要求' })).not.toBeInTheDocument()
+  })
+
+  it('makes the merge a primary button only when told to, and offers no merge once merged', () => {
+    const { rerender } = renderActions(base)
+    expect(screen.getByRole('button', { name: 'マージ…' })).toHaveClass('MuiButton-outlined')
+    rerender({ ...base, state: 'merged' })
+    expect(screen.queryByRole('button', { name: 'マージ…' })).not.toBeInTheDocument()
+  })
+
+  it('shows the merge as the primary action when the header asks for it', () => {
+    renderActions(base, undefined, false, true)
+    expect(screen.getByRole('button', { name: 'マージ…' })).toHaveClass('MuiButton-contained')
+  })
+
+  it('puts the rebase on the button while it is what blocks the merge', async () => {
+    const { onRun } = renderActions({ ...base, detailedMergeStatus: 'need_rebase' })
+    expect(screen.queryByRole('button', { name: 'マージ…' })).not.toBeInTheDocument()
+    clickButton('リベース')
+    await waitFor(() => expect(onRun).toHaveBeenCalledWith({ iid: '3', kind: 'rebase', projectId: '7', sha: head }))
   })
 })

@@ -205,6 +205,7 @@
   "richMarkdown.image": "[이미지: {alt}]",
   "richMarkdown.imageLoading": "[이미지: {alt} · 불러오는 중]",
   "richMarkdown.imageUnavailable": "[이미지: {alt} · 표시할 수 없음]",
+  "richMarkdown.diagramUnavailable": "다이어그램을 그릴 수 없어 소스를 표시합니다.",
   "richMarkdown.noAlt": "설명 없음",
   "richMarkdown.linkPrompt": "링크 URL",
   "markdownReview.removedLabel": "이전 버전에서 삭제됨, {lines}행",

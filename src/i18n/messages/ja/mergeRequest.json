@@ -186,7 +186,6 @@
   "menu.rebase": "リベース",
   "menu.behind": "ターゲットより{count}コミット遅れています",
   "menu.requestChanges": "変更を要求",
-  "menu.requestChangesReviewerOnly": "レビュアーに指定されている場合に使えます",
   "menu.editTitle": "タイトルを編集…",
   "menu.editLabels": "ラベルを編集…",
   "menu.changeMilestone": "マイルストーンを変更…",

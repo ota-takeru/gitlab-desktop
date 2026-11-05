@@ -839,6 +839,59 @@ describe('MergeRequestDetail header, results and pending review', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(detailMocks.mergeRequest.webUrl))
   })
 
+  describe('opening in GitLab', () => {
+    const openShown = async () => {
+      detailMocks.openUrlMock.mockClear()
+      fireEvent.click(await screen.findByRole('button', { name: 'GitLabで開く' }))
+      await waitFor(() => expect(detailMocks.openUrlMock).toHaveBeenCalledTimes(1))
+      return (detailMocks.openUrlMock.mock.calls as unknown as [string, string][])[0][1]
+    }
+    /** The MR scrolled so that everything but the sticky header is on screen. */
+    const scrollEverythingIntoView = () => {
+      const style = globalThis.getComputedStyle.bind(globalThis)
+      vi.spyOn(globalThis, 'getComputedStyle').mockImplementation((element) => element.tagName === 'BODY' ? { overflowY: 'auto' } as CSSStyleDeclaration : style(element))
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        const header = this instanceof HTMLElement && this.dataset.stickyHeader === 'true'
+        return new DOMRect(0, header ? 0 : 60, 0, header ? 50 : this.tagName === 'BODY' ? 600 : 40)
+      })
+    }
+    afterEach(() => vi.restoreAllMocks())
+
+    it('opens the MR page from the overview', async () => {
+      renderDetail('overview')
+      expect(await openShown()).toBe(detailMocks.mergeRequest.webUrl)
+    })
+
+    it('opens the comment in view from the discussion', async () => {
+      renderDetail('discussion')
+      await screen.findAllByRole('article')
+      scrollEverythingIntoView()
+      const first = document.querySelector<HTMLElement>('[data-discussion-id] [data-note-id]')
+      expect(await openShown()).toBe(`${detailMocks.mergeRequest.webUrl}#note_${first?.dataset.noteId}`)
+    })
+
+    it('opens the comment in view from the changes', async () => {
+      renderDetail('changes')
+      await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+      scrollEverythingIntoView()
+      expect(await openShown()).toBe(`${detailMocks.mergeRequest.webUrl}/diffs#note_${detailMocks.discussion.notes[0].id}`)
+    })
+
+    it('opens the file shown when no comment is in view', async () => {
+      // The test DOM has no crypto.subtle, which the desktop webview has.
+      vi.stubGlobal('crypto', { subtle: { digest: () => Promise.resolve(new Uint8Array(20).fill(0xab).buffer) } })
+      onTestFinished(() => { vi.unstubAllGlobals() })
+      renderDetail('changes')
+      await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+      expect(await openShown()).toBe(`${detailMocks.mergeRequest.webUrl}/diffs#${'ab'.repeat(20)}`)
+    })
+
+    it('opens the MR pipelines before a pipeline is read', async () => {
+      renderDetail('pipelines')
+      expect(await openShown()).toMatch(/\/pipelines/u)
+    })
+  })
+
   it('names the write whose result is unknown, in the header', async () => {
     detailMocks.mutationState = { error: new Error('unknown'), status: 'unknown', unknownAction: { kind: 'approve' } }
     renderDetail('discussion')

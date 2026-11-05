@@ -47,7 +47,7 @@
   "diff.viewToggle": "切換差異與整個檔案",
   "diff.view.diff": "差異",
   "diff.view.file": "整個檔案",
-  "diff.search.hint": "搜尋顯示中的差異頁面。不包含其他頁面。",
+  "diff.search.hint": "搜尋所有已載入的差異。",
   "diff.search.placeholder": "在差異中搜尋",
   "diff.search.previousTooltip": "上一個結果",
   "diff.search.previous": "差異中的上一個搜尋結果",

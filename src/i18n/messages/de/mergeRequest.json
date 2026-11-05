@@ -186,7 +186,6 @@
   "menu.rebase": "Rebase",
   "menu.behind": "{count, plural, one {# Commit hinter dem Ziel} other {# Commits hinter dem Ziel}}",
   "menu.requestChanges": "Änderungen anfordern",
-  "menu.requestChangesReviewerOnly": "Verfügbar, wenn Sie Reviewer sind",
   "menu.editTitle": "Titel bearbeiten…",
   "menu.editLabels": "Labels bearbeiten…",
   "menu.changeMilestone": "Meilenstein ändern…",
