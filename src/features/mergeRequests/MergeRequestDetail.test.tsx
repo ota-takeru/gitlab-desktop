@@ -551,7 +551,9 @@ describe('MergeRequestDetail tabs and description', () => {
     globalThis.confirm = vi.fn(() => true)
     try {
       renderDetail('overview')
-      expect(await screen.findByLabelText('未解決のスレッドがあります')).toBeInTheDocument()
+      const status = await screen.findByRole('button', { name: '未解決のスレッドがあります' })
+      expect(status).toBeInTheDocument()
+      expect(screen.getByRole('region', { name: 'マージ' })).toBeInTheDocument()
       expect(screen.getByText('v0.9')).toBeInTheDocument()
       // Only other reviewers can be asked again.
       expect(screen.queryByRole('button', { name: 'Reviewerさんにレビューを再依頼' })).not.toBeInTheDocument()

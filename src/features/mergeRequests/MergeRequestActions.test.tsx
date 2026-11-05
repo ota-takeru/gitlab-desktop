@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
+import { createRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
@@ -28,7 +29,7 @@ vi.mock('../shared/useGitLabQuery', () => ({
   },
 }))
 
-import { MergeRequestActions } from './MergeRequestActions'
+import { MergeRequestActions, MergeStatusText, type MergeRequestActionsHandle } from './MergeRequestActions'
 
 const head = 'a'.repeat(40)
 const base: MergeRequest = {
@@ -57,9 +58,11 @@ const base: MergeRequest = {
 
 function renderActions(mergeRequest: MergeRequest, onRun = vi.fn<(action: GitLabAction) => Promise<boolean>>(async () => true), isReviewer = true, mergePrimary = false) {
   const onRefresh = vi.fn(() => { mocks.refreshes += 1 })
-  const view = render(<ThemeProvider theme={createAppTheme('light')}><MergeRequestActions disabled={false} isReviewer={isReviewer} mergePrimary={mergePrimary} mergeRequest={mergeRequest} onRefresh={onRefresh} onRun={onRun} /></ThemeProvider>)
-  const rerender = (next: MergeRequest) => view.rerender(<ThemeProvider theme={createAppTheme('light')}><MergeRequestActions disabled={false} isReviewer={isReviewer} mergePrimary={mergePrimary} mergeRequest={next} onRefresh={onRefresh} onRun={onRun} /></ThemeProvider>)
-  return { onRefresh, onRun, rerender }
+  const onOpenMerge = vi.fn()
+  const handle = createRef<MergeRequestActionsHandle>()
+  const element = (next: MergeRequest) => <ThemeProvider theme={createAppTheme('light')}><MergeRequestActions disabled={false} isReviewer={isReviewer} mergePrimary={mergePrimary} mergeRequest={next} onOpenMerge={onOpenMerge} onRefresh={onRefresh} onRun={onRun} ref={handle} /></ThemeProvider>
+  const view = render(element(mergeRequest))
+  return { handle, onOpenMerge, onRefresh, onRun, rerender: (next: MergeRequest) => view.rerender(element(next)) }
 }
 
 function clickButton(name: RegExp | string) {
@@ -79,47 +82,38 @@ describe('MergeRequestActions', () => {
     globalThis.confirm = vi.fn(() => true)
   })
 
-  it('merges the head shown when the dialog opened, with the chosen options', async () => {
-    const { onRun } = renderActions(base)
+  it('leads to the merge panel from the header button and from the header status', () => {
+    const { onOpenMerge } = renderActions({ ...base, detailedMergeStatus: 'draft_status' })
     clickButton('マージ…')
-    const dialog = screen.getByRole('dialog', { name: '!3 をマージ' })
-    expect(within(dialog).getByText('マージできます')).toBeInTheDocument()
-    expect(within(dialog).getByRole('checkbox', { name: 'ソースブランチを削除' })).toBeChecked()
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'コミットをスカッシュ' }))
-    fireEvent.change(within(dialog).getByRole('textbox', { name: 'マージコミットのメッセージ（任意）' }), { target: { value: 'Merge search' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'マージする' }))
-    await waitFor(() => expect(onRun).toHaveBeenCalledWith({ autoMerge: false, iid: '3', kind: 'merge', mergeCommitMessage: 'Merge search', projectId: '7', removeSourceBranch: true, sha: head, squash: true }))
+    expect(onOpenMerge).toHaveBeenCalledTimes(1)
+    const onOpen = vi.fn()
+    render(<ThemeProvider theme={createAppTheme('light')}><MergeStatusText mergeRequest={{ ...base, detailedMergeStatus: 'draft_status' }} onOpen={onOpen} /></ThemeProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Draftのためマージできません' }))
+    expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
-  it('refuses to merge a head that changed while the dialog was open', () => {
-    const { onRun, rerender } = renderActions(base)
-    clickButton('マージ…')
-    rerender({ ...base, headSha: 'b'.repeat(40) })
-    const dialog = screen.getByRole('dialog', { name: '!3 をマージ' })
-    expect(within(dialog).getByText(/ダイアログを開いた後にMRが更新されました/)).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'マージする' })).toBeDisabled()
+  it('merges after confirmation, showing what will be merged', async () => {
+    const { handle, onRun } = renderActions(base)
+    const options = { autoMerge: false, removeSourceBranch: true, sha: head, squash: true }
+    await act(async () => { await handle.current?.merge(options) })
+    expect(globalThis.confirm).toHaveBeenCalledWith(expect.stringContaining('!3 をマージ'))
+    expect(onRun).toHaveBeenCalledWith({ ...options, iid: '3', kind: 'merge', projectId: '7' })
+  })
+
+  it('does not merge when the confirmation is declined', async () => {
+    globalThis.confirm = vi.fn(() => false)
+    const { handle, onRun } = renderActions(base)
+    await act(async () => { await handle.current?.merge({ autoMerge: false, removeSourceBranch: false, sha: head, squash: false }) })
     expect(onRun).not.toHaveBeenCalled()
   })
 
-  it('does not offer a merge GitLab reports as blocked and names the reason', () => {
-    renderActions({ ...base, detailedMergeStatus: 'discussions_not_resolved' })
-    clickButton('マージ…')
-    const dialog = screen.getByRole('dialog', { name: '!3 をマージ' })
-    expect(within(dialog).getByText('未解決のスレッドがあります')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'マージする' })).toBeDisabled()
-  })
-
-  it('sets auto-merge by default while the pipeline runs and keeps a squash the project always does', async () => {
-    mocks.project = { squashOption: 'always' }
-    const { onRun } = renderActions({ ...base, detailedMergeStatus: 'ci_still_running', forceRemoveSourceBranch: false, pipeline: { status: 'running', webUrl: '' } })
-    clickButton('自動マージを設定')
-    const dialog = screen.getByRole('dialog', { name: '!3 をマージ' })
-    expect(within(dialog).getByRole('radio', { name: '今すぐマージ' })).toBeDisabled()
-    const squash = within(dialog).getByRole('checkbox', { name: 'コミットをスカッシュ' })
-    expect(squash).toBeChecked()
-    expect(squash).toBeDisabled()
-    fireEvent.click(within(dialog).getByRole('button', { name: '自動マージを設定' }))
-    await waitFor(() => expect(onRun).toHaveBeenCalledWith({ autoMerge: true, iid: '3', kind: 'merge', projectId: '7', removeSourceBranch: false, sha: head, squash: true }))
+  it('does not merge a head that moved while the confirmation was open', async () => {
+    const { handle, onRun, rerender } = renderActions(base)
+    const moved = { ...base, headSha: 'b'.repeat(40) }
+    globalThis.confirm = vi.fn(() => { rerender(moved); return true })
+    // Not inside act: the re-render's own act has to finish while the merge waits on the confirmation.
+    await expect(handle.current?.merge({ autoMerge: false, removeSourceBranch: false, sha: head, squash: false })).resolves.toBe(false)
+    expect(onRun).not.toHaveBeenCalled()
   })
 
   it('cancels auto-merge after confirmation', async () => {
