@@ -186,7 +186,6 @@
   "menu.rebase": "变基",
   "menu.behind": "{count, plural, other {落后目标分支 # 个提交}}",
   "menu.requestChanges": "请求更改",
-  "menu.requestChangesReviewerOnly": "你是审核者时可用",
   "menu.editTitle": "编辑标题…",
   "menu.editLabels": "编辑标签…",
   "menu.changeMilestone": "更改里程碑…",

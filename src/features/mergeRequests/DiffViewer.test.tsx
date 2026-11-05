@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAppTheme } from '../../theme'
 import type { Diff, Position } from '../../types/gitlab'
 import { scopedKey } from '../shared/preferences'
-import { DIFF_PAGE_SIZE, FILE_PAGE_SIZE } from './diffShared'
+import { FILE_PAGE_SIZE } from './diffShared'
 import { DiffViewer } from './DiffViewer'
 import { FullFileView } from './FullFileView'
 import { setFileReviewed, type ReviewedFileContext } from './useReviewedFiles'
@@ -105,33 +105,23 @@ describe('DiffViewer', () => {
     expect(screen.getByLabelText('差分内を検索')).toHaveValue('zzz')
   })
 
-  it('marks unchanged lines omitted between hunks and hides paging for short diffs', () => {
+  it('marks unchanged lines omitted between hunks', () => {
     const diff = makeDiff('@@ -3,2 +3,2 @@\n a\n-b\n+c\n@@ -20,1 +20,2 @@\n d\n+e\n')
     renderViewer(diff)
     expect(screen.getByText('⋯ 変更のない2行')).toBeInTheDocument()
     expect(screen.getByText('⋯ 変更のない15行')).toBeInTheDocument()
     expect(screen.getAllByTestId('diff-line')).toHaveLength(5)
     expect(screen.getByLabelText('追加2行、削除1行')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: `次の${DIFF_PAGE_SIZE}行` })).not.toBeInTheDocument()
   })
 
-  it('keeps the DOM bounded while allowing navigation to the final diff page', () => {
-    const diff = makeDiff(`@@ -1,10000 +1,10000 @@\n${Array.from({ length: 10_000 }, (_, index) => ` line ${index + 1}`).join('\n')}\n`)
+  it('shows every line of a long diff without paging', () => {
+    const diff = makeDiff(`@@ -1,1500 +1,1500 @@\n${Array.from({ length: 1500 }, (_, index) => ` line ${index + 1}`).join('\n')}\n`)
 
     renderViewer(diff)
 
-    expect(screen.getAllByTestId('diff-line')).toHaveLength(DIFF_PAGE_SIZE)
-    expect(screen.getByText(/表示 1.*600.*10000行（残り9400行）/u)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: `前の${DIFF_PAGE_SIZE}行` })).toBeDisabled()
-
-    act(() => {
-      for (let page = 0; page < 16; page += 1) fireEvent.click(screen.getByRole('button', { name: `次の${DIFF_PAGE_SIZE}行` }))
-    })
-
-    expect(screen.getAllByTestId('diff-line')).toHaveLength(10_000 % DIFF_PAGE_SIZE)
-    expect(screen.getByText(/表示 9601.*10000.*10000行/u)).toBeInTheDocument()
-    expect(screen.getAllByTestId('diff-line').at(-1)).toHaveTextContent('line 10000')
-    expect(screen.getByRole('button', { name: `次の${DIFF_PAGE_SIZE}行` })).toBeDisabled()
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(1500)
+    expect(screen.getAllByTestId('diff-line').at(-1)).toHaveTextContent('line 1500')
+    expect(screen.queryByRole('button', { name: /^次の\d+行$/u })).not.toBeInTheDocument()
   })
 
   it('highlights code syntax and marks search matches across highlighted tokens', () => {
@@ -167,7 +157,7 @@ describe('DiffViewer', () => {
     expect(screen.getAllByTestId('file-line').at(-1)).toHaveTextContent('内容 2001')
   })
 
-  it('opens the page containing a selected comment position and preserves its line number', async () => {
+  it('shows a selected comment position far down a long diff and preserves its line number', async () => {
     const diff = makeDiff(`@@ -1,1800 +1,1800 @@\n${Array.from({ length: 1_800 }, (_, index) => ` line ${index + 1}`).join('\n')}\n`)
     const onComment = vi.fn()
     const position: Position = { baseSha: 'base', headSha: 'head', newLine: 1201, newPath: diff.newPath, oldPath: diff.oldPath, positionType: 'text', startSha: 'start' }
@@ -178,13 +168,12 @@ describe('DiffViewer', () => {
       </ThemeProvider>,
     )
 
-    await waitFor(() => expect(screen.getByText(/表示 1201.*1800.*1800行/u)).toBeInTheDocument())
-    const comment = screen.getByRole('button', { name: 'src/example.tsの1201行にコメント' })
+    const comment = await screen.findByRole('button', { name: 'src/example.tsの1201行にコメント' })
     fireEvent.click(comment)
     expect(onComment).toHaveBeenCalledWith(expect.objectContaining({ newLine: 1201, newPath: 'src/example.ts' }))
   })
 
-  it('focuses the selected diff line after switching to its page', async () => {
+  it('focuses the selected diff line far down a long diff', async () => {
     const diff = makeDiff(`@@ -1,1800 +1,1800 @@\n${Array.from({ length: 1_800 }, (_, index) => ` line ${index + 1}`).join('\n')}\n`)
     const position: Position = { baseSha: 'base', headSha: 'head', newLine: 1201, newPath: diff.newPath, oldPath: diff.oldPath, positionType: 'text', startSha: 'start' }
 
@@ -194,7 +183,6 @@ describe('DiffViewer', () => {
     const selectedLine = comment.closest('[data-testid="diff-line"]')
     await waitFor(() => expect(selectedLine).toHaveFocus())
     expect(selectedLine).toHaveAttribute('data-line-id')
-    expect(screen.getByText(/表示 1201.*1800.*1800行/u)).toBeInTheDocument()
   })
 
   it('keeps invalid diff positions un-commentable and reports the unsafe state', () => {
@@ -207,7 +195,7 @@ describe('DiffViewer', () => {
     expect(screen.getAllByTestId('diff-line')).toHaveLength(2)
   })
 
-  it('searches every loaded diff line beyond the rendered page and navigates results in order', () => {
+  it('searches every loaded diff line of a long diff and navigates results in order', () => {
     const lines = Array.from({ length: 610 }, (_, index) => ` line ${index + 1}${index === 600 || index === 608 ? ' needle' : ''}`).join('\n')
     const diff = makeDiff(`@@ -1,610 +1,610 @@\n${lines}\n`)
     renderMany([diff])
@@ -215,7 +203,6 @@ describe('DiffViewer', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '差分内を検索' }), { target: { value: 'needle' } })
     fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
 
-    expect(screen.getByText(/表示 601.*610.*610行/u)).toBeInTheDocument()
     expect(screen.getByText('1/2')).toBeInTheDocument()
     expect(screen.getAllByTestId('diff-line').find((line) => line.dataset.searchActive === 'true')).toHaveTextContent('line 601 needle')
 

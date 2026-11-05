@@ -205,6 +205,7 @@
   "richMarkdown.image": "[圖片：{alt}]",
   "richMarkdown.imageLoading": "[圖片：{alt} · 載入中]",
   "richMarkdown.imageUnavailable": "[圖片：{alt} · 無法顯示]",
+  "richMarkdown.diagramUnavailable": "無法繪製此圖表，因此顯示其原始碼。",
   "richMarkdown.noAlt": "無說明",
   "richMarkdown.linkPrompt": "連結 URL",
   "markdownReview.removedLabel": "已從前一版本移除，第 {lines} 行",

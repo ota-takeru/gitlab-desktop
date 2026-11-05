@@ -186,7 +186,6 @@
   "menu.rebase": "Rebase",
   "menu.behind": "{count, plural, one {# commit atrás do destino} other {# commits atrás do destino}}",
   "menu.requestChanges": "Solicitar alterações",
-  "menu.requestChangesReviewerOnly": "Disponível quando você é revisor",
   "menu.editTitle": "Editar título…",
   "menu.editLabels": "Editar rótulos…",
   "menu.changeMilestone": "Alterar marco…",

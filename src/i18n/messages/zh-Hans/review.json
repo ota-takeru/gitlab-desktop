@@ -47,7 +47,7 @@
   "diff.viewToggle": "在差异和完整文件之间切换",
   "diff.view.diff": "差异",
   "diff.view.file": "完整文件",
-  "diff.search.hint": "搜索当前显示的差异页面。不包括其他页面。",
+  "diff.search.hint": "搜索所有已加载的差异。",
   "diff.search.placeholder": "在差异中搜索",
   "diff.search.previousTooltip": "上一个结果",
   "diff.search.previous": "差异中的上一个搜索结果",

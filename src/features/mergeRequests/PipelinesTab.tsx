@@ -13,7 +13,7 @@ import ListItemButton from '@mui/material/ListItemButton'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { type ConfirmOptions } from '../../components/Feedback'
 import { useConfirm } from '../../components/feedbackContext'
@@ -39,6 +39,8 @@ export interface PipelinesTabProps {
   /** Sends one write through the MR's write guard; resolves true once GitLab confirmed it. */
   onRunAction: (action: JobAction | PipelineAction) => Promise<boolean>
   onOpenUrl: (url: string) => void
+  /** GitLab's address of the pipeline or job shown. */
+  onShownUrlChange?: (url: string | null) => void
 }
 
 /**
@@ -46,7 +48,7 @@ export interface PipelinesTabProps {
  * While something runs and this tab is shown it is read again every 15
  * seconds; finished pipelines are not polled.
  */
-export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId, sessionId }: PipelinesTabProps) {
+export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, onShownUrlChange, projectId, sessionId }: PipelinesTabProps) {
   const t = useT()
   const confirm = useConfirm()
   const autoRefresh = useQueryRefreshAllowed()
@@ -78,6 +80,8 @@ export function PipelinesTab({ disabled, iid, onOpenUrl, onRunAction, projectId,
   const jobs = useMemo(() => jobsResult.data ?? [], [jobsResult.data])
   const stages = useMemo(() => groupByStage(jobs), [jobs])
   const shownJob = selected && selectedJob?.pipelineId === selected.id ? jobs.find((job) => job.id === selectedJob.jobId) ?? null : null
+  const shownUrl = shownJob?.webUrl || pipeline?.webUrl || null
+  useEffect(() => onShownUrlChange?.(shownUrl), [onShownUrlChange, shownUrl])
 
   const refreshAll = () => { list.refresh(); detail.refresh(); jobsResult.refresh() }
   const run = async (key: string, action: JobAction | PipelineAction, question?: ConfirmOptions) => {

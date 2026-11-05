@@ -205,6 +205,7 @@
   "richMarkdown.image": "[Imagem: {alt}]",
   "richMarkdown.imageLoading": "[Imagem: {alt} · carregando]",
   "richMarkdown.imageUnavailable": "[Imagem: {alt} · indisponível]",
+  "richMarkdown.diagramUnavailable": "Não foi possível desenhar este diagrama, então a fonte é exibida.",
   "richMarkdown.noAlt": "sem descrição",
   "richMarkdown.linkPrompt": "URL do link",
   "markdownReview.removedLabel": "Removido da versão anterior, linhas {lines}",

@@ -1,6 +1,7 @@
+import CallMergeRoundedIcon from '@mui/icons-material/CallMergeRounded'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
-import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
@@ -12,7 +13,6 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
-import IconButton from '@mui/material/IconButton'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
@@ -49,19 +49,22 @@ export interface MergeRequestActionsProps {
   disabled: boolean
   /** The current user is a reviewer of this MR. */
   isReviewer: boolean
+  /** The merge is the header's one primary action, rather than the approval. */
+  mergePrimary: boolean
   /** Sends one write and reads the MR again once it succeeded. */
   onRun: (action: GitLabAction) => Promise<boolean>
   onRefresh: () => void
 }
 
 /**
- * The MR's secondary operations in one menu beside the header's primary
- * action: merge, auto-merge, rebase, request changes, title, Draft, labels,
- * milestone and close/reopen. Each write is sent once with what the user saw,
- * so GitLab refuses it when the MR changed meanwhile.
+ * The MR's operations beside the header's approve button: request changes and
+ * the step that moves the MR on (merge, auto-merge, rebase or reopen) as
+ * buttons, then a menu for rebase on demand, title, Draft, labels, milestone
+ * and close. Each write is sent once with what the user saw, so GitLab refuses
+ * it when the MR changed meanwhile.
  */
 /** Memoized: the MR page renders on every file or tab switch, the actions only when the MR or the lock changes. */
-export const MergeRequestActions = memo(function MergeRequestActions({ disabled, isReviewer, mergeRequest, onRefresh, onRun }: MergeRequestActionsProps) {
+export const MergeRequestActions = memo(function MergeRequestActions({ disabled, isReviewer, mergePrimary, mergeRequest, onRefresh, onRun }: MergeRequestActionsProps) {
   const t = useT()
   const confirm = useConfirm()
   const notify = useNotify()
@@ -140,24 +143,30 @@ export const MergeRequestActions = memo(function MergeRequestActions({ disabled,
     await run({ ...ref, kind: 'requestChanges', projectPath: mergeRequest.projectPath }, t('mergeRequest.requestChanges.done'))
   }
 
+  // The one step that moves this MR on is a button; while a rebase is what blocks the merge, that step is the rebase.
+  const needsRebase = canRebase(mergeRequest) && mergeRequest.detailedMergeStatus === 'need_rebase'
+  const nextStep = mergeRequest.state === 'closed' ? <Button disabled={busy} onClick={() => void setState('reopen')} variant="outlined">{t('mergeRequest.menu.reopen')}</Button>
+    : !opened ? null
+      : mergeRequest.autoMerge ? <Button disabled={busy} onClick={() => void cancelAutoMerge()} variant="outlined">{t('mergeRequest.autoMerge.cancel')}</Button>
+        : needsRebase ? <Button disabled={busy} onClick={() => void rebase()} variant="outlined">{t('mergeRequest.menu.rebase')}</Button>
+          : <Button disabled={busy} onClick={() => setEditor('merge')} startIcon={<CallMergeRoundedIcon />} variant={mergePrimary ? 'contained' : 'outlined'}>{readiness.canAutoMerge ? t('mergeRequest.mergeDialog.submitAuto') : t('mergeRequest.menu.merge')}</Button>
+
   return (
     <>
-      <Tooltip title={t('mergeRequest.menu.more')}><span><IconButton aria-controls={menuAnchor ? menuId : undefined} aria-expanded={menuAnchor ? 'true' : undefined} aria-haspopup="menu" aria-label={t('mergeRequest.menu.more')} disabled={busy} onClick={(event) => setMenuAnchor(event.currentTarget)}><MoreVertRoundedIcon /></IconButton></span></Tooltip>
+      {opened && isReviewer ? <Button disabled={busy || !mergeRequest.projectPath} onClick={() => void requestChanges()} variant="outlined">{t('mergeRequest.menu.requestChanges')}</Button> : null}
+      {nextStep ? <Tooltip describeChild title={opened ? readiness.summary : ''}><span>{nextStep}</span></Tooltip> : null}
+      <Button aria-controls={menuAnchor ? menuId : undefined} aria-expanded={menuAnchor ? 'true' : undefined} aria-haspopup="menu" color="inherit" disabled={busy} endIcon={<ExpandMoreRoundedIcon />} onClick={(event) => setMenuAnchor(event.currentTarget)}>{t('mergeRequest.menu.more')}</Button>
       <Menu anchorEl={menuAnchor} anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }} id={menuId} onClose={() => setMenuAnchor(null)} open={Boolean(menuAnchor)} transformOrigin={{ horizontal: 'right', vertical: 'top' }}>
-        {opened ? [
-          <MenuItem key="merge" onClick={() => choose(() => setEditor('merge'))}><ListItemText primary={t('mergeRequest.menu.merge')} secondary={readiness.summary} /></MenuItem>,
-          mergeRequest.autoMerge ? <MenuItem key="cancel-auto" onClick={() => choose(() => void cancelAutoMerge())}>{t('mergeRequest.autoMerge.cancel')}</MenuItem> : null,
-          canRebase(mergeRequest) ? <MenuItem key="rebase" onClick={() => choose(() => void rebase())}><ListItemText primary={t('mergeRequest.menu.rebase')} secondary={mergeRequest.divergedCommitsCount ? t('mergeRequest.menu.behind', { count: mergeRequest.divergedCommitsCount }) : undefined} /></MenuItem> : null,
-          <MenuItem disabled={!isReviewer || !mergeRequest.projectPath} key="request-changes" onClick={() => choose(() => void requestChanges())}><ListItemText primary={t('mergeRequest.menu.requestChanges')} secondary={isReviewer ? undefined : t('mergeRequest.menu.requestChangesReviewerOnly')} /></MenuItem>,
+        {canRebase(mergeRequest) && !needsRebase ? [
+          <MenuItem key="rebase" onClick={() => choose(() => void rebase())}><ListItemText primary={t('mergeRequest.menu.rebase')} secondary={mergeRequest.divergedCommitsCount ? t('mergeRequest.menu.behind', { count: mergeRequest.divergedCommitsCount }) : undefined} /></MenuItem>,
           <Divider key="divider-edit" />,
         ] : null}
         <MenuItem onClick={() => choose(() => setEditor('title'))}>{t('mergeRequest.menu.editTitle')}</MenuItem>
         {opened ? <MenuItem onClick={() => choose(() => void toggleDraft())}>{mergeRequest.draft ? t('mergeRequest.draft.markReady') : t('mergeRequest.draft.markDraft')}</MenuItem> : null}
         <MenuItem onClick={() => choose(() => setEditor('labels'))}>{t('mergeRequest.menu.editLabels')}</MenuItem>
         <MenuItem onClick={() => choose(() => setEditor('milestone'))}>{t('mergeRequest.menu.changeMilestone')}</MenuItem>
-        {mergeRequest.state === 'merged' ? null : <Divider />}
+        {opened ? <Divider /> : null}
         {opened ? <MenuItem onClick={() => choose(() => void setState('close'))} sx={{ color: 'error.main' }}>{t('mergeRequest.menu.close')}</MenuItem> : null}
-        {mergeRequest.state === 'closed' ? <MenuItem onClick={() => choose(() => void setState('reopen'))}>{t('mergeRequest.menu.reopen')}</MenuItem> : null}
       </Menu>
       {editor === 'merge' ? <MergeDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onMerge={(options) => run({ ...ref, kind: 'merge', ...options }, options.autoMerge ? t('mergeRequest.mergeDialog.autoMergeSet') : t('mergeRequest.mergeDialog.merged'), !options.autoMerge)} /> : null}
       {editor === 'title' ? <TitleDialog disabled={busy} mergeRequest={mergeRequest} onClose={() => setEditor(null)} onSave={(title, expectedTitle) => run({ ...ref, expectedTitle, kind: 'setTitle', title }, t('mergeRequest.titleDialog.saved'))} /> : null}
