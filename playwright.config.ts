@@ -6,14 +6,16 @@ import { defineConfig } from '@playwright/test'
 // the UI Preview workflow's manual run with update_snapshots rebuilds them there. Font rendering
 // differs between machines, so a local run compares with this machine's own baselines in
 // output/ui-snap/baselines instead, recorded on its first run (`npm run ui:snap:update` re-records them).
+// `npm run ui:check` compares a local run with the committed baselines, to see before a push what CI will see.
 const onCi = Boolean(process.env.CI)
+const committedBaselines = onCi || process.env.UI_SNAP_BASELINES === 'committed'
 
 export default defineConfig({
   testDir: 'tests/visual',
   testMatch: '**/*.visual.ts',
   outputDir: 'output/ui-snap/results',
-  snapshotPathTemplate: onCi ? '{testDir}/screenshots/{arg}{ext}' : 'output/ui-snap/baselines/{arg}{ext}',
-  updateSnapshots: onCi ? 'none' : 'missing',
+  snapshotPathTemplate: committedBaselines ? '{testDir}/screenshots/{arg}{ext}' : 'output/ui-snap/baselines/{arg}{ext}',
+  updateSnapshots: committedBaselines ? 'none' : 'missing',
   fullyParallel: true,
   workers: 2,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'output/ui-snap/report' }]],
@@ -28,6 +30,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:1420',
-    reuseExistingServer: true,
+    // A server left running from another checkout would be compared in place of this one.
+    reuseExistingServer: !committedBaselines,
   },
 })
