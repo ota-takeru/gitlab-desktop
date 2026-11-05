@@ -37,6 +37,9 @@ export interface VersionChoice {
   onSelect: (headCommitSha: string | null) => void
 }
 
+/** The tab's top padding: the commit row sticks exactly where it rests, so scrolling does not move it, and its `::before` covers what scrolls through the gap. */
+const TIMELINE_GAP = 8
+
 export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, pendingDrafts, lineComposer, discussions, discussionHeadSha, discussionsIncomplete, onOpenDiscussion, reviewContext, allowComments, changesError, changesLoading, changesMissing, changesTruncated, commits, commitsError, commitsLoading, diffs, fileResult, fileView, moreCommits, onComment, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition, suggestionActions, versions }: { compareBaseSha?: string; local?: LocalChoice; fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; iid?: string; projectUrl?: string }; reviewContext?: ReviewedFileContext; allowComments: boolean; changesError: Error | null; changesLoading: boolean; /** GitLab's list leaves out files of the MR: its count of them, when it does. */ changesMissing?: string | null; changesTruncated: boolean; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; moreCommits: MoreCommits | null; onComment: (position: Position) => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position; discussions?: Discussion[]; discussionHeadSha?: string; discussionsIncomplete: boolean; onOpenDiscussion: (discussionId: string) => void; lineComposer?: { position: Position; node: React.ReactNode }; pendingDrafts?: Draft[]; threadActions?: ThreadActions; suggestionActions?: SuggestionActions; versions: VersionChoice }) {
   const t = useT()
   const compareFrom = versions.compareFrom
@@ -50,7 +53,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     const root = rootRef.current
     const timeline = timelineRef.current
     if (!root) return
-    const update = () => root.style.setProperty('--commit-timeline-height', `${timeline?.offsetHeight ?? 0}px`)
+    const update = () => root.style.setProperty('--commit-timeline-height', `${timeline ? timeline.offsetHeight + TIMELINE_GAP : 0}px`)
     update()
     if (!timeline || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(update)
@@ -61,7 +64,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     <Stack ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)' }}>
       {commitsError && !commits.length ? <Alert severity="error">{t('review.changes.commitsError', { message: commitsError.message })}</Alert> : null}
       {commitsError && commits.length ? <Alert severity="warning">{t('review.changes.commitsStale', { message: commitsError.message })}</Alert> : null}
-      {showTimeline ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: 'var(--mr-header-height)', zIndex: 2 }}><CommitTimeline baseSha={compareBaseSha} commits={commits} compareFrom={compareFrom} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versionPicker={<VersionPicker versions={versions} />} /></Box> : null}
+      {showTimeline ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: `calc(var(--mr-header-height) + ${TIMELINE_GAP}px)`, zIndex: 2, '&::before': { bgcolor: 'background.default', content: '""', height: TIMELINE_GAP, left: 0, position: 'absolute', right: 0, top: -TIMELINE_GAP } }}><CommitTimeline baseSha={compareBaseSha} commits={commits} compareFrom={compareFrom} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versionPicker={<VersionPicker versions={versions} />} /></Box> : null}
       <Stack spacing={1.5} sx={{ '--detail-header-height': 'calc(var(--mr-header-height) + var(--commit-timeline-height, 0px))' }}>
       {showingLocal ? local?.content : <>
       {changesTruncated ? <Alert severity="warning">{t('review.changes.truncated')}</Alert> : null}

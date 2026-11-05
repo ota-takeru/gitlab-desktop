@@ -1,16 +1,23 @@
-import { type Theme } from '@mui/material/styles'
+import Box from '@mui/material/Box'
+import { type SxProps, type Theme } from '@mui/material/styles'
+import Typography from '@mui/material/Typography'
 import { Fragment } from 'react'
 
 import type { SyntaxToken } from '../../lib/syntaxHighlight'
 import { gridLine } from '../../theme'
 import type { Position } from '../../types/gitlab'
-import type { ParsedLine } from './diffParser'
+import type { DiffLineCounts, ParsedLine } from './diffParser'
 
 export const FILE_PAGE_SIZE = 1000
 
 /** Rows without code (empty split cells, omitted lines): a tone that stays visible on the dark theme too. */
 export function quietBand(theme: Theme): string {
   return theme.palette.mode === 'dark' && theme.palette.surface ? theme.palette.surface.list : theme.palette.action.hover
+}
+
+/** Added and removed lines; `label` says them in words where nothing around the marks does. */
+export function LineCounts({ added, label, removed, sx }: DiffLineCounts & { label?: string; sx?: SxProps<Theme> }) {
+  return <Typography aria-label={label} component="span" sx={[{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap' }, ...(Array.isArray(sx) ? sx : [sx])]} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{removed}</Box></Typography>
 }
 
 /** Styles shared by the unified and side-by-side layouts. */

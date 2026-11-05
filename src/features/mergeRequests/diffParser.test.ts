@@ -1,4 +1,4 @@
-import { ignoreWhitespace, parseDiff, splitFileLines } from './diffParser'
+import { countDiffLines, ignoreWhitespace, parseDiff, splitFileLines } from './diffParser'
 
 describe('parseDiff', () => {
   it('keeps header-looking additions and deletions inside a hunk', () => {
@@ -118,5 +118,20 @@ describe('ignoreWhitespace', () => {
     const onlySpace = ignoreWhitespace(parseDiff('@@ -1 +1 @@\n-x =1\n+x = 1\n', 'a.ts', 'a.ts').lines)
     expect(onlySpace.changed).toBe(false)
     expect(onlySpace.lines).toHaveLength(1)
+  })
+})
+
+describe('countDiffLines', () => {
+  it('agrees with the parsed rows, leaving out file headers and metadata', () => {
+    const diff = 'diff --git a/a b/a\nindex 1..2 100644\n--- a/a\n+++ b/a\n@@ -1,3 +1,3 @@\n same\n-old\n+new\n+++ generated\n--- removed\n\\ No newline at end of file\n'
+    const rows = parseDiff(diff, 'a', 'a').lines
+    expect(countDiffLines(diff)).toEqual({ added: rows.filter((line) => line.kind === 'add').length, removed: rows.filter((line) => line.kind === 'remove').length })
+    expect(countDiffLines(diff)).toEqual({ added: 2, removed: 2 })
+  })
+
+  it('counts nothing without a hunk, and a last line without a line break', () => {
+    expect(countDiffLines('')).toEqual({ added: 0, removed: 0 })
+    expect(countDiffLines('--- a/a\n+++ b/a\n')).toEqual({ added: 0, removed: 0 })
+    expect(countDiffLines('@@ -1 +1 @@\n-a\n+b')).toEqual({ added: 1, removed: 1 })
   })
 })

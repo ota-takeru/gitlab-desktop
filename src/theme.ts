@@ -84,7 +84,9 @@ declare module '@mui/material/styles' {
     iconCount: React.CSSProperties
     /** The largest heading of a long Markdown document. */
     markdownTitle: React.CSSProperties
-    /** A section heading of a Markdown document, between the body text and `h1`. */
+    /** The next heading of a long Markdown document, and the largest of a short one. */
+    markdownHeading: React.CSSProperties
+    /** A section heading of a Markdown document, between the body text and `markdownHeading`. */
     markdownSection: React.CSSProperties
   }
 
@@ -92,6 +94,7 @@ declare module '@mui/material/styles' {
     code?: React.CSSProperties
     iconCount?: React.CSSProperties
     markdownTitle?: React.CSSProperties
+    markdownHeading?: React.CSSProperties
     markdownSection?: React.CSSProperties
   }
 
@@ -182,7 +185,7 @@ export const gridLine = (steps: number) => `${steps * grid}px`
 export const appBadgeColors = { fill: '#e01e5a', text: '#ffffff' } as const
 
 /** The line height of each text variant, in grid steps, so a mark can be sized to a variant's first line (components/rows). */
-export const typeLines = { body1: 6, body2: 5, caption: 5, code: 5, h1: 6, h2: 5, h3: 5, iconCount: 4, markdownSection: 6, markdownTitle: 8, overline: 4, subtitle1: 6, subtitle2: 5 } as const
+export const typeLines = { body1: 6, body2: 5, caption: 5, code: 5, h1: 6, h2: 5, h3: 5, iconCount: 4, markdownHeading: 7, markdownSection: 6, markdownTitle: 9, overline: 4, subtitle1: 6, subtitle2: 5 } as const
 
 const forcedColors = '@media (forced-colors: active)'
 const selectedOutline = { outline: '2px solid Highlight', outlineOffset: -2 }
@@ -325,8 +328,9 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       caption: { fontSize: '0.75rem', lineHeight: gridLine(typeLines.caption), letterSpacing: 0 },
       overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: gridLine(typeLines.overline) },
       iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: gridLine(typeLines.iconCount) },
-      markdownTitle: { fontSize: '1.375rem', fontWeight: 700, lineHeight: gridLine(typeLines.markdownTitle) },
-      markdownSection: { fontSize: '1rem', fontWeight: 600, lineHeight: gridLine(typeLines.markdownSection) },
+      markdownTitle: { fontSize: '1.625rem', fontWeight: 700, lineHeight: gridLine(typeLines.markdownTitle) },
+      markdownHeading: { fontSize: '1.25rem', fontWeight: 600, lineHeight: gridLine(typeLines.markdownHeading) },
+      markdownSection: { fontSize: '1.0625rem', fontWeight: 600, lineHeight: gridLine(typeLines.markdownSection) },
     },
     // Radii are 4 (small) or 8 (standard): `borderRadius: 1` or `2` in sx.
     shape: {

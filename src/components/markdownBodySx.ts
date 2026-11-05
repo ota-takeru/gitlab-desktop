@@ -53,9 +53,10 @@ export function markdownBodySx(size: 'body1' | 'body2') {
     '& [data-short-cell]': { minWidth: 0, whiteSpace: 'nowrap', '& code': { whiteSpace: 'nowrap' } },
     '& hr': { border: 0, height: 0, my: roomy ? 4 : 3, ...hairline('top', { color: 'surface.borderStrong' }) },
     '& h1, & h2, & h3, & h4, & h5, & h6': { color: 'text.primary', fontSize: `${size}.fontSize`, fontWeight: 600, mb: 0.5, mt: roomy ? 3 : 2 },
-    '& h1': { ...hairline('bottom', { color: 'surface.borderStrong' }), fontSize: roomy ? 'markdownTitle.fontSize' : 'h1.fontSize', fontWeight: 700, lineHeight: gridLine(roomy ? 8 : 7), mb: roomy ? 1.5 : 1, mt: roomy ? 4 : 3, pb: 0.5 },
-    '& h2': { ...hairline('bottom'), fontSize: roomy ? 'h1.fontSize' : 'markdownSection.fontSize', lineHeight: gridLine(roomy ? 7 : 6), mb: roomy ? 1.5 : 1, mt: roomy ? 4 : 3, pb: 0.5 },
-    '& h3': { fontSize: roomy ? 'markdownSection.fontSize' : 'body1.fontSize', lineHeight: gridLine(roomy ? 6 : 5), mb: 1 },
+    '& h1': { ...hairline('bottom', { color: 'surface.borderStrong' }), fontSize: roomy ? 'markdownTitle.fontSize' : 'markdownHeading.fontSize', fontWeight: 700, lineHeight: gridLine(roomy ? 9 : 7), mb: roomy ? 1.5 : 1, mt: roomy ? 4 : 3, pb: 0.5 },
+    '& h2': { ...hairline('bottom'), fontSize: roomy ? 'markdownHeading.fontSize' : 'markdownSection.fontSize', lineHeight: gridLine(roomy ? 7 : 6), mb: roomy ? 1.5 : 1, mt: roomy ? 4 : 3, pb: 0.5 },
+    '& h3': { fontSize: roomy ? 'markdownSection.fontSize' : 'subtitle1.fontSize', lineHeight: gridLine(6), mb: 1 },
+    '& h4': { fontSize: roomy ? 'subtitle1.fontSize' : 'body1.fontSize' },
     '& h5, & h6': { color: 'text.secondary' },
     // What a heading introduces takes its distance from the heading alone.
     '& :is(h1, h2, h3, h4, h5, h6) + *, & :is(h1, h2, h3, h4, h5, h6) + [data-table-scroll]': { mt: 0 },
