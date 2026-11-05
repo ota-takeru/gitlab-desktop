@@ -186,7 +186,6 @@
   "menu.rebase": "變基",
   "menu.behind": "{count, plural, other {落後目標 # 個提交}}",
   "menu.requestChanges": "要求變更",
-  "menu.requestChangesReviewerOnly": "您是審查者時可使用",
   "menu.editTitle": "編輯標題…",
   "menu.editLabels": "編輯標籤…",
   "menu.changeMilestone": "變更里程碑…",

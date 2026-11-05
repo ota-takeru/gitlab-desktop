@@ -186,7 +186,6 @@
   "menu.rebase": "Rebase",
   "menu.behind": "{count, plural, one {# commit de retard sur la cible} many {# commits de retard sur la cible} other {# commits de retard sur la cible}}",
   "menu.requestChanges": "Demander des modifications",
-  "menu.requestChangesReviewerOnly": "Disponible lorsque vous êtes relecteur",
   "menu.editTitle": "Modifier le titre…",
   "menu.editLabels": "Modifier les labels…",
   "menu.changeMilestone": "Changer de jalon…",
