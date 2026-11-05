@@ -758,7 +758,7 @@ const richEditorSx = {
     '& ul[data-type="taskList"] li > div': { flex: 1, minWidth: 0 },
     '& ul[data-type="taskList"] li > label': { lineHeight: 1, pt: 0.5 },
     '& ul[data-type="taskList"] li p, & td p, & th p': { my: 0 },
-    '& td, & th': { ...hairline(['right', 'bottom']), minWidth: '6em', px: 1, py: 0.5 },
+    '& td, & th': { minWidth: '6em' },
     '& [data-markdown-image]': { color: 'text.secondary', fontSize: 'caption.fontSize' },
     '& a': { color: 'primary.main' },
     '& .selectedCell': { bgcolor: 'action.selected' },

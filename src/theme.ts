@@ -82,12 +82,24 @@ declare module '@mui/material/styles' {
     code: React.CSSProperties
     /** A count shown with an icon, such as the notification bell's. */
     iconCount: React.CSSProperties
+    /** The largest heading of a long Markdown document. */
+    markdownTitle: React.CSSProperties
+    /** A section heading of a Markdown document, between the body text and `h1`. */
+    markdownSection: React.CSSProperties
   }
 
   interface TypographyVariantsOptions {
     code?: React.CSSProperties
     iconCount?: React.CSSProperties
+    markdownTitle?: React.CSSProperties
+    markdownSection?: React.CSSProperties
   }
+
+  interface TypeText {
+    /** Running text of a Markdown document, a step softer than its headings. */
+    body: string
+  }
+
 }
 
 declare module '@mui/material/Typography' {
@@ -135,6 +147,7 @@ interface Tokens {
   surface: string
   raised: string
   ink: string
+  inkBody: string
   inkMuted: string
   border: string
   borderStrong: string
@@ -169,7 +182,7 @@ export const gridLine = (steps: number) => `${steps * grid}px`
 export const appBadgeColors = { fill: '#e01e5a', text: '#ffffff' } as const
 
 /** The line height of each text variant, in grid steps, so a mark can be sized to a variant's first line (components/rows). */
-export const typeLines = { body1: 6, body2: 5, caption: 5, code: 5, h1: 6, h2: 5, h3: 5, iconCount: 4, overline: 4, subtitle1: 6, subtitle2: 5 } as const
+export const typeLines = { body1: 6, body2: 5, caption: 5, code: 5, h1: 6, h2: 5, h3: 5, iconCount: 4, markdownSection: 6, markdownTitle: 8, overline: 4, subtitle1: 6, subtitle2: 5 } as const
 
 const forcedColors = '@media (forced-colors: active)'
 const selectedOutline = { outline: '2px solid Highlight', outlineOffset: -2 }
@@ -178,7 +191,7 @@ const selectedOutline = { outline: '2px solid Highlight', outlineOffset: -2 }
 const tokens: Record<PaletteMode, Tokens> = {
   light: {
     canvas: '#ffffff', nav: '#f1f3f5', list: '#f8f9fb', surface: '#ffffff', raised: '#ffffff',
-    ink: '#1b1f24', inkMuted: '#5d6672', border: '#e3e6ea', borderStrong: '#cfd4da', inputBorder: '#848c96',
+    ink: '#1b1f24', inkBody: '#333a42', inkMuted: '#5d6672', border: '#e3e6ea', borderStrong: '#cfd4da', inputBorder: '#848c96',
     primary: '#2860c4', primaryStrong: '#1f56b8', primaryFill: '#2f6fde', primaryFillHover: '#2459b8', accent: '#6f45d8',
     success: '#1a7440', warning: '#8c5800', error: '#b5352f', info: '#0a6676', tooltip: '#24292f',
     diff: { addedBackground: '#e6f4ea', deletedBackground: '#fbe9eb', addedText: '#1a6b34', deletedText: '#a3242f', searchMatchBackground: '#fff0b3', searchMatchText: '#1b1f24' },
@@ -192,7 +205,7 @@ const tokens: Record<PaletteMode, Tokens> = {
   },
   dark: {
     canvas: '#232529', nav: '#101113', list: '#1a1b1f', surface: '#232529', raised: '#2e3036',
-    ink: '#e3e6ea', inkMuted: '#9ca3ad', border: '#3a3d45', borderStrong: '#4d515a', inputBorder: '#7e848e',
+    ink: '#e3e6ea', inkBody: '#c8cdd4', inkMuted: '#9ca3ad', border: '#3a3d45', borderStrong: '#4d515a', inputBorder: '#7e848e',
     primary: '#7aa7ee', primaryStrong: '#a3c2f5', primaryFill: '#2e66c8', primaryFillHover: '#2858b0', accent: '#a990ea',
     success: '#5cbf8e', warning: '#dca54f', error: '#f07c7c', info: '#5bb8d4', tooltip: '#2e3036',
     diff: { addedBackground: '#1d3527', deletedBackground: '#3c2428', addedText: '#e3e6ea', deletedText: '#e3e6ea', searchMatchBackground: '#5c4a12', searchMatchText: '#e3e6ea' },
@@ -248,6 +261,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       text: {
         primary: palette.ink,
         secondary: palette.inkMuted,
+        body: palette.inkBody,
         disabled: alpha(palette.ink, 0.42),
       },
       divider: palette.border,
@@ -311,6 +325,8 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
       caption: { fontSize: '0.75rem', lineHeight: gridLine(typeLines.caption), letterSpacing: 0 },
       overline: { fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.06em', lineHeight: gridLine(typeLines.overline) },
       iconCount: { fontSize: '0.6875rem', fontVariantNumeric: 'tabular-nums', fontWeight: 700, letterSpacing: 0, lineHeight: gridLine(typeLines.iconCount) },
+      markdownTitle: { fontSize: '1.375rem', fontWeight: 700, lineHeight: gridLine(typeLines.markdownTitle) },
+      markdownSection: { fontSize: '1rem', fontWeight: 600, lineHeight: gridLine(typeLines.markdownSection) },
     },
     // Radii are 4 (small) or 8 (standard): `borderRadius: 1` or `2` in sx.
     shape: {
