@@ -44,14 +44,16 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
   const t = useT()
   const pieces = useMemo(() => {
     const skipped = diffGaps(lines, startIndex)
-    return chunkRanges(lines.length).map(([from, to]) => ({ lines: lines.slice(from, to), skipped: skipped.slice(from, to), start: startIndex + from, tokens: tokens.slice(from, to) }))
-  }, [lines, startIndex, tokens])
+    return chunkRanges(lines.length).map(([from, to]) => ({ lines: lines.slice(from, to), skipped: skipped.slice(from, to), start: startIndex + from }))
+  }, [lines, startIndex])
+  // Apart from the pieces, so colours arriving later do not start the rows over.
+  const pieceTokens = useMemo(() => chunkRanges(lines.length).map(([from, to]) => tokens.slice(from, to)), [lines.length, tokens])
   const shown = useProgressiveCount(pieces, firstRows)
   // The prefix and the space after it take two columns of the code cell.
   const columns = useCodeColumns(scrollRef, '.diff-code', `unified:${blameEnabled}`)
   const heights = useMemo(() => pieces.map((piece) => piece.lines.reduce((sum, line, index) => sum + wrappedLines(line.text, columns, 2) * ROW_HEIGHT + (piece.skipped[index].count > 0 ? GAP_HEIGHT : 0), 0)), [columns, pieces])
-  // Rows are plain elements styled from this one block: a page holds up to
-  // DIFF_PAGE_SIZE rows, and per-row styled components dominate render time.
+  // Rows are plain elements styled from this one block: a file can hold many
+  // thousands of rows, and per-row styled components dominate render time.
   return (
     <Box ref={scrollRef} sx={(theme) => ({ ...diffBaseStyles(theme),
       // Long code lines wrap, so the page stays the only scroll.
@@ -98,7 +100,7 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
             skipped={piece.skipped}
             startIndex={piece.start}
             threadView={hasThreads ? threadView : undefined}
-            tokens={piece.tokens}
+            tokens={pieceTokens[pieceIndex]}
           />
         })}
       </div>

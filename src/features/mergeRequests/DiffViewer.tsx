@@ -31,10 +31,10 @@ import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { DiffFileTree, FileThreadMark } from './DiffFileTree'
 import { FILE_LIST_MODE_KEY, readFileListMode, type FileListMode } from './diffFileOrder'
 import type { GapExpansion } from './DiffGap'
-import { PageControls } from './DiffPageControls'
 import { SplitDiff, UnifiedDiff, type LineSelection, type RowSelection } from './DiffRows'
-import { DIFF_PAGE_SIZE, firstVisibleFileLine, matchesPosition, positionLineId, scrollNearestBy } from './diffShared'
+import { firstVisibleFileLine, matchesPosition, positionLineId, scrollNearestBy } from './diffShared'
 import { FullFileView } from './FullFileView'
+import { useDiffTokens } from './useDiffTokens'
 import { BlameProvider } from './BlamePanel'
 import type { HistoryCursor } from './lineHistory'
 import { LineHistoryView } from './LineHistoryView'
@@ -45,7 +45,7 @@ import { markdownDiffNeedsFile } from './markdownDiff'
 import { firstChangedFileLine } from './fullFileAnnotations'
 import type { ThreadActions } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine, type FileThreadCount } from './diffLineThreads'
-import { highlightLines, languageForPath, type SyntaxToken } from '../../lib/syntaxHighlight'
+import { languageForPath } from '../../lib/syntaxHighlight'
 import { ignoreWhitespace as ignoreWhitespaceChanges, parseDiff, type DiffHunk, type ParsedDiff, type ParsedLine } from './diffParser'
 import { canReadOmittedDiff, isDiffOmitted, OmittedDiffReader, type OmittedDiffRead } from './omittedDiff'
 import { positionLines } from './diffLineThreads'
@@ -181,12 +181,6 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const currentSearchMatch = activeSearch?.query === diffSearch && activeSearch.path === displayedPath
     ? activeSearch.lineIndex
     : -1
-  const pagingPositionKey = currentSearchMatch >= 0 ? `search:${diffSearch}:${currentSearchMatch}` : positionKey
-  const requestedOffset = currentSearchMatch >= 0
-    ? Math.floor(currentSearchMatch / DIFF_PAGE_SIZE) * DIFF_PAGE_SIZE
-    : selectedLineIndex >= 0 ? Math.floor(selectedLineIndex / DIFF_PAGE_SIZE) * DIFF_PAGE_SIZE : 0
-  const [diffPaging, setDiffPaging] = useState({ diffKey: '', positionKey: '', offset: 0 })
-  const diffOffset = diffPaging.diffKey === diffKey && diffPaging.positionKey === pagingPositionKey ? diffPaging.offset : requestedOffset
   const diffScrollRef = useRef<HTMLDivElement | null>(null)
   const reviewState = useReviewedFiles(reviewContext, diffs)
   const fileSearchMatches = useMemo(() => {
@@ -205,17 +199,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     setLayout(next)
     saveDiffLayout(next)
   }
-  const updateDiffOffset = (update: (current: number) => number): void => {
-    setDiffPaging((current) => {
-      const currentOffset = current.diffKey === diffKey && current.positionKey === pagingPositionKey ? current.offset : requestedOffset
-      return { diffKey, positionKey: pagingPositionKey, offset: update(currentOffset) }
-    })
-  }
-
-  // One array per page, so the split view's row pairing is not rebuilt on every render.
-  const rows = useMemo(() => displayLines.slice(diffOffset, diffOffset + DIFF_PAGE_SIZE), [diffOffset, displayLines])
   const language = displayedPath ? languageForPath(displayedPath) : null
-  const rowTokens = useMemo(() => renderedMarkdownDiff ? [] : highlightDiffLines(rows, language), [language, renderedMarkdownDiff, rows])
+  const rowTokens = useDiffTokens(displayLines, language, !renderedMarkdownDiff)
   const pageSearchMatches = useMemo(() => new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex)), [displayedPath, searchMatches])
   const lineCounts = useMemo(() => ({ added: displayLines.filter((line) => line.kind === 'add').length, removed: displayLines.filter((line) => line.kind === 'remove').length }), [displayLines])
   const commentable = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
@@ -307,7 +292,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
       event.preventDefault()
       const anchor = choice && choice.focus === index ? choice.anchor : index
       const next = index + (event.key === 'ArrowUp' ? -1 : 1)
-      if (next < diffOffset || next >= diffOffset + DIFF_PAGE_SIZE || !sameHunk(anchor, next)) return
+      if (!sameHunk(anchor, next)) return
       setLineChoice({ anchor, diffKey, focus: next === anchor ? null : next })
       focusAfterRender.current = next
     },
@@ -351,7 +336,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   // A rendered Markdown edit reads the lines before it (a table header, an open fence) from the whole new file,
   // which is read only when the diff does not show them.
   const markdownSource = useMemo(() => parsed.status === 'valid' ? { content: fileContent, diffLines: parsed.lines } : undefined, [fileContent, parsed])
-  const markdownNeedsFile = useMemo(() => renderedMarkdownDiff && parsed.status === 'valid' && typeof fileContent !== 'string' && markdownDiffNeedsFile(rows, parsed.lines), [fileContent, parsed, renderedMarkdownDiff, rows])
+  const markdownNeedsFile = useMemo(() => renderedMarkdownDiff && parsed.status === 'valid' && typeof fileContent !== 'string' && markdownDiffNeedsFile(displayLines, parsed.lines), [displayLines, fileContent, parsed, renderedMarkdownDiff])
 
   const navigateSearch = (direction: -1 | 1) => {
     if (searchMatches.length === 0) return
@@ -410,13 +395,13 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     // A line comment editor under the line takes the focus itself.
     if (!composerOpen) target.focus({ preventScroll: true })
     target.scrollIntoView?.({ behavior: 'auto', block: 'center' })
-  }, [composerOpen, diffOffset, layout, positionKey, selectedLineIndex, selectedPosition, view])
+  }, [composerOpen, layout, positionKey, selectedLineIndex, selectedPosition, view])
 
   useLayoutEffect(() => {
     if (currentSearchMatch < 0 || view !== 'diff') return
     const target = diffScrollRef.current?.querySelector<HTMLElement>('[data-search-active="true"]')
     target?.scrollIntoView?.({ behavior: 'auto', block: 'center' })
-  }, [currentSearchMatch, diffOffset, layout, view])
+  }, [currentSearchMatch, layout, view])
 
   // The page is the only vertical scroll, so a newly chosen file starts at its top.
   const fileTopRef = useRef<HTMLDivElement>(null)
@@ -484,7 +469,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
       })
       const visibleLine = visible ? Number(visible.dataset.fileAnchor) : NaN
       const measured = Number.isSafeInteger(visibleLine) && visibleLine > 0
-      const line = measured ? visibleLine : selectedPosition?.newLine ?? firstChangedFileLine(rows.length ? rows : displayLines)
+      const line = measured ? visibleLine : selectedPosition?.newLine ?? firstChangedFileLine(displayLines)
       setFileAnchor({ path: displayedPath, line, top: measured ? visible?.getBoundingClientRect().top : undefined })
     }
     if (next === 'diff' && view === 'file' && displayedPath) {
@@ -509,7 +494,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     if (target && wanted.top !== undefined) scrollNearestBy(target, target.getBoundingClientRect().top - wanted.top)
     else target?.scrollIntoView?.({ behavior: 'auto', block: 'center' })
     restoreDiffAnchor.current = null
-  }, [diffOffset, displayedPath, layout, renderedMarkdownDiff, view])
+  }, [displayedPath, layout, renderedMarkdownDiff, view])
 
   useLayoutEffect(() => {
     if (historyStart || !historyScroll.current) return
@@ -522,14 +507,14 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const [wholePageKey, setWholePageKey] = useState<string | null>(null)
   // The lines chosen for a comment, offered to Blame as a range to follow.
   const blameSelection = chosenRange ? chosenLineRange(displayLines.slice(chosenRange[0], chosenRange[1] + 1)) : undefined
-  const firstRows = wholePageKey === diffKey ? rows.length : Math.max(selectedLineIndex, currentSearchMatch, chosenRange?.[1] ?? -1) - diffOffset + 1
+  const firstRows = wholePageKey === diffKey ? displayLines.length : Math.max(selectedLineIndex, currentSearchMatch, chosenRange?.[1] ?? -1) + 1
   const diffContent = renderedMarkdownDiff
     ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{markdownNeedsFile && gapQuery && sourceSessionId && !selectedDiff?.deletedFile
-      ? <FetchedMarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} query={gapQuery} sessionId={sourceSessionId} source={markdownSource} />
-      : <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={rows} source={markdownSource} />}</MarkdownLinkProvider>
+      ? <FetchedMarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} query={gapQuery} sessionId={sourceSessionId} source={markdownSource} />
+      : <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} source={markdownSource} />}</MarkdownLinkProvider>
     : layout === 'split'
-    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={rows} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
-    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={rows} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={diffOffset} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
+    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} />
 
   return (
     <Box ref={rootRef}>
@@ -612,7 +597,6 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             {threadView && lineThreads.outdated > 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.outdatedHidden', { count: lineThreads.outdated })}</Typography> : null}
             {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.discussionsIncomplete')}</Typography> : null}
             {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.search.noMatch')}</Typography> : null}
-            <PageControls offset={diffOffset} pageSize={DIFF_PAGE_SIZE} total={displayLines.length} onNext={() => updateDiffOffset((current) => Math.min(current + DIFF_PAGE_SIZE, Math.max(0, displayLines.length - 1)))} onPrevious={() => updateDiffOffset((current) => Math.max(0, current - DIFF_PAGE_SIZE))} />
             {/* Always wrapped while Blame can be shown, so toggling it does not remount the diff and an open comment editor in it. */}
             {canBlame && fileSource && selectedDiff
               ? <BlameProvider beforeSha={fileSource.beforeSha} enabled={blameOpen} onHistory={openHistory} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} projectUrl={fileSource.projectUrl} selectedLines={blameSelection} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
@@ -691,25 +675,6 @@ function saveIgnoreWhitespace(ignore: boolean): void {
   } catch {
     // The choice still applies until the viewer is reopened.
   }
-}
-
-/**
- * Highlights a page of diff lines. Each side is highlighted as one text so
- * multi-line strings and comments keep their colour; context lines use the new side.
- */
-function highlightDiffLines(lines: ParsedLine[], language: string | null): SyntaxToken[][] {
-  const oldSide: number[] = []
-  const newSide: number[] = []
-  lines.forEach((line, index) => {
-    if (line.kind !== 'add') oldSide.push(index)
-    if (line.kind !== 'remove') newSide.push(index)
-  })
-  const result: SyntaxToken[][] = []
-  const oldTokens = highlightLines(oldSide.map((index) => lines[index].text), language)
-  oldSide.forEach((lineIndex, index) => { result[lineIndex] = oldTokens[index] })
-  const newTokens = highlightLines(newSide.map((index) => lines[index].text), language)
-  newSide.forEach((lineIndex, index) => { result[lineIndex] = newTokens[index] })
-  return result
 }
 
 /** Scrolls the nearest scrolling ancestor of `node`, or the page, by `delta` pixels. */

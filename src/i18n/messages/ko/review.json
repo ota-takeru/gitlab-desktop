@@ -47,7 +47,7 @@
   "diff.viewToggle": "diff와 전체 파일 간 전환",
   "diff.view.diff": "diff",
   "diff.view.file": "전체 파일",
-  "diff.search.hint": "표시된 diff 페이지를 검색합니다. 다른 페이지는 포함되지 않습니다.",
+  "diff.search.hint": "불러온 모든 diff를 검색합니다.",
   "diff.search.placeholder": "diff에서 검색",
   "diff.search.previousTooltip": "이전 결과",
   "diff.search.previous": "diff의 이전 검색 결과",

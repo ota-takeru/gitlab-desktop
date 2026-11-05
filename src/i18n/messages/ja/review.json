@@ -47,7 +47,7 @@
   "diff.viewToggle": "差分とファイル全体の切り替え",
   "diff.view.diff": "差分",
   "diff.view.file": "ファイル全体",
-  "diff.search.hint": "表示中の差分ページを検索します。他のページは対象外です。",
+  "diff.search.hint": "読み込み済みの差分をすべて検索します。",
   "diff.search.placeholder": "差分内を検索",
   "diff.search.previousTooltip": "前の検索結果",
   "diff.search.previous": "前の差分内検索結果",
