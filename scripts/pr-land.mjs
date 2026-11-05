@@ -17,6 +17,11 @@ export function landingBlockers(pullRequest, checks, startHead) {
   return blockers
 }
 
+/** `npm run pr:land 12 --dry-run` gives the flag to npm, which passes it on only in the environment; missing it would merge. */
+export function isDryRun(args, env) {
+  return args.includes('--dry-run') || env.npm_config_dry_run === 'true'
+}
+
 function gh(...args) {
   return execFileSync('gh', args, { encoding: 'utf8' })
 }
@@ -42,9 +47,10 @@ function sleep(ms) {
 /** Waits for a pull request's checks, then merges it with a merge commit only if every one passed on the same head. */
 function main() {
   const args = process.argv.slice(2)
-  const dryRun = args.includes('--dry-run')
+  const dryRun = isDryRun(args, process.env)
   const number = args.find((arg) => /^\d+$/u.test(arg))
   if (!number) throw new Error('Usage: npm run pr:land <pull request number> [--dry-run]')
+  if (dryRun) console.log('Dry run: nothing will be merged.')
 
   const start = readPullRequest(number)
   console.log(`Waiting for the checks of #${number}: ${start.title}`)

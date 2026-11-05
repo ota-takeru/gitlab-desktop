@@ -109,7 +109,7 @@ npm run desktop:build -- --no-bundle
 
 release実行ファイル: `src-tauri/target/release/gitlab-desktop.exe`。配布は公開鍵を埋め込んだNSISインストーラーを使用します。更新署名鍵はGitHub Repository secretに保存し、ソースには含めません。Tauriの更新署名はWindowsのAuthenticode署名と別です。実行先にもWebView2が必要です。
 
-mainへpushすると、検査後にActionsがタグ・インストーラー・署名・`latest.json`を自動公開します。バージョンを変えずにpushした場合はActionsがパッチ版を上げてmainへコミットし、`npm run version:bump -- minor` などで先に上げた場合はそのバージョンを公開します。ドキュメントだけの変更は公開しません。[配布と自動更新](docs/distribution.md)を参照してください。
+mainへpushすると、検査後にActionsがタグ・インストーラー・署名・`latest.json`を自動公開します。バージョンを変えずにpushした場合はActionsがパッチ版を上げてmainへコミットし、`npm run version:bump -- minor` などで先に上げた場合はそのバージョンを公開します。ドキュメント・テスト・CI・テストとlintの設定だけを変えたpushは、バージョンを変えない限り公開しません。[配布と自動更新](docs/distribution.md)を参照してください。
 
 個別コマンド:
 
@@ -122,15 +122,15 @@ mainへpushすると、検査後にActionsがタグ・インストーラー・�
 | `npm run ui:snap` | UIカタログの各節と、固定データで表示した実際のMR一覧・議論・差分を明暗 × 960×640 / 1280×840 で、取得中・失敗・空・古いキャッシュの状態を明暗 × 1280×840 で撮影し、基準画像と比較。ローカルではこの端末の基準（`output/ui-snap/baselines`、初回に記録）と比べ、CIでは `tests/visual/screenshots` と比べる。差分は `output/ui-snap/report` で確認 |
 | `npm run ui:snap:update` | 意図した見た目の変更後に、この端末の基準画像を撮り直す。コミット済みの基準画像は `npm run ui:rebaseline` で更新する |
 | `npm run ui:check` | 見た目を変えてpushする前の手順は[見た目を変えたとき](#見た目を変えたとき)を参照。コミット済みの基準画像（`tests/visual/screenshots`）と比較する。CIが使うのと同じ画像である。スクリーンショットの比較だけを行い、CIのほかの画面検査は含まない。失敗したテストは1回再試行する。ポート1420でサーバーが動いていると失敗するので、先に止める。差分は `npx playwright show-report output/ui-snap/report` で開く |
-| `npm run ui:rebaseline` | GitHub Actionsのランナーで基準画像を作り直し、変わった画像だけをコミットする。`main` 以外のブランチで、変更をすべてコミットしてpushし、GitHub CLIにログインした状態で実行する。CIの完了まで待ち、数十分かかることがある。pushはしない |
-| `npm run pr:land <番号>` | PRのチェックの完了を待ち、同じheadですべて合格していればマージコミットでマージする。それ以外ではマージせず、理由を表示する。文書・テスト・CI以外を変えたマージはmainでリリースを公開する。待つ間はPCを起動しておく。マージせずに確かめるときは `--dry-run` を付ける（PowerShellでは `node scripts/pr-land.mjs <番号> --dry-run`）。GitHub CLIが必要 |
+| `npm run ui:rebaseline` | [見た目を変えたとき](#見た目を変えたとき)の最後の手順。GitHub Actionsのランナーで基準画像を作り直し、変わった画像だけをコミットする。`main` 以外のブランチで、変更をすべてコミットしてpushし、GitHub CLIにログインした状態で実行する。CIの完了まで待ち、数十分かかることがある。pushはしない |
+| `npm run pr:land <番号>` | PRのチェックの完了を待ち、マージコミットでマージする。マージするのは、開始時と同じheadですべてのチェックが合格またはスキップで、GitHubがマージ可能と報告しているときだけである。それ以外ではマージせず、理由を表示する。マージによってリリースが公開されることがある。条件はこの節の先頭を参照。GitHub CLIにマージできる権限でログインして実行し、終わるまで端末を開いたままにする。`--dry-run` を付けると、マージだけを行わない |
 | `npm run native:check` | Rustの書式・静的検査・テスト |
 | `npm run tauri -- info` | Tauri開発環境の診断 |
 
 ### 見た目を変えたとき
 
 1. `npm run ui:check` を実行する。作業中に変更の前後を比べるときは、この端末の基準と比べる `npm run ui:snap` を使う。
-2. 意図した画面だけに差分があれば、コミットしてpushする。レイアウトが同じほかの画面で文字の縁だけが違うのは、この端末のフォント描画によるものなので、CIの判定に任せてよい。コミット済みの基準画像がまだ古いので、この時点のCIのスクリーンショット比較は失敗する。
+2. 意図した画面だけに差分があれば、コミットしてpushし、PRを開く。レイアウトが同じほかの画面で文字の縁だけが違うのは、この端末のフォント描画によるものなので、CIの判定に任せてよい。コミット済みの基準画像がまだ古いので、この時点のCIのスクリーンショット比較は失敗する。
 3. `npm run ui:rebaseline` を実行し、一覧に出たファイルを `tests/visual/screenshots` で開いて、意図した変更だけであることを確かめてからpushする。CIのスクリーンショット比較が合格すれば完了である。
 
 `ui:check` に `-` で始まる引数を渡すときは、`node scripts/ui-check.mjs --grep "client stale"` のようにスクリプトを直接実行する。PowerShellの `npm run` は、この引数に必要な `--` を取り除く。

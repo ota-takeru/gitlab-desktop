@@ -1,7 +1,13 @@
 import { deepEqual } from 'node:assert'
 import { test } from 'node:test'
 
-import { landingBlockers } from './pr-land.mjs'
+import { isDryRun, landingBlockers } from './pr-land.mjs'
+
+test('takes a dry run from the argument or from npm, which keeps the flag for itself', () => {
+  deepEqual(isDryRun(['12', '--dry-run'], {}), true)
+  deepEqual(isDryRun(['12'], { npm_config_dry_run: 'true' }), true)
+  deepEqual(isDryRun(['12'], {}), false)
+})
 
 const open = { headRefOid: 'a', isDraft: false, mergeable: 'MERGEABLE', state: 'OPEN' }
 const passed = [{ bucket: 'pass', name: 'Frontend' }, { bucket: 'skipping', name: 'Optional' }]
