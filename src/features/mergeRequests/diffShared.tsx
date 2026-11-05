@@ -15,9 +15,12 @@ export function quietBand(theme: Theme): string {
   return theme.palette.mode === 'dark' && theme.palette.surface ? theme.palette.surface.list : theme.palette.action.hover
 }
 
-/** Added and removed lines; `label` says them in words where nothing around the marks does. */
+/**
+ * Added and removed lines; `label` says them in words where nothing around the marks does.
+ * The numbers are drawn from `data-count`, so a file row, whose name says them in words, is not given stray digits.
+ */
 export function LineCounts({ added, label, removed, sx }: DiffLineCounts & { label?: string; sx?: SxProps<Theme> }) {
-  return <Typography aria-label={label} component="span" sx={[{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap' }, ...(Array.isArray(sx) ? sx : [sx])]} variant="caption"><Box component="span" sx={{ color: 'success.main' }}>+{added}</Box> <Box component="span" sx={{ color: 'error.main' }}>−{removed}</Box></Typography>
+  return <Typography aria-hidden={label ? undefined : true} aria-label={label} component="span" role={label ? 'img' : undefined} sx={[{ flexShrink: 0, fontFamily: 'code.fontFamily', whiteSpace: 'nowrap', '& > [data-count]::before': { content: 'attr(data-count)' } }, ...(Array.isArray(sx) ? sx : [sx])]} variant="caption"><Box component="span" data-count={`+${added}`} sx={{ color: 'success.main' }} /> <Box component="span" data-count={`−${removed}`} sx={{ color: 'error.main' }} /></Typography>
 }
 
 /** Styles shared by the unified and side-by-side layouts. */
