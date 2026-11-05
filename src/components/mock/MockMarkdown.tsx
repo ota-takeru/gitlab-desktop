@@ -5,6 +5,7 @@ import { memo, useEffect, useRef, useState, type ReactElement, type ReactNode } 
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { useT } from '../../i18n/useT'
 import { emojiForName, useEmojiCatalog, type EmojiCatalog } from '../../lib/awardEmoji'
 import { remarkGitLabReferences, resolveMarkdownUrl, type MarkdownLinkBase } from '../../lib/markdownLinks'
 import { useMarkdownLinks } from '../markdownLinksContext'
@@ -14,6 +15,8 @@ import { grid } from '../../theme'
 import type { FullFileDiffAnnotations } from '../../features/mergeRequests/fullFileAnnotations'
 import { useGitLabImage } from '../../features/shared/useGitLabImage'
 import { alignTop } from '../rows'
+import { mermaidSource } from '../../lib/mermaidDiagram'
+import { MarkdownMermaid } from './MarkdownMermaid'
 
 interface MarkdownNode { type: string; value?: string; children?: MarkdownNode[] }
 
@@ -50,8 +53,9 @@ function MarkdownAnchor({ children, href }: { children?: ReactNode; href?: strin
 function MarkdownImage({ alt, src }: { alt?: string; src?: string }) {
   const { sessionId } = useMarkdownLinks()
   const { data, ready } = useGitLabImage(sessionId, src)
+  const t = useT()
   if (data) return <GridImage alt={alt ?? ''} src={data} />
-  return <Typography component="span" color="textSecondary" variant="caption">[画像: {alt || '説明なし'} · {sessionId && src && !ready ? '読み込み中' : '表示できません'}]</Typography>
+  return <Typography component="span" color="textSecondary" variant="caption">{t(sessionId && src && !ready ? 'common.richMarkdown.imageLoading' : 'common.richMarkdown.imageUnavailable', { alt: alt || t('common.richMarkdown.noAlt') })}</Typography>
 }
 
 function GridImage({ alt, src }: { alt: string; src: string }) {
@@ -70,10 +74,27 @@ function GridImage({ alt, src }: { alt: string; src: string }) {
   return <Box component="img" alt={alt} loading="lazy" ref={ref} src={src} sx={{ display: 'block', height: 'auto', maxHeight: 480, maxWidth: '100%', mb: `${rest}px`, objectFit: 'contain' }} />
 }
 
+/** Up to this many characters a table cell keeps one line, so an ID or a date is not split to make room for a sentence. */
+const SHORT_CELL_LENGTH = 16
+
+function textLength(node: MarkdownNode | undefined): number {
+  return (node?.value?.length ?? 0) + (node?.children ?? []).reduce((total, child) => total + textLength(child), 0)
+}
+
+const isShortCell = (node: MarkdownNode | undefined) => textLength(node) <= SHORT_CELL_LENGTH || undefined
+
 const components: Components = {
   a: ({ href, children }) => <MarkdownAnchor href={href}>{children}</MarkdownAnchor>,
   img: ({ alt, src }) => <MarkdownImage alt={alt} src={src} />,
   code: ({ children }) => <Typography component="code" variant="code" sx={{ fontSize: 'inherit', whiteSpace: 'pre-wrap' }}>{children}</Typography>,
+  pre: ({ node, ...props }) => {
+    const source = mermaidSource(node)
+    return source === null ? <pre {...props} /> : <MarkdownMermaid {...props} source={source} />
+  },
+  // A wide or long table scrolls by itself, so its scrollbars stay beside it and the text around it stays put.
+  table: (props) => <div data-table-scroll><table {...{ ...props, node: undefined }} /></div>,
+  td: ({ node, ...props }) => <td {...props} data-short-cell={isShortCell(node)} />,
+  th: ({ node, ...props }) => <th {...props} data-short-cell={isShortCell(node)} />,
 }
 
 /** Parsed comment bodies, most recently used last; reopening a thread reuses them. */

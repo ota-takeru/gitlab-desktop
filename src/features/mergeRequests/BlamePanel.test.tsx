@@ -3,31 +3,44 @@ import { ThemeProvider } from '@mui/material/styles'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 
+import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { createAppTheme } from '../../theme'
-import { FullFileView } from './DiffViewer'
+import { FullFileView } from './FullFileView'
 import { BlameCell, BlameProvider } from './BlamePanel'
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }))
 vi.mock('../shared/useGitLabQuery', () => ({ useGitLabQuery: queryMock }))
-vi.mock('../../lib/gitlab', () => ({ openGitLabUrl: vi.fn() }))
+vi.mock('../../lib/gitlab', () => ({ commitUrl: (projectUrl: string, sha: string) => `${projectUrl}/-/commit/${sha}`, openGitLabUrl: vi.fn() }))
 
 const newSha = 'a'.repeat(40)
 const oldSha = 'b'.repeat(40)
-const block = (sha: string) => ({ authorName: 'Alice', commitId: sha, committedAt: '2026-09-01T10:00:00Z', lines: ['one', 'two', 'three'], title: 'Introduce a' })
+const block = (sha: string, lines = ['one', 'two', 'three']) => ({ authorName: 'Alice', commitId: sha, committedAt: '2026-09-01T10:00:00Z', lines, title: 'Introduce a' })
+
+type Query = { kind: string; sha?: string; path?: string; startLine?: number; endLine?: number } | null
 
 beforeEach(() => {
-  queryMock.mockReset().mockImplementation((_session: string, query: { kind: string; sha?: string } | null) => {
-    if (query?.kind === 'blame') return { data: [block(query.sha === oldSha ? oldSha : newSha)], error: null, loading: false }
-    if (query?.kind === 'commitMergeRequests') return {
-      data: [{ iid: '12', projectId: '7', state: 'merged', title: 'Introduce a', webUrl: 'https://gitlab.example/x/-/merge_requests/12' }],
-      error: null, loading: false,
-    }
-    return { data: null, error: null, loading: false }
+  // One result per query, as React Query keeps it, so a re-render sees the same data.
+  const stored = new Map<string, unknown>()
+  queryMock.mockReset().mockImplementation((_session: string, query: Query) => {
+    const key = JSON.stringify(query)
+    if (!stored.has(key)) stored.set(key, answer(query))
+    return stored.get(key)
   })
 })
 
+function answer(query: Query) {
+  // A long file is blamed in full, one window at a time; short ones have three lines.
+  if (query?.kind === 'blame' && query.path === 'src/long.ts') return { data: [block(newSha, Array.from({ length: query.endLine! - query.startLine! + 1 }, (_, index) => `line ${query.startLine! + index}`))], error: null, loading: false }
+  if (query?.kind === 'blame') return { data: [block(query.sha === oldSha ? oldSha : newSha)], error: null, loading: false }
+  if (query?.kind === 'commitMergeRequests') return {
+    data: [{ iid: '12', projectId: '7', state: 'merged', title: 'Introduce a', webUrl: 'https://gitlab.example/x/-/merge_requests/12' }],
+    error: null, loading: false,
+  }
+  return { data: null, error: null, loading: false }
+}
+
 it('shows attribution beside code only once, and loads the related MRs only after selecting a commit', () => {
-  render(<BlameProvider beforeSha={oldSha} lines={[{ kind: 'context', newLine: 1, oldLine: 1, newPath: 'src/test.ts', oldPath: 'src/test.ts', text: 'only code', prefix: ' ', commentable: true }]} newPath="src/test.ts" oldPath="src/test.ts" projectId="7" sessionId="session1" sha={newSha}>
+  render(<BlameProvider beforeSha={oldSha} newPath="src/test.ts" oldPath="src/test.ts" projectId="7" sessionId="session1" sha={newSha}>
     <BlameCell line={1} side="new" /><code>only code</code>
     <BlameCell line={1} side="old" />
   </BlameProvider>)
@@ -43,7 +56,7 @@ it('shows attribution beside code only once, and loads the related MRs only afte
 })
 
 it('never attributes removed code to the new revision when its old SHA is unknown', () => {
-  render(<BlameProvider lines={[{ kind: 'remove', oldLine: 17, oldPath: 'old.ts', newPath: 'new.ts', text: 'old', prefix: '-', commentable: true }]} newPath="new.ts" oldPath="old.ts" projectId="7" sessionId="session1" sha={newSha}>
+  render(<BlameProvider newPath="new.ts" oldPath="old.ts" projectId="7" sessionId="session1" sha={newSha}>
     <BlameCell line={17} side="old" />
   </BlameProvider>)
   expect(screen.getByLabelText('このリビジョンの変更前の履歴はありません')).toBeInTheDocument()
@@ -53,7 +66,7 @@ it('never attributes removed code to the new revision when its old SHA is unknow
 it('annotates rendered Markdown blocks with Blame and keeps the original text once', () => {
   const body = '# Introduction\n\nA **rich** paragraph.\n\n- First item\n- Second item'
   render(<ThemeProvider theme={createAppTheme('light')}>
-    <BlameProvider initialNewLine={3} lines={[]} newPath="docs/guide.md" oldPath="docs/guide.md" projectId="7" sessionId="session1" sha={newSha}>
+    <BlameProvider newPath="docs/guide.md" oldPath="docs/guide.md" projectId="7" sessionId="session1" sha={newSha}>
       <FullFileView blameEnabled content={body} language="markdown" loading={false} path="docs/guide.md" targetLine={3} />
     </BlameProvider>
   </ThemeProvider>)
@@ -80,18 +93,22 @@ it('annotates rendered Markdown blocks with Blame and keeps the original text on
   expect(queryMock).toHaveBeenCalledWith('session1', { kind: 'commitMergeRequests', projectId: '7', sha: newSha })
 })
 
-it('begins whole-file Blame at its focused 80-line window and loads a different range on demand', () => {
+it('blames every line shown in a long file, reading its windows a few at a time', () => {
   const content = Array.from({ length: 1250 }, (_, index) => `line ${index + 1}`).join('\n')
   render(<ThemeProvider theme={createAppTheme('light')}>
-    <BlameProvider initialNewLine={1201} lines={[]} newPath="src/long.ts" oldPath="src/long.ts" projectId="7" sessionId="session1" sha={newSha}>
+    <BlameProvider newPath="src/long.ts" oldPath="src/long.ts" projectId="7" sessionId="session1" sha={newSha}>
       <FullFileView blameEnabled content={content} language="typescript" loading={false} path="src/long.ts" targetLine={1201} />
     </BlameProvider>
   </ThemeProvider>)
-  expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', path: 'src/long.ts', sha: newSha, startLine: 1201, endLine: 1280 }))
   const first = screen.getAllByTestId('file-line')[0]
   expect(first).toHaveAttribute('data-file-line', '1001')
-  fireEvent.click(within(first).getByRole('button', { name: /1001行のBlameを取得/u }))
-  expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', path: 'src/long.ts', sha: newSha, startLine: 961, endLine: 1040 }))
+  // No line waits for a click: the windows of the page are all read, and every line names its commit.
+  for (const startLine of [961, 1041, 1121, 1201]) {
+    expect(queryMock).toHaveBeenCalledWith('session1', expect.objectContaining({ kind: 'blame', path: 'src/long.ts', sha: newSha, startLine, endLine: startLine + 79 }))
+  }
+  expect(within(first).getByRole('button', { name: /1001行のBlame: aaaaaaaa/u })).toBeInTheDocument()
+  const last = screen.getAllByTestId('file-line').at(-1)!
+  expect(within(last).getByRole('button', { name: /1250行のBlame: aaaaaaaa/u })).toBeInTheDocument()
 })
 
 it('leaves Markdown rendering and source mode free of Blame in standalone code browsing', () => {
@@ -108,7 +125,7 @@ it('keeps full-file source mode mounted while Blame is toggled on and off', () =
   function Harness() {
     const [enabled, setEnabled] = useState(false)
     return <ThemeProvider theme={createAppTheme('light')}>
-      <BlameProvider enabled={enabled} initialNewLine={1} lines={[]} newPath="docs/file.md" oldPath="docs/file.md" projectId="7" sessionId="session1" sha={newSha}>
+      <BlameProvider enabled={enabled} newPath="docs/file.md" oldPath="docs/file.md" projectId="7" sessionId="session1" sha={newSha}>
         <button onClick={() => setEnabled((current) => !current)} type="button">Blame切替</button>
         <FullFileView blameEnabled={enabled} content={'# Heading\n\nBody text'} language="markdown" loading={false} path="docs/file.md" />
       </BlameProvider>
@@ -131,12 +148,49 @@ it('keeps full-file source mode mounted while Blame is toggled on and off', () =
   expect(screen.getByRole('button', { name: 'Markdownをレンダリング' })).toBeInTheDocument()
 })
 
-it('opens the history of the lines the selected commit wrote, at the revision of their side', () => {
+it('opens the history of the clicked line, of its commit\'s lines, or of the chosen lines, at the revision of their side', () => {
   const onHistory = vi.fn()
-  render(<BlameProvider beforeSha={oldSha} lines={[{ kind: 'remove', oldLine: 2, oldPath: 'old.ts', newPath: 'new.ts', text: 'two', prefix: '-', commentable: true }]} newPath="new.ts" oldPath="old.ts" onHistory={onHistory} projectId="7" sessionId="session1" sha={newSha}>
+  const view = (selectedLines?: { side: 'old' | 'new'; range: { start: number; end: number } }) => <BlameProvider beforeSha={oldSha} newPath="new.ts" oldPath="old.ts" onHistory={onHistory} projectId="7" projectUrl="https://gitlab.example/x" selectedLines={selectedLines} sessionId="session1" sha={newSha}>
     <BlameCell line={2} side="old" />
-  </BlameProvider>)
+  </BlameProvider>
+  const { rerender } = render(view())
   fireEvent.click(screen.getByRole('button', { name: /2行のBlame: bbbbbbbb/ }))
-  fireEvent.click(screen.getByRole('button', { name: 'この範囲の履歴' }))
-  expect(onHistory).toHaveBeenCalledWith({ path: 'old.ts', range: { start: 1, end: 3 }, sha: oldSha })
+  expect(screen.getByRole('button', { name: 'GitLabでコミットを開く' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /選択中/ })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'このコミットの1〜3行' }))
+  expect(onHistory).toHaveBeenLastCalledWith({ path: 'old.ts', range: { start: 1, end: 3 }, sha: oldSha })
+
+  fireEvent.click(screen.getByRole('button', { name: /2行のBlame: bbbbbbbb/ }))
+  fireEvent.click(screen.getByRole('button', { name: '2行だけ' }))
+  expect(onHistory).toHaveBeenLastCalledWith({ path: 'old.ts', range: { start: 2, end: 2 }, sha: oldSha })
+
+  rerender(view({ range: { end: 9, start: 2 }, side: 'old' }))
+  fireEvent.click(screen.getByRole('button', { name: /2行のBlame: bbbbbbbb/ }))
+  fireEvent.click(screen.getByRole('button', { name: '選択中の2〜9行' }))
+  expect(onHistory).toHaveBeenLastCalledWith({ path: 'old.ts', range: { start: 2, end: 9 }, sha: oldSha })
+})
+
+it('shows the commit in the app where links open in place, and closes the popover', () => {
+  const open = vi.fn()
+  render(<MarkdownLinkProvider open={open}>
+    <BlameProvider beforeSha={oldSha} newPath="new.ts" oldPath="old.ts" projectId="7" projectUrl="https://gitlab.example/x" sessionId="session1" sha={newSha}>
+      <BlameCell line={2} side="old" />
+    </BlameProvider>
+  </MarkdownLinkProvider>)
+  fireEvent.click(screen.getByRole('button', { name: /2行のBlame: bbbbbbbb/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'コミットを表示' }))
+  expect(open).toHaveBeenCalledWith(`https://gitlab.example/x/-/commit/${oldSha}`)
+  expect(screen.queryByRole('dialog', { name: 'Blameの詳細' })).not.toBeInTheDocument()
+})
+
+it('names the commit on every line, and marks only where a run starts', () => {
+  render(<BlameProvider newPath="new.ts" oldPath="new.ts" projectId="7" sessionId="session1" sha={newSha}>
+    <BlameCell line={2} side="new" />
+    <BlameCell line={1} side="new" />
+  </BlameProvider>)
+  // A row inside a run still shows the commit, so a hunk starting mid-run is readable.
+  const inside = screen.getByRole('button', { name: /2行のBlame: aaaaaaaa/ })
+  expect(inside).toHaveTextContent('aaaaaaaaAlice')
+  expect(inside).toHaveAttribute('data-continued', 'true')
+  expect(screen.getByRole('button', { name: /1行のBlame: aaaaaaaa/ })).not.toHaveAttribute('data-continued')
 })

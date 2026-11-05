@@ -11,11 +11,12 @@ import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
+import { keyframes } from '@mui/material/styles'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
 import { edgeRow } from '../../components/edges'
@@ -89,6 +90,8 @@ interface DiscussionListProps {
   suggestionActions?: SuggestionActions
   /** A comment a link named (`#note_<id>`), shown once loaded; older pages load until it is. */
   focusNoteId?: string
+  /** A thread read on its own, older than the others; the older pages between are loaded below it. */
+  detachedDiscussionId?: string
   /** The named comment was shown, or is not among the comments. */
   onFocusNoteDone?: () => void
   /** Uploads a file pasted into an edit and returns its Markdown. */
@@ -112,6 +115,8 @@ export interface OlderDiscussions {
   loading: boolean
   limitReached: boolean
   error: string | null
+  /** A loaded page is being read, so a linked comment not found yet may still arrive. */
+  reading?: boolean
   onLoad: () => void
   onRetry: () => void
 }
@@ -119,7 +124,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, discussions, disabled = false, editingNoteId, filter: filterProp, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFilterChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, detachedDiscussionId, discussions, disabled = false, editingNoteId, filter: filterProp, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFilterChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
@@ -132,6 +137,8 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const [collapsedThreads, setCollapsedThreads] = useState<Record<string, boolean>>({})
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
   const [pendingJumpNoteId, setPendingJumpNoteId] = useState<string | null>(null)
+  // The comment a jump landed on, lit for a moment so the reader sees which one it is.
+  const [flash, setFlash] = useState<{ noteId: string; at: number } | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const restoreScrollRef = useRef<{ element: HTMLElement; top: number; left: number } | null>(null)
   const anchorRef = useRef<ScrollAnchor | null>(null)
@@ -235,6 +242,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         // The view moved without a scroll event yet; the next run must keep this position, not the one before the jump.
         if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current)
         setPendingJumpNoteId(null)
+        setFlash({ noteId: pendingJumpNoteId, at: Date.now() })
         restoreScrollRef.current = null
         return
       }
@@ -250,6 +258,13 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     const anchor = anchorRef.current
     if (host && listRef.current && anchor) restoreAnchor(host, listRef.current, anchor)
   }, [collapsedThreads, expandedReplies, filter, notePages, pendingJumpNoteId, visibleDiscussions, older?.loading, older?.hasOlder, older?.error])
+
+  useEffect(() => {
+    if (!flash) return
+    // Shown again after being hidden, a highlight that has run its time is not lit again.
+    const timer = setTimeout(() => setFlash(null), Math.max(0, flash.at + FLASH_MS - Date.now()))
+    return () => clearTimeout(timer)
+  }, [flash])
 
   const updatePreservingScroll = (update: () => void): void => {
     restoreScrollRef.current = captureScrollPosition(listRef.current)
@@ -273,7 +288,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const focusJump = useStableCallback(jumpToNote)
   const focusDiscussion = focusNoteId ? discussions.find((discussion) => discussion.notes.some((note) => note.id === focusNoteId)) : undefined
   const canLoadOlder = Boolean(older?.hasOlder && !older.error)
-  const loadingOlder = Boolean(older?.loading)
+  const loadingOlder = Boolean(older?.loading || older?.reading)
   useEffect(() => {
     if (!focusNoteId) return
     if (focusDiscussion) {
@@ -281,10 +296,21 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
       if (!note.system) focusJump({ discussion: focusDiscussion, note })
       focusDone()
     } else if (loadingOlder) {
-      // Wait for the page being read.
+      // Wait for the page being read, which may be one shown from the cache that lacks the comment.
     } else if (canLoadOlder) olderRef.current?.onLoad()
     else focusDone()
   }, [canLoadOlder, focusDiscussion, focusDone, focusJump, focusNoteId, loadingOlder])
+
+  // The older pages are loaded where they belong: above the threads read, or below a thread read on its own.
+  const detachedShown = visibleDiscussions.some(({ discussion }) => discussion.id === detachedDiscussionId)
+  const olderRow = older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (
+    <Row spacing={1} sx={{ justifyContent: 'center', minHeight: 32 }}>
+      {older.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('review.discussion.older.loading')}</Typography>
+        : older.error ? <><Typography color="error" variant="caption">{t('review.discussion.older.error', { message: older.error })}</Typography><Button onClick={older.onRetry}>{t('review.discussion.older.retry')}</Button></>
+          : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>{t('review.discussion.older.load')}</Button>
+            : <Typography color="textSecondary" variant="caption">{t('review.discussion.older.limit')}</Typography>}
+    </Row>
+  ) : null
 
   return (
     <Stack ref={listRef} spacing={1.5} sx={{ overflowAnchor: 'none' }}>
@@ -309,14 +335,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
           {onMarkRead ? <Button disabled={disabled || unreadNotes.length === 0} onClick={() => onMarkRead(loadedCommentNotes.map(({ note }) => note))} size="small">{t('review.discussion.markRead')}</Button> : null}
         </Row>
       </Stack>
-      {older && (older.hasOlder || older.loading || older.limitReached || older.error) ? (
-        <Row spacing={1} sx={{ justifyContent: 'center', minHeight: 32 }}>
-          {older.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('review.discussion.older.loading')}</Typography>
-            : older.error ? <><Typography color="error" variant="caption">{t('review.discussion.older.error', { message: older.error })}</Typography><Button onClick={older.onRetry}>{t('review.discussion.older.retry')}</Button></>
-              : older.hasOlder ? <Button onClick={() => { const host = findScrollContainer(listRef.current); if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current); older.onLoad() }} startIcon={<ExpandLessRoundedIcon />}>{t('review.discussion.older.load')}</Button>
-                : <Typography color="textSecondary" variant="caption">{t('review.discussion.older.limit')}</Typography>}
-        </Row>
-      ) : null}
+      {detachedShown ? null : olderRow}
       {visibleDiscussions.map(({ discussion, notes }) => {
         const canResolve = notes.some((note) => note.resolvable)
         const resolved = canResolve && notes.filter((note) => note.resolvable).every((note) => note.resolved)
@@ -339,7 +358,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const firstNote = notes[0]
         const threadLabel = positionLabel ?? t('review.discussion.threadLabel', { author: firstNote?.author.name ?? '' })
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
-        return (
+        const thread = (
           // A thread skipped out of view keeps the height it was last laid out at; one added since takes an estimate
           // until shown, and the anchor above keeps the thread being read still when that changes.
           <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, containIntrinsicSize: 'auto 240px', minWidth: 0, overflow: 'clip', '[data-skip-offscreen="true"] > &': { contentVisibility: 'auto' } }}>
@@ -393,6 +412,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                 disabled={disabled}
                 divided={index > 0}
                 editBufferKey={editing === row.note.id ? noteEditBufferKey?.(row.note) ?? JSON.stringify({ noteEdit: row.note.id }) : null}
+                flash={flash?.noteId === row.note.id}
                 key={row.note.id}
                 mentionParticipants={mentionParticipants}
                 note={row.note}
@@ -423,6 +443,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
             </Row> : null}
           </Box>
         )
+        return discussion.id === detachedDiscussionId && olderRow ? <Fragment key={discussion.id}>{thread}{olderRow}</Fragment> : thread
       })}
       {commentDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">{t('review.discussion.empty')}</Typography></Paper> : null}
       {commentDiscussions.length > 0 && filteredDiscussions.length === 0 ? <Paper sx={{ p: 3, textAlign: 'center' }} variant="outlined"><Typography color="textSecondary" variant="body2">{t('review.discussion.noMatch')}</Typography></Paper> : null}
@@ -431,6 +452,9 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
 }
 
 const noAwards: readonly AwardEmoji[] = []
+
+const FLASH_MS = 2000
+const flashFade = keyframes`from { opacity: 0.2; } to { opacity: 0; }`
 
 interface NoteItemProps {
   awards?: readonly AwardEmoji[]
@@ -442,6 +466,8 @@ interface NoteItemProps {
   editedAt?: string | null
   /** Where the edit's text is kept while this comment is being edited; null otherwise. */
   editBufferKey: string | null
+  /** Lit for a moment after a jump landed on this comment. */
+  flash: boolean
   mentionParticipants?: GitLabUser[]
   note: Note
   onDelete: (note: Note) => Promise<boolean>
@@ -456,7 +482,7 @@ interface NoteItemProps {
 }
 
 /** One comment. Memoized: a change to another comment (its reactions, its edit) does not render this one again. */
-const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, editedAt, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
+const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabled, divided, editBufferKey, editedAt, flash, mentionParticipants, note, onDelete, onEdit, onToggleReaction, onUploadAttachment, reactionsDisabled, sessionId, setEditing, suggestionActions, unread }: NoteItemProps) {
   const t = useT()
   const own = note.author.id === currentUserId
   const editing = editBufferKey !== null
@@ -481,6 +507,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
   return (
     <Box
       component="li"
+      data-flash={flash || undefined}
       data-note-id={note.id}
       ref={itemRef}
       tabIndex={-1}
@@ -497,6 +524,7 @@ const NoteItem = memo(function NoteItem({ awards, confirm, currentUserId, disabl
         '&:focus-visible': { boxShadow: (theme) => `inset 0 0 0 2px ${theme.palette.primary.main}` },
         '&:hover .note-actions, &:focus-within .note-actions': { opacity: 1 },
         '&::before': unread ? { bgcolor: 'primary.main', bottom: 0, content: '""', left: 0, position: 'absolute', top: 0, width: 3 } : undefined,
+        '&::after': flash ? { animation: `${flashFade} ${FLASH_MS}ms ease-out forwards`, bgcolor: 'primary.main', content: '""', inset: 0, pointerEvents: 'none', position: 'absolute', '@media (prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.12 } } : undefined,
       }}
     >
       <Box sx={firstLine(6)}><GitLabUserAvatar sessionId={sessionId} user={note.author} /></Box>

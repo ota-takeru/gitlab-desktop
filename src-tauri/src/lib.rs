@@ -7,6 +7,7 @@ mod dto;
 mod gitlab_api;
 mod glab;
 mod local_git;
+mod memory;
 mod native;
 mod storage;
 mod text_encoding;
@@ -386,6 +387,14 @@ fn runtime_info() -> RuntimeInfo {
     }
 }
 
+/// Whether the system is short of physical memory, so the interface keeps fewer hidden screens.
+/// Each reading also updates how much memory the WebView keeps while out of focus.
+#[tauri::command]
+fn memory_pressure(window: tauri::WebviewWindow) -> bool {
+    memory::update_webview_memory_target(&window);
+    memory::memory_constrained()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -403,6 +412,14 @@ pub fn run() {
         .manage(updates::UpdateState::default())
         .manage(CloseGuard::default())
         .on_window_event(|window, event| {
+            if matches!(
+                event,
+                tauri::WindowEvent::Focused(_) | tauri::WindowEvent::Resized(_)
+            ) {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    memory::update_webview_memory_target(&webview);
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let guard = window.state::<CloseGuard>();
                 if guard.active.load(Ordering::SeqCst) && !guard.closing.load(Ordering::SeqCst) {
@@ -425,6 +442,29 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
+            // A click on a notification brings the window forward and opens the GitLab page the
+            // notification names; the page checks that it is on the connected instance.
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let handle = app.handle().clone();
+                app.notification().on_action(move |performed| {
+                    if performed.action_id() != "tap" {
+                        return;
+                    }
+                    let Some(window) = handle.get_webview_window("main") else {
+                        return;
+                    };
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                    if let Some(url) = performed
+                        .notification()
+                        .and_then(|notification| notification.extra().get("url"))
+                        .and_then(|url| url.as_str())
+                    {
+                        let _ = window.emit("notification-clicked", url);
+                    }
+                })?;
+            }
             let state = app
                 .path()
                 .app_data_dir()
@@ -435,6 +475,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            memory_pressure,
             connect_gitlab,
             reauthenticate_gitlab,
             list_glab_connections,

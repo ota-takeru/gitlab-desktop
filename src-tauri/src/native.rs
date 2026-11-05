@@ -913,7 +913,12 @@ impl NativeState {
                     // An empty repository or a deleted branch or folder is 404
                     // too. The screen still hides a 404 answer's saved copy.
                     let expected_missing = error.code == "NOT_FOUND"
-                        && matches!(input.query, Query::JobTrace { .. } | Query::Tree { .. });
+                        && matches!(
+                            input.query,
+                            Query::JobTrace { .. }
+                                | Query::Tree { .. }
+                                | Query::RepositoryCommits { .. }
+                        );
                     if !expected_missing {
                         self.record_error(&session, &error, Some(key.clone()))
                             .await?;
@@ -2065,10 +2070,17 @@ fn queries_changed_by(action: &Action, project_id: &str, iid: &str) -> Option<Ve
     // The merge request itself and every list that summarizes it: its title,
     // state, people, labels, update time, approvals or To-Dos.
     let merge_request = || {
-        let mut rules: Vec<CacheRule> = ["mr", "notes", "discussions", "drafts", "approvals"]
-            .into_iter()
-            .map(|kind| rule(kind, Some(project_id), Some(iid)))
-            .collect();
+        let mut rules: Vec<CacheRule> = [
+            "mr",
+            "notes",
+            "discussions",
+            "noteDiscussion",
+            "drafts",
+            "approvals",
+        ]
+        .into_iter()
+        .map(|kind| rule(kind, Some(project_id), Some(iid)))
+        .collect();
         // Comment reactions are addressed by the project's path, which the write does not carry.
         rules.push(rule("noteAwards", None, Some(iid)));
         rules.extend(["mrs", "mrApprovals", "todos"].map(|kind| rule(kind, None, None)));

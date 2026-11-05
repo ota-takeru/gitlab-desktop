@@ -98,7 +98,7 @@ it('opens the MR of a notification, marks it read against that MR, and closes th
   expect(screen.queryByRole('button', { name: /既読にする$/u })).not.toBeInTheDocument()
   fireEvent.click(within(screen.getByRole('list', { name: '通知' })).getAllByRole('button')[0])
 
-  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '3', projectId: '77' }))
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '3', projectId: '77' }), undefined)
   expect(runDetailedMock).toHaveBeenCalledWith({ iid: '3', kind: 'markTodoDone', projectId: '77', todoId: '1' })
   // The write is recorded against the notification's MR, like the MR view's own writes.
   expect(mutationKeys).toEqual([JSON.stringify({ iid: '3', projectId: '77' })])
@@ -187,7 +187,7 @@ it('stacks the notifications of one MR into one card that reads them all', async
   expect(within(cards[1]).queryByText(/^ほか/u)).not.toBeInTheDocument()
 
   fireEvent.click(within(cards[0]).getByRole('button'))
-  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '3' }))
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '3' }), undefined)
   await waitFor(() => expect(runDetailedMock.mock.calls.map(([action]) => (action as { todoId: string }).todoId)).toEqual(['9', '1']))
 })
 
@@ -223,7 +223,7 @@ it('shows read notifications on request and opens them without another read', ()
   expect(queryMock).toHaveBeenCalledWith('session-1', { kind: 'todos', page: 1, done: true })
   expect(screen.queryByRole('button', { name: 'すべて既読' })).not.toBeInTheDocument()
   fireEvent.click(screen.getByText('Already read'))
-  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '9' }))
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ iid: '9' }), undefined)
   expect(runDetailedMock).not.toHaveBeenCalled()
 })
 
@@ -253,7 +253,8 @@ it('shows the events of the user\'s MRs beside the To-Dos, leaves a mentioned co
     expect(within(card).getByText('ほか2件')).toBeInTheDocument()
 
     act(() => fireEvent.click(within(card).getAllByRole('button')[0]))
-    expect(onOpen).toHaveBeenCalledWith({ iid: '5', projectId: '77' })
+    // It opens at the oldest of their comments, so the newer ones follow below it.
+    expect(onOpen).toHaveBeenCalledWith({ iid: '5', projectId: '77' }, '87')
     expect(screen.getByRole('button', { name: '通知 1件' })).toBeInTheDocument()
 
     // Once the To-Do is done, its comment does not come back as unread.

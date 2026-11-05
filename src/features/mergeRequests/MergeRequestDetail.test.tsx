@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
@@ -24,6 +24,7 @@ const detailMocks = vi.hoisted(() => {
   const session = { id: 'session-42', instanceUrl: 'https://gitlab.com', user: currentUser, serverVersion: '18.0' }
   return {
     commits: [] as { id: string; title: string }[],
+    commitPages: undefined as Record<number, { id: string; title: string }[]> | undefined,
     diff,
     fileContent: null as string | null,
     /** Diff pages by page number, when a test needs more than the one file. */
@@ -34,6 +35,10 @@ const detailMocks = vi.hoisted(() => {
     openUrlMock: vi.fn(async () => undefined),
     queryGitLabMock: vi.fn(),
     refreshKinds: [] as unknown[],
+    /** A refresh that never comes back, as a slow network read. */
+    holdRefresh: false,
+    /** The thread a linked comment is in, read on its own. */
+    linkedDiscussion: null as unknown,
     applyConfirmedMock: vi.fn(),
     discussions: { 1: [discussion] } as Record<number, typeof discussion[]>,
     flushComposerBuffersMock: vi.fn(),
@@ -110,7 +115,7 @@ vi.mock('../../lib/attachments', async () => ({
 }))
 
 vi.mock('../shared/useGitLabQuery', async () => {
-  const { useState } = await import('react')
+  const { useCallback, useState } = await import('react')
   return {
   applyConfirmedGitLabChange: detailMocks.applyConfirmedMock,
   useGitLabQuery: (_sessionId: string | null, query: { kind: string; page?: number; search?: string } | null) => {
@@ -124,20 +129,23 @@ vi.mock('../shared/useGitLabQuery', async () => {
     else if (query?.kind === 'file') data = detailMocks.fileContent === null ? null : { content: detailMocks.fileContent }
     else if (query?.kind === 'users') data = query.search === 'al' ? detailMocks.users : []
     else if (query?.kind === 'drafts') data = detailMocks.drafts
-    else if (query?.kind === 'commits') data = detailMocks.commits
+    else if (query?.kind === 'commits') data = detailMocks.commitPages?.[query.page ?? 1] ?? detailMocks.commits
     else if (query?.kind === 'approvals') data = []
     else if (query?.kind === 'mrAwards') data = detailMocks.mrAwards
     else if (query?.kind === 'noteAwards') data = detailMocks.noteAwards
+    else if (query?.kind === 'noteDiscussion') data = detailMocks.linkedDiscussion
     else if (query?.kind === 'mrPipelines') data = []
     else if (query?.kind === 'mrVersions') data = detailMocks.versions
     else if (query?.kind === 'versionCompare') data = [detailMocks.diff]
+    const refresh = useCallback(() => { if (query) { detailMocks.refreshKinds.push(query.kind); if (!detailMocks.holdRefresh) setFetchedAt((current) => current + 1) } }, [query])
+    const pages: Record<number, unknown> | undefined = query?.kind === 'diffs' ? detailMocks.diffPages ?? undefined : query?.kind === 'commits' ? detailMocks.commitPages : undefined
     return {
       data,
       error: null,
       loading: false,
       refreshing: false,
-      refresh: () => { if (query) { detailMocks.refreshKinds.push(query.kind); setFetchedAt((current) => current + 1) } },
-      snapshot: query ? { data, source: 'network', nextPage: query.kind === 'diffs' && detailMocks.diffPages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt } : null,
+      refresh,
+      snapshot: query ? { data, source: 'network', nextPage: pages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt } : null,
       stale: false,
     }
   },
@@ -237,6 +245,32 @@ describe('BufferedReviewComposer', () => {
     detailMocks.useComposerBufferMock.mockReturnValue({ body: 'ota@example.com に連絡済み', change: vi.fn(), discard: vi.fn(), error: null, persistenceStatus: 'saved' })
     rerender(<BufferedReviewComposer bufferKey="composer-key" onCancelReply={() => undefined} onClearPosition={() => undefined} onSaveDraft={async () => true} onSetReviewers={onSetReviewers} onSubmitComment={async () => true} />)
     expect(screen.queryByRole('button', { name: 'レビュアーを設定' })).not.toBeInTheDocument()
+  })
+
+  it('reads the MR again from GitLab when it opens, even when its data was just read', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    const reads: string[] = []
+    const keyOf = (projectId: string, iid: string) => ['gitlab', detailMocks.session.id, JSON.stringify({ kind: 'discussions', projectId, iid, page: 1 })]
+    const Reader = ({ projectId, iid }: { projectId: string; iid: string }) => {
+      useQuery({ queryKey: keyOf(projectId, iid), queryFn: async () => { reads.push(`${projectId}:${iid}`); return reads.length } })
+      return null
+    }
+    const { projectId, iid } = detailMocks.mergeRequest
+    client.setQueryData(keyOf(projectId, iid), 0)
+    client.setQueryData(keyOf(projectId, `${iid}0`), 0)
+
+    render(
+      <QueryClientProvider client={client}>
+        <ThemeProvider theme={createAppTheme('dark')}>
+          <Reader iid={iid} projectId={projectId} />
+          <Reader iid={`${iid}0`} projectId={projectId} />
+          <MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    )
+
+    // Only this MR's reads, though fresh; another MR's are left alone.
+    await waitFor(() => expect(reads).toEqual([`${projectId}:${iid}`]))
   })
 
   it('wires read-only MR discussion, unread marking, position navigation, and mention lookup', async () => {
@@ -623,6 +657,25 @@ describe('suggestions and versions', () => {
     expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
   })
 
+  it('leaves the local view when a comment opens its place in the MR diff', async () => {
+    localMocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/project', projectPath: 'group/project' })
+    localMocks.getLocalChanges.mockResolvedValue({ aheadCount: 1, branch: 'feature', comparedSha: 'head-abc', containsMrHead: true, diffs: [{ ...detailMocks.diff, diff: '@@ -1,2 +1,3 @@\n line one\n line two\n+local line\n' }], localHead: 'c'.repeat(40), repositoryPath: 'C:/repos/project', truncated: false, untrackedCount: 2, untrackedIncluded: 0, untrackedMore: false })
+    localMocks.getLocalStatus.mockResolvedValue({ aheadCount: 1, branch: 'feature', changedCount: 0, containsMrHead: true, countMore: false, localHead: 'c'.repeat(40), mrHeadPresent: true, untrackedCount: 2 })
+    // The detail keeps its own tab here, so the test can go from the changes to the discussion and back.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} /></ThemeProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('tab', { name: '変更' }))
+    const local = { name: 'ローカルの変更未コミット2 · 未push1' }
+    fireEvent.click(await screen.findByRole('button', local, { timeout: 5_000 }))
+    expect(await screen.findByText('local line', undefined, { timeout: 5_000 })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
+    fireEvent.click(await screen.findByRole('button', { name: '差分へ移動: src/example.ts:2' }, { timeout: 5_000 }))
+
+    expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' }, { timeout: 5_000 })).toBeInTheDocument()
+    expect(screen.getByRole('button', local)).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('shows the linked clone against the MR head read-only, without loading the MR diff', async () => {
     localMocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/project', projectPath: 'group/project' })
     localMocks.getLocalChanges.mockResolvedValue({ aheadCount: 1, branch: 'feature', comparedSha: 'head-abc', containsMrHead: true, diffs: [{ ...detailMocks.diff, diff: '@@ -1,2 +1,3 @@\n line one\n line two\n+local line\n' }], localHead: 'c'.repeat(40), repositoryPath: 'C:/repos/project', truncated: false, untrackedCount: 2, untrackedIncluded: 0, untrackedMore: false })
@@ -749,12 +802,92 @@ describe('MergeRequestDetail header, results and pending review', () => {
     expect(detailMocks.refreshKinds).toEqual(expect.arrayContaining(['mr', 'approvals', 'drafts', 'discussions']))
   })
 
+  it('goes to a linked comment already shown without waiting for the pages to be read again', async () => {
+    detailMocks.holdRefresh = true
+    onTestFinished(() => { detailMocks.holdRefresh = false })
+    const onNoteFocused = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail focusNote={{ noteId: '1002' }} initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onNoteFocused={onNoteFocused} onTabChange={vi.fn()} tab="discussion" /></ThemeProvider></QueryClientProvider>)
+    await waitFor(() => expect(onNoteFocused).toHaveBeenCalled())
+    expect(detailMocks.refreshKinds).toContain('discussions')
+  })
+
+  it('shows the older thread of a linked comment read on its own first, without walking the pages back to it', async () => {
+    detailMocks.holdRefresh = true
+    detailMocks.linkedDiscussion = { id: 'discussion-old', individualNote: false, notes: [
+      { id: '500', body: '古いスレッド', author: { id: '99', name: 'Colleague', username: 'colleague' }, createdAt: '2025-12-01T00:00:00.000Z', system: false, resolvable: false, resolved: false, position: null },
+      { id: '501', body: '古いスレッドへの返信', author: { id: '99', name: 'Colleague', username: 'colleague' }, createdAt: '2026-04-05T00:00:00.000Z', system: false, resolvable: false, resolved: false, position: null },
+    ] }
+    onTestFinished(() => { detailMocks.holdRefresh = false; detailMocks.linkedDiscussion = null })
+    const onNoteFocused = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><MergeRequestDetail focusNote={{ noteId: '501' }} initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onNoteFocused={onNoteFocused} onTabChange={vi.fn()} tab="discussion" /></ThemeProvider></QueryClientProvider>)
+    expect(await screen.findByText('古いスレッドへの返信')).toBeInTheDocument()
+    await waitFor(() => expect(onNoteFocused).toHaveBeenCalled())
+    expect(detailMocks.queryCalls).toContainEqual({ iid: '120', kind: 'noteDiscussion', noteId: '501', projectId: '7' })
+    const [first] = screen.getAllByRole('article')
+    expect(first).toHaveAttribute('data-discussion-id', 'discussion-old')
+  })
+
   it('copies the MR link from the header', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     renderDetail('discussion')
     fireEvent.click(await screen.findByRole('button', { name: 'リンクをコピー' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(detailMocks.mergeRequest.webUrl))
+  })
+
+  describe('opening in GitLab', () => {
+    const openShown = async () => {
+      detailMocks.openUrlMock.mockClear()
+      fireEvent.click(await screen.findByRole('button', { name: 'GitLabで開く' }))
+      await waitFor(() => expect(detailMocks.openUrlMock).toHaveBeenCalledTimes(1))
+      return (detailMocks.openUrlMock.mock.calls as unknown as [string, string][])[0][1]
+    }
+    /** The MR scrolled so that everything but the sticky header is on screen. */
+    const scrollEverythingIntoView = () => {
+      const style = globalThis.getComputedStyle.bind(globalThis)
+      vi.spyOn(globalThis, 'getComputedStyle').mockImplementation((element) => element.tagName === 'BODY' ? { overflowY: 'auto' } as CSSStyleDeclaration : style(element))
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        const header = this instanceof HTMLElement && this.dataset.stickyHeader === 'true'
+        return new DOMRect(0, header ? 0 : 60, 0, header ? 50 : this.tagName === 'BODY' ? 600 : 40)
+      })
+    }
+    afterEach(() => vi.restoreAllMocks())
+
+    it('opens the MR page from the overview', async () => {
+      renderDetail('overview')
+      expect(await openShown()).toBe(detailMocks.mergeRequest.webUrl)
+    })
+
+    it('opens the comment in view from the discussion', async () => {
+      renderDetail('discussion')
+      await screen.findAllByRole('article')
+      scrollEverythingIntoView()
+      const first = document.querySelector<HTMLElement>('[data-discussion-id] [data-note-id]')
+      expect(await openShown()).toBe(`${detailMocks.mergeRequest.webUrl}#note_${first?.dataset.noteId}`)
+    })
+
+    it('opens the comment in view from the changes', async () => {
+      renderDetail('changes')
+      await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+      scrollEverythingIntoView()
+      expect(await openShown()).toBe(`${detailMocks.mergeRequest.webUrl}/diffs#note_${detailMocks.discussion.notes[0].id}`)
+    })
+
+    it('opens the file shown when no comment is in view', async () => {
+      // The test DOM has no crypto.subtle, which the desktop webview has.
+      vi.stubGlobal('crypto', { subtle: { digest: () => Promise.resolve(new Uint8Array(20).fill(0xab).buffer) } })
+      onTestFinished(() => { vi.unstubAllGlobals() })
+      renderDetail('changes')
+      await screen.findByRole('article', { name: 'Colleagueのスレッド' })
+      expect(await openShown()).toBe(`${detailMocks.mergeRequest.webUrl}/diffs#${'ab'.repeat(20)}`)
+    })
+
+    it('opens the MR pipelines before a pipeline is read', async () => {
+      renderDetail('pipelines')
+      expect(await openShown()).toMatch(/\/pipelines/u)
+    })
   })
 
   it('names the write whose result is unknown, in the header', async () => {
@@ -862,7 +995,7 @@ describe('MergeRequestDetail header, results and pending review', () => {
 
       // Another tab and back: the edit is still open with its text.
       fireEvent.click(screen.getByRole('tab', { name: '変更' }))
-      expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByRole('textbox', { name: '下書きを編集' })).not.toBeInTheDocument())
       fireEvent.click(screen.getByRole('tab', { name: /議論/u }))
       expect(await screen.findByRole('textbox', { name: '下書きを編集' })).toHaveValue('直した下書き')
 
@@ -921,6 +1054,57 @@ describe('MergeRequestDetail header, results and pending review', () => {
     expect(screen.getByRole('button', { name: /次のコミット内容/u })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: /次のコミット内容/u }))
     expect(screen.getByText('コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。')).toBeInTheDocument()
+  })
+
+  it('adds older commits to the row as its end comes near, keeping the ones listed', async () => {
+    const observers: { callback: IntersectionObserverCallback; disconnect: () => void }[] = []
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(public callback: IntersectionObserverCallback) { observers.push(this) }
+      observe() { return undefined }
+      disconnect() { observers.splice(observers.indexOf(this), 1) }
+    })
+    detailMocks.commitPages = {
+      1: [{ id: 'aaaaaaaa1', title: '一番新しいコミット' }, { id: 'bbbbbbbb2', title: '二番目のコミット' }],
+      // A push moved the second commit down, so it comes again here.
+      2: [{ id: 'bbbbbbbb2', title: '二番目のコミット' }, { id: 'cccccccc3', title: '古いコミット' }],
+      3: [{ id: 'dddddddd4', title: '一番古いコミット' }],
+    }
+    const reach = () => act(() => observers.at(-1)?.callback([{ isIntersecting: true } as IntersectionObserverEntry], observers.at(-1) as unknown as IntersectionObserver))
+    try {
+      renderDetail('changes')
+      await screen.findByRole('button', { name: /一番新しいコミット/u })
+      expect(screen.queryByRole('button', { name: /古いコミット/u })).not.toBeInTheDocument()
+      reach()
+      expect(await screen.findByRole('button', { name: /^cccccccc?.*古いコミット/u })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /一番新しいコミット/u })).toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: /二番目のコミット/u })).toHaveLength(1)
+      reach()
+      expect(await screen.findByRole('button', { name: /一番古いコミット/u })).toBeInTheDocument()
+      // The last page was read, so nothing more is offered.
+      expect(screen.queryByRole('button', { name: '次のコミット' })).not.toBeInTheDocument()
+    } finally {
+      detailMocks.commitPages = undefined
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('turns the commit row with the mouse wheel, and leaves the wheel to the page at its end', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() { return undefined } disconnect() { return undefined } })
+    detailMocks.commits = [{ id: 'aaaaaaaa1', title: '最初のコミット' }]
+    try {
+      renderDetail('changes')
+      const row = await screen.findByRole('toolbar', { name: '比較対象' })
+      Object.defineProperty(row, 'scrollWidth', { value: 1000 })
+      Object.defineProperty(row, 'clientWidth', { value: 400 })
+      expect(fireEvent.wheel(row, { deltaY: 200 })).toBe(false)
+      expect(row.scrollLeft).toBe(200)
+      // The end may be a fraction of a pixel short of the rounded widths.
+      row.scrollLeft = 599.5
+      expect(fireEvent.wheel(row, { deltaY: 200 })).toBe(true)
+      expect(row.scrollLeft).toBe(599.5)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 
@@ -984,16 +1168,16 @@ describe('stepping through unresolved threads', () => {
       await waitFor(() => expect(focusedThread()).toBe('readme'))
     })
 
-    it('opens a file on a later diff page and focuses its thread', async () => {
+    it('lists the files of every diff page together and opens one from a later page at its thread', async () => {
       detailMocks.diffPages = { 1: [file('README.md')], 2: [file('src/example.ts')] }
       detailMocks.discussions[1] = [thread('example', 'src/example.ts', 2, 'えぐざんぷる')]
       renderDetail('changes')
-      await screen.findByRole('button', { name: '差分の次のページ' })
+      await screen.findByText('2/2')
+      expect(screen.queryByRole('button', { name: '差分の次のページ' })).not.toBeInTheDocument()
       expect(screen.queryByText('えぐざんぷる')).not.toBeInTheDocument()
 
       fireEvent.keyDown(document.body, { key: 'n' })
       await waitFor(() => expect(focusedThread()).toBe('example'))
-      expect(screen.getByText('差分のページ 2')).toBeInTheDocument()
     })
   })
 

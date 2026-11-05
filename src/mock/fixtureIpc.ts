@@ -6,6 +6,7 @@
 import { mockIPC } from '@tauri-apps/api/mocks'
 
 import { createFixtureData, fixtureSession, fixtureUser, type FixtureMergeRequest } from './gitlabFixtures'
+import { fixtureBlame, fixtureCommitDiff } from './fileHistory'
 import { createPipelineFixtures } from './pipelineFixtures'
 import type { AwardEmoji, Discussion, Draft, GitLabAction, GitLabErrorShape, GitLabQuery, GitLabSnapshot, Note, QueryData, TreeEntry } from '../types/gitlab'
 
@@ -60,6 +61,8 @@ export function installFixtureIpc(state: FixtureState): void {
     const payload = (args ?? {}) as Record<string, unknown>
     switch (command) {
       case 'runtime_info': return { appVersion: 'fixture', arch: 'x86_64', os: 'windows' }
+      // `?lowMemory` shows the screens as they behave while the system is short of memory.
+      case 'memory_pressure': return new URLSearchParams(window.location.search).has('lowMemory')
       case 'restore_session':
       case 'connect_gitlab':
       case 'connect_gitlab_from_glab': return fixtureSession
@@ -132,6 +135,8 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'get_gitlab_image': return null
       case 'plugin:notification|is_permission_granted': return false
       case 'plugin:notification|request_permission': return 'denied'
+      case 'plugin:image|new': return 1
+      case 'verify_session':
       case 'acknowledge_pending_operation':
       case 'cancel_gitlab_request':
       case 'clear_gitlab_cache':
@@ -141,7 +146,10 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'open_token_creation_page':
       case 'set_window_close_guard':
       case 'close_app_window':
-      case 'plugin:notification|notify': return null
+      case 'plugin:notification|notify':
+      case 'plugin:window|set_badge_count':
+      case 'plugin:window|set_overlay_icon':
+      case 'plugin:resources|close': return null
       default:
         console.warn(`fixture IPC: unhandled command ${command}`)
         throw { code: 'UNSUPPORTED', message: `固定データでは未対応のコマンドです: ${command}` } satisfies GitLabErrorShape
@@ -189,7 +197,8 @@ export function installFixtureIpc(state: FixtureState): void {
         const items = data.mergeRequests.map((item) => item.mergeRequest).filter((mergeRequest) => mergeRequest.projectId === request.projectId)
         const branches = [
           ...items.map((mergeRequest) => ({ commit: { authorName: mergeRequest.author.name, committedDate: mergeRequest.updatedAt, id: mergeRequest.headSha ?? '', shortId: (mergeRequest.headSha ?? '').slice(0, 8), title: mergeRequest.title }, default: false, merged: mergeRequest.state === 'merged', name: mergeRequest.sourceBranch, protected: false, webUrl: '' })),
-          ...(items[0] ? [{ commit: null, default: true, merged: false, name: items[0].targetBranch, protected: true, webUrl: '' }] : []),
+          // The repository's files are the first MR's, so the default branch is at its head.
+          ...(items[0] ? [{ commit: { authorName: items[0].author.name, committedDate: items[0].updatedAt, id: items[0].headSha ?? '', shortId: (items[0].headSha ?? '').slice(0, 8), title: items[0].title }, default: true, merged: false, name: items[0].targetBranch, protected: true, webUrl: '' }] : []),
         ]
         return branches.filter((branch, index) => branches.findIndex((other) => other.name === branch.name) === index && matches(branch.name, request.search))
       }
@@ -206,19 +215,35 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'mr': return find(request).mergeRequest
       case 'discussions': return find(request).discussions
       case 'notes': return find(request).discussions.flatMap((discussion) => discussion.notes)
+      case 'noteDiscussion': return find(request).discussions.find((discussion) => discussion.notes.some((note) => note.id === request.noteId)) ?? null
       case 'commits': return find(request).commits.map(({ createdAt, id, title }) => ({ createdAt, committedAt: createdAt, id, title }))
       case 'drafts': return drafts.get(keyOf(request)) ?? []
       case 'diffs': return find(request).diffs
-      case 'commitDiff': return find(request).commits.find((commit) => commit.id === request.sha)?.diffs ?? notFound()
-      case 'blame': {
-        const file = projectFiles(request.projectId)[request.path]
-        if (file === undefined) return notFound()
-        const lines = file.split('\n').slice(request.startLine - 1, request.endLine)
-        return lines.length ? [{ authorName: 'Fixture User', commitId: request.sha, committedAt: new Date().toISOString(), lines, title: 'Fixture commit' }] : []
-      }
+      case 'commitDiff': return fixtureCommitDiff(request.sha, projectFiles(request.projectId))
+        ?? data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === request.projectId).flatMap((item) => item.commits).find((commit) => commit.id === request.sha)?.diffs
+        ?? notFound()
+      case 'blame': return fixtureBlame(request.path, request.sha, request.startLine, request.endLine, projectFiles(request.projectId)[request.path]) ?? notFound()
       case 'commitMergeRequests': return data.mergeRequests.map(({ mergeRequest }) => mergeRequest)
         .filter((mr) => mr.projectId === request.projectId && mr.headSha === request.sha)
         .map((mr) => ({ iid: mr.iid, projectId: mr.projectId, state: mr.state, title: mr.title, webUrl: mr.webUrl }))
+      case 'repositoryCommits': {
+        // The repository's history is the commits of its fixture MRs; a source branch has its MR's only.
+        const items = data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === request.projectId)
+        const onBranch = items.filter(({ mergeRequest }) => mergeRequest.sourceBranch === request.ref)
+        return request.page > 1 ? [] : (onBranch.length ? onBranch : items)
+          .flatMap(({ commits, mergeRequest }) => commits.map((commit) => ({ authorName: mergeRequest.author.name, commit })))
+          .filter(({ commit }, index, all) => all.findIndex((other) => other.commit.id === commit.id) === index)
+          .filter(({ commit }) => !request.path || commit.diffs.some((diff) => [diff.newPath, diff.oldPath].some((path) => path === request.path || path.startsWith(`${request.path}/`))))
+          .sort((left, right) => right.commit.createdAt.localeCompare(left.commit.createdAt))
+          .map(({ authorName, commit: { createdAt, id, parentIds, title } }) => ({ authorName, committedAt: createdAt, createdAt, id, message: title, parentIds, title }))
+      }
+      case 'repositoryCommit': {
+        const item = data.mergeRequests.filter(({ mergeRequest }) => mergeRequest.projectId === request.projectId).find(({ commits }) => commits.some((commit) => commit.id === request.sha))
+        const commit = item?.commits.find((candidate) => candidate.id === request.sha)
+        if (!item || !commit) return notFound()
+        const { createdAt, id, parentIds, title } = commit
+        return { authorName: item.mergeRequest.author.name, committedAt: createdAt, createdAt, id, message: title, parentIds, title }
+      }
       case 'file': {
         const content = data.mergeRequests.find((item) => item.mergeRequest.projectId === request.projectId && request.path in item.files)?.files[request.path]
         return content === undefined ? notFound() : { content }

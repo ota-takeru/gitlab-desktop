@@ -49,7 +49,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       {children}
       <Dialog aria-labelledby="confirm-dialog-title" maxWidth="xs" onClose={() => settle('cancel')} open={pending !== null} fullWidth>
         <DialogTitle id="confirm-dialog-title">{pending?.title}</DialogTitle>
-        {pending?.message ? <DialogContent><DialogContentText component="div" variant="body2">{pending.message}</DialogContentText></DialogContent> : null}
+        {pending?.message ? <DialogContent><DialogContentText component="div" variant="body2"><ConfirmMessage cancel={() => settle('cancel')} message={pending.message} /></DialogContentText></DialogContent> : null}
         <DialogActions>
           <Button autoFocus onClick={() => settle('cancel')}>{pending?.cancelLabel ?? t('common.feedback.cancel')}</Button>
           {/* The alternative gives something up, so it reads as a warning beside the main action. */}
@@ -70,6 +70,11 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       </Snackbar>
     </FeedbackContext.Provider>
   )
+}
+
+/** The confirmation's text; a function message gets the dialog's cancel. */
+function ConfirmMessage({ cancel, message }: { cancel: () => void; message: ConfirmOptions['message'] }) {
+  return typeof message === 'function' ? message(cancel) : message
 }
 
 /** The check of a milestone notice pops in while a ring spreads from it; still when the system asks for less motion. */

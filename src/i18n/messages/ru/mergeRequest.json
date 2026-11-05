@@ -186,7 +186,6 @@
   "menu.rebase": "Rebase",
   "menu.behind": "{count, plural, one {Отстаёт от целевой ветки на # коммит} few {Отстаёт от целевой ветки на # коммита} many {Отстаёт от целевой ветки на # коммитов} other {Отстаёт от целевой ветки на # коммита}}",
   "menu.requestChanges": "Запросить изменения",
-  "menu.requestChangesReviewerOnly": "Доступно, если вы ревьюер",
   "menu.editTitle": "Изменить название…",
   "menu.editLabels": "Изменить метки…",
   "menu.changeMilestone": "Изменить этап…",

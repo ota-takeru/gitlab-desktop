@@ -93,6 +93,7 @@ enum ResponseKind {
     Diffs,
     Discussions,
     Commits,
+    Commit,
     Blame,
     CommitMergeRequests,
     Drafts,
@@ -157,6 +158,14 @@ pub async fn fetch(client: &Client, api_base: &Url, query: &Query) -> Result<Api
     } = query
     {
         return fetch_note_awards(client, api_base, project_path, iid, since_note_id).await;
+    }
+    if let Query::NoteDiscussion {
+        project_id,
+        iid,
+        note_id,
+    } = query
+    {
+        return fetch_note_discussion(client, api_base, project_id, iid, note_id).await;
     }
     if let Query::PipelineJobs {
         project_id,
@@ -2076,6 +2085,66 @@ async fn fetch_note_awards(
         next_page: None,
         total_pages: None,
         truncated: !reached,
+    })
+}
+
+const NOTE_DISCUSSION_QUERY: &str = "query($id: NoteID!) { note(id: $id) { discussion { id } } }";
+
+/// The thread holding a comment, or null when GitLab does not say which one it
+/// is or the thread is not this merge request's. REST notes carry no thread ID,
+/// so GraphQL names it and REST reads it in the shape the pages have.
+async fn fetch_note_discussion(
+    client: &Client,
+    api_base: &Url,
+    project_id: &str,
+    iid: &str,
+    note_id: &str,
+) -> Result<ApiResult, AppError> {
+    validate_id(project_id, "projectId")?;
+    validate_id(iid, "iid")?;
+    validate_id(note_id, "noteId")?;
+    let body = json!({
+        "query": NOTE_DISCUSSION_QUERY,
+        "variables": { "id": format!("gid://gitlab/Note/{note_id}") },
+    });
+    let unsupported = || {
+        unsupported_response("GitLabから対応していない形式の応答が返されました。")
+            .key("native.response.unsupported")
+    };
+    let data = post_graphql(client, api_base, &body, unsupported(), unsupported()).await?;
+    let discussion_id = data
+        .get("note")
+        .and_then(|note| note.get("discussion"))
+        .and_then(|discussion| discussion.get("id"))
+        .and_then(Value::as_str)
+        .and_then(|id| id.rsplit('/').next())
+        .filter(|id| validate_sha(id, "discussionId").is_ok());
+    let data = match discussion_id {
+        None => Value::Null,
+        Some(discussion_id) => {
+            let url = endpoint(
+                api_base,
+                &[
+                    "projects",
+                    project_id,
+                    "merge_requests",
+                    iid,
+                    "discussions",
+                    discussion_id,
+                ],
+            )?;
+            match get_json_once(client, &url).await {
+                Ok(value) => normalize_discussion(&value)?,
+                Err(error) if error.code == "NOT_FOUND" => Value::Null,
+                Err(error) => return Err(error),
+            }
+        }
+    };
+    Ok(ApiResult {
+        data,
+        next_page: None,
+        total_pages: None,
+        truncated: false,
     })
 }
 

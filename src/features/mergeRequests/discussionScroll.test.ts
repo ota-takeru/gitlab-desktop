@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { captureAnchor, positionAtLatest, restoreAnchor } from './discussionScroll'
+import { captureAnchor, firstDiffThreadInView, positionAtLatest, restoreAnchor } from './discussionScroll'
 
 /**
  * A minimal scroll container: the sticky header is 100px tall, the viewport
@@ -33,6 +33,22 @@ function setup(threads: Array<{ id: string; top: number; height: number; notes?:
 }
 
 describe('discussion scroll positions', () => {
+  it('finds the first diff thread on screen, not one above the header or below the view', () => {
+    const host = setup([])
+    const rect = (top: number, height: number) => ({ bottom: top + height, height, left: 0, right: 0, top, width: 0, x: 0, y: top, toJSON: () => null }) as DOMRect
+    const thread = (id: string, top: number) => {
+      const element = document.createElement('div')
+      element.dataset.diffThread = id
+      element.getBoundingClientRect = () => rect(top, 50)
+      host.append(element)
+    }
+    thread('above', 20)
+    thread('below', 700)
+    expect(firstDiffThreadInView(host, host)).toBeNull()
+    thread('shown', 300)
+    expect(firstDiffThreadInView(host, host)).toBe('shown')
+  })
+
   it('opens at the first unread note just below the sticky header', () => {
     const host = setup([{ id: 'a', notes: ['n1'], top: 100, height: 200 }, { id: 'b', notes: ['n2'], top: 900, height: 200 }])
     positionAtLatest(host, host, 'n2', 'n2')

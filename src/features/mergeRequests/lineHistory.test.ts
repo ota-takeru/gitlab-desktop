@@ -95,11 +95,23 @@ describe('historyStep', () => {
     expect(root).toMatchObject({ before: { start: 1, end: 2 }, next: null, stop: 'root' })
   })
 
+  it('finds a run whose lines were apart in the commit by the start of the run', async () => {
+    // A later commit removed `mid`, so blame gives commit c the lines `a` and `b` side by side.
+    const blame = async () => [block(sha('c'), '2026-05-01T00:00:00Z', ['a', 'b'], [sha('p')])]
+    const step = await historyStep({ path: 'a.ts', range: { start: 5, end: 6 }, sha: sha('h') }, { blame, commitDiff: async () => [diffOf(['@@ -4,2 +4,4 @@', ' x', '+a', ' mid', '+b'].join('\n'))] })
+    expect(step).toMatchObject({ commit: { commitId: sha('c') }, range: { start: 5, end: 6 } })
+    expect('stop' in step && step.stop).not.toBe('unmatched')
+    expect('segments' in step && step.segments).toHaveLength(1)
+  })
+
   it('reports what it cannot follow', async () => {
     const blame = async () => [block(sha('c'), '2026-05-01T00:00:00Z', ['a'], [sha('p')])]
     expect(await historyStep({ path: 'a.ts', range: { start: 1, end: 500 }, sha: sha('h') }, { blame, commitDiff: async () => [] })).toEqual({ stop: 'tooWide' })
-    expect(await historyStep({ path: 'a.ts', range: { start: 1, end: 1 }, sha: sha('h') }, { blame, commitDiff: async () => [diffOf('', { tooLarge: true })] })).toEqual({ stop: 'unavailable' })
-    expect(await historyStep({ path: 'a.ts', range: { start: 1, end: 1 }, sha: sha('h') }, { blame, commitDiff: async () => [diffOf(['@@ -1 +1 @@', '-x', '+other'].join('\n'))] })).toEqual({ stop: 'unmatched' })
+    expect(await historyStep({ path: 'a.ts', range: { start: 1, end: 1 }, sha: sha('h') }, { blame: async () => [], commitDiff: async () => [] })).toEqual({ stop: 'noBlame' })
+    // The commit is still shown when its change cannot be located in its diff.
+    const unlocated = { before: null, commit: { commitId: sha('c'), title: sha('c') }, next: null, path: 'a.ts', range: { start: 1, end: 1 }, segments: [] }
+    expect(await historyStep({ path: 'a.ts', range: { start: 1, end: 1 }, sha: sha('h') }, { blame, commitDiff: async () => [diffOf('', { tooLarge: true })] })).toMatchObject({ ...unlocated, stop: 'tooLarge' })
+    expect(await historyStep({ path: 'a.ts', range: { start: 1, end: 1 }, sha: sha('h') }, { blame, commitDiff: async () => [diffOf(['@@ -1 +1 @@', '-x', '+other'].join('\n'))] })).toMatchObject({ ...unlocated, stop: 'unmatched' })
   })
 
   it('reads a wide range in blame calls of at most 100 lines', async () => {

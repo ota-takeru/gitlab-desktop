@@ -41,8 +41,10 @@ import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
 import { setLocalePreference, translate, type MessageKey } from '../i18n/i18n'
 import { localeNames, supportedLocales, systemLocale, type LocalePreference } from '../i18n/locales'
 import { useLocalePreference, useT } from '../i18n/useT'
+import { isEditableTarget, isInsideMenu } from '../lib/eventTargets'
 import { clearLocalDrafts } from '../lib/localDrafts'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
+import type { UnsentTarget } from '../lib/windowSafety'
 import type { GitLabCommandError, GitLabSnapshot, MergeRequest, Project } from '../types/gitlab'
 import type { ColorMode, ColorPreference } from './colorMode'
 import { reportGitLabConnectivity, resetGitLabConnectivity, useGitLabConnectivity } from './connectivity'
@@ -58,6 +60,7 @@ import { WindowCloseProtection } from '../components/WindowCloseProtection'
 import { MergeRequestList } from './mergeRequests/MergeRequestList'
 import { BranchList } from './projects/BranchList'
 import type { CodeLocation } from './projects/CodeBrowser'
+import { CommitHistory, type HistoryLocation } from './projects/CommitHistory'
 import { ProjectView } from './projects/ProjectView'
 import { ProjectOverview } from './projects/ProjectOverview'
 import { WorkspaceSettings } from './connections/WorkspaceSettings'
@@ -68,6 +71,7 @@ import { personalQueueFor } from './mergeRequests/personalQueue'
 import { closeStaleTabs, hasViewedMergeRequest, mrRefKey, openWorkspaceTab, STALE_TAB_MS, usePersonalWorkspace, type MrRef } from './shared/personalWorkspace'
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
 import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
+import { MemoryPressure, useMemoryPressureReading } from './shared/MemoryPressure'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
@@ -114,7 +118,7 @@ function writeLayoutPreference(key: string, value: boolean): void {
   }
 }
 
-type ClientRoute = 'projects' | 'overview' | 'mrs' | 'branches' | 'code' | 'settings' | 'user'
+type ClientRoute = 'projects' | 'overview' | 'mrs' | 'history' | 'branches' | 'code' | 'settings' | 'user'
 /**
  * The MR list's own conditions: the search of all MRs, or one condition on the connected user,
  * switched with the chips under the search field. Notifications open from their own button in the sidebar.
@@ -377,9 +381,16 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
       const modifier = event.ctrlKey || event.metaKey
       // Text input keeps its own keys: Ctrl+K in a comment must not leave the MR.
       const editing = isEditableTarget(event.target)
-      if (modifier && !editing && session && event.key.toLowerCase() === 'o') { event.preventDefault(); setOpenUrlDialog(true); return }
+      // An open dialog or menu owns the keyboard, so nothing opens over it or moves underneath it.
+      const covered = isInsideMenu(event.target) || document.querySelector('[role="dialog"]') !== null
+      if (modifier && !editing && session && event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        if (!covered) setOpenUrlDialog(true)
+        return
+      }
       if (modifier && !editing && session && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        if (covered) return
         // Ctrl+K searches all MRs; "/" searches within the list on screen.
         if (searchingAllMrs && !selected) {
           globalThis.dispatchEvent(new Event('gitlab-focus-project-search'))
@@ -390,7 +401,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
         globalThis.setTimeout(() => globalThis.dispatchEvent(new Event('gitlab-focus-project-search')), 0)
         return
       }
-      if (event.defaultPrevented || modifier || event.altKey || editing || isInsideMenu(event.target) || document.querySelector('[role="dialog"]')) return
+      if (event.defaultPrevented || modifier || event.altKey || editing || covered) return
       if (event.key === '?') {
         event.preventDefault()
         setShortcutsOpen(true)
@@ -468,6 +479,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     openMergeRequestRef(ref, target?.tab)
   }
   const openGitLabPage = useCallback((location: GitLabPageLocation) => navigate(location.route, location.params), [navigate])
+  // The update confirmation goes to the screen holding unsent work: the MR, or the settings for the access token.
+  const openUnsent = (target: UnsentTarget) => { if (target.kind === 'settings') navigate('settings'); else openMergeRequestRef({ iid: target.iid, projectId: target.projectId }) }
   const openMarkdownLink = useOpenMarkdownLink(openMergeRequestTarget, (user) => navigate('user', { username: user.username }), openGitLabPage)
   useDeepLinks(openMarkdownLink, session?.instanceUrl)
   const changeUserTab = (tab: UserTab) => {
@@ -495,7 +508,16 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     return () => globalThis.clearInterval(timer)
   }, [instanceUrl, selectedIid, selectedProjectId, userId])
   const openTabKeys = useMemo(() => workspace.open.map(mrRefKey), [workspace.open])
+  // Short of memory, only the screens on view stay mounted and fetched data nothing shows is let go:
+  // Rust's disk cache brings it back when a screen reads it again.
+  const queryClient = useQueryClient()
+  const releaseUnusedData = useCallback((constrained: boolean) => {
+    if (constrained) queryClient.removeQueries({ queryKey: ['gitlab'], type: 'inactive' })
+  }, [queryClient])
+  const memoryConstrained = useMemoryPressureReading(releaseUnusedData)
   const selectedHasTab = selectedPinned || Boolean(selected && openTabKeys.includes(mrRefKey(selected)))
+  // A newly opened MR waiting for its saved data, the list still showing in its place.
+  const [mrRevealPending, setMrRevealPending] = useState(false)
 
   const personal = personalQueueFor(listParams, session?.user.id)
   // The personal queues and search share one list screen; chips under its search field switch between them.
@@ -507,7 +529,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
   }, [hubTab, listParams, route])
   const mergeRequest = openedMergeRequest?.sessionKey === sessionKey ? openedMergeRequest.mergeRequest : null
   // Each list keeps its own mounted screen, so returning to it is immediate.
-  const listScreenKey = route === 'mrs' || route === 'user' ? `${route}:${listMount.key}` : route === 'overview' || route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
+  const listScreenKey = route === 'mrs' || route === 'user' ? `${route}:${listMount.key}` : route === 'overview' || route === 'history' || route === 'branches' || route === 'code' ? `${route}:${params.projectId}` : route
   // Kept screens get the refresh policy inside their own content, so a hidden one does not render again when it changes.
   const refreshAllowed = useQueryRefreshAllowed()
   // Only the first restore at startup: a later connect attempt keeps the form on screen.
@@ -521,26 +543,35 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
   }
   // Opening by URL is a one-off action of the MR list, beside its title.
   const hubActions = hubTab ? <Tooltip title={t('app.openUrl.tooltip')}><IconButton aria-label={t('app.openUrl.label')} onClick={() => setOpenUrlDialog(true)}><LinkRoundedIcon /></IconButton></Tooltip> : undefined
-  // A project's screen shows its name over tabs for its MRs, its branches and its code.
-  const projectTab = route === 'overview' || route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
+  // A project's screen shows its name over tabs for its MRs, its history, its code and its branches.
+  const projectTab = route === 'overview' || route === 'history' || route === 'branches' || route === 'code' ? route : route === 'mrs' && hubTab === null && params.projectId && params.projectName ? 'mrs' : null
+  const projectBase = { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) }
   const projectNavigation = projectTab ? <PaneNavigation
     heading={<Tooltip title={params.projectName ?? ''}><Typography component="div" noWrap sx={{ flexShrink: 1, minWidth: 0 }} variant="h1">{params.projectName}</Typography></Tooltip>}
-    tabs={<Tabs aria-label={t('project.tabs.label')} onChange={(_, value: 'overview' | 'mrs' | 'branches' | 'code') => navigate(value, { projectId: params.projectId, projectName: params.projectName, ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}) })} scrollButtons={false} value={projectTab} variant="scrollable">
+    tabs={<Tabs aria-label={t('project.tabs.label')} onChange={(_, value: 'overview' | 'mrs' | 'history' | 'branches' | 'code') => navigate(value, {
+      projectId: params.projectId,
+      projectName: params.projectName,
+      ...(params.projectUrl ? { projectUrl: params.projectUrl } : {}),
+      // History and code read the same branch, so moving between them keeps it.
+      ...((value === 'history' || value === 'code') && (route === 'history' || route === 'code') && params.ref ? { ref: params.ref } : {}),
+    })} scrollButtons={false} value={projectTab} variant="scrollable">
       {/* Choosing MR again, e.g. after a branch's MRs, returns to all the project's MRs. */}
       <Tab label={t('project.tabs.overview')} value="overview" />
       <Tab label={t('project.tabs.mergeRequests')} onClick={() => { if (projectTab === 'mrs' && Object.keys(listParams).some((key) => key !== 'projectId' && key !== 'projectName')) navigate('mrs', { projectId: params.projectId, projectName: params.projectName }) }} value="mrs" />
-      <Tab label={t('project.tabs.branches')} value="branches" />
+      <Tab label={t('project.tabs.history')} value="history" />
       <Tab label={t('project.tabs.code')} value="code" />
+      <Tab label={t('project.tabs.branches')} value="branches" />
     </Tabs>}
   /> : undefined
   const hubBackLabel = hubTabs.find((tab) => tab.value === hubTab)?.backLabel
-  const backLabel = route === 'user' ? t('app.back.user', { username: params.username }) : (route === 'overview' || route === 'branches' || route === 'code') && params.projectName ? t('app.back.named', { name: params.projectName }) : hubBackLabel ? t(hubBackLabel) : route === 'mrs' && params.projectName ? t('app.back.named', { name: params.projectName }) : route === 'projects' ? t('app.back.projects') : t('app.back.list')
+  const backLabel = route === 'user' ? t('app.back.user', { username: params.username }) : (route === 'overview' || route === 'history' || route === 'branches' || route === 'code') && params.projectName ? t('app.back.named', { name: params.projectName }) : hubBackLabel ? t(hubBackLabel) : route === 'mrs' && params.projectName ? t('app.back.named', { name: params.projectName }) : route === 'projects' ? t('app.back.projects') : t('app.back.list')
 
   // Places only; one-off actions such as opening a URL sit beside the search box.
   // An open MR is marked by its tab below, not by these places.
-  const projectsSelected = !selected && (route === 'projects' || route === 'overview' || route === 'branches' || route === 'code' || (route === 'mrs' && hubTab === null))
+  const projectsSelected = !selected && (route === 'projects' || route === 'overview' || route === 'history' || route === 'branches' || route === 'code' || (route === 'mrs' && hubTab === null))
 
   return (
+    <MemoryPressure value={memoryConstrained}>
     <MarkdownLinkProvider instanceUrl={session?.instanceUrl} open={openMarkdownLink}>
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <Box sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
@@ -567,8 +598,8 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
             <MergeRequestTabs collapsed={navCollapsed} onOpen={openMergeRequestRef} selected={selected} />
           </Box>
           {/* Notifications are not a place: they open over the page, from beside the settings. */}
-          <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref) => openMergeRequestRef(ref, 'discussion')} onOpenChange={foldForNotifications} /></List>
-          <AutoInstallAllowed status={status}>{(allowed) => <UpdateSidebarButton autoInstallAllowed={allowed} collapsed={navCollapsed} />}</AutoInstallAllowed>
+          <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref, noteId) => openMergeRequestTarget(ref, { tab: 'discussion', ...(noteId ? { noteId } : {}) })} onOpenChange={foldForNotifications} /></List>
+          <AutoInstallAllowed status={status}>{(allowed) => <UpdateSidebarButton autoInstallAllowed={allowed} collapsed={navCollapsed} onOpenUnsent={openUnsent} />}</AutoInstallAllowed>
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>
             <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ ...hairline('top'), color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
@@ -588,12 +619,12 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
           </Dialog>
           <KeyboardShortcutsDialog onClose={closeShortcuts} open={shortcutsOpen} />
           <OpenMergeRequestDialog open={openUrlDialog} onClose={() => setOpenUrlDialog(false)} onOpen={openMergeRequestTarget} onOpenPage={openGitLabPage} />
-          <Box key={sessionKey} sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
+          <Box key={sessionKey} sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
             {/* The same pane as the restored screen, so nothing moves when it arrives. */}
             {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
               <Box component="main" sx={{ flex: 1, overflow: 'auto' }}>
-                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><AutoInstallAllowed status={status}>{(allowed) => <SettingsView autoInstallAllowed={allowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onShowShortcuts={() => setShortcutsOpen(true)} />}</AutoInstallAllowed></Box>
+                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><AutoInstallAllowed status={status}>{(allowed) => <SettingsView autoInstallAllowed={allowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onOpenUnsent={openUnsent} onShowShortcuts={() => setShortcutsOpen(true)} />}</AutoInstallAllowed></Box>
               </Box>
             ) : null}
             {!waitingForSessionRestore && route !== 'settings' && awaitingReauth ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}>
@@ -601,25 +632,29 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
             </Box> : null}
             {!waitingForSessionRestore && !awaitingReauth ? <>
               {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive.
-                  Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once. */}
-              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: selected || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-                {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy. */}
-                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={6} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                  Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once.
+                  Under an MR about to show, the list leaves the flow: the MR comes into the flow a commit before the list hides, and must not lay out narrow beside it. */}
+              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative', ...(selected && mrRevealPending && { inset: 0, position: 'absolute' }) }}>
+                {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy.
+                    A list shown for the first time shows once its saved data is read; the list before it stays until then. */}
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={memoryConstrained ? 1 : 6} revealWhenReady={!memoryConstrained} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
-                {route === 'overview' && session ? <ProjectOverview instanceUrl={session.instanceUrl} key={params.projectId} navigation={projectNavigation} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} projectUrl={params.projectUrl} sessionId={session.id} /> : null}
+                {route === 'overview' && session ? <ProjectOverview instanceUrl={session.instanceUrl} key={params.projectId} navigation={projectNavigation} onOpenCommit={(sha) => navigate('history', { ...projectBase, sha })} onOpenMergeRequest={openMergeRequestRef} onShowHistory={() => navigate('history', projectBase)} onShowMergeRequests={() => navigate('mrs', projectBase)} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} projectUrl={params.projectUrl} sessionId={session.id} /> : null}
                 {route === 'user' ? <UserView initialParams={listParams} onOpenMergeRequest={openMergeRequest} onOpenProject={openProject} onOpenProjectId={openProjectId} onSearchStateChange={updateMergeRequestLocation} onTabChange={changeUserTab} recentMrId={recentMrId} selected={selected} username={params.username} /> : null}
                 {route === 'mrs' ? <MergeRequestList actions={hubActions} key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
-                {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
-                {route === 'code' ? <Suspense fallback={<Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, p: 2 }} variant="body2">{t('app.loading')}</Typography>}><CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /></Suspense> : null}
+                {route === 'history' ? <CommitHistory key={params.projectId} location={historyLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('history', { ...projectBase, ...historyParams(next) })} onOpenMergeRequest={openMergeRequestRef} projectId={params.projectId} projectName={projectBase.projectName} projectUrl={params.projectUrl} /> : null}
+                {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowHistory={(ref) => navigate('history', { ...projectBase, ref })} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
+                {route === 'code' ? <Suspense fallback={<Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, p: 2 }} variant="body2">{t('app.loading')}</Typography>}><CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} onShowHistory={(path) => navigate('history', { ...projectBase, ...historyParams({ path, ref: params.ref }) })} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /></Suspense> : null}
                 </AppErrorBoundary>
                 </QueryRefreshPolicy>
                 </KeepAlive>
               </Box>
-              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={openTabKeys} max={5} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              {/* An MR opened for the first time shows once its saved data is read; the list or the MR before it stays until then. */}
+              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} onRevealPendingChange={setMrRevealPending} revealWhenReady={!memoryConstrained} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
               {/* An MR with a sidebar tab keeps its data while hidden, so switching back shows it at once. */}
-              {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
+              {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab && !memoryConstrained ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute
                   initialMergeRequest={mergeRequest}
                   key={`${selected.projectId}:${selected.iid}`}
@@ -640,11 +675,12 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
       </Box>
       {/* Update notices live in the bar, in a slot of fixed height, so the page never shifts. */}
       <ConnectionStatusBar awaitingReauth={awaitingReauth} trailing={<>
-        <AutoInstallAllowed status={status}>{(allowed) => <UpdatePanel autoInstallAllowed={allowed} notificationOnly />}</AutoInstallAllowed>
+        <AutoInstallAllowed status={status}>{(allowed) => <UpdatePanel autoInstallAllowed={allowed} notificationOnly onOpenUnsent={openUnsent} />}</AutoInstallAllowed>
         <AppVersionLabel />
       </>} />
     </Box>
     </MarkdownLinkProvider>
+    </MemoryPressure>
   )
 }
 
@@ -795,7 +831,7 @@ function AppVersionLabel() {
   return <Typography aria-label={t('app.version', { version })} color="textSecondary" noWrap sx={{ flexShrink: 0 }} variant="caption">v{version}</Typography>
 }
 
-function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceChange, onShowShortcuts }: ColorPreferenceProps & { autoInstallAllowed: boolean; onShowShortcuts: () => void }) {
+function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceChange, onOpenUnsent, onShowShortcuts }: ColorPreferenceProps & { autoInstallAllowed: boolean; onOpenUnsent: (target: UnsentTarget) => void; onShowShortcuts: () => void }) {
   const { session } = useConnection()
   const t = useT()
   return <Box>
@@ -814,7 +850,7 @@ function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceCh
     <SettingsSection description={t('settings.language.description')} id="settings-language" title={t('settings.language.title')}><LanguageSettings /></SettingsSection>
     <SettingsSection description={t('settings.workspace.description')} id="settings-workspace" title={t('settings.workspace.title')}><WorkspaceSettings /></SettingsSection>
     {session ? <SettingsSection description={t('settings.local.description')} id="settings-local" title={t('settings.local.title')}><Suspense fallback={<Typography color="textSecondary" role="status" sx={delayedRevealSx} variant="body2">{t('app.loading')}</Typography>}><ScanFolders sessionId={session.id} userId={session.user.id} /></Suspense></SettingsSection> : null}
-    <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} /></SettingsSection>
+    <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} onOpenUnsent={onOpenUnsent} /></SettingsSection>
     <SettingsSection description={t('settings.shortcuts.description')} id="settings-shortcuts" title={t('settings.shortcuts.title')}>
       <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
         <Typography color="textSecondary" variant="body2">{t('settings.shortcuts.hint')}</Typography>
@@ -989,7 +1025,7 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   // The former pinned list became the sidebar's pinned tabs; its links show the history.
   // The former pinned list and history are covered by the sidebar's tabs; their links start the MR list.
   // So do links to the former To-Do place, now the notification button.
-  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'overview' || routeValue === 'mrs' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' || routeValue === 'user' ? routeValue : null
+  let route: ClientRoute | null = routeValue === 'projects' || routeValue === 'overview' || routeValue === 'mrs' || routeValue === 'history' || routeValue === 'branches' || routeValue === 'code' || routeValue === 'settings' || routeValue === 'user' ? routeValue : null
   if (route === 'user' && !params.username) { route = start.route; params = start.params }
   if (routeValue === 'mr' && params.projectId && params.iid) {
     // Older links opened a full-page detail; show it over the list the MR list starts with.
@@ -999,7 +1035,7 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
   if (!route) {
     route = hasSession ? start.route : 'settings'
     params = hasSession ? start.params : {}
-  } else if ((route === 'overview' || route === 'branches' || route === 'code') && !params.projectId) {
+  } else if ((route === 'overview' || route === 'history' || route === 'branches' || route === 'code') && !params.projectId) {
     route = 'projects'
     params = {}
   }
@@ -1008,6 +1044,15 @@ function readClientLocation(hasSession: boolean, hash = window.location.hash, us
     params = {}
   }
   return { params, raw, route }
+}
+
+/** The history's place, kept in the URL so Back returns to the list a commit was opened from. */
+function historyLocation(params: Record<string, string>): HistoryLocation {
+  return { ...(params.ref ? { ref: params.ref } : {}), ...(params.path ? { path: params.path } : {}), ...(/^[0-9a-f]{40}([0-9a-f]{24})?$/u.test(params.sha ?? '') ? { sha: params.sha } : {}) }
+}
+
+function historyParams(next: HistoryLocation): Record<string, string> {
+  return { ...(next.ref ? { ref: next.ref } : {}), ...(next.path ? { path: next.path } : {}), ...(next.sha ? { sha: next.sha } : {}) }
 }
 
 /** The code browser's place, kept in the URL so Back returns to the folder a file was opened from. */
@@ -1063,11 +1108,3 @@ function isInsideControlGroup(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-composer], [role="toolbar"], [role="menu"], [role="menubar"], [role="listbox"], form') !== null
 }
 
-/** An open menu or listbox owns letter keys (MUI only consumes letters that match an item). */
-function isInsideMenu(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
-}

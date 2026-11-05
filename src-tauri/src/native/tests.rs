@@ -653,6 +653,7 @@ fn projects_input(session: &LiveSession, mode: ReadMode) -> QueryInput {
             search: String::new(),
             membership: false,
             include_archived: true,
+            filters: crate::dto::ProjectFilters::default(),
             page: 1,
         },
         background: false,
@@ -895,6 +896,7 @@ async fn gitlab_com_public_projects() {
             search: "gitlab".into(),
             membership: false,
             include_archived: true,
+            filters: crate::dto::ProjectFilters::default(),
             page: 1,
         },
     )

@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitLabSnapshot, Project, ProjectQuery } from '../../types/gitlab'
+import { ScreenReadinessContext } from '../../components/screenReadinessContext'
 import { applyConfirmedGitLabChange, prefetchGitLabQuery, useGitLabQuery } from './useGitLabQuery'
 
 const { cancelMock, queryGitLabMock } = vi.hoisted(() => ({ cancelMock: vi.fn(), queryGitLabMock: vi.fn() }))
@@ -23,8 +24,8 @@ const snapshot = (source: 'cache' | 'network'): GitLabSnapshot<Project[]> => ({
   source,
 })
 
-function QueryProbe() {
-  const result = useGitLabQuery('session-1', query)
+function QueryProbe({ sessionId = 'session-1' }: { sessionId?: string }) {
+  const result = useGitLabQuery(sessionId, query)
   return <output data-testid="query-state">{`${result.snapshot?.source ?? 'none'}:${result.refreshing ? 'refreshing' : 'idle'}:${result.error?.code ?? 'ok'}`}</output>
 }
 
@@ -79,6 +80,40 @@ describe('useGitLabQuery', () => {
     renderProbe(queryClient)
     await waitFor(() => expect(screen.getByTestId('query-state')).toHaveTextContent('network:idle:ok'))
     expect(queryGitLabMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('holds a screen waiting to show only until the saved data is checked, not for the network', async () => {
+    let resolveCache: (value: GitLabSnapshot<Project[]> | null) => void = () => undefined
+    queryGitLabMock.mockImplementation(({ mode }: { mode: string }) => mode === 'cache'
+      ? new Promise((resolve) => { resolveCache = resolve })
+      : new Promise(() => undefined))
+    const release = vi.fn()
+    const hold = vi.fn(() => release)
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ScreenReadinessContext.Provider value={hold}><QueryProbe /></ScreenReadinessContext.Provider></QueryClientProvider>)
+
+    await waitFor(() => expect(queryGitLabMock).toHaveBeenCalledTimes(1))
+    expect(hold).toHaveBeenCalledTimes(1)
+    expect(release).not.toHaveBeenCalled()
+
+    await act(async () => { resolveCache(null) })
+    await waitFor(() => expect(queryGitLabMock).toHaveBeenCalledTimes(2))
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('query-state')).toHaveTextContent('none:idle:ok')
+  })
+
+  it('holds a screen waiting to show until saved data found has rendered', async () => {
+    let resolveCache: (value: GitLabSnapshot<Project[]> | null) => void = () => undefined
+    queryGitLabMock.mockImplementation(({ mode }: { mode: string }) => mode === 'cache'
+      ? new Promise((resolve) => { resolveCache = resolve })
+      : new Promise(() => undefined))
+    let shownAtRelease = ''
+    const release = vi.fn(() => { shownAtRelease = screen.getByTestId('query-state').textContent ?? '' })
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ScreenReadinessContext.Provider value={() => release}>{/* Another session: the previous test's read never finishes. */}<QueryProbe sessionId="session-2" /></ScreenReadinessContext.Provider></QueryClientProvider>)
+
+    await waitFor(() => expect(queryGitLabMock).toHaveBeenCalledTimes(1))
+    await act(async () => { resolveCache(snapshot('cache')) })
+    await waitFor(() => expect(release).toHaveBeenCalledTimes(1))
+    expect(shownAtRelease).toBe('cache:refreshing:ok')
   })
 
   it('hydrates a cache snapshot while the network refresh is in flight', async () => {

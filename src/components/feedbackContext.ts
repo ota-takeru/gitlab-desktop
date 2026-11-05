@@ -2,7 +2,8 @@ import { createContext, useContext, type ReactNode } from 'react'
 
 export interface ConfirmOptions {
   title: string
-  message?: ReactNode
+  /** A function gets the dialog's cancel, for content that leads elsewhere and closes the dialog on the way. */
+  message?: ReactNode | ((cancel: () => void) => ReactNode)
   /** Names what happens, e.g. 「破棄する」. Never just 「OK」. */
   confirmLabel: string
   cancelLabel?: string

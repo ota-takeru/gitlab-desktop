@@ -206,8 +206,9 @@ describe('WorkspaceMonitor', () => {
     await act(async () => view.rerender(<WorkspaceMonitor />))
 
     expect(mocks.notifyWorkspace).toHaveBeenCalledTimes(2)
-    expect(mocks.notifyWorkspace).toHaveBeenCalledWith('新しい通知が1件あります。')
-    expect(mocks.notifyWorkspace).toHaveBeenCalledWith('自分のMRに新しい更新が2件あります。')
+    // A click opens the new To-Do, and the MR at the first new comment.
+    expect(mocks.notifyWorkspace).toHaveBeenCalledWith('新しい通知が1件あります。', 'https://gitlab.example/project/-/merge_requests/120')
+    expect(mocks.notifyWorkspace).toHaveBeenCalledWith('自分のMRに新しい更新が2件あります。', 'https://gitlab.example/project/-/merge_requests/120#note_note-2')
   })
 
   it('suppresses activity notifications for the MR already open in the window hash', async () => {

@@ -6,6 +6,7 @@ import Typography from '@mui/material/Typography'
 import type { Editor, EditorOptions } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 import type { Theme } from '@mui/material/styles'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type FocusEvent as ReactFocusEvent, type ReactNode, type Ref } from 'react'
@@ -230,8 +231,13 @@ function RichInput({ activeDescendantId, autoFocus, controlsId, disabled = false
   const extensions = useMemo(() => [...createRichMarkdownExtensions(placeholder), MentionHighlight], [placeholder])
   const editorProps = useMemo<EditorOptions['editorProps']>(() => ({
     attributes: { 'aria-label': label, 'aria-multiline': 'true', role: 'textbox' },
-    handleKeyDown: (_view, event) => {
+    // ProseMirror counts clicks itself within 500ms and 10px, so a double-click right after placing the caret counts
+    // as a triple-click and selects the whole paragraph, every line of it. The browser selects by the system's count:
+    // a word on a double-click, the clicked line on a triple-click.
+    handleDOMEvents: { mousedown: (_view, event) => event.detail >= 2 },
+    handleKeyDown: (view, event) => {
       if (callbacksRef.current.onKeyDown?.(event)) return true
+      if (moveUpPastLeadingBreak(view, event)) return true
       // Same strikethrough shortcut as the Markdown input.
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'x' && editorRef.current) {
         applyRichFormat(editorRef.current, 'strikethrough')
@@ -596,6 +602,21 @@ function leftForElsewhere(event: FocusEvent, controlsId: string | null | undefin
   return !(list && next instanceof Node && (list.contains(next) || next.contains(list)))
 }
 
+/**
+ * Up from the line after a line break (Shift+Enter) that starts a paragraph goes to the empty line above it.
+ * ProseMirror puts a hidden separator in front of that break, and its own Up handling moves the caret
+ * to before the break ahead of the browser, then puts it back 50ms later as no selection change followed.
+ */
+function moveUpPastLeadingBreak(view: EditorView, event: KeyboardEvent): boolean {
+  if (event.key !== 'ArrowUp' || event.altKey || event.ctrlKey || event.metaKey) return false
+  const { selection } = view.state
+  const { $head } = selection
+  if ($head.parentOffset !== 1 || $head.nodeBefore?.type.name !== 'hardBreak') return false
+  const start = $head.start()
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, event.shiftKey ? selection.anchor : start, start)).scrollIntoView())
+  return true
+}
+
 /** The position after `count` code units of the text the rich editor shows. */
 function richPosAtShown(doc: ProseMirrorNode, count: number): number {
   let remaining = count
@@ -737,7 +758,7 @@ const richEditorSx = {
     '& ul[data-type="taskList"] li > div': { flex: 1, minWidth: 0 },
     '& ul[data-type="taskList"] li > label': { lineHeight: 1, pt: 0.5 },
     '& ul[data-type="taskList"] li p, & td p, & th p': { my: 0 },
-    '& td, & th': { ...hairline(['right', 'bottom']), minWidth: 48, px: 1, py: 0.5 },
+    '& td, & th': { ...hairline(['right', 'bottom']), minWidth: '6em', px: 1, py: 0.5 },
     '& [data-markdown-image]': { color: 'text.secondary', fontSize: 'caption.fontSize' },
     '& a': { color: 'primary.main' },
     '& .selectedCell': { bgcolor: 'action.selected' },

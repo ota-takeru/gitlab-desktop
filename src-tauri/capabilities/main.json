@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "allow-runtime-info",
+    "allow-memory-pressure",
     "allow-connect-gitlab",
     "allow-reauthenticate-gitlab",
     "allow-list-glab-connections",
@@ -47,6 +48,10 @@
     "allow-close-app-window",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
+    "core:image:allow-new",
+    "core:resources:allow-close",
+    "core:window:allow-set-badge-count",
+    "core:window:allow-set-overlay-icon",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
     "notification:allow-notify",

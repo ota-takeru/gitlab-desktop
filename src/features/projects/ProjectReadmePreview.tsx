@@ -12,7 +12,7 @@ import { chooseReadmeFile } from './readmeFiles'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 
 // A README that is not Markdown is rare; the file view (and its highlighting) loads only for one.
-const FullFileView = lazy(() => import('../mergeRequests/DiffViewer').then(({ FullFileView }) => ({ default: FullFileView })))
+const FullFileView = lazy(() => import('../mergeRequests/FullFileView').then(({ FullFileView }) => ({ default: FullFileView })))
 
 export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { project: Pick<Project, 'id' | 'name'> & Partial<Pick<Project, 'webUrl'>>; sessionId: string; instanceUrl: string }) {
   const t = useT()
@@ -27,8 +27,8 @@ export function ProjectReadmePreview({ project, sessionId, instanceUrl }: { proj
   const blob = useGitLabQuery(sessionId, blobQuery)
   const repository = readme ? { projectId: project.id, path: readme.path } : undefined
   const markdown = Boolean(readme && (isMarkdownFilePath(readme.name) || /^readme$/iu.test(readme.name)))
-  return <Box aria-label={t('project.readme.label', { project: project.name })} component="section" sx={{ maxHeight: 440, overflow: 'auto', px: 1 }}>
-    <Typography sx={{ fontWeight: 600, mb: 1 }} variant="subtitle2">{readme ? t('project.readme.titleWithFile', { file: readme.name }) : t('project.readme.title')}</Typography>
+  return <Box aria-label={t('project.readme.label', { project: project.name })} component="section" sx={{ px: 1 }}>
+    <Typography component="h2" sx={{ fontWeight: 600, mb: 1 }} variant="subtitle1">{readme ? readme.name : t('project.overview.readme')}</Typography>
     {tree.loading || readme && blob.loading ? <Typography color="textSecondary" variant="body2">{t('project.readme.loading')}</Typography> : null}
     {tree.error ? <Alert severity="warning">{t('project.readme.listFailed', { message: tree.error.message })}</Alert> : null}
     {readme && blob.error ? <Alert severity="warning">{t('project.readme.loadFailed', { message: blob.error.message })}</Alert> : null}

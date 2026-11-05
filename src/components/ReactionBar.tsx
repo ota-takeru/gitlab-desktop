@@ -70,7 +70,7 @@ export function ReactionBar({ awards, currentUserId, disabled = false, label, on
           disabled={disabled}
           label={<>
             {/* A custom emoji without a glyph stays as its `:name:` text, at text size. */}
-            <Box aria-hidden component="span" sx={emoji.startsWith(':') ? { fontSize: 'body2.fontSize' } : { fontSize: 18, lineHeight: 1 }}>{emoji}</Box>
+            <Box aria-hidden component="span" sx={emoji.startsWith(':') ? { fontSize: 'body2.fontSize' } : { fontSize: 18, lineHeight: gridLine(5) }}>{emoji}</Box>
             <Box aria-hidden component="span" sx={{ fontSize: 'body2.fontSize', fontVariantNumeric: 'tabular-nums' }}>{group.users.length}</Box>
           </>}
           onClick={() => toggle(group.name, !group.mine)}

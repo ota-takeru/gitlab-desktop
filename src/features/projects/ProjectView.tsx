@@ -1,31 +1,29 @@
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
-import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SourceOutlinedIcon from '@mui/icons-material/SourceOutlined'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
+import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
-import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 
+import { ConditionSearchField } from '../../components/ConditionSearchField'
 import { hairline } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
 import { paneGutter, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
+import { PillSelect } from '../../components/PillSelect'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon } from '../../components/StateIcon'
 import { translate } from '../../i18n/i18n'
@@ -34,12 +32,16 @@ import { formatFetchedAt } from '../../lib/format'
 import type { GitLabUser, Project } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { preferenceScope, readPinnedProjectIds, readRecentProjectIds, writePinnedProjectIds, writeRecentProjectIds } from '../shared/preferences'
+import { ProjectFetchAlerts } from './ProjectFetchAlerts'
+import { useFocusSearchShortcut } from '../shared/useFocusSearchShortcut'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { useRememberedListState } from './listState'
+import { ProjectConditionEditor } from './ProjectConditions'
+import { addableKinds, CONDITION_NAMES, defaultProjectFilters, isSwitchCondition, ORDER_NAMES, projectConditionChips, projectFilterQuery, type ProjectConditionKind, type ProjectFilterValues } from './projectFilters'
 import { type ProjectLabel, readProjectLabels, sameProjectLabel, writeProjectLabels } from './projectLabels'
 import { Row } from '../../components/Row'
 
-const defaultConditions = { includeArchived: false, membershipOnly: true, page: 1, search: '', searchInput: '' }
+const defaultConditions = { ...defaultProjectFilters, includeArchived: false, membershipOnly: true, page: 1, search: '', searchInput: '' }
 const userProjectDefaultConditions = { ...defaultConditions, membershipOnly: false }
 
 interface ProjectViewProps {
@@ -60,6 +62,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
   const userId = user?.id
   const scope = useMemo(() => preferenceScope(session?.instanceUrl ?? 'anonymous', session?.user.id ?? 'anonymous'), [session?.instanceUrl, session?.user.id])
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [editing, setEditing] = useState<{ anchor: HTMLElement; kind: ProjectConditionKind } | null>(null)
   // The conditions outlive the screen, so returning from a project shows the list as it was left.
   const stateKey = userId !== undefined ? `${scope.instanceUrl}:${scope.userId}:user-projects:${userId}` : `${scope.instanceUrl}:${scope.userId}:projects`
   const initialConditions = user ? userProjectDefaultConditions : defaultConditions
@@ -68,10 +71,13 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
   const [pinned, setPinned] = useState(() => readPinnedProjectIds(scope))
   const [recent, setRecent] = useState(() => readRecentProjectIds(scope))
   const [labels, setLabels] = useState(() => readProjectLabels(scope))
+  // A person's projects take only the search word and archived projects; the other conditions are the project list's.
+  const filters: ProjectFilterValues = conditions
+  const filterQuery = useMemo(() => projectFilterQuery(filters), [filters])
   const query = useMemo(() => userId !== undefined
     ? { includeArchived, kind: 'userProjects' as const, page, search: search.trim(), userId }
-    : { includeArchived, kind: 'projects' as const, membership: membershipOnly, page, search: search.trim() },
-  [includeArchived, membershipOnly, page, search, userId])
+    : { ...filterQuery, includeArchived, kind: 'projects' as const, membership: membershipOnly, page, search: search.trim() },
+  [filterQuery, includeArchived, membershipOnly, page, search, userId])
   const result = useGitLabQuery(session?.id ?? null, query, { keepPrevious: true })
   const projects = useMemo(() => result.data ?? [], [result.data])
 
@@ -93,11 +99,7 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
     if (projects.some((project) => keep.includes(project.id) && !sameProjectLabel(stored[project.id], project))) writeProjectLabels(scope, stored, projects, keep)
   }, [pinned, projects, recent, scope])
 
-  useEffect(() => {
-    const focus = () => searchInputRef.current?.focus()
-    globalThis.addEventListener('gitlab-focus-project-search', focus)
-    return () => globalThis.removeEventListener('gitlab-focus-project-search', focus)
-  }, [])
+  useFocusSearchShortcut(searchInputRef)
 
   const openProject = (project: Project) => {
     const nextRecent = [project.id, ...recent.filter((id) => id !== project.id)].slice(0, 20)
@@ -119,8 +121,18 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
 
   const projectById = new Map(projects.map((project) => [project.id, project]))
   const shortcutLabel = (id: string): ProjectLabel | undefined => projectById.get(id) ?? labels[id]
-  const conditionsChanged = searchInput.trim() !== '' || search !== '' || includeArchived !== initialConditions.includeArchived || (!user && membershipOnly !== initialConditions.membershipOnly)
+  const chips = user ? [] : projectConditionChips(filters)
+  const addable = user ? [] : addableKinds(filters)
+  const conditionsChanged = searchInput.trim() !== '' || search !== '' || includeArchived !== initialConditions.includeArchived || (!user && (membershipOnly !== initialConditions.membershipOnly || chips.length > 0 || filters.orderBy !== defaultProjectFilters.orderBy || filters.sort !== defaultProjectFilters.sort))
   const clearConditions = () => setConditions(initialConditions)
+  // A person's contributed projects take neither a search word nor the switches, which GitLab does not filter them by.
+  const byContributor = !user && filters.contributorId !== ''
+  const applyFilters = (patch: Partial<ProjectFilterValues>) => setConditions({ ...patch, ...(patch.contributorId ? { search: '', searchInput: '' } : {}), page: 1 })
+  const chooseSearchOption = (kind: ProjectConditionKind, anchor: HTMLElement) => {
+    // Owned and starred have no value to choose, so they apply at once.
+    if (isSwitchCondition(kind)) applyFilters(kind === 'owned' ? { owned: true } : { starred: true })
+    else setEditing({ anchor, kind })
+  }
 
   if (!session) {
     return <PaneEmpty description={t('project.connect.projects')} icon={<SourceOutlinedIcon fontSize="inherit" />} title={t('project.connect.title')}><Button href="#client/settings" variant="contained">{t('project.connect.openSettings')}</Button></PaneEmpty>
@@ -130,37 +142,45 @@ function ProjectViewContent({ navigation, onOpenProject, onOpenProjectId, user }
     <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader actions={<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>} navigation={navigation} title={t('project.list.title')}>
         <Box component="form" onSubmit={(event) => { event.preventDefault(); setConditions({ page: 1, search: searchInput.trim() }) }}>
-          <TextField
-            fullWidth
+          <ConditionSearchField
+            appliedLabel={t('project.search.applied')}
             inputRef={searchInputRef}
-            onChange={(event) => setConditions({ searchInput: event.target.value })}
-            placeholder={t('project.list.searchPlaceholder')}
-            slotProps={{
-              htmlInput: { 'aria-label': t('project.list.searchLabel') },
-              input: {
-                startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>,
-                endAdornment: <InputAdornment position="end"><Tooltip title={t('project.search.submitTooltip')}><IconButton aria-label={t('project.search.submit')} edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
-              },
-            }}
+            label={t('project.list.searchLabel')}
+            menu={user ? undefined : { id: 'project-search-options', label: t('project.search.conditionsMenu'), onChoose: chooseSearchOption, options: addable.map((kind) => ({ kind, label: t(CONDITION_NAMES[kind]) })), title: t('project.search.addCondition') }}
+            onChange={(value) => setConditions({ searchInput: value })}
+            placeholder={byContributor ? t('project.list.contributorPlaceholder') : t('project.list.searchPlaceholder')}
+            readOnly={byContributor}
+            submitLabel={t('project.search.submit')}
+            submitTooltip={t('project.search.submitTooltip')}
+            tags={chips.map((chip) => ({ code: chip.code, key: chip.kind, label: chip.label, onOpen: isSwitchCondition(chip.kind) ? undefined : (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind: chip.kind }), onRemove: () => applyFilters(chip.clear), removeLabel: t('project.search.removeCondition', { name: chip.name }) }))}
             value={searchInput}
           />
           <Row spacing={2} sx={{ flexWrap: 'wrap', mt: 1, rowGap: 0.5 }}>
-            {!user ? <FormControlLabel control={<Switch checked={membershipOnly} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.membershipOnlyLabel') } }} />} label={t('project.list.membershipOnly')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} /> : null}
-            <FormControlLabel control={<Switch checked={includeArchived} onChange={(event) => setConditions({ includeArchived: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.includeArchivedLabel') } }} />} label={t('project.list.archived')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
-            {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 24, ml: 'auto !important', px: 1 }}>{t('project.list.clearConditions')}</Button> : null}
+            {!user ? <FormControlLabel control={<Switch checked={membershipOnly} disabled={byContributor} onChange={(event) => setConditions({ membershipOnly: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.membershipOnlyLabel') } }} />} label={t('project.list.membershipOnly')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} /> : null}
+            <FormControlLabel control={<Switch checked={includeArchived} disabled={byContributor} onChange={(event) => setConditions({ includeArchived: event.target.checked, page: 1 })} slotProps={{ input: { 'aria-label': t('project.list.includeArchivedLabel') } }} />} label={t('project.list.archived')} slotProps={{ typography: { color: 'text.secondary', variant: 'caption' } }} />
+            {conditionsChanged ? <Button onClick={clearConditions} sx={{ color: 'text.secondary', minHeight: 24, ml: user ? 'auto !important' : undefined, px: 1 }}>{t('project.list.clearConditions')}</Button> : null}
+            {/* The order is not a condition, so it stays a pull-down beside the switches. */}
+            {!user ? <Row sx={{ gap: 0.5, ml: 'auto !important' }}>
+              <PillSelect aria-label={t('project.order.aria')} onChange={(event) => applyFilters({ orderBy: event.target.value as ProjectFilterValues['orderBy'] })} value={filters.orderBy}>
+                {(Object.keys(ORDER_NAMES) as ProjectFilterValues['orderBy'][]).map((orderBy) => <MenuItem key={orderBy} value={orderBy}>{t(ORDER_NAMES[orderBy])}</MenuItem>)}
+              </PillSelect>
+              <PillSelect aria-label={t('project.order.directionAria')} onChange={(event) => applyFilters({ sort: event.target.value as ProjectFilterValues['sort'] })} value={filters.sort}>
+                <MenuItem value="desc">{t('project.order.desc')}</MenuItem>
+                <MenuItem value="asc">{t('project.order.asc')}</MenuItem>
+              </PillSelect>
+            </Row> : null}
           </Row>
+          {!user ? <ProjectConditionEditor anchorEl={editing?.anchor ?? null} currentUser={session.user} kind={editing?.kind ?? null} onApply={applyFilters} onClose={() => setEditing(null)} values={filters} /> : null}
         </Box>
       </PaneHeader>
 
       {!user && (pinned.length > 0 || recent.length > 0) ? <ProjectShortcuts ids={pinned} label={t('project.list.favourites')} labelOf={shortcutLabel} onOpen={openProjectId} secondaryIds={recent} secondaryLabel={t('project.list.recent')} /> : null}
-      {/* GitLab returns the projects most recently active first. */}
-      <PaneStatus announcement={result.data && !result.previous ? t('project.list.announcement', { count: projects.length, page }) : null}>{result.data && !result.previous ? <>{t('project.status.fetched', { count: projects.length })} · {t('project.list.order')}{page > 1 || result.snapshot?.nextPage ? ` · ${t('project.status.page', { page })}` : ''}{result.stale ? ` · ${t('project.status.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) })}` : result.refreshing ? ` · ${t('project.status.refreshing')}` : ''}{result.snapshot?.completeness === 'truncated' ? ` · ${t('project.list.truncated')}` : ''}</> : result.loading || result.previous ? t('project.list.loading') : null}</PaneStatus>
+      <PaneStatus announcement={result.data && !result.previous ? t('project.list.announcement', { count: projects.length, page }) : null}>{result.data && !result.previous ? <>{t('project.status.fetched', { count: projects.length })} · {user ? t('project.order.lastActivity') : t(ORDER_NAMES[filters.orderBy])}{page > 1 || result.snapshot?.nextPage ? ` · ${t('project.status.page', { page })}` : ''}{result.stale ? ` · ${t('project.status.saved', { time: formatFetchedAt(result.snapshot?.fetchedAt) })}` : result.refreshing ? ` · ${t('project.status.refreshing')}` : ''}{result.snapshot?.completeness === 'truncated' ? ` · ${t('project.list.truncated')}` : ''}</> : result.loading || result.previous ? t('project.list.loading') : null}</PaneStatus>
 
       <Box aria-busy={result.previous} sx={paneResultsSx(result.previous)}>
-        {result.error && !result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="error" sx={{ m: 1.5 }}>{result.error.message}</Alert> : null}
-        {result.error && result.data ? <Alert action={<Button color="inherit" onClick={result.refresh}>{t('project.retry')}</Button>} severity="warning" sx={{ m: 1.5 }}>{t('project.status.refreshFailed', { message: result.error.message })}</Alert> : null}
+        <ProjectFetchAlerts error={result.error} failed={result.error?.message ?? ''} hasData={Boolean(result.data)} onRetry={result.refresh} refreshFailed={t('project.status.refreshFailed', { message: result.error?.message ?? '' })} />
         {!result.loading && !result.data && !result.error ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : t('project.list.empty.description')} icon={<SourceOutlinedIcon fontSize="inherit" />} title={t('project.list.empty.title')} /> : null}
-        {result.data && projects.length === 0 ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : t('project.conditions.applied', { conditions: projectConditionSummary(search, membershipOnly, includeArchived) })} icon={<SourceOutlinedIcon fontSize="inherit" />} title={t('project.list.noMatch.title')}>{conditionsChanged ? <Button onClick={clearConditions} variant="outlined">{t('project.list.clearConditions')}</Button> : null}</PaneEmpty> : null}
+        {result.data && projects.length === 0 ? <PaneEmpty description={user ? userProjectEmptyDescription(search, includeArchived) : t('project.conditions.applied', { conditions: [...(byContributor ? [] : [projectConditionSummary(search, membershipOnly, includeArchived)]), ...chips.map((chip) => chip.label)].join(' · ') })} icon={<SourceOutlinedIcon fontSize="inherit" />} title={t('project.list.noMatch.title')}>{conditionsChanged ? <Button onClick={clearConditions} variant="outlined">{t('project.list.clearConditions')}</Button> : null}</PaneEmpty> : null}
         {projects.length ? <Box aria-label={t('project.list.label')} component="ul" onKeyDown={moveListRowFocus} sx={{ m: 0, p: 0 }}>
           {projects.map((project) => {
             const isPinned = pinned.includes(project.id)

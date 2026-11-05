@@ -2,6 +2,7 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "memory_pressure",
             "connect_gitlab",
             "reauthenticate_gitlab",
             "list_glab_connections",

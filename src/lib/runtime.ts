@@ -14,3 +14,9 @@ export function getRuntimeInfo(): Promise<RuntimeInfo> {
 export function setTextLanguage(language: string): Promise<void> {
   return invoke('set_text_language', { language })
 }
+
+/** Whether the system is short of physical memory; outside the desktop app it never is. */
+export async function getMemoryPressure(): Promise<boolean> {
+  if (!isTauri()) return false
+  return await invoke<unknown>('memory_pressure') === true
+}

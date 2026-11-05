@@ -7,7 +7,7 @@ import { forgetActivity, publishActivity } from '../mergeRequests/activityStore'
 import { isNotificationTodo } from '../mergeRequests/todoCache'
 import { mrRefKey, usePersonalWorkspace } from './personalWorkspace'
 import { useGitLabQuery } from './useGitLabQuery'
-import type { MergeRequest, MergeRequestsQuery, Note } from '../../types/gitlab'
+import type { GitLabTodo, MergeRequest, MergeRequestsQuery, Note } from '../../types/gitlab'
 
 /** The user's MRs whose events are followed, the most recently updated first. */
 const WATCHED_MRS = 20
@@ -40,7 +40,9 @@ export function WorkspaceMonitor() {
     const current = seen.current
     if (current?.sessionId === session.id) {
       const added = result.data.filter((todo) => isNotificationTodo(todo) && !current.ids.has(todo.id))
-      if (added.length) void notifyWorkspace(translate('common.notifications.newTodos', { count: added.length })).catch(() => undefined)
+      // A click opens the newest of them, at its comment for a mention.
+      const newest = added.reduce<GitLabTodo | undefined>((found, todo) => !found || Date.parse(todo.createdAt) > Date.parse(found.createdAt) ? todo : found, undefined)
+      if (newest) void notifyWorkspace(translate('common.notifications.newTodos', { count: added.length }), newest.webUrl).catch(() => undefined)
     }
     seen.current = { sessionId: session.id, ids: new Set([...(current?.sessionId === session.id ? current.ids : []), ...result.data.map((todo) => todo.id)].slice(-1000)) }
   }, [result.data, result.error, result.snapshot?.source, session, settings.notifyTodos])
@@ -84,7 +86,10 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
       const added = items.filter((item) => !known.has(item.id) && Date.parse(item.createdAt) > latest)
       const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
       const currentlyOpen = window.location.hash.startsWith('#client/mr?') && params.get('projectId') === mergeRequest.projectId && params.get('iid') === mergeRequest.iid
-      if (notify && added.length && !currentlyOpen) void notifyWorkspace(translate('common.notifications.newActivity', { count: added.length })).catch(() => undefined)
+      // A click opens the MR at the first of the new comments (items are newest first), or the MR itself for other events.
+      const firstComment = added.filter((item) => item.kind === 'comment').at(-1)
+      const url = firstComment ? `${mergeRequest.webUrl}#note_${firstComment.id}` : mergeRequest.webUrl
+      if (notify && added.length && !currentlyOpen) void notifyWorkspace(translate('common.notifications.newActivity', { count: added.length }), url).catch(() => undefined)
     }
     previous.current = new Set(items.map((item) => item.id))
   }, [mergeRequest, mrKey, notify, result.data, result.error, result.snapshot?.source, session])

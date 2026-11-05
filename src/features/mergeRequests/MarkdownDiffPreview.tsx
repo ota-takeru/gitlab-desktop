@@ -7,22 +7,26 @@ import { hairline, panelFrame } from '../../components/hairline'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { BlameCell } from './BlamePanel'
 import { ChangeMarker } from './ChangeMarker'
-import { markdownDiffChanges, type MarkdownChangeSide } from './markdownDiff'
+import { markdownDiffChanges, type MarkdownChangeSide, type MarkdownDiffSource } from './markdownDiff'
 import type { ParsedLine } from './diffParser'
 import { useT } from '../../i18n/useT'
+import { useGitLabQuery } from '../shared/useGitLabQuery'
+import type { FileQuery } from '../../types/gitlab'
 import { Row } from '../../components/Row'
 
 interface MarkdownDiffPreviewProps {
   blameEnabled?: boolean
   layout: 'unified' | 'split'
   lines: ParsedLine[]
+  /** The whole diff and file the lines around each edit are read from. */
+  source?: MarkdownDiffSource
 }
 
 /** Render only edited fragments, not the entire README or source-code rows.
  * Line-accurate review actions remain available through the source-diff switch. */
-export function MarkdownDiffPreview({ blameEnabled = false, layout, lines }: MarkdownDiffPreviewProps) {
+export function MarkdownDiffPreview({ blameEnabled = false, layout, lines, source }: MarkdownDiffPreviewProps) {
   const t = useT()
-  const changes = useMemo(() => markdownDiffChanges(lines), [lines])
+  const changes = useMemo(() => markdownDiffChanges(lines, source), [lines, source])
   return <Box aria-label={t('review.markdownDiff.label')} component="section" sx={{
     minWidth: 0, px: { xs: 1, sm: 2 }, py: 1.5,
     '& .blame-cell': { alignItems: 'center', display: 'inline-flex', maxWidth: '100%', minWidth: 0 },
@@ -43,6 +47,14 @@ export function MarkdownDiffPreview({ blameEnabled = false, layout, lines }: Mar
       </Box>)}
     </Stack>
   </Box>
+}
+
+/** The preview with the lines around each edit read from the whole new file once it has been read. */
+export function FetchedMarkdownDiffPreview({ query, sessionId, source, ...props }: MarkdownDiffPreviewProps & { query: FileQuery; sessionId: string }) {
+  const file = useGitLabQuery<FileQuery>(sessionId, query)
+  const content = file.data?.content
+  const fetched = useMemo(() => source && content !== undefined ? { ...source, content } : source, [content, source])
+  return <MarkdownDiffPreview {...props} source={fetched} />
 }
 
 function ChangedFragment({ blameEnabled, kind, side }: { blameEnabled: boolean; kind: 'add' | 'remove'; side: MarkdownChangeSide }) {

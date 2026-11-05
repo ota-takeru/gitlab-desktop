@@ -1,6 +1,6 @@
 [package]
 name = "gitlab-desktop"
-version = "0.18.3"
+version = "0.24.0"
 description = "Personal GitLab desktop client"
 edition = "2021"
 rust-version = "1.98"
@@ -25,7 +25,7 @@ time = { version = "0.3", features = ["parsing"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros", "process", "io-util"] }
 tokio-util = "0.7"
 futures-util = "0.3"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 keyring = { version = "3", features = ["windows-native"] }
 sha2 = "0.11"
 uuid = { version = "1", features = ["v4"] }
@@ -37,6 +37,11 @@ tauri-plugin-dialog = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 chardetng = "1"
+
+[target.'cfg(windows)'.dependencies]
+# The same versions Tauri's WebView2 backend uses, for the memory target and the system memory load.
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_System_SystemInformation"] }
 
 [dev-dependencies]
 serde_json = "1"

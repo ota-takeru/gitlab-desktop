@@ -66,8 +66,27 @@ export interface ProjectQuery {
   search: string
   membership: boolean
   includeArchived: boolean
+  /** The projects this user contributed to; GitLab then takes no other condition than the order. */
+  contributorId?: string
+  /** A group's projects, its subgroups' too; GitLab then filters by neither language nor activity. */
+  groupId?: string
+  visibility?: ProjectVisibility
+  /** The user's lowest role in the project: 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner. */
+  minAccessLevel?: number
+  topics?: string[]
+  language?: string
+  /** Only the projects the user owns. */
+  owned?: true
+  starred?: true
+  lastActivityAfter?: string
+  lastActivityBefore?: string
+  orderBy?: ProjectOrderBy
+  sort?: 'asc' | 'desc'
   page: number
 }
+
+export type ProjectVisibility = 'public' | 'internal' | 'private'
+export type ProjectOrderBy = 'last_activity_at' | 'name' | 'created_at' | 'star_count'
 
 export type MergeRequestState = 'all' | 'opened' | 'closed' | 'merged'
 
@@ -162,7 +181,8 @@ export interface DiffsQuery extends Omit<ReviewResourceQuery, 'kind'> {
 export interface CommitDiffQuery {
   kind: 'commitDiff'
   projectId: string
-  iid: string
+  /** The MR the commit is read for; absent for a repository file's history. */
+  iid?: string
   sha: string
   page: number
 }
@@ -176,6 +196,9 @@ export interface FileQuery {
 
 export interface BlameQuery { kind: 'blame'; projectId: string; path: string; sha: string; startLine: number; endLine: number }
 export interface CommitMergeRequestsQuery { kind: 'commitMergeRequests'; projectId: string; sha: string }
+/** A repository's commits, newest first; without `ref`, those of the default branch. */
+export interface RepositoryCommitsQuery { kind: 'repositoryCommits'; projectId: string; ref?: string; path?: string; page: number }
+export interface RepositoryCommitQuery { kind: 'repositoryCommit'; projectId: string; sha: string }
 
 /** `parentIds` is missing in blame stored before the app kept it. */
 export interface BlameBlock { commitId: string; title: string; authorName: string; committedAt: string; lines: string[]; parentIds?: string[] }
@@ -271,6 +294,18 @@ export interface NoteAwardsQuery {
   sinceNoteId: string
 }
 
+/**
+ * The thread holding one comment, read on its own so a comment linked from a
+ * notification shows before the pages between it and the newest are read.
+ * Null when GitLab does not say which thread it is or it is another MR's.
+ */
+export interface NoteDiscussionQuery {
+  kind: 'noteDiscussion'
+  projectId: string
+  iid: string
+  noteId: string
+}
+
 /** One user's emoji reaction; `name` is GitLab's emoji name such as `thumbsup`. */
 export interface AwardEmoji {
   name: string
@@ -359,12 +394,15 @@ export type GitLabQuery =
   | FileQuery
   | BlameQuery
   | CommitMergeRequestsQuery
+  | RepositoryCommitsQuery
+  | RepositoryCommitQuery
   | TreeQuery
   | BlobQuery
   | ApprovalsQuery
   | MrApprovalsQuery
   | MrAwardsQuery
   | NoteAwardsQuery
+  | NoteDiscussionQuery
   | MrPipelinesQuery
   | PipelineQuery
   | PipelineJobsQuery
@@ -444,6 +482,8 @@ export interface MergeRequest {
   createdAt?: string
   headSha: string | null
   diffRefs: DiffRefs | null
+  /** GitLab's count of changed files; `1000+` once it stopped counting at a limit. Only an MR's own read has it. */
+  changesCount?: string | null
   projectPath?: string | null
   draft?: boolean
   labels?: string[]
@@ -554,6 +594,9 @@ export interface Discussion {
 export interface Commit {
   id: string
   title: string
+  /** The whole message; absent in older cached records. */
+  message?: string
+  authorName?: string
   /** Fallback for older cached records. */
   createdAt: string
   /** Git's committer timestamp, which may differ from the creation/author date. */
@@ -591,7 +634,9 @@ export type QueryData =
   | MergeRequest
   | Diff[]
   | Discussion[]
+  | Discussion
   | Commit[]
+  | Commit
   | Draft[]
   | FileContent
   | BlameBlock[]
@@ -887,12 +932,15 @@ export type GitLabQueryData<Q extends GitLabQuery> =
             : Q extends FileQuery ? FileContent
               : Q extends BlameQuery ? BlameBlock[]
               : Q extends CommitMergeRequestsQuery ? AssociatedMergeRequest[]
+              : Q extends RepositoryCommitsQuery ? Commit[]
+              : Q extends RepositoryCommitQuery ? Commit
               : Q extends TreeQuery ? TreeEntry[]
               : Q extends BlobQuery ? FileContent
               : Q extends ApprovalsQuery ? Approvals
                 : Q extends MrApprovalsQuery ? MrApproval[]
                 : Q extends MrAwardsQuery ? AwardEmoji[]
                 : Q extends NoteAwardsQuery ? NoteAwards[]
+                : Q extends NoteDiscussionQuery ? Discussion | null
                 : Q extends MrPipelinesQuery ? Pipeline[]
                 : Q extends PipelineQuery ? Pipeline
                 : Q extends PipelineJobsQuery ? PipelineJob[]

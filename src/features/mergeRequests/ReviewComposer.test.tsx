@@ -201,6 +201,31 @@ describe('ReviewComposer', () => {
     expect(screen.getByRole('textbox', { name: 'コメント本文' })).toHaveValue('@ota ')
   })
 
+  it('takes the highlighted candidate with Tab and keeps the focus for the next characters', () => {
+    const participants = [
+      { id: 'u1', name: '太田 健', username: 'ota' },
+      { id: 'u2', name: 'Suzuki', username: 'suzuki' },
+    ]
+    function StatefulComposer() {
+      const [value, setValue] = useState('@')
+      return <ReviewComposer enableMentions mentionParticipants={participants} onCancelReply={() => undefined} onChange={setValue} onClearPosition={() => undefined} onSaveDraft={async () => true} onSubmitComment={async () => true} value={value} />
+    }
+
+    render(<StatefulComposer />)
+    const textbox = screen.getByRole('textbox', { name: 'コメント本文' }) as HTMLTextAreaElement
+    textbox.focus()
+    textbox.setSelectionRange(1, 1)
+    fireEvent.click(textbox)
+    fireEvent.keyDown(textbox, { key: 'ArrowDown' })
+    const tab = fireEvent.keyDown(textbox, { key: 'Tab' })
+
+    expect(tab).toBe(false)
+    expect(textbox).toHaveValue('@suzuki ')
+    expect(textbox).toHaveFocus()
+    expect(textbox.selectionStart).toBe('@suzuki '.length)
+    expect(screen.queryByRole('listbox', { name: 'メンション候補' })).not.toBeInTheDocument()
+  })
+
   it('leaves Enter to the IME while it is composing a mention query', () => {
     function StatefulComposer() {
       const [value, setValue] = useState('@')

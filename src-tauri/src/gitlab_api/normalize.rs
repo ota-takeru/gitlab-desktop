@@ -17,6 +17,7 @@ pub(super) fn normalize_response(kind: ResponseKind, value: Value) -> Result<Val
         ResponseKind::Diffs => normalize_array(value, Some("changes"), normalize_diff),
         ResponseKind::Discussions => normalize_array(value, None, normalize_discussion),
         ResponseKind::Commits => normalize_array(value, None, normalize_commit),
+        ResponseKind::Commit => normalize_commit(&value),
         ResponseKind::Blame => normalize_array(value, None, normalize_blame_block),
         ResponseKind::CommitMergeRequests => {
             normalize_array(value, None, normalize_associated_merge_request)
@@ -345,6 +346,7 @@ pub(super) fn normalize_merge_request(value: &Value) -> Result<Value, AppError> 
         "updatedAt": string_field(value, "updated_at"),
         "headSha": if head_sha.is_empty() { Value::Null } else { Value::String(head_sha) },
         "diffRefs": diff_refs.unwrap_or(Value::Null),
+        "changesCount": value.get("changes_count").and_then(Value::as_str),
         "projectPath": project_path,
         "draft": bool_field(value, "draft"),
         "labels": labels,
@@ -635,6 +637,8 @@ pub(super) fn normalize_commit(value: &Value) -> Result<Value, AppError> {
     Ok(json!({
         "id": string_field(value, "id"),
         "title": string_field(value, "title"),
+        "message": string_field(value, "message"),
+        "authorName": string_field(value, "author_name"),
         "createdAt": string_field(value, "created_at"),
         "committedAt": value.get("committed_date").and_then(Value::as_str).unwrap_or_else(|| value.get("created_at").and_then(Value::as_str).unwrap_or("")),
         "parentIds": value.get("parent_ids").and_then(Value::as_array).map(|parents| parents.iter().filter_map(Value::as_str).filter(|sha| validate_sha(sha, "parentId").is_ok()).collect::<Vec<_>>()).unwrap_or_default(),

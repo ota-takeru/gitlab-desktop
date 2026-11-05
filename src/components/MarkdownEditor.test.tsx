@@ -76,6 +76,25 @@ describe('MarkdownEditor', () => {
     expect(onKeyDown).toHaveBeenLastCalledWith(expect.objectContaining({ ctrlKey: true, key: 'Enter' }))
   })
 
+  it('moves Up from the line after a leading line break to the empty line above', () => {
+    localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
+    render(<MarkdownEditor label="本文" onChange={() => undefined} value="" />)
+    const editor = richEditor('本文')
+    act(() => { editor.chain().setHardBreak().insertContent('abc').setTextSelection(2).run() })
+
+    fireEvent.keyDown(editor.view.dom, { key: 'ArrowUp' })
+    expect(editor.state.selection.from).toBe(1)
+
+    act(() => { editor.commands.setTextSelection(4) })
+    fireEvent.keyDown(editor.view.dom, { key: 'ArrowUp' })
+    // Further along the line the browser moves the caret as usual.
+    expect(editor.state.selection.from).toBe(4)
+
+    act(() => { editor.commands.setTextSelection(2) })
+    fireEvent.keyDown(editor.view.dom, { key: 'ArrowUp', shiftKey: true })
+    expect(editor.state.selection).toMatchObject({ anchor: 2, head: 1 })
+  })
+
   it('keeps the selection of a rich editor created again when a hidden screen shows', async () => {
     localStorage.setItem(MARKDOWN_EDITOR_MODE_KEY, 'rich')
     const screenWith = (mode: 'hidden' | 'visible') => <Activity mode={mode}><MarkdownEditor autoFocus label="本文" onChange={() => undefined} value="abcdefghij" /></Activity>

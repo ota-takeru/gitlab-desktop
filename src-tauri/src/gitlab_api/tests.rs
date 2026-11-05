@@ -150,6 +150,7 @@ fn normalizes_ids_and_pagination() {
                 search: String::new(),
                 membership: true,
                 include_archived: false,
+                filters: crate::dto::ProjectFilters::default(),
                 page: 1,
             },
         ))
@@ -398,6 +399,164 @@ fn user_and_user_projects_queries_validate_identifiers_and_build_expected_urls()
 }
 
 #[test]
+fn project_search_sends_its_conditions() {
+    let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let (url, _) = build_query_url(
+        &api,
+        &Query::Projects {
+            search: String::new(),
+            membership: true,
+            include_archived: false,
+            filters: crate::dto::ProjectFilters {
+                visibility: Some("internal".to_owned()),
+                min_access_level: Some(40),
+                topics: Some(vec!["rust".to_owned(), "desktop".to_owned()]),
+                language: Some("TypeScript".to_owned()),
+                owned: true,
+                starred: true,
+                last_activity_after: Some("2026-10-01T00:00:00.000Z".to_owned()),
+                order_by: Some("name".to_owned()),
+                sort: Some("asc".to_owned()),
+                ..Default::default()
+            },
+            page: 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(url.path(), "/api/v4/projects");
+    let params = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(params.get("membership").unwrap(), "true");
+    assert_eq!(params.get("visibility").unwrap(), "internal");
+    assert_eq!(params.get("min_access_level").unwrap(), "40");
+    assert_eq!(params.get("topic").unwrap(), "rust,desktop");
+    assert_eq!(
+        params.get("with_programming_language").unwrap(),
+        "TypeScript"
+    );
+    assert_eq!(params.get("owned").unwrap(), "true");
+    assert_eq!(params.get("starred").unwrap(), "true");
+    assert_eq!(
+        params.get("last_activity_after").unwrap(),
+        "2026-10-01T00:00:00.000Z"
+    );
+    assert_eq!(params.get("order_by").unwrap(), "name");
+    assert_eq!(params.get("sort").unwrap(), "asc");
+}
+
+#[test]
+fn project_search_in_a_group_lists_its_subgroups_and_keeps_membership() {
+    let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let query = |filters| Query::Projects {
+        search: "demo".to_owned(),
+        membership: true,
+        include_archived: true,
+        filters,
+        page: 1,
+    };
+    let (url, _) = build_query_url(
+        &api,
+        &query(crate::dto::ProjectFilters {
+            group_id: Some("platform/web".to_owned()),
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    assert_eq!(url.path(), "/api/v4/groups/platform%2Fweb/projects");
+    let params = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(params.get("include_subgroups").unwrap(), "true");
+    assert_eq!(params.get("min_access_level").unwrap(), "10");
+    assert_eq!(params.get("search").unwrap(), "demo");
+    assert!(!params.contains_key("membership"));
+    assert!(!params.contains_key("search_namespaces"));
+
+    let error = build_query_url(
+        &api,
+        &query(crate::dto::ProjectFilters {
+            group_id: Some("platform".to_owned()),
+            language: Some("Rust".to_owned()),
+            ..Default::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message_key.as_deref(),
+        Some("native.query.groupProjectFilter")
+    );
+    let error = build_query_url(
+        &api,
+        &query(crate::dto::ProjectFilters {
+            order_by: Some("path".to_owned()),
+            ..Default::default()
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message_key.as_deref(),
+        Some("native.query.invalidProjectFilter")
+    );
+}
+
+#[test]
+fn project_search_by_contributor_lists_their_contributed_projects_in_order() {
+    let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let query = |search: &str, filters| Query::Projects {
+        search: search.to_owned(),
+        membership: true,
+        include_archived: false,
+        filters,
+        page: 2,
+    };
+    let (url, _) = build_query_url(
+        &api,
+        &query(
+            "",
+            crate::dto::ProjectFilters {
+                contributor_id: Some("9".to_owned()),
+                order_by: Some("name".to_owned()),
+                ..Default::default()
+            },
+        ),
+    )
+    .unwrap();
+    assert_eq!(url.path(), "/api/v4/users/9/contributed_projects");
+    let params = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(params.get("order_by").unwrap(), "name");
+    assert_eq!(params.get("page").unwrap(), "2");
+    assert!(!params.contains_key("membership"));
+    assert!(!params.contains_key("archived"));
+
+    for (search, filters) in [
+        (
+            "demo",
+            crate::dto::ProjectFilters {
+                contributor_id: Some("9".to_owned()),
+                ..Default::default()
+            },
+        ),
+        (
+            "",
+            crate::dto::ProjectFilters {
+                contributor_id: Some("9".to_owned()),
+                starred: true,
+                ..Default::default()
+            },
+        ),
+    ] {
+        let error = build_query_url(&api, &query(search, filters)).unwrap_err();
+        assert_eq!(
+            error.message_key.as_deref(),
+            Some("native.query.contributorProjectFilter")
+        );
+    }
+}
+
+#[test]
 fn project_search_includes_namespaces() {
     let api = Url::parse("https://gitlab.example/api/v4/").unwrap();
     let (url, _) = build_query_url(
@@ -406,6 +565,7 @@ fn project_search_includes_namespaces() {
             search: "group/demo".to_owned(),
             membership: false,
             include_archived: true,
+            filters: crate::dto::ProjectFilters::default(),
             page: 1,
         },
     )
@@ -1190,7 +1350,7 @@ fn uses_project_scoped_mr_and_repository_commit_diff_routes() {
             &fixture.url(),
             &Query::CommitDiff {
                 project_id: "42".to_owned(),
-                iid: "9".to_owned(),
+                iid: Some("9".to_owned()),
                 sha: HEAD_SHA.to_owned(),
                 page: 1,
             },
@@ -1460,6 +1620,12 @@ fn optional_review_metadata_and_todos_preserve_resource_types() {
     assert!(normalized["pipeline"].is_null());
     assert_eq!(normalized["assignees"], json!([]));
     assert_eq!(normalized["labels"], json!([]));
+    assert!(normalized["changesCount"].is_null());
+    mr["changes_count"] = json!("1000+");
+    assert_eq!(
+        normalize_merge_request(&mr).unwrap()["changesCount"],
+        "1000+"
+    );
     mr["references"] = json!({"full": "group/project!3"});
     mr["draft"] = json!(true);
     mr["labels"] = json!(["bug"]);
@@ -1685,6 +1851,78 @@ fn normalizes_blame_and_associated_merge_requests() {
     .unwrap();
     assert_eq!(mr["projectId"], "7");
     assert_eq!(mr["iid"], "12");
+}
+
+#[test]
+fn repository_commits_filter_by_branch_and_path() {
+    let base = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let (url, kind) = build_query_url(
+        &base,
+        &Query::RepositoryCommits {
+            project_id: "7".to_owned(),
+            git_ref: Some("feature/x".to_owned()),
+            path: Some("src/foo bar.ts".to_owned()),
+            page: 2,
+        },
+    )
+    .unwrap();
+    assert!(matches!(kind, ResponseKind::Commits));
+    assert_eq!(url.path(), "/api/v4/projects/7/repository/commits");
+    let params: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(params["ref_name"], "feature/x");
+    assert_eq!(params["path"], "src/foo bar.ts");
+    assert_eq!(params["page"], "2");
+    let (url, _) = build_query_url(
+        &base,
+        &Query::RepositoryCommits {
+            project_id: "7".to_owned(),
+            git_ref: None,
+            path: None,
+            page: 1,
+        },
+    )
+    .unwrap();
+    assert!(!url.as_str().contains("ref_name"));
+    assert!(!url.as_str().contains("path="));
+    assert!(build_query_url(
+        &base,
+        &Query::RepositoryCommits {
+            project_id: "7".to_owned(),
+            git_ref: None,
+            path: Some("../secret".to_owned()),
+            page: 1,
+        },
+    )
+    .is_err());
+}
+
+#[test]
+fn repository_commit_keeps_message_and_author() {
+    let base = Url::parse("https://gitlab.example/api/v4/").unwrap();
+    let sha = "a".repeat(40);
+    let (url, kind) = build_query_url(
+        &base,
+        &Query::RepositoryCommit {
+            project_id: "7".to_owned(),
+            sha: sha.clone(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(kind, ResponseKind::Commit));
+    assert_eq!(
+        url.path(),
+        format!("/api/v4/projects/7/repository/commits/{sha}")
+    );
+    let commit = normalize_commit(&json!({
+        "id": sha,
+        "title": "Subject",
+        "message": "Subject\n\nBody",
+        "author_name": "Ann",
+        "created_at": "2026-11-01T00:00:00Z",
+    }))
+    .unwrap();
+    assert_eq!(commit["message"], "Subject\n\nBody");
+    assert_eq!(commit["authorName"], "Ann");
 }
 
 #[test]
@@ -2012,6 +2250,70 @@ fn comment_reactions_read_back_from_the_newest_page_to_the_oldest_shown_comment(
             .unwrap_err()
             .code,
         "INVALID_INPUT"
+    );
+}
+
+#[test]
+fn a_comments_thread_is_named_by_graphql_and_read_through_rest() {
+    let sha = "a".repeat(40);
+    let named = format!(
+        r#"{{"data":{{"note":{{"discussion":{{"id":"gid://gitlab/Discussion/{sha}"}}}}}}}}"#
+    );
+    let thread = format!(
+        r#"{{"id":"{sha}","individual_note":false,"notes":[{{"id":77,"body":"reply","author":{{"id":7,"username":"alice","name":"Alice"}},"created_at":"2026-10-01T09:00:00Z","system":false}}]}}"#
+    );
+    let fixture = Fixture::new(vec![
+        response("200 OK", &named, ""),
+        response("200 OK", &thread, ""),
+    ]);
+    let query = Query::NoteDiscussion {
+        project_id: "42".to_owned(),
+        iid: "9".to_owned(),
+        note_id: "77".to_owned(),
+    };
+    let result = runtime()
+        .block_on(fetch(&Client::new(), &fixture.url(), &query))
+        .unwrap();
+    assert_eq!(result.data["id"], sha.as_str());
+    assert_eq!(result.data["notes"][0]["id"], "77");
+    let requests = fixture.requests.lock().unwrap();
+    assert!(requests[0].starts_with("POST /api/graphql "));
+    assert_eq!(
+        graphql_body(&requests[0])["variables"]["id"],
+        "gid://gitlab/Note/77"
+    );
+    assert!(requests[1].starts_with(&format!(
+        "GET /api/v4/projects/42/merge_requests/9/discussions/{sha} "
+    )));
+    drop(requests);
+
+    // A comment GitLab does not find, or whose thread is another MR's, has no thread here.
+    let fixture = Fixture::new(vec![response("200 OK", r#"{"data":{"note":null}}"#, "")]);
+    let result = runtime()
+        .block_on(fetch(&Client::new(), &fixture.url(), &query))
+        .unwrap();
+    assert!(result.data.is_null());
+    let fixture = Fixture::new(vec![
+        response("200 OK", &named, ""),
+        response("404 Not Found", "{}", ""),
+    ]);
+    let result = runtime()
+        .block_on(fetch(&Client::new(), &fixture.url(), &query))
+        .unwrap();
+    assert!(result.data.is_null());
+
+    // A GitLab without the field answers with errors only.
+    let fixture = Fixture::new(vec![response(
+        "200 OK",
+        r#"{"errors":[{"message":"Field 'note' doesn't exist"}]}"#,
+        "",
+    )]);
+    assert_eq!(
+        runtime()
+            .block_on(fetch(&Client::new(), &fixture.url(), &query))
+            .unwrap_err()
+            .code,
+        "UNSUPPORTED"
     );
 }
 

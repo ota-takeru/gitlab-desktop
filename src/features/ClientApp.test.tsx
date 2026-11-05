@@ -309,6 +309,25 @@ it('keeps the list mounted and only toggles the selection parameter when opening
   expect(screen.getByRole('combobox', { name: 'レビュー依頼をタイトル・説明・MR番号で検索' })).toHaveValue('unsent draft')
 })
 
+it('takes the list out of the flow while an MR waits to show, so the MR never lays out narrow beside it', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => {
+    if (query?.kind === 'mrs') return { ...emptyQueryResult(), data: [mergeRequestFixture], snapshot: snapshot([mergeRequestFixture]) }
+    if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    return emptyQueryResult()
+  })
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+  const row = await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list')
+  // The MR shows a frame after its reads settle: without frames it stays waiting.
+  const frames = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0)
+  fireEvent.click(row)
+  await waitFor(() => expect(document.querySelector('[data-list-pane]')).toHaveStyle({ position: 'absolute' }))
+  expect(document.querySelector('[data-list-pane]')).toBeVisible()
+  frames.mockRestore()
+  await waitFor(() => expect(document.querySelector('[data-list-pane]')).not.toBeVisible(), { timeout: 2000 })
+})
+
 it('returns to the list through history, so Back does not reopen the MR', async () => {
   window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
   invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
@@ -433,7 +452,7 @@ it('returns to the last MR list tab from the navigation', async () => {
   // Projects are a place of their own, without the MR list's chips.
   fireEvent.click(screen.getByRole('button', { name: 'プロジェクト' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/projects'))
-  expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument())
 
   fireEvent.click(screen.getByRole('button', { name: 'MR一覧' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?page=1&state=opened&assignee=self&orderBy=updated_at&sort=desc'))
@@ -455,7 +474,7 @@ it('opens the project screen from an MR and names where Back returns to', async 
   expect(screen.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByRole('heading', { name: 'group/projectの概要' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'プロジェクト' })).toHaveAttribute('aria-current', 'page')
-  expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('group', { name: '自分のMR' })).not.toBeInTheDocument())
 })
 
 it('switches a project screen between its MRs and branches, and shows the MRs of a branch', async () => {
@@ -475,14 +494,15 @@ it('switches a project screen between its MRs and branches, and shows the MRs of
 
   fireEvent.click(await screen.findByRole('button', { name: 'feature/searchのMRを表示' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject&sourceBranch=feature%2Fsearch&state=all'))
-  expect(screen.getByRole('tab', { name: 'MR' })).toHaveAttribute('aria-selected', 'true')
+  // A list opened for the first time shows a frame later; the branches stay until then.
+  await waitFor(() => expect(screen.getByRole('tab', { name: 'MR' })).toHaveAttribute('aria-selected', 'true'))
   expect(screen.getByText('ブランチ: feature/search')).toBeInTheDocument()
 
   // Choosing MR again returns to all the project's MRs.
   fireEvent.click(screen.getByRole('tab', { name: 'MR' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?projectId=42&projectName=group%2Fproject'))
   // The branch's MRs stay mounted for a quick return, hidden.
-  expect(screen.getByText('ブランチ: feature/search')).not.toBeVisible()
+  await waitFor(() => expect(screen.getByText('ブランチ: feature/search')).not.toBeVisible())
 })
 
 it('keeps the account, theme and connection in one settings entry', async () => {
@@ -686,6 +706,13 @@ it('leaves Ctrl+K and Esc to the composer and lists the shortcuts with ?', async
     fireEvent.keyDown(window, { key: '?' })
     const dialog = await screen.findByRole('dialog', { name: 'キーボードショートカット' })
     expect(within(dialog).getByText('すべてのMRを検索')).toBeInTheDocument()
+
+    // An open dialog owns the keyboard: nothing moves underneath it or opens over it.
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'k' })
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'o' })
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 20))
+    expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7')
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
   } finally {
     comment.remove()
     toolbar.remove()

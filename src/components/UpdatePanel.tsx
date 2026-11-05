@@ -20,14 +20,18 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { translate } from '../i18n/i18n'
 import { useT } from '../i18n/useT'
 import { checkAppUpdate, downloadAppUpdate, installAppUpdate, type AppUpdate } from '../lib/updater'
+import { CURRENT_RELEASE_NOTES, releaseNoteLines } from '../lib/releaseNotes'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import { normalizeGitLabError } from '../lib/gitlab'
 import { isGitLabErrorShape } from '../types/gitlab'
 import { flushComposerBuffers } from '../features/mergeRequests/useComposerBuffer'
+import { unsentItems, type UnsentTarget } from '../lib/windowSafety'
+import { useConfirm } from './feedbackContext'
 import { RelativeTime } from './RelativeTime'
 import { firstLine } from './rows'
 import { StatusPill, type StatusTone } from './StatusPill'
 import { UpdateNavButton } from './UpdateNavButton'
+import { withItems } from './withItems'
 import { Row } from './Row'
 
 export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
@@ -200,25 +204,45 @@ function rememberCheckErrorDismissed() {
 }
 
 /**
+ * The install click: at once, or after naming the screens with unsent input, edits or unconfirmed operations
+ * and asking, so an update is never out of reach while something is held back.
+ */
+function useInstall(autoInstallAllowed: boolean, onOpenUnsent?: (target: UnsentTarget) => void) {
+  const t = useT()
+  const confirm = useConfirm()
+  return async () => {
+    if (!autoInstallAllowed && !await confirm({
+      cancelLabel: t('common.closeProtection.back'),
+      confirmLabel: t('common.update.restartAndUpdate'),
+      message: (cancel) => withItems(t('common.update.unsentMessage'), unsentItems(), onOpenUnsent && ((target) => { cancel(); onOpenUnsent(target) })),
+      title: t('common.closeProtection.unsentTitle'),
+    })) return
+    await installUpdate()
+  }
+}
+
+/**
  * Shows the navigation's install button only while an update is available.
  * The always-mounted footer panel owns the installing dialog.
  */
-export function UpdateSidebarButton({ autoInstallAllowed = false, collapsed }: { autoInstallAllowed?: boolean; collapsed: boolean }) {
-  const t = useT()
+export function UpdateSidebarButton({ autoInstallAllowed = false, collapsed, onOpenUnsent }: { autoInstallAllowed?: boolean; collapsed: boolean; onOpenUnsent?: (target: UnsentTarget) => void }) {
   const { state } = useSyncExternalStore(subscribeToUpdates, getUpdateSnapshot, getUpdateSnapshot)
+  const install = useInstall(autoInstallAllowed, onOpenUnsent)
   if (state.status !== 'available' || !state.update.version) return null
-  return <UpdateNavButton collapsed={collapsed} disabledReason={autoInstallAllowed ? undefined : t('common.update.waitingForSafeState')} onClick={() => { if (autoInstallAllowed) void installUpdate() }} version={state.update.version} />
+  return <UpdateNavButton collapsed={collapsed} onClick={() => void install()} version={state.update.version} />
 }
 
 export interface UpdatePanelProps {
-  /** The owning screen allows installing only when no unsaved work is present. */
+  /** Whether nothing unsent holds the app back; otherwise installing asks first. */
   autoInstallAllowed?: boolean
   compact?: boolean
   /** A small indicator for the window's footer: only an available update or a failure shows. */
   notificationOnly?: boolean
+  /** Goes to a screen the install confirmation names. */
+  onOpenUnsent?: (target: UnsentTarget) => void
 }
 
-export function UpdatePanel({ autoInstallAllowed = false, compact = false, notificationOnly = false }: UpdatePanelProps) {
+export function UpdatePanel({ autoInstallAllowed = false, compact = false, notificationOnly = false, onOpenUnsent }: UpdatePanelProps) {
   const t = useT()
   const inTauri = isTauri()
   const { lastCheckedAt, state } = useSyncExternalStore(subscribeToUpdates, getUpdateSnapshot, getUpdateSnapshot)
@@ -233,7 +257,7 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
   }, [showsVersion])
 
   const check = () => void checkForUpdate()
-  const install = () => { if (autoInstallAllowed) void installUpdate() }
+  const install = useInstall(autoInstallAllowed, onOpenUnsent)
   const availableVersion = state.status === 'available' ? state.update.version : null
   const copy = getCopy(state, inTauri)
   const isBusy = state.status === 'pending' || state.status === 'installing'
@@ -256,9 +280,9 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
     </Dialog>
   ) : null
   const installButton = (size: 'small' | 'medium') => (
-    <Tooltip title={autoInstallAllowed ? t('common.update.installHint') : t('common.update.waitingForSafeState')}>
+    <Tooltip title={t('common.update.installHint')}>
       <Box component="span" sx={{ flexShrink: 0 }}>
-        <Button disabled={isBusy || !autoInstallAllowed} onClick={install} size={size === 'small' ? 'dense' : 'medium'} startIcon={size === 'medium' ? <DownloadOutlinedIcon /> : undefined} variant={size === 'small' ? 'text' : 'contained'}>
+        <Button disabled={isBusy} onClick={() => void install()} size={size === 'small' ? 'dense' : 'medium'} startIcon={size === 'medium' ? <DownloadOutlinedIcon /> : undefined} variant={size === 'small' ? 'text' : 'contained'}>
           {t('common.update.restartAndUpdate')}
         </Button>
       </Box>
@@ -310,7 +334,6 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
           </Row>
           {state.status === 'error' || state.status === 'installing' ? <Typography color="textSecondary" variant="caption">{copy.message}</Typography> : null}
           {state.status === 'available' ? <Typography color={state.download === 'failed' ? 'warning' : 'textSecondary'} variant="caption">{downloadStatus(state)}</Typography> : null}
-          {state.status === 'available' && !autoInstallAllowed ? <Typography color="textSecondary" variant="caption">{t('common.update.waitingForSafeState')}</Typography> : null}
         </Stack>
       </CardContent></Card>
       {installingDialog}
@@ -340,10 +363,23 @@ export function UpdatePanel({ autoInstallAllowed = false, compact = false, notif
         {inTauri ? <Button disabled={isBusy} onClick={check} variant="outlined">{t('common.update.check')}</Button> : null}
         {state.status === 'available' ? installButton('medium') : null}
       </Row>
-      {state.status === 'available' && !autoInstallAllowed ? <Typography color="textSecondary" variant="caption">{t('common.update.waitingForSafeState')}</Typography> : null}
+      {state.status === 'available' ? <ReleaseNotes notes={state.update.notes} title={t('common.update.changesIn', { version: `v${state.update.version}` })} /> : null}
+      {currentVersion ? <ReleaseNotes notes={CURRENT_RELEASE_NOTES} title={t('common.update.changesIn', { version: `v${currentVersion}` })} /> : null}
     </Stack>
     {installingDialog}
   </>
+}
+
+/** The changes a release ships, one per line, under a heading naming its version. */
+function ReleaseNotes({ notes, title }: { notes: string | null | undefined; title: string }) {
+  const lines = releaseNoteLines(notes)
+  if (!lines.length) return null
+  return <Stack component="section" aria-label={title} spacing={0.5}>
+    <Typography sx={{ fontWeight: 600 }} variant="body2">{title}</Typography>
+    <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+      {lines.map((line, index) => <Typography component="li" key={index} variant="body2">{line}</Typography>)}
+    </Box>
+  </Stack>
 }
 
 function downloadStatus(state: Extract<UpdateState, { status: 'available' }>): string {
@@ -382,7 +418,7 @@ function getCopy(state: UpdateState, inTauri: boolean): {
       label: state.download === 'ready' ? translate('common.update.available.downloaded') : translate('common.update.available.label'),
       tone: 'success',
       title: translate('common.update.available.title'),
-      message: state.update.notes?.trim() || translate('common.update.available.message'),
+      message: translate('common.update.available.message'),
       icon: <DownloadOutlinedIcon color="success" fontSize="small" />,
     }
   }

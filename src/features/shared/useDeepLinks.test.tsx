@@ -4,6 +4,13 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   current: null as string[] | null,
   listener: null as ((links: string[]) => void) | null,
+  notificationListener: null as ((event: { payload: string }) => void) | null,
+}))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: async (event: string, handler: (event: { payload: string }) => void) => {
+    if (event === 'notification-clicked') mocks.notificationListener = handler
+    return () => { mocks.notificationListener = null }
+  },
 }))
 vi.mock('@tauri-apps/plugin-deep-link', () => ({
   getCurrent: async () => mocks.current,
@@ -24,6 +31,7 @@ function Probe({ open, instanceUrl }: { open?: (url: string) => void; instanceUr
 beforeEach(() => {
   mocks.current = null
   mocks.listener = null
+  mocks.notificationListener = null
 })
 
 it('opens the start link once the connection is ready, and later links as they come', async () => {
@@ -39,4 +47,15 @@ it('opens the start link once the connection is ready, and later links as they c
   mocks.listener?.([link('https://gitlab.example/team/app'), link('https://evil.example/x')])
   expect(open).toHaveBeenCalledTimes(2)
   expect(open).toHaveBeenLastCalledWith('https://gitlab.example/team/app')
+})
+
+it('opens the page of a clicked notification when it is on the connected instance', async () => {
+  const open = vi.fn()
+  render(<Probe instanceUrl={instance} open={open} />)
+  await waitFor(() => expect(mocks.notificationListener).not.toBeNull())
+
+  mocks.notificationListener?.({ payload: 'https://gitlab.example/team/app/-/merge_requests/3#note_12' })
+  mocks.notificationListener?.({ payload: 'https://evil.example/x' })
+  expect(open).toHaveBeenCalledTimes(1)
+  expect(open).toHaveBeenCalledWith('https://gitlab.example/team/app/-/merge_requests/3#note_12')
 })

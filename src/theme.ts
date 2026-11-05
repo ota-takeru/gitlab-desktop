@@ -1,3 +1,4 @@
+import Fade from '@mui/material/Fade'
 import { alpha, createTheme, type PaletteMode } from '@mui/material/styles'
 
 import { frame, hairline, panelFrame } from './components/hairline'
@@ -96,6 +97,20 @@ declare module '@mui/material/Typography' {
   }
 }
 
+declare module '@mui/material/InputBase' {
+  interface InputBasePropsSizeOverrides {
+    /** 28px, for fields in a toolbar. */
+    dense: true
+  }
+}
+
+declare module '@mui/material/TextField' {
+  interface TextFieldPropsSizeOverrides {
+    /** 28px, for fields in a toolbar. */
+    dense: true
+  }
+}
+
 declare module '@mui/material/Button' {
   interface ButtonPropsVariantOverrides {
     /** Secondary text that is also an action (a label, names and a trailing pencil): no box, it darkens on hover. */
@@ -149,6 +164,9 @@ interface Tokens {
 export const grid = 4
 /** A line height of whole grid steps, in px: a unitless ratio such as 1.45 × 12px leaves a 17.4px line. */
 export const gridLine = (steps: number) => `${steps * grid}px`
+
+/** The unread mark drawn over the taskbar button (lib/appBadge); the taskbar follows neither the app's light nor dark theme. */
+export const appBadgeColors = { fill: '#e01e5a', text: '#ffffff' } as const
 
 /** The line height of each text variant, in grid steps, so a mark can be sized to a variant's first line (components/rows). */
 export const typeLines = { body1: 6, body2: 5, caption: 5, code: 5, h1: 6, h2: 5, h3: 5, iconCount: 4, overline: 4, subtitle1: 6, subtitle2: 5 } as const
@@ -410,7 +428,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         },
       },
       MuiTooltip: {
-        defaultProps: { disableInteractive: true, enterDelay: 350 },
+        defaultProps: { disableInteractive: true, enterDelay: 350, slots: { transition: Fade } },
         styleOverrides: {
           tooltip: { backgroundColor: palette.tooltip, ...frame({ color: palette.borderStrong }), color: '#eef1f5', fontSize: '0.75rem', fontWeight: 400, lineHeight: gridLine(4), padding: '4px 8px' },
         },
@@ -523,9 +541,12 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
             '&.MuiInputBase-sizeSmall .MuiSelect-select': { height: 20, lineHeight: '20px', minHeight: 0 },
             '&.MuiInputBase-multiline.MuiInputBase-sizeSmall': { paddingBottom: 6, paddingTop: 6 },
           },
-          // A small field or select is 32px, the height of the buttons beside it. MUI marks the size only on the
-          // root, so it is read from the owner state; a field's own sx (a dense toolbar field) still wins.
-          input: ({ ownerState }) => ownerState.size === 'small' && !ownerState.multiline ? { height: 20, lineHeight: '20px', paddingBottom: 6, paddingTop: 6 } : {},
+          // A small field or select is 32px, the height of the buttons beside it, and a dense one is 28px, for
+          // toolbars. MUI marks the size only on the root, so it is read from the owner state.
+          input: ({ ownerState }) => {
+            const inset = ownerState.multiline ? undefined : ownerState.size === 'small' ? 6 : ownerState.size === 'dense' ? 4 : undefined
+            return inset === undefined ? {} : { height: 20, lineHeight: '20px', paddingBottom: inset, paddingTop: inset }
+          },
         },
       },
       MuiInputLabel: {
@@ -537,12 +558,16 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
         styleOverrides: { inputRoot: { '&.MuiInputBase-sizeSmall .MuiAutocomplete-input': { paddingBottom: 0, paddingTop: 0 } } },
       },
       // Menus and popovers otherwise take a height-based "auto" time, which grows with long menus.
+      // Overlays fade in place; MUI's default also scales them from their anchor.
       MuiPopover: {
-        defaultProps: { transitionDuration: { enter: 160, exit: 100 } },
+        defaultProps: { slots: { transition: Fade }, transitionDuration: { enter: 160, exit: 100 } },
       },
       MuiMenu: {
-        defaultProps: { transitionDuration: { enter: 160, exit: 100 } },
+        defaultProps: { slots: { transition: Fade }, transitionDuration: { enter: 160, exit: 100 } },
         styleOverrides: { paper: { ...frame({ color: palette.border }), boxShadow: `0 8px 24px ${alpha('#000000', mode === 'dark' ? 0.45 : 0.12)}` } },
+      },
+      MuiSnackbar: {
+        defaultProps: { slots: { transition: Fade } },
       },
       MuiMenuItem: {
         styleOverrides: { root: { fontSize: '0.8125rem', minHeight: 32, [forcedColors]: { '&.Mui-selected': selectedOutline } } },

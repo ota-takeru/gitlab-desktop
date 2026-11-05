@@ -1,8 +1,5 @@
 import BookmarksOutlinedIcon from '@mui/icons-material/BookmarksOutlined'
-import CancelRoundedIcon from '@mui/icons-material/CancelRounded'
-import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -25,22 +22,19 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
-import MenuList from '@mui/material/MenuList'
-import Paper from '@mui/material/Paper'
-import Popper from '@mui/material/Popper'
-import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FocusEvent, KeyboardEvent, MouseEvent, PointerEvent, ReactNode, RefObject } from 'react'
+import type { MouseEvent, PointerEvent, ReactNode, RefObject } from 'react'
 
+import { ConditionSearchField } from '../../components/ConditionSearchField'
 import { hairline, panelFrame } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
+import { PillSelect } from '../../components/PillSelect'
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
@@ -55,6 +49,7 @@ import { formatFetchedAt } from '../../lib/format'
 import { normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { preferenceScope, readSavedSearches, type SavedMergeRequestSearch, writeSavedSearches } from '../shared/preferences'
+import { useFocusSearchShortcut } from '../shared/useFocusSearchShortcut'
 import { prefetchGitLabQuery, useGitLabQuery } from '../shared/useGitLabQuery'
 import { usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
 import { listTitle } from './listTitle'
@@ -102,17 +97,6 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
   const initial = useMemo(() => makeInitialState(fixedAuthorId !== undefined ? { ...initialParams, authorId: fixedAuthorId } : initialParams, initialQuery, projectId, session?.user.id), [fixedAuthorId, initialParams, initialQuery, projectId, session?.user.id])
   const [draft, setDraft] = useState<SearchDraft>(initial.draft)
   // Every condition is a tag inside the search field; the field's options and a tag open the same editor for one condition.
-  const searchFieldRef = useRef<HTMLDivElement>(null)
-  const searchOptionsRef = useRef<HTMLDivElement>(null)
-  const [searchOptions, setSearchOptions] = useState<{ anchor: HTMLElement; keyboard: boolean; width: number } | null>(null)
-  const searchOptionsAnchor = searchOptions?.anchor
-  useEffect(() => {
-    // The options stay as wide as the search field when the pane is resized while they are open.
-    if (!searchOptionsAnchor || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => setSearchOptions((current) => current && current.width !== searchOptionsAnchor.clientWidth ? { ...current, width: searchOptionsAnchor.clientWidth } : current))
-    observer.observe(searchOptionsAnchor)
-    return () => observer.disconnect()
-  }, [searchOptionsAnchor])
   const [editing, setEditing] = useState<{ anchor: HTMLElement; kind: ConditionKind } | null>(null)
   // Names of people and projects chosen in the editor, keyed by `<kind>:<id>`; the condition keeps the ID.
   const [conditionNames, setConditionNames] = useState<Record<string, string>>({})
@@ -137,11 +121,7 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
   const [refreshes, setRefreshes] = useState(0)
   const resultsRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const focus = () => searchInputRef.current?.focus()
-    globalThis.addEventListener('gitlab-focus-project-search', focus)
-    return () => globalThis.removeEventListener('gitlab-focus-project-search', focus)
-  }, [])
+  useFocusSearchShortcut(searchInputRef)
 
   const emitApplied = (next: AppliedSearch) => {
     onSearchStateChange?.(serializeSearch(next))
@@ -336,20 +316,6 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
     setApplied(next)
     emitApplied(next)
   }
-  const openSearchOptions = (keyboard: boolean) => {
-    const anchor = searchFieldRef.current
-    if (anchor && addableKinds.length) setSearchOptions({ anchor, keyboard, width: anchor.clientWidth })
-  }
-  // The options close when focus leaves both the field and the options.
-  const closeSearchOptionsOnBlur = (event: FocusEvent) => {
-    const next = event.relatedTarget as Node | null
-    if (next && (searchFieldRef.current?.contains(next) || searchOptionsRef.current?.contains(next))) return
-    setSearchOptions(null)
-  }
-  const chooseSearchOption = (kind: ConditionKind) => {
-    setSearchOptions(null)
-    if (searchOptions) setEditing({ anchor: searchOptions.anchor, kind })
-  }
   const applyEdited = (kind: ConditionKind, patch: Partial<SearchDraft>, name?: string) => {
     if (name) {
       const id = kind === 'group' ? patch.groupId : kind === 'project' ? patch.projectId : kind === 'author' ? patch.authorId : kind === 'reviewer' ? patch.reviewer : patch.assignee
@@ -371,70 +337,21 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
         title={title}
       >
         <Box component="form" onSubmit={(event) => { event.preventDefault(); applyDraft() }}>
-          <TextField
-            fullWidth
-            onChange={(event) => {
-              setSearchOptions(null)
-              setDraft((current) => ({ ...current, search: event.target.value }))
-            }}
-            placeholder={personalQueue ? t('mrList.search.placeholderIn', { title }) : t('mrList.search.placeholder')}
-            ref={searchFieldRef}
-            slotProps={{
-              htmlInput: {
-                // A text field that opens the conditions menu; as a combobox its open state may be announced.
-                role: 'combobox',
-                'aria-controls': searchOptions ? 'mr-search-options' : undefined,
-                'aria-expanded': Boolean(searchOptions),
-                'aria-haspopup': 'menu',
-                'aria-label': personalQueue ? t('mrList.search.ariaIn', { title }) : t('mrList.search.aria'),
-                onBlur: closeSearchOptionsOnBlur,
-                onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
-                  if (event.key === 'ArrowDown') {
-                    event.preventDefault()
-                    openSearchOptions(true)
-                  } else if (event.key === 'Escape') setSearchOptions(null)
-                },
-              },
-              input: {
-                // Clicking the field, but not a tag in it, lists the conditions that can be added.
-                onClick: (event) => { if (!(event.target as Element).closest('.MuiChip-root, button')) openSearchOptions(false) },
-                startAdornment: <>
-                  <InputAdornment position="start"><SearchRoundedIcon sx={{ color: 'text.secondary', fontSize: 18 }} /></InputAdornment>
-                  {/* Each applied condition shows its value as a tag in the field: a tag opens its editor, ✕ removes it. */}
-                  {fieldChips.length ? <Box aria-label={t('mrList.search.applied')} role="group" sx={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%', mr: 0.5, py: 0.5 }}>
-                    {fieldChips.map((chip) => {
-                      const { clear, kind } = chip
-                      const open = kind && kind !== 'search' ? (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind }) : undefined
-                      return <Chip color={clear ? 'primary' : 'default'} deleteIcon={clear ? <CancelRoundedIcon aria-label={t('mrList.search.removeCondition', { name: chip.name })} /> : undefined} key={chip.name} label={chip.label} onClick={open} onDelete={clear ? () => applyConditions(clear) : undefined} size="small" sx={{ fontFamily: chip.code ? 'code.fontFamily' : undefined, maxWidth: '100%' }} variant="outlined" />
-                    })}
-                  </Box> : null}
-                </>,
-                endAdornment: <InputAdornment position="end"><Tooltip title={t('mrList.search.submitTooltip')}><IconButton aria-label={t('mrList.search.submit')} edge="end" type="submit"><KeyboardReturnRoundedIcon /></IconButton></Tooltip></InputAdornment>,
-                sx: { flexWrap: 'wrap', '& .MuiInputBase-input': { flex: 1, minWidth: 160, width: 'auto' } },
-              },
-            }}
+          <ConditionSearchField
+            appliedLabel={t('mrList.search.applied')}
             inputRef={searchInputRef}
+            label={personalQueue ? t('mrList.search.ariaIn', { title }) : t('mrList.search.aria')}
+            menu={{ id: 'mr-search-options', label: t('mrList.search.conditionsMenu'), onChoose: (kind, anchor) => setEditing({ anchor, kind }), options: addableKinds.map((kind) => ({ kind, label: t(CONDITION_NAMES[kind]) })), title: t('mrList.search.addCondition') }}
+            onChange={(value) => setDraft((current) => ({ ...current, search: value }))}
+            placeholder={personalQueue ? t('mrList.search.placeholderIn', { title }) : t('mrList.search.placeholder')}
+            submitLabel={t('mrList.search.submit')}
+            submitTooltip={t('mrList.search.submitTooltip')}
+            tags={fieldChips.map((chip) => {
+              const { clear, kind } = chip
+              return { code: chip.code, key: chip.name, label: chip.label, onOpen: kind && kind !== 'search' ? (event: MouseEvent<HTMLElement>) => setEditing({ anchor: event.currentTarget, kind }) : undefined, onRemove: clear ? () => applyConditions(clear) : undefined, removeLabel: t('mrList.search.removeCondition', { name: chip.name }) }
+            })}
             value={draft.search}
           />
-          <Popper anchorEl={searchOptions?.anchor} open={Boolean(searchOptions)} placement="bottom-start" sx={{ maxWidth: 'calc(100vw - 16px)', width: searchOptions?.width, zIndex: 'modal' }}>
-            <Paper ref={searchOptionsRef} sx={{ ...panelFrame(), boxShadow: 8, mt: 0.5, py: 0.5 }}>
-              <Typography color="textSecondary" sx={{ display: 'block', px: 1.5 }} variant="overline">{t('mrList.search.addCondition')}</Typography>
-              <MenuList
-                aria-label={t('mrList.search.conditionsMenu')}
-                autoFocusItem={searchOptions?.keyboard}
-                dense
-                id="mr-search-options"
-                onBlur={closeSearchOptionsOnBlur}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Escape') return
-                  setSearchOptions(null)
-                  searchInputRef.current?.focus()
-                }}
-              >
-                {addableKinds.map((kind) => <MenuItem key={kind} onClick={() => chooseSearchOption(kind)}>{t(CONDITION_NAMES[kind])}</MenuItem>)}
-              </MenuList>
-            </Paper>
-          </Popper>
           <Row sx={{ flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             {queueSwitches.length ? <Row aria-label={t('mrList.queue.group')} role="group" sx={{ gap: 0.5, mr: 0.5 }}>
               {queueSwitches.map(({ active, label, patch }) => <Chip aria-pressed={active} color={active ? 'primary' : 'default'} key={label} label={label} onClick={() => applyConditions(patch)} size="small" variant={active ? 'filled' : 'outlined'} />)}
@@ -442,14 +359,14 @@ function MergeRequestListContent({ actions, author, initialQuery = '', initialPa
             {conditionsChanged ? <Button onClick={resetConditions} sx={{ color: 'text.secondary', minHeight: 24, px: 1 }}>{t('mrList.search.clear')}</Button> : null}
             {/* The order is not a condition, so it stays a pull-down beside the field. */}
             <Row sx={{ gap: 0.5, ml: 'auto' }}>
-              <Select aria-label={t('mrList.order.aria')} displayEmpty onChange={(event) => applyConditions({ orderBy: event.target.value as OrderBy })} sx={pillSelectSx} value={draft.orderBy}>
+              <PillSelect aria-label={t('mrList.order.aria')} displayEmpty onChange={(event) => applyConditions({ orderBy: event.target.value as OrderBy })} value={draft.orderBy}>
                 <MenuItem value="updated_at">{t('mrList.order.updated')}</MenuItem>
                 <MenuItem value="created_at">{t('mrList.order.created')}</MenuItem>
-              </Select>
-              <Select aria-label={t('mrList.order.directionAria')} onChange={(event) => applyConditions({ sort: event.target.value as SortDirection })} sx={pillSelectSx} value={draft.sort}>
+              </PillSelect>
+              <PillSelect aria-label={t('mrList.order.directionAria')} onChange={(event) => applyConditions({ sort: event.target.value as SortDirection })} value={draft.sort}>
                 <MenuItem value="desc">{t('mrList.order.desc')}</MenuItem>
                 <MenuItem value="asc">{t('mrList.order.asc')}</MenuItem>
-              </Select>
+              </PillSelect>
             </Row>
           </Row>
           <ConditionEditor
@@ -588,7 +505,6 @@ function MoreRows({ capped, count, error, loading, onLoad, onRetry, rootRef }: {
 
 /** Condition selects are the theme's small Select on the pane surface, with caption-sized text. */
 // Body-size text and an 18px arrow, so the text is not lost inside the 32px control.
-const pillSelectSx = { bgcolor: 'transparent', typography: 'body2', '& .MuiSelect-icon': { fontSize: 18 } } as const
 
 /** The approval line of the preview, saying what the row's approval mark says. */
 function approvalText(approval: RowApproval | null, state: string): string | null {
@@ -765,7 +681,7 @@ function MergeRequestResults({ currentUserId, grouping, onFocusRow, onOpenMergeR
       sections[approval ? done ? 1 : 0 : approvalPending(mergeRequest) ? 2 : 3][1].push(mergeRequest)
     }
     items = sections.filter(([label, rows]) => rows.length > 0 || label === waitingLabel || label === doneLabel).flatMap(([label, rows]) => [
-      <Box component="li" key={`section:${label}`} role="presentation" sx={{ contentVisibility: 'visible' }}>
+      <Box component="li" key={`section:${label}`} sx={{ contentVisibility: 'visible' }}>
         <Typography color="textSecondary" component="h2" sx={{ bgcolor: 'surface.nav', ...hairline('bottom'), display: 'block', px: paneGutter, py: 0.5 }} variant="overline">{t('mrList.sections.heading', { count: rows.length, label })}</Typography>
       </Box>,
       ...rows.map(row),

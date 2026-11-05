@@ -1,17 +1,16 @@
 import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import { useEffect, useState } from 'react'
 
-import { translate } from '../i18n/i18n'
 import { useT } from '../i18n/useT'
 import { isTauri } from '../lib/runtime'
-import { ensureBeforeUnloadProtection, initializeWindowCloseProtection, queueWindowCloseGuard, setCloseDialogs, setLatestWindowUnsafe, type CloseItem } from '../lib/windowSafety'
+import { ensureBeforeUnloadProtection, initializeWindowCloseProtection, queueWindowCloseGuard, setCloseDialogs, setLatestWindowUnsafe } from '../lib/windowSafety'
 import { useRetainedComposerUnsafe } from '../features/mergeRequests/useComposerBuffer'
 import { useAutoUpdateAllowed, useAutoUpdateSafety, useUnsafeSources } from '../features/shared/autoUpdateSafetyContext'
 import { useChoose, useConfirm, useNotify } from './feedbackContext'
 import { Row } from './Row'
+import { withItems } from './withItems'
 
 type ProtectionStatus = 'starting' | 'ready' | 'failed'
 
@@ -82,18 +81,4 @@ export function WindowCloseProtection() {
       <Button onClick={() => { setStatus('starting'); setRetry((current) => current + 1) }} size="small" variant="outlined">{t('common.closeProtection.retry')}</Button>
     </Row>
   </Alert>
-}
-
-/** The places with unsent work under the question: the screen on one line, what in it is not sent below it. */
-function withItems(message: string | undefined, items: CloseItem[] | undefined) {
-  if (!items?.length) return message
-  return <>
-    {message}
-    <Box aria-label={translate('common.closeProtection.unsentScreens')} component="ul" sx={{ m: 0, mt: 1, pl: 2.5 }}>
-      {items.map(({ detail, name }) => <Box component="li" key={name}>
-        <Typography noWrap title={name} variant="body2">{name}</Typography>
-        {detail ? <Typography color="textSecondary" component="div" variant="caption">{detail}</Typography> : null}
-      </Box>)}
-    </Box>
-  </>
 }

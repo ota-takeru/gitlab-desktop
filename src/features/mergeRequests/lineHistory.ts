@@ -8,7 +8,8 @@ export interface LineRange { start: number; end: number }
 /** The lines to follow back from one revision. */
 export interface HistoryCursor { sha: string; path: string; range: LineRange }
 
-export type HistoryStop = 'added' | 'created' | 'root' | 'unavailable' | 'unmatched' | 'tooWide'
+/** Why following stops: the lines' start was reached, or the range could not be followed further. */
+export type HistoryStop = 'added' | 'created' | 'root' | 'noBlame' | 'tooLarge' | 'unmatched' | 'tooWide'
 
 export interface HistoryStep {
   commit: Pick<BlameBlock, 'commitId' | 'title' | 'authorName' | 'committedAt'>
@@ -154,7 +155,7 @@ export async function historyStep(cursor: HistoryCursor, fetch: HistoryFetchers)
   for (const block of blocks) {
     if (!newest || Date.parse(block.committedAt) > Date.parse(newest.committedAt)) newest = block
   }
-  if (!newest) return { stop: 'unavailable' }
+  if (!newest) return { stop: 'noBlame' }
   // The first run of lines blame gives the commit, as they read now.
   let anchor = -1
   const texts: string[] = []
@@ -166,7 +167,10 @@ export async function historyStep(cursor: HistoryCursor, fetch: HistoryFetchers)
       texts.push(lineText(attributions, line))
     } else if (anchor >= 0) break
   }
-  if (anchor < 0) return { stop: 'unavailable' }
+  if (anchor < 0) return { stop: 'noBlame' }
+  const commit = { authorName: newest.authorName, commitId: newest.commitId, committedAt: newest.committedAt, title: newest.title }
+  // The commit is known even when its change cannot be located, so it is still shown.
+  const unlocated = (stop: HistoryStop): HistoryStep => ({ before: null, commit, next: null, path: cursor.path, range, segments: [], stop })
 
   for (let page = 1; page <= MAX_COMMIT_DIFF_PAGES; page += 1) {
     const diffs = await fetch.commitDiff(newest.commitId, page)
@@ -174,12 +178,17 @@ export async function historyStep(cursor: HistoryCursor, fetch: HistoryFetchers)
     const ordered = [...diffs.filter((diff) => diff.newPath === cursor.path), ...diffs.filter((diff) => diff.newPath !== cursor.path)]
     for (const diff of ordered) {
       if (diff.tooLarge || diff.collapsed || !diff.diff) {
-        if (diff.newPath === cursor.path) return { stop: 'unavailable' }
+        if (diff.newPath === cursor.path) return unlocated('tooLarge')
         continue
       }
       const parsed = parseDiff(diff.diff, diff.oldPath, diff.newPath)
       if (parsed.status === 'invalid') continue
-      const found = findAddedRun(parsed.lines, texts, anchor)
+      let found = findAddedRun(parsed.lines, texts, anchor)
+      // Lines a later commit removed from between them were apart in this commit, so in the
+      // file under its own path the run's start is looked for with fewer lines.
+      for (let length = texts.length - 1; found === null && length > 0 && diff.newPath === cursor.path; length -= 1) {
+        found = findAddedRun(parsed.lines, texts.slice(0, length), anchor)
+      }
       if (found === null) continue
       const shift = found - anchor
       const atCommit = { start: Math.max(1, range.start + shift), end: range.end + shift }
@@ -188,7 +197,7 @@ export async function historyStep(cursor: HistoryCursor, fetch: HistoryFetchers)
       const stop: HistoryStop | undefined = diff.newFile ? 'created' : !before ? 'added' : !parent ? 'root' : undefined
       return {
         before,
-        commit: { authorName: newest.authorName, commitId: newest.commitId, committedAt: newest.committedAt, title: newest.title },
+        commit,
         next: stop || !before || !parent ? null : { path: diff.oldPath || diff.newPath, range: before, sha: parent },
         path: diff.newPath,
         range: atCommit,
@@ -198,7 +207,7 @@ export async function historyStep(cursor: HistoryCursor, fetch: HistoryFetchers)
     }
     if (diffs.length < COMMIT_DIFF_PAGE) break
   }
-  return { stop: 'unmatched' }
+  return unlocated('unmatched')
 }
 
 /** A line's text as blame gives it, from its block's lines. */

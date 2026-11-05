@@ -149,6 +149,38 @@ pub enum MergeRequestState {
     Merged,
 }
 
+/// The project list's conditions beyond the search word, membership and archived projects.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFilters {
+    /// The projects this user contributed to, which GitLab lists without any
+    /// other condition than the order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contributor_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_access_level: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topics: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub owned: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub starred: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_after: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+}
+
 /// Read operations supported by the GitLab REST adapter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -203,6 +235,8 @@ pub enum Query {
         search: String,
         membership: bool,
         include_archived: bool,
+        #[serde(flatten)]
+        filters: ProjectFilters,
         page: u32,
     },
     Mrs {
@@ -261,7 +295,9 @@ pub enum Query {
     },
     CommitDiff {
         project_id: String,
-        iid: String,
+        /// The MR the commit is read for; absent for a repository file's history.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        iid: Option<String>,
         sha: String,
         page: u32,
     },
@@ -280,6 +316,20 @@ pub enum Query {
     },
     /// MR(s) associated with a commit.
     CommitMergeRequests {
+        project_id: String,
+        sha: String,
+    },
+    /// A repository's commits, newest first; without `ref`, those of the default branch.
+    RepositoryCommits {
+        project_id: String,
+        #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+        git_ref: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        page: u32,
+    },
+    /// One commit of a repository, without its diff.
+    RepositoryCommit {
         project_id: String,
         sha: String,
     },
@@ -317,6 +367,13 @@ pub enum Query {
         project_path: String,
         iid: String,
         since_note_id: String,
+    },
+    /// The thread holding one comment, read on its own so a comment linked from
+    /// a notification shows before the pages between it and the newest are read.
+    NoteDiscussion {
+        project_id: String,
+        iid: String,
+        note_id: String,
     },
     /// One page of the merge request's pipelines, newest first.
     MrPipelines {
@@ -656,6 +713,7 @@ mod tests {
             search: "demo".to_owned(),
             membership: true,
             include_archived: false,
+            filters: ProjectFilters::default(),
             page: 1,
         })
         .unwrap();

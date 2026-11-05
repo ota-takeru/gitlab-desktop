@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
 import type { Diff } from '../../types/gitlab'
-import { DiffViewer, FullFileView } from './DiffViewer'
+import { DiffViewer } from './DiffViewer'
+import { FullFileView } from './FullFileView'
 import { parseDiff } from './diffParser'
 
 const theme = createAppTheme('light')

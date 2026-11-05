@@ -1,6 +1,7 @@
 //! The GitLab REST URL, the response kind and the extra query parameters of each read.
 
 use super::*;
+use crate::dto::ProjectFilters;
 
 pub(super) fn build_query_url(
     api_base: &Url,
@@ -122,28 +123,78 @@ pub(super) fn build_query_url(
             search,
             membership,
             include_archived,
+            filters,
             page,
         } => {
             validate_page(*page)?;
+            validate_project_filters(search, filters)?;
+            let order_by = filters.order_by.as_deref().unwrap_or("last_activity_at");
+            let sort = filters.sort.as_deref().unwrap_or("desc");
             let mut params = vec![
-                ("membership".to_owned(), membership.to_string()),
-                ("order_by".to_owned(), "last_activity_at".to_owned()),
-                ("sort".to_owned(), "desc".to_owned()),
+                ("order_by".to_owned(), order_by.to_owned()),
+                ("sort".to_owned(), sort.to_owned()),
                 ("page".to_owned(), page.to_string()),
                 ("per_page".to_owned(), PER_PAGE.to_string()),
             ];
+            if let Some(contributor_id) = &filters.contributor_id {
+                // Membership and archived projects are not filters of this list.
+                return Ok((
+                    append_query(
+                        endpoint(api_base, &["users", contributor_id, "contributed_projects"])?,
+                        params,
+                    ),
+                    ResponseKind::Projects,
+                ));
+            }
             if !include_archived {
                 params.push(("archived".to_owned(), "false".to_owned()));
             }
-            if !search.is_empty() {
-                params.push(("search".to_owned(), search.clone()));
-                params.push(("search_namespaces".to_owned(), "true".to_owned()));
+            let url = if let Some(group_id) = &filters.group_id {
+                // A group's list has no membership filter; the lowest role
+                // limits it to the projects the user is a member of instead.
+                params.push(("include_subgroups".to_owned(), "true".to_owned()));
+                if *membership && filters.min_access_level.is_none() {
+                    params.push(("min_access_level".to_owned(), "10".to_owned()));
+                }
+                if !search.is_empty() {
+                    params.push(("search".to_owned(), search.clone()));
+                }
+                endpoint(api_base, &["groups", group_id, "projects"])?
+            } else {
+                params.push(("membership".to_owned(), membership.to_string()));
+                if !search.is_empty() {
+                    params.push(("search".to_owned(), search.clone()));
+                    params.push(("search_namespaces".to_owned(), "true".to_owned()));
+                }
+                endpoint(api_base, &["projects"])?
+            };
+            add_optional_param(&mut params, "visibility", &filters.visibility);
+            if let Some(level) = filters.min_access_level {
+                params.push(("min_access_level".to_owned(), level.to_string()));
             }
-            (
-                endpoint(api_base, &["projects"])?,
-                ResponseKind::Projects,
-                params,
-            )
+            if let Some(topics) = &filters.topics {
+                if !topics.is_empty() {
+                    params.push(("topic".to_owned(), topics.join(",")));
+                }
+            }
+            add_optional_param(&mut params, "with_programming_language", &filters.language);
+            if filters.owned {
+                params.push(("owned".to_owned(), "true".to_owned()));
+            }
+            if filters.starred {
+                params.push(("starred".to_owned(), "true".to_owned()));
+            }
+            add_optional_param(
+                &mut params,
+                "last_activity_after",
+                &filters.last_activity_after,
+            );
+            add_optional_param(
+                &mut params,
+                "last_activity_before",
+                &filters.last_activity_before,
+            );
+            (url, ResponseKind::Projects, params)
         }
         Query::UserProjects {
             user_id,
@@ -333,7 +384,9 @@ pub(super) fn build_query_url(
             page,
         } => {
             validate_id(project_id, "projectId")?;
-            validate_id(iid, "iid")?;
+            if let Some(iid) = iid {
+                validate_id(iid, "iid")?;
+            }
             validate_sha(sha, "sha")?;
             validate_page(*page)?;
             (
@@ -418,6 +471,44 @@ pub(super) fn build_query_url(
                 vec![("per_page".to_owned(), "20".to_owned())],
             )
         }
+        Query::RepositoryCommits {
+            project_id,
+            git_ref,
+            path,
+            page,
+        } => {
+            validate_id(project_id, "projectId")?;
+            validate_page(*page)?;
+            let mut params = vec![
+                ("page".to_owned(), page.to_string()),
+                ("per_page".to_owned(), PER_PAGE.to_string()),
+            ];
+            if let Some(git_ref) = git_ref {
+                validate_ref(git_ref)?;
+                params.push(("ref_name".to_owned(), git_ref.clone()));
+            }
+            if let Some(path) = path {
+                validate_path(path)?;
+                params.push(("path".to_owned(), path.clone()));
+            }
+            (
+                endpoint(api_base, &["projects", project_id, "repository", "commits"])?,
+                ResponseKind::Commits,
+                params,
+            )
+        }
+        Query::RepositoryCommit { project_id, sha } => {
+            validate_id(project_id, "projectId")?;
+            validate_sha(sha, "sha")?;
+            (
+                endpoint(
+                    api_base,
+                    &["projects", project_id, "repository", "commits", sha],
+                )?,
+                ResponseKind::Commit,
+                Vec::new(),
+            )
+        }
         Query::Tree {
             project_id,
             git_ref,
@@ -493,6 +584,13 @@ pub(super) fn build_query_url(
                 "コメントのリアクションはこの方法では取得できません。",
             )
             .key("native.query.noteAwardsUnsupported"))
+        }
+        Query::NoteDiscussion { .. } => {
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                "コメントのスレッドはこの方法では取得できません。",
+            )
+            .key("native.query.noteDiscussionUnsupported"))
         }
         Query::MrPipelines {
             project_id,
@@ -621,4 +719,67 @@ pub(super) fn build_query_url(
     };
 
     Ok((append_query(url, params), response_kind))
+}
+
+/// GitLab lists a group's projects without the language and activity filters of
+/// the whole instance's list, so those cannot be combined with a group, and a
+/// user's contributed projects without any filter but the order.
+fn validate_project_filters(search: &str, filters: &ProjectFilters) -> Result<(), AppError> {
+    let invalid = || {
+        AppError::new(
+            "INVALID_INPUT",
+            "プロジェクト検索の条件が正しくありません。",
+        )
+        .key("native.query.invalidProjectFilter")
+    };
+    if !matches!(
+        filters.order_by.as_deref().unwrap_or("last_activity_at"),
+        "last_activity_at" | "name" | "created_at" | "star_count"
+    ) || !matches!(filters.sort.as_deref().unwrap_or("desc"), "asc" | "desc")
+    {
+        return Err(invalid());
+    }
+    if let Some(visibility) = filters.visibility.as_deref() {
+        if !matches!(visibility, "public" | "internal" | "private") {
+            return Err(invalid());
+        }
+    }
+    if let Some(level) = filters.min_access_level {
+        if !matches!(level, 10 | 20 | 30 | 40 | 50) {
+            return Err(invalid());
+        }
+    }
+    if let Some(topics) = &filters.topics {
+        validate_labels(topics)?;
+    }
+    if let Some(contributor_id) = &filters.contributor_id {
+        validate_id(contributor_id, "contributorId")?;
+        let only_order = ProjectFilters {
+            contributor_id: filters.contributor_id.clone(),
+            order_by: filters.order_by.clone(),
+            sort: filters.sort.clone(),
+            ..ProjectFilters::default()
+        };
+        if !search.is_empty() || *filters != only_order {
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                "関わったユーザーを指定したプロジェクト検索では、検索語やほかの条件を指定できません。",
+            )
+            .key("native.query.contributorProjectFilter"));
+        }
+    }
+    if let Some(group_id) = &filters.group_id {
+        validate_group_id(group_id)?;
+        if filters.language.is_some()
+            || filters.last_activity_after.is_some()
+            || filters.last_activity_before.is_some()
+        {
+            return Err(AppError::new(
+                "INVALID_INPUT",
+                "グループを指定したプロジェクト検索では、言語と最終活動日を指定できません。",
+            )
+            .key("native.query.groupProjectFilter"));
+        }
+    }
+    Ok(())
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '@mui/material/styles'
 
@@ -365,6 +365,32 @@ describe('DiscussionList note ownership and resolution', () => {
     expect(document.activeElement).toHaveAttribute('data-note-id', 'chronologically-latest')
   })
 
+  it('lights the comment a jump lands on for a moment, moving to the next one jumped to', () => {
+    vi.useFakeTimers()
+    try {
+      const discussions = [
+        createDiscussion([createNote('older', otherUser, { createdAt: '2026-01-01T00:00:00.000Z' })], 'discussion-older'),
+        createDiscussion([createNote('newest', otherUser, { createdAt: '2026-02-01T00:00:00.000Z' })], 'discussion-newest'),
+      ]
+      const { container } = renderList(discussions, { unreadNoteIds: ['older'] })
+      const lit = () => [...container.querySelectorAll('[data-flash]')].map((item) => item.getAttribute('data-note-id'))
+      expect(lit()).toEqual([])
+
+      fireEvent.click(screen.getByRole('button', { name: /未読へ/ }))
+      expect(lit()).toEqual(['older'])
+      act(() => vi.advanceTimersByTime(1000))
+      fireEvent.click(screen.getByRole('button', { name: '最新へ' }))
+      expect(lit()).toEqual(['newest'])
+
+      act(() => vi.advanceTimersByTime(1999))
+      expect(lit()).toEqual(['newest'])
+      act(() => vi.advanceTimersByTime(1))
+      expect(lit()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('marks every loaded note read, including other note pages and collapsed resolved threads', () => {
     const notes = Array.from({ length: 61 }, (_, index) => createNote(`read-${index + 1}`, otherUser))
     const resolvedNotes = [
@@ -403,6 +429,19 @@ describe('DiscussionList note ownership and resolution', () => {
     fireEvent.click(screen.getByRole('button', { name: '自分のコメント「owned-note の本文」を編集' }))
     expect(screen.getByRole('button', { name: 'すべて' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '未解決' })).toBeDisabled()
+  })
+
+  it('offers older discussions below a thread read on its own, between it and the loaded ones', () => {
+    const discussions = [createDiscussion([createNote('linked-note', otherUser)], 'linked'), createDiscussion([createNote('newest-page-note', otherUser)], 'newest')]
+    render(
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} detachedDiscussionId="linked" discussions={discussions} older={{ error: null, hasOlder: true, limitReached: false, loading: false, onLoad: vi.fn(), onRetry: vi.fn() }} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>,
+    )
+    const [linked, newest] = screen.getAllByRole('article')
+    const load = screen.getByRole('button', { name: '以前の議論を読み込む' })
+    expect(linked.compareDocumentPosition(load) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(newest.compareDocumentPosition(load) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
   })
 
   it('offers older discussions above the loaded ones and reports loading, errors and the limit', () => {
@@ -574,6 +613,7 @@ describe('DiscussionList code beside line comments', () => {
     view.rerender(list([linked, ...newer], { ...older, hasOlder: false }))
     await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'linked'))
+    expect(document.activeElement).toHaveAttribute('data-flash', 'true')
   })
 
   it('stops looking for a linked comment that is not among all the threads', async () => {
@@ -584,6 +624,22 @@ describe('DiscussionList code beside line comments', () => {
       </ThemeProvider>,
     )
     await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
+  })
+
+  it('waits for pages being read again before giving up on a linked comment', async () => {
+    const onFocusNoteDone = vi.fn()
+    const list = (discussions: ReturnType<typeof createDiscussion>[], reading: boolean) => (
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} discussions={discussions} focusNoteId="fresh" older={{ error: null, hasOlder: false, limitReached: false, loading: false, reading, onLoad: vi.fn(), onRetry: vi.fn() }} onDelete={vi.fn()} onEdit={vi.fn()} onFocusNoteDone={onFocusNoteDone} onReply={vi.fn()} onResolve={vi.fn()} />
+      </ThemeProvider>
+    )
+    const cached = [createDiscussion([createNote('other', otherUser)])]
+    const view = render(list(cached, true))
+    expect(onFocusNoteDone).not.toHaveBeenCalled()
+
+    view.rerender(list([...cached, createDiscussion([createNote('fresh', otherUser)], 'fresh-thread')], false))
+    await waitFor(() => expect(onFocusNoteDone).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'fresh'))
   })
 
   it('uploads an image pasted into an edit and puts its Markdown in the text', async () => {

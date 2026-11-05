@@ -36,6 +36,16 @@ describe('desktop workspace notifications', () => {
     })
   })
 
+  it('keeps the page a click on the notification opens', async () => {
+    mocks.isPermissionGranted.mockResolvedValue(true)
+
+    await notifyWorkspace('新しいコメントがあります。', 'https://gitlab.example/team/app/-/merge_requests/3#note_12')
+
+    expect(mocks.invoke).toHaveBeenCalledWith('plugin:notification|notify', {
+      options: { title: 'GitLab Desktop', body: '新しいコメントがあります。', extra: { url: 'https://gitlab.example/team/app/-/merge_requests/3#note_12' } },
+    })
+  })
+
   it('refuses notification emission when permission is denied', async () => {
     mocks.isPermissionGranted.mockResolvedValue(false)
 
