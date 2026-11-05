@@ -212,7 +212,7 @@ export function MergeStatusText({ mergeRequest, onOpen }: { mergeRequest: MergeR
   const readiness = mergeReadiness(mergeRequest)
   const icon = readiness.tone === 'success' ? <CheckCircleOutlineRoundedIcon fontSize="inherit" /> : readiness.tone === 'warning' ? <WarningAmberRoundedIcon fontSize="inherit" /> : <InfoOutlinedIcon fontSize="inherit" />
   // The icon tells mergeable, blocked and waiting apart at a glance; the reason is the tooltip, and the panel says what to do.
-  return <ButtonBase aria-label={readiness.summary} onClick={onOpen} sx={{ borderRadius: 0.5 }}><StateIcon icon={icon} label={readiness.summary} tone={readiness.tone === 'success' ? 'success' : readiness.tone === 'warning' ? 'warning' : 'neutral'} /></ButtonBase>
+  return <ButtonBase aria-label={readiness.summary} onClick={onOpen} sx={{ borderRadius: 1 }}><StateIcon icon={icon} label={readiness.summary} tone={readiness.tone === 'success' ? 'success' : readiness.tone === 'warning' ? 'warning' : 'neutral'} /></ButtonBase>
 }
 
 function TitleDialog({ disabled, mergeRequest, onClose, onSave }: { disabled: boolean; mergeRequest: MergeRequest; onClose: () => void; onSave: (title: string, expectedTitle: string) => Promise<boolean> }) {
