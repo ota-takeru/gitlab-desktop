@@ -62,19 +62,20 @@ it('applies the path box and offers to clear a path that matches nothing', () =>
   expect(onNavigate).toHaveBeenLastCalledWith({ path: 'src/lib', ref: 'dev' })
 })
 
-it('shows a commit with its message, related MR and read-only changes from its parent', () => {
+it('shows a commit with its message, related MR and read-only changes from its parent', async () => {
   const onOpenMergeRequest = vi.fn()
   render(<CommitHistory location={{ sha: sha('a') }} onNavigate={vi.fn()} onOpenMergeRequest={onOpenMergeRequest} projectId="7" projectName="app" />)
 
-  expect(screen.getByText('Why it changed')).toBeTruthy()
+  expect(await screen.findByText('Why it changed')).toBeTruthy()
   expect(screen.getByTestId('diff').textContent).toBe(`false|src/a.ts|${sha('a')}|${sha('b')}`)
   fireEvent.click(screen.getByRole('button', { name: /!9 The change/u }))
   expect(onOpenMergeRequest).toHaveBeenCalledWith({ iid: '9', projectId: '7' })
 })
 
-it('moves to the neighbouring commits of the list and returns to it with the keys', () => {
+it('moves to the neighbouring commits of the list and returns to it with the keys', async () => {
   const onNavigate = vi.fn()
   const { container } = render(<CommitHistory location={{ ref: 'dev', sha: sha('b') }} onNavigate={onNavigate} projectId="7" projectName="app" />)
+  await screen.findByRole('button', { name: '変更履歴に戻る' })
   const detail = container.querySelector('[tabindex="-1"]') as HTMLElement
 
   fireEvent.keyDown(detail, { key: 'j' })
@@ -85,8 +86,8 @@ it('moves to the neighbouring commits of the list and returns to it with the key
   expect(onNavigate).toHaveBeenLastCalledWith({ ref: 'dev' })
 })
 
-it('opens a commit that is not in the list without offering neighbours', () => {
+it('opens a commit that is not in the list without offering neighbours', async () => {
   render(<CommitHistory location={{ sha: sha('d') }} onNavigate={vi.fn()} projectId="7" projectName="app" />)
+  expect(await screen.findByRole('button', { name: '変更履歴に戻る' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: '古いコミットへ' })).toBeNull()
-  expect(screen.getByRole('button', { name: '変更履歴に戻る' })).toBeTruthy()
 })
