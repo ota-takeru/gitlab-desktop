@@ -66,6 +66,9 @@ export function firstVisibleFileLine(root: HTMLElement, top: number): { line: nu
     const rect = node.getBoundingClientRect()
     const line = Number(node.dataset.fileLine ?? node.dataset.sourceStart)
     if (rect.bottom <= top + 2 || rect.top >= bottom - 2 || !Number.isSafeInteger(line) || line <= 0) continue
+    // A row scrolled out of its table is not on screen, wherever its box lies.
+    const table = node.closest('[data-table-scroll]')?.getBoundingClientRect()
+    if (table && (rect.bottom <= table.top + 2 || rect.top >= table.bottom - 2)) continue
     if (rect.top >= top - 2) return { line, top: rect.top }
     partly ??= { line, top: rect.top }
   }
@@ -73,8 +76,15 @@ export function firstVisibleFileLine(root: HTMLElement, top: number): { line: nu
 }
 
 export function scrollNearestBy(node: HTMLElement, delta: number) {
+  // A row in a table that scrolls by itself comes up under the table's header first; the page then moves by what is left.
+  const table = node.closest<HTMLElement>('[data-table-scroll]')
+  if (table) {
+    const before = node.getBoundingClientRect().top
+    table.scrollTop += before - table.getBoundingClientRect().top - (table.querySelector('thead')?.getBoundingClientRect().height ?? 0)
+    delta += node.getBoundingClientRect().top - before
+  }
   if (!delta) return
-  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+  for (let parent = (table ?? node).parentElement; parent; parent = parent.parentElement) {
     const overflow = getComputedStyle(parent).overflowY
     if ((overflow === 'auto' || overflow === 'scroll') && parent.scrollHeight > parent.clientHeight) { parent.scrollTop += delta; return }
   }

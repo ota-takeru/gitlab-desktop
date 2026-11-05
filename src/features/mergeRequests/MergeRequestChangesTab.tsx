@@ -15,6 +15,7 @@ import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import type { Commit, Diff, Discussion, Draft, MrVersion, Position } from '../../types/gitlab'
 import type { ThreadActions } from './DiffThreads'
 import { DiffViewer } from './DiffViewer'
+import type { MoreCommits } from './useCommitPages'
 import type { ReviewedFileContext } from './useReviewedFiles'
 import type { SuggestionActions } from './SuggestionBlock'
 import { LoadingSkeleton } from './LoadingPanel'
@@ -36,7 +37,7 @@ export interface VersionChoice {
   onSelect: (headCommitSha: string | null) => void
 }
 
-export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, pendingDrafts, lineComposer, discussions, discussionHeadSha, discussionsIncomplete, onOpenDiscussion, reviewContext, allowComments, changesError, changesLoading, changesTruncated, commitNextPage, commitPage, commits, commitsError, commitsLoading, diffs, fileResult, fileView, onComment, onNextCommitPage, onPrevCommitPage, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition, suggestionActions, versions }: { compareBaseSha?: string; local?: LocalChoice; fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; iid?: string; projectUrl?: string }; reviewContext?: ReviewedFileContext; allowComments: boolean; changesError: Error | null; changesLoading: boolean; changesTruncated: boolean; commitNextPage: number | null; commitPage: number; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; onComment: (position: Position) => void; onNextCommitPage: () => void; onPrevCommitPage: () => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position; discussions?: Discussion[]; discussionHeadSha?: string; discussionsIncomplete: boolean; onOpenDiscussion: (discussionId: string) => void; lineComposer?: { position: Position; node: React.ReactNode }; pendingDrafts?: Draft[]; threadActions?: ThreadActions; suggestionActions?: SuggestionActions; versions: VersionChoice }) {
+export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, pendingDrafts, lineComposer, discussions, discussionHeadSha, discussionsIncomplete, onOpenDiscussion, reviewContext, allowComments, changesError, changesLoading, changesMissing, changesTruncated, commits, commitsError, commitsLoading, diffs, fileResult, fileView, moreCommits, onComment, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition, suggestionActions, versions }: { compareBaseSha?: string; local?: LocalChoice; fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; iid?: string; projectUrl?: string }; reviewContext?: ReviewedFileContext; allowComments: boolean; changesError: Error | null; changesLoading: boolean; /** GitLab's list leaves out files of the MR: its count of them, when it does. */ changesMissing?: string | null; changesTruncated: boolean; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; moreCommits: MoreCommits | null; onComment: (position: Position) => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position; discussions?: Discussion[]; discussionHeadSha?: string; discussionsIncomplete: boolean; onOpenDiscussion: (discussionId: string) => void; lineComposer?: { position: Position; node: React.ReactNode }; pendingDrafts?: Draft[]; threadActions?: ThreadActions; suggestionActions?: SuggestionActions; versions: VersionChoice }) {
   const t = useT()
   const compareFrom = versions.compareFrom
   const showingLocal = Boolean(local?.active)
@@ -60,10 +61,11 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     <Stack ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)' }}>
       {commitsError && !commits.length ? <Alert severity="error">{t('review.changes.commitsError', { message: commitsError.message })}</Alert> : null}
       {commitsError && commits.length ? <Alert severity="warning">{t('review.changes.commitsStale', { message: commitsError.message })}</Alert> : null}
-      {showTimeline ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: 'var(--mr-header-height)', zIndex: 2 }}><CommitTimeline baseSha={compareBaseSha} commits={commits} compareFrom={compareFrom} local={local} headSha={discussionHeadSha} loading={commitsLoading} nextPage={commitNextPage} onNextPage={onNextCommitPage} onPrevPage={onPrevCommitPage} onSelect={onSelectCommit} page={commitPage} selected={selectedCommit} versionPicker={<VersionPicker versions={versions} />} /></Box> : null}
+      {showTimeline ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: 'var(--mr-header-height)', zIndex: 2 }}><CommitTimeline baseSha={compareBaseSha} commits={commits} compareFrom={compareFrom} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versionPicker={<VersionPicker versions={versions} />} /></Box> : null}
       <Stack spacing={1.5} sx={{ '--detail-header-height': 'calc(var(--mr-header-height) + var(--commit-timeline-height, 0px))' }}>
       {showingLocal ? local?.content : <>
       {changesTruncated ? <Alert severity="warning">{t('review.changes.truncated')}</Alert> : null}
+      {changesMissing ? <Alert severity="warning">{t('review.changes.filesMissing', { shown: diffs.length, total: changesMissing })}</Alert> : null}
       {changesError && !diffs.length ? <Alert severity="error">{t('review.changes.diffError', { message: changesError.message })}</Alert> : null}
       {changesError && diffs.length ? <Alert severity="warning">{t('review.changes.diffStale', { message: changesError.message })}</Alert> : null}
       {changesLoading && !diffs.length ? <LoadingSkeleton label={t('review.changes.loading')} variant="changes" /> : null}
@@ -76,7 +78,22 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
   )
 }
 
-function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading, nextPage, onNextPage, onPrevPage, onSelect, page, selected, versionPicker }: { baseSha?: string; commits: Commit[]; compareFrom: string | null; local?: LocalChoice; headSha?: string; loading: boolean; nextPage: number | null; onNextPage: () => void; onPrevPage: () => void; onSelect: (sha: string | null) => void; page: number; selected: string | null; versionPicker: React.ReactNode }) {
+/** The end of the commit row: older commits load as it comes near, or from the button for keyboard use. */
+function MoreCommitsEnd({ more, rootRef }: { more: MoreCommits; rootRef: React.RefObject<HTMLDivElement | null> }) {
+  const t = useT()
+  const { auto, onLoad } = more
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!auto || !sentinel || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoad() }, { root: rootRef.current, rootMargin: '0px 480px 0px 0px' })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [auto, onLoad, rootRef])
+  return <Box ref={sentinelRef} sx={{ flexShrink: 0, px: 1 }}>{more.loading ? <Typography color="textSecondary" role="status" variant="caption">{t('review.changes.loadingCommits')}</Typography> : <Button onClick={onLoad} size="small">{t('review.changes.nextCommits')}</Button>}</Box>
+}
+
+function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading, more, onSelect, selected, versionPicker }: { baseSha?: string; commits: Commit[]; compareFrom: string | null; local?: LocalChoice; headSha?: string; loading: boolean; more: MoreCommits | null; onSelect: (sha: string | null) => void; selected: string | null; versionPicker: React.ReactNode }) {
   const t = useT()
   const showingLocal = Boolean(local?.active)
   const wholeMergeRequest = selected === null && !compareFrom && !showingLocal
@@ -105,7 +122,17 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
     observer.observe(scroller)
     if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
     scroller.addEventListener('scroll', update, { passive: true })
-    return () => { observer.disconnect(); scroller.removeEventListener('scroll', update) }
+    // The mouse wheel turns the row; at either end it goes on to scroll the page.
+    const turnWheel = (event: WheelEvent) => {
+      if (event.shiftKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      const left = Math.min(scroller.scrollWidth - scroller.clientWidth, Math.max(0, scroller.scrollLeft + event.deltaY))
+      // scrollLeft is fractional at some widths while scrollWidth is rounded, so the end is within a pixel.
+      if (Math.abs(left - scroller.scrollLeft) < 1) return
+      event.preventDefault()
+      scroller.scrollLeft = left
+    }
+    scroller.addEventListener('wheel', turnWheel, { passive: false })
+    return () => { observer.disconnect(); scroller.removeEventListener('scroll', update); scroller.removeEventListener('wheel', turnWheel) }
   }, [])
   const scrollBy = (direction: 1 | -1) => {
     const scroller = scrollerRef.current
@@ -114,14 +141,13 @@ function CommitTimeline({ baseSha, commits, compareFrom, local, headSha, loading
   const scrollable = overflow.left || overflow.right
   return <Stack spacing={0.5}>
     <Row spacing={0.5} sx={{ minWidth: 0 }}>
-      {page > 1 ? <Button onClick={onPrevPage} size="small" sx={{ flexShrink: 0 }}>{t('review.changes.previousCommits')}</Button> : null}
       {scrollable ? <Tooltip title={t('review.changes.scrollLeftTooltip')}><span><IconButton aria-label={t('review.changes.scrollLeft')} disabled={!overflow.left} onClick={() => scrollBy(-1)}><ChevronLeftRoundedIcon /></IconButton></span></Tooltip> : null}
       <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, height: 48, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}><Row spacing={0.5} sx={{ minWidth: 'max-content' }}>
         <Button aria-pressed={wholeMergeRequest} color="inherit" data-commit-item onClick={() => onSelect(null)} sx={item(wholeMergeRequest)} tabIndex={tabStop === null ? 0 : -1}>{t('review.changes.wholeMr')}</Button>
         {loading ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">{t('review.changes.loadingCommits')}</Typography> : commits.map((commit) => { const time = commit.committedAt || commit.createdAt; return <Tooltip describeChild key={commit.id} title={`${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={selected === commit.id} color="inherit" data-commit-item onClick={() => onSelect(commit.id)} sx={{ ...item(selected === commit.id), justifyContent: 'flex-start', gap: 1, maxWidth: 420 }} tabIndex={tabStop === commit.id ? 0 : -1}><Box component="span" sx={{ color: 'primary.main', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', flexShrink: 0 }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box>{time ? <Box component="time" dateTime={time} sx={{ color: 'text.secondary', flexShrink: 0, fontSize: 'caption.fontSize' }}>{formatAbsoluteTime(time)}</Box> : null}</Button></Tooltip> })}
+        {more ? <MoreCommitsEnd more={more} rootRef={scrollerRef} /> : null}
       </Row></Box>
       {scrollable ? <Tooltip title={t('review.changes.scrollRightTooltip')}><span><IconButton aria-label={t('review.changes.scrollRight')} disabled={!overflow.right} onClick={() => scrollBy(1)}><ChevronRightRoundedIcon /></IconButton></span></Tooltip> : null}
-      {nextPage !== null ? <Button onClick={onNextPage} size="small" sx={{ flexShrink: 0 }}>{t('review.changes.nextCommits')}</Button> : null}
     </Row>
     <Row spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
       <Typography color="textSecondary" variant="caption">

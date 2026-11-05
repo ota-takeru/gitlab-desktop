@@ -72,10 +72,23 @@ function GridImage({ alt, src }: { alt: string; src: string }) {
   return <Box component="img" alt={alt} loading="lazy" ref={ref} src={src} sx={{ display: 'block', height: 'auto', maxHeight: 480, maxWidth: '100%', mb: `${rest}px`, objectFit: 'contain' }} />
 }
 
+/** Up to this many characters a table cell keeps one line, so an ID or a date is not split to make room for a sentence. */
+const SHORT_CELL_LENGTH = 16
+
+function textLength(node: MarkdownNode | undefined): number {
+  return (node?.value?.length ?? 0) + (node?.children ?? []).reduce((total, child) => total + textLength(child), 0)
+}
+
+const isShortCell = (node: MarkdownNode | undefined) => textLength(node) <= SHORT_CELL_LENGTH || undefined
+
 const components: Components = {
   a: ({ href, children }) => <MarkdownAnchor href={href}>{children}</MarkdownAnchor>,
   img: ({ alt, src }) => <MarkdownImage alt={alt} src={src} />,
   code: ({ children }) => <Typography component="code" variant="code" sx={{ fontSize: 'inherit', whiteSpace: 'pre-wrap' }}>{children}</Typography>,
+  // A wide or long table scrolls by itself, so its scrollbars stay beside it and the text around it stays put.
+  table: (props) => <div data-table-scroll><table {...{ ...props, node: undefined }} /></div>,
+  td: ({ node, ...props }) => <td {...props} data-short-cell={isShortCell(node)} />,
+  th: ({ node, ...props }) => <th {...props} data-short-cell={isShortCell(node)} />,
 }
 
 /** Parsed comment bodies, most recently used last; reopening a thread reuses them. */

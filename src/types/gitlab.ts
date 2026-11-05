@@ -482,6 +482,8 @@ export interface MergeRequest {
   createdAt?: string
   headSha: string | null
   diffRefs: DiffRefs | null
+  /** GitLab's count of changed files; `1000+` once it stopped counting at a limit. Only an MR's own read has it. */
+  changesCount?: string | null
   projectPath?: string | null
   draft?: boolean
   labels?: string[]

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -24,6 +24,7 @@ const detailMocks = vi.hoisted(() => {
   const session = { id: 'session-42', instanceUrl: 'https://gitlab.com', user: currentUser, serverVersion: '18.0' }
   return {
     commits: [] as { id: string; title: string }[],
+    commitPages: undefined as Record<number, { id: string; title: string }[]> | undefined,
     diff,
     fileContent: null as string | null,
     /** Diff pages by page number, when a test needs more than the one file. */
@@ -114,7 +115,7 @@ vi.mock('../../lib/attachments', async () => ({
 }))
 
 vi.mock('../shared/useGitLabQuery', async () => {
-  const { useState } = await import('react')
+  const { useCallback, useState } = await import('react')
   return {
   applyConfirmedGitLabChange: detailMocks.applyConfirmedMock,
   useGitLabQuery: (_sessionId: string | null, query: { kind: string; page?: number; search?: string } | null) => {
@@ -128,7 +129,7 @@ vi.mock('../shared/useGitLabQuery', async () => {
     else if (query?.kind === 'file') data = detailMocks.fileContent === null ? null : { content: detailMocks.fileContent }
     else if (query?.kind === 'users') data = query.search === 'al' ? detailMocks.users : []
     else if (query?.kind === 'drafts') data = detailMocks.drafts
-    else if (query?.kind === 'commits') data = detailMocks.commits
+    else if (query?.kind === 'commits') data = detailMocks.commitPages?.[query.page ?? 1] ?? detailMocks.commits
     else if (query?.kind === 'approvals') data = []
     else if (query?.kind === 'mrAwards') data = detailMocks.mrAwards
     else if (query?.kind === 'noteAwards') data = detailMocks.noteAwards
@@ -136,13 +137,15 @@ vi.mock('../shared/useGitLabQuery', async () => {
     else if (query?.kind === 'mrPipelines') data = []
     else if (query?.kind === 'mrVersions') data = detailMocks.versions
     else if (query?.kind === 'versionCompare') data = [detailMocks.diff]
+    const refresh = useCallback(() => { if (query) { detailMocks.refreshKinds.push(query.kind); if (!detailMocks.holdRefresh) setFetchedAt((current) => current + 1) } }, [query])
+    const pages: Record<number, unknown> | undefined = query?.kind === 'diffs' ? detailMocks.diffPages ?? undefined : query?.kind === 'commits' ? detailMocks.commitPages : undefined
     return {
       data,
       error: null,
       loading: false,
       refreshing: false,
-      refresh: () => { if (query) { detailMocks.refreshKinds.push(query.kind); if (!detailMocks.holdRefresh) setFetchedAt((current) => current + 1) } },
-      snapshot: query ? { data, source: 'network', nextPage: query.kind === 'diffs' && detailMocks.diffPages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt } : null,
+      refresh,
+      snapshot: query ? { data, source: 'network', nextPage: pages?.[(query.page ?? 1) + 1] ? (query.page ?? 1) + 1 : null, completeness: 'complete', fetchedAt } : null,
       stale: false,
     }
   },
@@ -998,6 +1001,57 @@ describe('MergeRequestDetail header, results and pending review', () => {
     expect(screen.getByRole('button', { name: /次のコミット内容/u })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: /次のコミット内容/u }))
     expect(screen.getByText('コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。')).toBeInTheDocument()
+  })
+
+  it('adds older commits to the row as its end comes near, keeping the ones listed', async () => {
+    const observers: { callback: IntersectionObserverCallback; disconnect: () => void }[] = []
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(public callback: IntersectionObserverCallback) { observers.push(this) }
+      observe() { return undefined }
+      disconnect() { observers.splice(observers.indexOf(this), 1) }
+    })
+    detailMocks.commitPages = {
+      1: [{ id: 'aaaaaaaa1', title: '一番新しいコミット' }, { id: 'bbbbbbbb2', title: '二番目のコミット' }],
+      // A push moved the second commit down, so it comes again here.
+      2: [{ id: 'bbbbbbbb2', title: '二番目のコミット' }, { id: 'cccccccc3', title: '古いコミット' }],
+      3: [{ id: 'dddddddd4', title: '一番古いコミット' }],
+    }
+    const reach = () => act(() => observers.at(-1)?.callback([{ isIntersecting: true } as IntersectionObserverEntry], observers.at(-1) as unknown as IntersectionObserver))
+    try {
+      renderDetail('changes')
+      await screen.findByRole('button', { name: /一番新しいコミット/u })
+      expect(screen.queryByRole('button', { name: /古いコミット/u })).not.toBeInTheDocument()
+      reach()
+      expect(await screen.findByRole('button', { name: /^cccccccc?.*古いコミット/u })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /一番新しいコミット/u })).toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: /二番目のコミット/u })).toHaveLength(1)
+      reach()
+      expect(await screen.findByRole('button', { name: /一番古いコミット/u })).toBeInTheDocument()
+      // The last page was read, so nothing more is offered.
+      expect(screen.queryByRole('button', { name: '次のコミット' })).not.toBeInTheDocument()
+    } finally {
+      detailMocks.commitPages = undefined
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('turns the commit row with the mouse wheel, and leaves the wheel to the page at its end', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() { return undefined } disconnect() { return undefined } })
+    detailMocks.commits = [{ id: 'aaaaaaaa1', title: '最初のコミット' }]
+    try {
+      renderDetail('changes')
+      const row = await screen.findByRole('toolbar', { name: '比較対象' })
+      Object.defineProperty(row, 'scrollWidth', { value: 1000 })
+      Object.defineProperty(row, 'clientWidth', { value: 400 })
+      expect(fireEvent.wheel(row, { deltaY: 200 })).toBe(false)
+      expect(row.scrollLeft).toBe(200)
+      // The end may be a fraction of a pixel short of the rounded widths.
+      row.scrollLeft = 599.5
+      expect(fireEvent.wheel(row, { deltaY: 200 })).toBe(true)
+      expect(row.scrollLeft).toBe(599.5)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

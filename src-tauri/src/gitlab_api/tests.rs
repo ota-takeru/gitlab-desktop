@@ -1620,6 +1620,12 @@ fn optional_review_metadata_and_todos_preserve_resource_types() {
     assert!(normalized["pipeline"].is_null());
     assert_eq!(normalized["assignees"], json!([]));
     assert_eq!(normalized["labels"], json!([]));
+    assert!(normalized["changesCount"].is_null());
+    mr["changes_count"] = json!("1000+");
+    assert_eq!(
+        normalize_merge_request(&mr).unwrap()["changesCount"],
+        "1000+"
+    );
     mr["references"] = json!({"full": "group/project!3"});
     mr["draft"] = json!(true);
     mr["labels"] = json!(["bug"]);

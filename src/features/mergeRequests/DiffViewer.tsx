@@ -47,6 +47,7 @@ import type { ThreadActions } from './DiffThreads'
 import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine, type FileThreadCount } from './diffLineThreads'
 import { highlightLines, languageForPath, type SyntaxToken } from '../../lib/syntaxHighlight'
 import { ignoreWhitespace as ignoreWhitespaceChanges, parseDiff, type DiffHunk, type ParsedDiff, type ParsedLine } from './diffParser'
+import { canReadOmittedDiff, isDiffOmitted, OmittedDiffReader, type OmittedDiffRead } from './omittedDiff'
 import { positionLines } from './diffLineThreads'
 import type { SuggestionActions } from './SuggestionBlock'
 import { positionIndexRange, rangePosition } from './suggestions'
@@ -106,7 +107,13 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const [fileAnchor, setFileAnchor] = useState<{ path: string; line: number; top?: number } | null>(null)
   /** The line to show after returning to the diff, and where it was on screen when measured. */
   const restoreDiffAnchor = useRef<{ path: string; line: number; top?: number } | null>(null)
-  const parsed = useMemo(() => selectedDiff ? parseDiff(selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [selectedDiff])
+  // A file GitLab left the diff of out is compared here from its two versions. It stays read-only: GitLab has not stored these lines.
+  const omittedKey = selectedDiff && isDiffOmitted(selectedDiff) && canReadOmittedDiff(selectedDiff, fileSource) ? `${fileSource?.sessionId}\0${fileSource?.projectId}\0${fileSource?.beforeSha ?? ''}\0${fileSource?.sha}\0${selectedDiff.oldPath}\0${selectedDiff.newPath}` : null
+  const [omittedRead, setOmittedRead] = useState<{ key: string; read: OmittedDiffRead } | null>(null)
+  const omitted: OmittedDiffRead | null = omittedKey ? omittedRead?.key === omittedKey ? omittedRead.read : { status: 'loading' } : null
+  const reportOmitted = useCallback((read: OmittedDiffRead) => { if (omittedKey) setOmittedRead({ key: omittedKey, read }) }, [omittedKey])
+  const comparedDiff = omitted?.status === 'ready' ? omitted.diff : null
+  const parsed = useMemo(() => selectedDiff ? parseDiff(comparedDiff ?? selectedDiff.diff, selectedDiff.oldPath, selectedDiff.newPath) : EMPTY_PARSED_DIFF, [comparedDiff, selectedDiff])
   const [blameOpen, setBlameOpen] = useState(false)
   /** The lines whose history replaces the diff, for the file it was opened from. */
   const [history, setHistory] = useState<{ path: string; start: HistoryCursor } | null>(null)
@@ -133,7 +140,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const folded = useMemo(() => whitespaceIgnored ? ignoreWhitespaceChanges(parsed.lines) : null, [parsed, whitespaceIgnored])
   const displayLines = folded?.lines ?? parsed.lines
   const whitespaceOnlyFile = Boolean(folded && !folded.changed && parsed.lines.some((line) => line.kind !== 'context'))
-  const diffKey = selectedDiff ? `${displayedPath}\0${selectedDiff.diff}\0${whitespaceIgnored}` : ''
+  const diffKey = selectedDiff ? `${displayedPath}\0${comparedDiff ?? selectedDiff.diff}\0${whitespaceIgnored}` : ''
   const markdownDiff = Boolean(displayedPath && isMarkdownFilePath(displayedPath))
   const [markdownMode, setMarkdownMode] = useState<{ key: string; mode: 'preview' | 'source' } | null>(null)
   const [diffSearch, setDiffSearch] = useState('')
@@ -329,7 +336,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const markdownRepository = useMemo(() => sourceProjectId && sourceSha && displayedPath ? { projectId: sourceProjectId, path: displayedPath, ref: sourceSha } : undefined, [displayedPath, sourceProjectId, sourceSha])
   // The same query as the whole-file view, so both share one cached read.
   const gapQuery = useMemo<FileQuery | null>(() => sourceProjectId && sourceSha && displayedPath ? { kind: 'file', path: displayedPath, projectId: sourceProjectId, sha: sourceSha } : null, [displayedPath, sourceProjectId, sourceSha])
-  const gapsExpandable = Boolean(selectedDiff && !selectedDiff.deletedFile && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid')
+  const gapsExpandable = Boolean(selectedDiff && !selectedDiff.deletedFile && (comparedDiff !== null || (!selectedDiff.collapsed && !selectedDiff.tooLarge)) && parsed.status === 'valid')
   const expandGap = useCallback((key: string, shown: number) => setShownGaps((current) => ({ diffKey, shown: new Map(current.diffKey === diffKey ? current.shown : []).set(key, shown) })), [diffKey])
   const gapShown = shownGaps.diffKey === diffKey ? shownGaps.shown : NO_SHOWN_GAPS
   const gapReadable = Boolean(gapQuery && sourceSessionId)
@@ -583,8 +590,13 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             {treeShown ? null : fileSearchField(false)}
           </Stack>
           {fileSearch.trim() && fileSearchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.fileTree.noMatch')}</Typography> : null}
-          {selectedDiff?.tooLarge ? <Box sx={{ p: 2 }}><Row spacing={1}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">{t('review.diff.tooLarge')}</Typography></Row></Box> : null}
-          {selectedDiff?.collapsed ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">{t('review.diff.collapsed')}</Typography></Box> : null}
+          {omittedKey && selectedDiff && fileSource ? <OmittedDiffReader key={omittedKey} diff={selectedDiff} onRead={reportOmitted} source={fileSource} /> : null}
+          {omitted?.status === 'loading' ? <Typography color="textSecondary" role="status" sx={{ display: 'block', px: 1.5, pt: 1 }} variant="caption">{t('review.diff.omitted.loading')}</Typography> : null}
+          {omitted?.status === 'ready' ? <Typography color="textSecondary" role="note" sx={{ display: 'block', px: 1.5, pt: 1 }} variant="caption">{t(omitted.diff ? 'review.diff.omitted.notice' : 'review.diff.omitted.noChange')}</Typography> : null}
+          {selectedDiff?.tooLarge && omitted?.status !== 'ready' && omitted?.status !== 'loading' ? <Box sx={{ p: 2 }}><Row spacing={1}><ErrorOutlineRoundedIcon color="warning" fontSize="small" /><Typography variant="body2">{t('review.diff.tooLarge')}</Typography></Row></Box> : null}
+          {selectedDiff?.collapsed && omitted?.status !== 'ready' && omitted?.status !== 'loading' ? <Box sx={{ p: 2 }}><Typography color="textSecondary" variant="body2">{t('review.diff.collapsed')}</Typography></Box> : null}
+          {omitted?.status === 'notComparable' ? <Typography color="warning" role="status" sx={{ display: 'block', px: 2, pb: 1 }} variant="caption">{t('review.diff.omitted.notComparable')}</Typography> : null}
+          {omitted?.status === 'failed' ? <Typography color="warning" role="status" sx={{ display: 'block', px: 2, pb: 1 }} variant="caption">{t('review.diff.omitted.failed', { message: omitted.message })}</Typography> : null}
           {historyStart && fileSource ? <LineHistoryView key={JSON.stringify(historyStart)} iid={fileSource.iid} onClose={closeHistory} onRestart={(start) => setHistory({ path: displayedPath ?? '', start })} projectId={fileSource.projectId} projectUrl={fileSource.projectUrl} sessionId={fileSource.sessionId} start={historyStart} /> : null}
           {/* The file stays mounted under the history, so closing it keeps its place, opened lines and editors. */}
           <Box sx={historyStart ? { display: 'none' } : { display: 'contents' }}>

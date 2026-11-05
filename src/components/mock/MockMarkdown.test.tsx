@@ -11,6 +11,24 @@ describe('local Markdown preview', () => {
     expect(container.querySelector('pre code')).toHaveTextContent('const value = 1')
   })
 
+  it('keeps short table cells on one line and scrolls each table by itself', () => {
+    const sentence = '環境変数が未設定のときは既定値を使うこと'
+    const { container } = render(<MockMarkdown body={`| ID | 内容 |\n| --- | :--- |\n| PO-19 | ${sentence} |\n| **1234567890123456** | [12345678901234567](https://example.test/) |`} />)
+    expect(container.querySelector('[data-table-scroll] > table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'ID' })).toHaveAttribute('data-short-cell')
+    expect(screen.getByRole('cell', { name: 'PO-19' })).toHaveAttribute('data-short-cell')
+    expect(screen.getByRole('cell', { name: '1234567890123456' })).toHaveAttribute('data-short-cell')
+    expect(screen.getByRole('cell', { name: sentence })).not.toHaveAttribute('data-short-cell')
+    expect(screen.getByRole('cell', { name: '12345678901234567' })).not.toHaveAttribute('data-short-cell')
+    expect(screen.getByRole('cell', { name: sentence })).toHaveStyle({ textAlign: 'left' })
+  })
+
+  it('keeps the source lines of a table in a reviewed file', () => {
+    const review = { addedLines: new Set<number>(), removedByAnchor: new Map(), consistent: true }
+    const { container } = render(<MockMarkdown body={'| ID |\n| --- |\n| PO-19 |'} review={review} />)
+    expect(container.querySelector('[data-table-scroll] > table')).toHaveAttribute('data-source-start', '1')
+  })
+
   it('does not render raw HTML, executable links or remote image requests', () => {
     const { container } = render(<MockMarkdown body={'<script>alert(1)</script>\n\n[unsafe](javascript:alert)\n\n![private](https://example.test/private.png)\n\n[docs](https://docs.gitlab.com/)'} />)
     expect(container.querySelector('script')).toBeNull()
