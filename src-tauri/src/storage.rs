@@ -149,13 +149,24 @@ impl Store {
     }
 
     pub fn get(&mut self, account: &str, key: &str) -> Result<Option<Snapshot>, AppError> {
+        self.get_since(account, key, 0)
+    }
+
+    /// Like `get`, but only an answer fetched at or after `since` (ms); an
+    /// older one is skipped in SQL instead of being read and parsed.
+    pub fn get_since(
+        &mut self,
+        account: &str,
+        key: &str,
+        since: u64,
+    ) -> Result<Option<Snapshot>, AppError> {
         // Expired rows are skipped here and deleted by the next write, so a read
         // does not have to scan the whole cache.
         let text: Option<String> = self
             .0
             .query_row(
                 "SELECT snapshot FROM cache WHERE account=? AND key=? AND fetched >= ?",
-                params![account, key, retention_cutoff()],
+                params![account, key, retention_cutoff().max(since as i64)],
                 |row| row.get(0),
             )
             .optional()

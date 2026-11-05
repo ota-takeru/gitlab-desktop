@@ -25,7 +25,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { hairline } from '../components/hairline'
@@ -52,15 +52,14 @@ import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog'
 import { ConnectionProvider } from './connections/ConnectionProvider'
 import { useConnection } from './connections/connectionContext'
 import { ConnectionView } from './connections/ConnectionView'
-import { ScanFolders } from './mergeRequests/LocalChanges'
-import { MergeRequestDetail, type ReviewTab } from './mergeRequests/MergeRequestDetail'
+import type { ReviewTab } from './mergeRequests/MergeRequestDetail'
 import { clearComposerBuffers } from './mergeRequests/composerBuffers'
 import { clearGitLabCache } from '../lib/gitlab'
 import { clearComposerBufferStore, flushComposerBuffers } from './mergeRequests/useComposerBuffer'
 import { WindowCloseProtection } from '../components/WindowCloseProtection'
 import { MergeRequestList } from './mergeRequests/MergeRequestList'
 import { BranchList } from './projects/BranchList'
-import { CodeBrowser, type CodeLocation } from './projects/CodeBrowser'
+import type { CodeLocation } from './projects/CodeBrowser'
 import { CommitHistory, type HistoryLocation } from './projects/CommitHistory'
 import { ProjectView } from './projects/ProjectView'
 import { ProjectOverview } from './projects/ProjectOverview'
@@ -167,11 +166,25 @@ function trackConnectivity() {
 /** The development fixtures still pass a fixed light/dark mode with a toggle. */
 type ClientAppProps = ColorPreferenceProps | { mode: ColorMode; onModeChange: () => void }
 
+// The review and code screens carry the editor and syntax highlighting, the largest
+// part of the code; the list opens without them and they load while the app is idle.
+const loadMergeRequestDetail = () => import('./mergeRequests/MergeRequestDetail')
+const loadCodeBrowser = () => import('./projects/CodeBrowser')
+const CodeBrowser = lazy(() => loadCodeBrowser().then(({ CodeBrowser }) => ({ default: CodeBrowser })))
+// Local clones are set up in the settings; their module carries the diff view.
+const ScanFolders = lazy(() => import('./mergeRequests/LocalChanges').then(({ ScanFolders }) => ({ default: ScanFolders })))
+
+function preloadScreens() {
+  const idle = globalThis.requestIdleCallback ?? ((callback: () => void) => globalThis.setTimeout(callback, 1))
+  idle(() => { void loadMergeRequestDetail().then(() => idle(() => { void loadCodeBrowser() })).catch(() => undefined) })
+}
+
 export function ClientApp(props: ClientAppProps) {
   const { colorPreference, onColorPreferenceChange }: ColorPreferenceProps = 'colorPreference' in props
     ? props
     : { colorPreference: props.mode, onColorPreferenceChange: (next) => { if (next !== props.mode && next !== 'system') props.onModeChange() } }
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { gcTime: 15 * 60_000, refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } }, queryCache: trackConnectivity() }))
+  useEffect(preloadScreens, [])
   useEffect(() => {
     const handleWorkspaceReset = () => clearComposerBuffers()
     globalThis.addEventListener('gitlab-explicit-logout', handleWorkspaceReset)
@@ -205,7 +218,6 @@ function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, se
   const { session } = useConnection()
   // Everything below renders again only for the setting it reads, not for every workspace write.
   const workspace = usePersonalWorkspace(session, (data) => String(data.settings.autoRefresh))
-  const autoInstallAllowed = useAutoUpdateAllowed() && status !== 'checking'
   // The updater stays mounted across authentication resets so its install guard
   // and result remain active for the lifetime of the app.
   return <Box sx={{ bgcolor: 'background.default', display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -213,17 +225,17 @@ function SessionWorkspaceContents({ colorPreference, onColorPreferenceChange, se
     {/* Unsent text and pending writes hold back app updates, not data refresh: typed text lives in its own buffers. */}
     <QueryRefreshPolicy value={workspace.settings.autoRefresh}>
       <WorkspaceMonitor key={sessionKey} />
-      <ClientWorkspace colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} autoInstallAllowed={autoInstallAllowed} sessionKey={sessionKey} status={status} />
+      <ClientWorkspace colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} sessionKey={sessionKey} status={status} />
     </QueryRefreshPolicy>
   </Box>
 }
 
-function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstallAllowed, sessionKey, status }: ColorPreferenceProps & { autoInstallAllowed: boolean; sessionKey: string; status: string }) {
+function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey, status }: ColorPreferenceProps & { sessionKey: string; status: string }) {
   const { reauthRequired, session } = useConnection()
   const t = useT()
   // The screens read only the pinned and open tabs here.
   const workspace = usePersonalWorkspace(session, (data) => JSON.stringify([data.pinned, data.open]))
-  const locationHash = useSyncExternalStore(subscribeToClientLocation, getClientLocationHash, getClientLocationHash)
+  const locationHash = useClientLocationHash()
   // An expired token keeps the screen where it was, so reconnecting returns to it.
   const awaitingReauth = !session && Boolean(reauthRequired)
   const location = readClientLocation(Boolean(session) || awaitingReauth, locationHash, session?.user.id)
@@ -451,15 +463,16 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
     globalThis.dispatchEvent(new Event('gitlab-client-location-change'))
   }
 
-  const openMergeRequest = (nextMergeRequest: MergeRequest) => {
+  // Opening an MR renders it in a transition, as every change of the location does.
+  const openMergeRequest = (nextMergeRequest: MergeRequest) => startTransition(() => {
     setOpenedMergeRequest({ sessionKey, mergeRequest: nextMergeRequest })
     select({ iid: nextMergeRequest.iid, projectId: nextMergeRequest.projectId })
-  }
+  })
 
-  const openMergeRequestRef = (ref: MrRef | null, tab?: ReviewTab) => {
+  const openMergeRequestRef = (ref: MrRef | null, tab?: ReviewTab) => startTransition(() => {
     setOpenedMergeRequest(null)
     select(ref, tab)
-  }
+  })
   // A link opens the MR on the tab its URL names, and at the comment its `#note_<id>` names.
   const openMergeRequestTarget = (ref: MrRef, target?: MergeRequestTarget) => {
     setNoteFocus(target?.noteId ? { key: mrRefKey(ref), noteId: target.noteId } : null)
@@ -586,7 +599,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
           </Box>
           {/* Notifications are not a place: they open over the page, from beside the settings. */}
           <List data-no-peek disablePadding sx={{ mt: 1 }}><NotificationNavItem collapsed={navCollapsed} navigationWidth={sidebarIsCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} onOpen={(ref, noteId) => openMergeRequestTarget(ref, { tab: 'discussion', ...(noteId ? { noteId } : {}) })} onOpenChange={foldForNotifications} /></List>
-          <UpdateSidebarButton autoInstallAllowed={autoInstallAllowed} collapsed={navCollapsed} onOpenUnsent={openUnsent} />
+          <AutoInstallAllowed status={status}>{(allowed) => <UpdateSidebarButton autoInstallAllowed={allowed} collapsed={navCollapsed} onOpenUnsent={openUnsent} />}</AutoInstallAllowed>
           {/* The account and the settings are one entry: theme and connection both live in the settings. */}
           <Tooltip placement="right" title={navCollapsed ? session ? t('app.nav.settings.tooltip', { name: session.user.name, username: session.user.username }) : t('app.nav.settings.tooltipDisconnected') : ''}>
             <ListItemButton aria-current={route === 'settings' ? 'page' : undefined} aria-label={session ? t('app.nav.settings.label', { username: session.user.username }) : t('app.nav.settings.labelDisconnected')} onClick={() => navigate('settings')} selected={route === 'settings'} sx={{ ...hairline('top'), color: 'text.secondary', flexGrow: 0, gap: 1, justifyContent: navCollapsed ? 'center' : 'initial', minHeight: 40, mt: 1, px: navCollapsed ? 0 : 1, py: 0.5, '&:hover': { color: 'text.primary' }, '&.Mui-selected': { bgcolor: 'action.selected', color: 'text.primary' } }}>
@@ -611,7 +624,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
             {waitingForSessionRestore ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}><RestoreSessionPanel /></Box> : null}
             {!waitingForSessionRestore && route === 'settings' ? (
               <Box component="main" sx={{ flex: 1, overflow: 'auto' }}>
-                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><SettingsView autoInstallAllowed={autoInstallAllowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onOpenUnsent={openUnsent} onShowShortcuts={() => setShortcutsOpen(true)} /></Box>
+                <Box sx={{ maxWidth: 880, mx: 'auto', px: { md: 3, xs: 2 }, py: 3.5 }}><AutoInstallAllowed status={status}>{(allowed) => <SettingsView autoInstallAllowed={allowed} colorPreference={colorPreference} onColorPreferenceChange={onColorPreferenceChange} onOpenUnsent={openUnsent} onShowShortcuts={() => setShortcutsOpen(true)} />}</AutoInstallAllowed></Box>
               </Box>
             ) : null}
             {!waitingForSessionRestore && route !== 'settings' && awaitingReauth ? <Box aria-label={t('app.pane.list')} component="section" sx={{ bgcolor: 'surface.list', flex: 1, minWidth: 0 }}>
@@ -633,7 +646,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
                 {route === 'mrs' ? <MergeRequestList actions={hubActions} key={`${session?.instanceUrl ?? 'anonymous'}:${session?.user.id ?? 'anonymous'}:${listMount.key}`} initialParams={listParams} navigation={projectNavigation} onOpenMergeRequest={openMergeRequest} onSearchStateChange={updateMergeRequestLocation} projectId={params.projectId} projectName={params.projectName} recentMrId={recentMrId} selected={selected} /> : null}
                 {route === 'history' ? <CommitHistory key={params.projectId} location={historyLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('history', { ...projectBase, ...historyParams(next) })} onOpenMergeRequest={openMergeRequestRef} projectId={params.projectId} projectName={projectBase.projectName} projectUrl={params.projectUrl} /> : null}
                 {route === 'branches' ? <BranchList key={params.projectId} navigation={projectNavigation} onShowHistory={(ref) => navigate('history', { ...projectBase, ref })} onShowMergeRequests={(branch) => navigate('mrs', { projectId: params.projectId, projectName: params.projectName ?? t('project.fallbackName', { id: params.projectId }), sourceBranch: branch, state: 'all' })} projectId={params.projectId} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
-                {route === 'code' ? <CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} onShowHistory={(path) => navigate('history', { ...projectBase, ...historyParams({ path, ref: params.ref }) })} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /> : null}
+                {route === 'code' ? <Suspense fallback={<Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, p: 2 }} variant="body2">{t('app.loading')}</Typography>}><CodeBrowser key={params.projectId} location={codeLocation(params)} navigation={projectNavigation} onNavigate={(next) => navigate('code', codeParams(params, next))} onShowHistory={(path) => navigate('history', { ...projectBase, ...historyParams({ path, ref: params.ref }) })} projectId={params.projectId} projectUrl={params.projectUrl} projectName={params.projectName ?? t('project.fallbackName', { id: params.projectId })} /></Suspense> : null}
                 </AppErrorBoundary>
                 </QueryRefreshPolicy>
                 </KeepAlive>
@@ -662,7 +675,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, autoInstall
       </Box>
       {/* Update notices live in the bar, in a slot of fixed height, so the page never shifts. */}
       <ConnectionStatusBar awaitingReauth={awaitingReauth} trailing={<>
-        <UpdatePanel autoInstallAllowed={autoInstallAllowed} notificationOnly onOpenUnsent={openUnsent} />
+        <AutoInstallAllowed status={status}>{(allowed) => <UpdatePanel autoInstallAllowed={allowed} notificationOnly onOpenUnsent={openUnsent} />}</AutoInstallAllowed>
         <AppVersionLabel />
       </>} />
     </Box>
@@ -701,7 +714,8 @@ function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizi
   }, [collapsed, notificationsOpen, peeking, resting])
   // Followed per element rather than on entering, so moving onto or off the notification button counts.
   const follow = (event: ReactMouseEvent<HTMLElement>) => {
-    if (notificationsOpen) return
+    // Expanded, resting does nothing, and following it would render the navigation on every move onto it.
+    if (notificationsOpen || !collapsed) return
     setResting(!(event.target instanceof Element && event.target.closest('[data-no-peek]')))
   }
   const leave = () => {
@@ -835,7 +849,7 @@ function SettingsView({ autoInstallAllowed, colorPreference, onColorPreferenceCh
     </SettingsSection>
     <SettingsSection description={t('settings.language.description')} id="settings-language" title={t('settings.language.title')}><LanguageSettings /></SettingsSection>
     <SettingsSection description={t('settings.workspace.description')} id="settings-workspace" title={t('settings.workspace.title')}><WorkspaceSettings /></SettingsSection>
-    {session ? <SettingsSection description={t('settings.local.description')} id="settings-local" title={t('settings.local.title')}><ScanFolders sessionId={session.id} userId={session.user.id} /></SettingsSection> : null}
+    {session ? <SettingsSection description={t('settings.local.description')} id="settings-local" title={t('settings.local.title')}><Suspense fallback={<Typography color="textSecondary" role="status" sx={delayedRevealSx} variant="body2">{t('app.loading')}</Typography>}><ScanFolders sessionId={session.id} userId={session.user.id} /></Suspense></SettingsSection> : null}
     <SettingsSection description={t('settings.update.description')} id="settings-update" title={t('settings.update.title')}><UpdatePanel autoInstallAllowed={autoInstallAllowed} onOpenUnsent={onOpenUnsent} /></SettingsSection>
     <SettingsSection description={t('settings.shortcuts.description')} id="settings-shortcuts" title={t('settings.shortcuts.title')}>
       <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
@@ -921,11 +935,11 @@ const MergeRequestRoute = memo(function MergeRequestRoute({ backLabel, focusNote
       </Row>
     </PaneEmpty>
   }
-  return <MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} focusNote={focusNote} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onNoteFocused={onNoteFocused} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} />
+  return <Suspense fallback={<MergeRequestSkeleton />}><MemoizedMergeRequestDetail initialMergeRequest={mergeRequest} backLabel={backLabel} focusNote={focusNote} key={`${mergeRequest.projectId}:${mergeRequest.iid}`} onBack={onBack} onNoteFocused={onNoteFocused} onOpenProject={openProject} onTabChange={onTabChange} tab={tab ?? openingTab} /></Suspense>
 })
 
 /** A refresh of the MR that returns the same data (as when a kept MR shows again) does not render the review again. */
-const MemoizedMergeRequestDetail = memo(MergeRequestDetail)
+const MemoizedMergeRequestDetail = memo(lazy(() => loadMergeRequestDetail().then(({ MergeRequestDetail }) => ({ default: MergeRequestDetail }))))
 
 /** Why an MR could not be shown, in the reader's terms; GitLab's own message is kept for anything else. */
 function describeMergeRequestFailure(error: GitLabCommandError | null): { title: string; description: string; retry: boolean } {
@@ -956,6 +970,14 @@ function MergeRequestSkeleton() {
   </Box>
 }
 
+/**
+ * Whether an update may install by itself, read where it is shown, so a composer that
+ * starts or stops holding updates back does not render the whole workspace again.
+ */
+function AutoInstallAllowed({ children, status }: { children: (allowed: boolean) => ReactNode; status: string }) {
+  return children(useAutoUpdateAllowed() && status !== 'checking')
+}
+
 function RestoreSessionPanel() {
   const t = useT()
   return <Box aria-live="polite" role="status"><PaneEmpty title={t('app.restoring')} /></Box>
@@ -973,6 +995,22 @@ function subscribeToClientLocation(onChange: () => void) {
 }
 
 function getClientLocationHash() { return window.location.hash }
+
+/**
+ * The location the screens show. A change renders them in a transition, so a click
+ * returns at once and a later click interrupts the rendering; the MR tab strip shows
+ * the clicked tab itself meanwhile.
+ * (useSyncExternalStore would render the whole workspace inside the click.)
+ */
+function useClientLocationHash() {
+  const [hash, setHash] = useState(getClientLocationHash)
+  useEffect(() => {
+    const follow = () => startTransition(() => setHash(getClientLocationHash()))
+    follow()
+    return subscribeToClientLocation(follow)
+  }, [])
+  return hash
+}
 
 /** `userId` decides only where a location without a route starts. */
 function readClientLocation(hasSession: boolean, hash = window.location.hash, userId?: string): { raw: string; route: ClientRoute; params: Record<string, string> } {

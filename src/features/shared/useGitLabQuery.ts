@@ -1,5 +1,5 @@
-import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { keepPreviousData, notifyManager, QueryObserver, useQueryClient, type QueryClient, type QueryKey, type QueryObserverResult, type UseQueryOptions } from '@tanstack/react-query'
+import { startTransition, useCallback, useEffect, useMemo, useReducer, useState, useSyncExternalStore } from 'react'
 import { useQueryRefreshAllowed, useQueryRetention } from './QueryRefreshPolicy'
 import { useScreenReadiness } from '../../components/screenReadinessContext'
 import { translate } from '../../i18n/i18n'
@@ -61,7 +61,7 @@ export function useGitLabQuery<Q extends GitLabQuery>(
   const gcTime = useQueryRetention()
   const queryJson = useMemo(() => (query ? JSON.stringify(query) : ''), [query])
   const queryKey = useMemo(() => ['gitlab', sessionId ?? '', queryJson] as const, [queryJson, sessionId])
-  const loaded = useQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
+  const loaded = useTransitionQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
     enabled: Boolean(sessionId && query),
     // An explicit undefined would replace the client's default rather than keep it.
     ...(gcTime === undefined ? {} : { gcTime }),
@@ -143,6 +143,34 @@ export function useGitLabQuery<Q extends GitLabQuery>(
     snapshot,
     stale: Boolean(snapshot && (snapshot.source === 'cache' || queryError)),
   }
+}
+
+/**
+ * TanStack Query's useQuery, except that a change of the result renders the screen in a
+ * transition: an answer arriving while the reader clicks or scrolls is rendered in the
+ * background, in slices a click interrupts, instead of holding up the frame. A render for
+ * any other reason reads the latest result, as useQuery does. (useQuery follows the
+ * observer with useSyncExternalStore, which React always renders at once.)
+ * No suspense or error boundary: this app's queries use neither.
+ */
+function useTransitionQuery<T, E>(options: UseQueryOptions<T, E, T, QueryKey>): QueryObserverResult<T, E> {
+  const client = useQueryClient()
+  const defaultedOptions = client.defaultQueryOptions(options)
+  // The result is computed in the fetching state before subscribing or updating options.
+  defaultedOptions._optimisticResults = 'optimistic'
+  const [observer] = useState(() => new QueryObserver<T, E, T, T, QueryKey>(client, defaultedOptions))
+  const result = observer.getOptimisticResult(defaultedOptions)
+  const [, renderAgain] = useReducer((count: number) => count + 1, 0)
+  useEffect(() => {
+    const unsubscribe = observer.subscribe(notifyManager.batchCalls(() => startTransition(renderAgain)))
+    // A change between rendering and subscribing would otherwise be missed; it notifies the new subscriber.
+    observer.updateResult()
+    return unsubscribe
+  }, [observer])
+  useEffect(() => {
+    observer.setOptions(defaultedOptions)
+  }, [defaultedOptions, observer])
+  return observer.trackResult(result)
 }
 
 /**

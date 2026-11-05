@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MergeRequest } from '../../types/gitlab'
-import { canRebase, mergeReadiness, titleWithDraft } from './mergeActions'
+import { canRebase, mergeReadiness, mergeResolution, titleWithDraft } from './mergeActions'
 
 const base: MergeRequest = {
   author: { id: '1', name: 'Author', username: 'author' },
@@ -75,5 +75,38 @@ describe('titleWithDraft', () => {
     expect(titleWithDraft('[Draft] (draft) DRAFT: Add search', false)).toBe('Add search')
     expect(titleWithDraft('[draft] Add search', true)).toBe('Draft: Add search')
     expect(titleWithDraft('Drafting rules', false)).toBe('Drafting rules')
+  })
+})
+
+describe('mergeResolution', () => {
+  const mergeRequest = { canMerge: true, state: 'opened' } as MergeRequest
+  it.each([
+    ['draft_status', 'markReady'],
+    ['need_rebase', 'rebase'],
+    ['discussions_not_resolved', 'openDiscussion'],
+    ['requested_changes', 'openDiscussion'],
+    ['ci_must_pass', 'openPipelines'],
+    ['ci_still_running', 'openPipelines'],
+    ['not_approved', 'approve'],
+    ['conflict', 'openInGitLab'],
+    ['a_status_added_later', 'openInGitLab'],
+    ['mergeable', null],
+    ['checking', null],
+  ])('%s leads to %s', (detailedMergeStatus, resolution) => {
+    expect(mergeResolution({ ...mergeRequest, detailedMergeStatus })).toBe(resolution)
+  })
+
+  it('sends a status the server does not give to GitLab', () => {
+    expect(mergeResolution(mergeRequest)).toBe('openInGitLab')
+  })
+
+  it.each([
+    [{ canMerge: false }],
+    [{ canMerge: null }],
+    [{ autoMerge: true }],
+    [{ rebaseInProgress: true }],
+    [{ state: 'merged' }],
+  ])('offers nothing for %o', (change) => {
+    expect(mergeResolution({ ...mergeRequest, detailedMergeStatus: 'draft_status', ...change })).toBeNull()
   })
 })

@@ -9,13 +9,13 @@ import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { hairline } from '../../components/hairline'
 import { ListRow } from '../../components/ListRow'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { PaneEmpty, PaneHeader, PaneStatus } from '../../components/Pane'
-import { paneGutter, paneResultsSx } from '../../components/paneSx'
+import { delayedRevealSx, paneGutter, paneResultsSx } from '../../components/paneSx'
 import { Pager } from '../../components/Pager'
 import { RelativeTime } from '../../components/RelativeTime'
 import { Row } from '../../components/Row'
@@ -28,7 +28,6 @@ import type { MrRef } from '../shared/personalWorkspace'
 import { useFocusSearchShortcut } from '../shared/useFocusSearchShortcut'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { BranchSelect } from './BranchSelect'
-import { CommitDetail } from './CommitDetail'
 import { ProjectFetchAlerts } from './ProjectFetchAlerts'
 
 export interface HistoryLocation {
@@ -62,6 +61,9 @@ function groupByDay(commits: Commit[]): { label: string; commits: Commit[] }[] {
  * a path. A commit opens at the pane's full width, with the list kept underneath
  * so returning shows it as it was left.
  */
+// The commit's diff view is heavy and the overview shares this module's rows, so the view loads on demand.
+const CommitDetail = lazy(() => import('./CommitDetail').then(({ CommitDetail }) => ({ default: CommitDetail })))
+
 export function CommitHistory({ location, navigation, onNavigate, onOpenMergeRequest, projectId, projectName, projectUrl }: { location: HistoryLocation; navigation?: ReactNode; onNavigate: (next: HistoryLocation) => void; onOpenMergeRequest?: (ref: MrRef) => void; projectId: string; projectName: string; projectUrl?: string }) {
   const { session } = useConnection()
   const t = useT()
@@ -88,7 +90,7 @@ export function CommitHistory({ location, navigation, onNavigate, onOpenMergeReq
   const hasPages = page > 1 || result.snapshot?.nextPage != null
 
   return <Box component="section" sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
-    {sha ? <CommitDetail
+    {sha ? <Suspense fallback={<Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, p: 2 }} variant="body2">{t('app.loading')}</Typography>}><CommitDetail
       navigation={navigation}
       newer={shownIndex > 0 ? commits[shownIndex - 1].id : undefined}
       older={shownIndex >= 0 ? commits[shownIndex + 1]?.id : undefined}
@@ -100,7 +102,7 @@ export function CommitHistory({ location, navigation, onNavigate, onOpenMergeReq
       projectUrl={projectUrl}
       sessionId={session.id}
       sha={sha}
-    /> : null}
+    /></Suspense> : null}
     <Box sx={{ display: sha ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <PaneHeader
         actions={<Tooltip title={t('project.refresh')}><span><IconButton aria-label={t('project.refresh')} disabled={result.loading || result.refreshing} onClick={result.refresh}><RefreshRoundedIcon /></IconButton></span></Tooltip>}

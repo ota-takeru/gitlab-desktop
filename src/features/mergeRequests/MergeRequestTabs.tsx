@@ -9,6 +9,7 @@ import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import { startTransition } from 'react'
 
 import { MergeRequestStateIcon } from '../../components/MergeRequestStateIcon'
 import { alignTop, firstLine } from '../../components/rows'
@@ -29,6 +30,8 @@ export function MergeRequestTabs({ collapsed, onOpen, selected }: { collapsed: b
   const workspace = usePersonalWorkspace(session)
   if (!session) return null
   const selectedKey = selected ? mrRefKey(selected) : null
+  // The MR, and with it the selected tab, renders in a transition that a later click interrupts.
+  const open = (ref: MrRef) => startTransition(() => onOpen(ref))
   const close = (ref: MrRef) => {
     // Closing the shown MR shows its neighbour, as a browser does.
     if (mrRefKey(ref) === selectedKey) {
@@ -41,7 +44,7 @@ export function MergeRequestTabs({ collapsed, onOpen, selected }: { collapsed: b
     if (selectedKey && workspace.open.some((item) => mrRefKey(item) === selectedKey)) onOpen(null)
     workspace.closeAllTabs()
   }
-  const tab = (ref: MrRef, pinned: boolean, reorder: Reorder) => <MergeRequestTab collapsed={collapsed} key={mrRefKey(ref)} meta={workspace.tabs[mrRefKey(ref)]} mrRef={ref} onClose={pinned ? undefined : () => close(ref)} onOpen={() => onOpen(ref)} onTogglePin={() => pinned ? workspace.unpinToOpen(ref) : workspace.togglePinned(ref)} pinned={pinned} reorder={reorder} selected={mrRefKey(ref) === selectedKey} />
+  const tab = (ref: MrRef, pinned: boolean, reorder: Reorder) => <MergeRequestTab collapsed={collapsed} key={mrRefKey(ref)} meta={workspace.tabs[mrRefKey(ref)]} mrRef={ref} onClose={pinned ? undefined : () => close(ref)} onOpen={() => open(ref)} onTogglePin={() => pinned ? workspace.unpinToOpen(ref) : workspace.togglePinned(ref)} pinned={pinned} reorder={reorder} selected={mrRefKey(ref) === selectedKey} />
   // edge-exempt: the scroll area reaches 8px past the column and pads it back, so the tabs' focus rings are not clipped.
   return <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, mx: -1, overflowX: 'hidden', overflowY: 'auto', px: 1 }}>
     {workspace.pinned.length ? <TabSection items={workspace.pinned} label={t('mergeRequest.tabs.pinnedLabel')} onMove={workspace.moveTab} subheader={collapsed ? <Divider component="li" sx={{ my: 1 }} /> : <SectionHeading>{t('mergeRequest.tabs.pinnedHeading')}</SectionHeading>}>{(reorder) => workspace.pinned.map((ref) => tab(ref, true, reorder))}</TabSection> : null}

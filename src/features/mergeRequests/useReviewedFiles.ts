@@ -38,7 +38,8 @@ export function useReviewedFiles(context: ReviewedFileContext | undefined, diffs
     return new Set(diffs
       .filter((diff) => {
         const path = diff.newPath || diff.oldPath
-        return files[path] === diffFingerprint(revision, diff.diff)
+        // Only files marked reviewed are hashed; an unmarked file cannot match.
+        return files[path] !== undefined && files[path] === diffFingerprint(revision, diff.diff)
       })
       .map((diff) => diff.newPath || diff.oldPath))
   }, [diffs, files, revision])

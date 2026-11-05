@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { translate } from '../../i18n/i18n'
 import { notifyWorkspace } from '../../lib/notifications'
 import { useConnection } from '../connections/connectionContext'
@@ -7,7 +7,7 @@ import { forgetActivity, publishActivity } from '../mergeRequests/activityStore'
 import { isNotificationTodo } from '../mergeRequests/todoCache'
 import { mrRefKey, usePersonalWorkspace } from './personalWorkspace'
 import { useGitLabQuery } from './useGitLabQuery'
-import type { GitLabTodo, MergeRequest, MergeRequestsQuery } from '../../types/gitlab'
+import type { GitLabTodo, MergeRequest, MergeRequestsQuery, Note } from '../../types/gitlab'
 
 /** The user's MRs whose events are followed, the most recently updated first. */
 const WATCHED_MRS = 20
@@ -30,7 +30,9 @@ export function WorkspaceMonitor() {
   const reviews = useGitLabQuery(session?.id ?? null, roleQueries[2], { background: true })
   const watched = [...new Map([...(authored.data ?? []), ...(assigned.data ?? []), ...(reviews.data ?? [])].map((mr) => [mrRefKey(mr), mr])).values()]
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, WATCHED_MRS)
-  useEffect(() => { if (following) startActivity() }, [following, startActivity])
+  // The workspace changes with every MR opened or read; only `following` decides when this runs.
+  const start = useEffectEvent(() => startActivity())
+  useEffect(() => { if (following) start() }, [following])
   const seen = useRef<{ sessionId: string; ids: Set<string> } | null>(null)
   useEffect(() => {
     if (!session || !settings.notifyTodos) { seen.current = null; return }
@@ -67,13 +69,16 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
   const mrKey = mrRefKey(mergeRequest)
   useEffect(() => () => { if (sessionId) forgetActivity(sessionId, mrKey) }, [mrKey, sessionId])
   const previous = useRef<Set<string> | null>(null)
+  // Recording what was seen reads the workspace as it is now, without rerunning the effect
+  // (and every other watched MR's) each time the workspace changes.
+  const observe = useEffectEvent((notes: Note[]) => workspace.observe(mergeRequest, notes))
   useEffect(() => {
     if (!session || !result.data) return
     const items = mergeRequestActivity(mergeRequest, result.data, session.user.id)
     const since = Date.now() - ACTIVITY_DAYS_MS
     publishActivity(session.id, mrKey, items.filter((item) => Date.parse(item.createdAt) > since))
     if (result.snapshot?.source !== 'network' || result.error) return
-    workspace.observe(mergeRequest, result.data)
+    observe(result.data)
     if (previous.current) {
       const known = previous.current
       // Only newer than what was seen, so an older event coming onto the page is not new.
@@ -87,6 +92,6 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
       if (notify && added.length && !currentlyOpen) void notifyWorkspace(translate('common.notifications.newActivity', { count: added.length }), url).catch(() => undefined)
     }
     previous.current = new Set(items.map((item) => item.id))
-  }, [mergeRequest, mrKey, notify, result.data, result.error, result.snapshot?.source, session, workspace])
+  }, [mergeRequest, mrKey, notify, result.data, result.error, result.snapshot?.source, session])
   return null
 }

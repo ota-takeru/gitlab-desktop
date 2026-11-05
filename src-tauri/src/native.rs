@@ -899,7 +899,7 @@ impl NativeState {
                 snapshot.source = "network".into();
                 return Ok(Some(snapshot));
             }
-            let _slot = slots.acquire_owned().await.map_err(|_| cancelled())?;
+            let slot = slots.acquire_owned().await.map_err(|_| cancelled())?;
             check_cooldown(&session)?;
             let revision = session.revision.load(Ordering::SeqCst);
             let started_at = now_ms();
@@ -926,6 +926,10 @@ impl NativeState {
                     return Err(error);
                 }
             };
+            // The HTTP slot is free once GitLab has answered; saving the answer
+            // must not hold back another screen's request. A failure keeps it
+            // until its cooldown is recorded, so no waiting request slips past.
+            drop(slot);
             if let Query::Approvals { .. } = input.query {
                 let approved = result.data["approvedBy"].as_array().is_some_and(|users| {
                     users

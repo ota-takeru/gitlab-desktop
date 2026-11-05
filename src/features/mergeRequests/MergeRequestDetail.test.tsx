@@ -551,7 +551,9 @@ describe('MergeRequestDetail tabs and description', () => {
     globalThis.confirm = vi.fn(() => true)
     try {
       renderDetail('overview')
-      expect(await screen.findByLabelText('未解決のスレッドがあります')).toBeInTheDocument()
+      const status = await screen.findByRole('button', { name: '未解決のスレッドがあります' })
+      expect(status).toBeInTheDocument()
+      expect(screen.getByRole('region', { name: 'マージ' })).toBeInTheDocument()
       expect(screen.getByText('v0.9')).toBeInTheDocument()
       // Only other reviewers can be asked again.
       expect(screen.queryByRole('button', { name: 'Reviewerさんにレビューを再依頼' })).not.toBeInTheDocument()
@@ -1252,7 +1254,9 @@ describe('reactions and To-Dos', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '通知を既読にする' }))
     await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ iid: '120', kind: 'markTodoDone', projectId: '7', todoId: '501' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '通知を既読にする' })).not.toBeInTheDocument())
+    // The cached To-Dos change after the write, outside act, and the screen follows in a transition.
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+    expect(screen.queryByRole('button', { name: '通知を既読にする' })).not.toBeInTheDocument()
     expect(detailMocks.queryCalls).not.toContainEqual(expect.objectContaining({ kind: 'todos' }))
   })
 })

@@ -1,6 +1,7 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback } from 'react'
 
 import type { MergeRequestActivity } from './activityFeed'
+import { useStoreInTransition } from '../shared/useStoreInTransition'
 
 /**
  * The events the workspace monitor found on the user's MRs, per session and MR. The monitor
@@ -48,5 +49,5 @@ function subscribe(listener: () => void) {
 /** Every loaded event of the session, the same array until one MR's events change. */
 export function useLoadedActivity(sessionId: string | null): MergeRequestActivity[] {
   const get = useCallback(() => snapshot(sessionId), [sessionId])
-  return useSyncExternalStore(subscribe, get, get)
+  return useStoreInTransition(subscribe, get)
 }
