@@ -123,6 +123,7 @@ Individual commands:
 | `npm run ui:snap:update` | Recaptures this device's baselines after an intended visual change. The committed baselines are updated with `npm run ui:rebaseline` |
 | `npm run ui:check` | Before pushing a visual change, see [After a visual change](#after-a-visual-change). Compares the screens with the committed baselines (`tests/visual/screenshots`), the images CI uses. It covers only the screenshot comparison, not the other visual checks CI runs, and it retries a failed test once. Stop any server on port 1420 first, or it fails. Open the differences with `npx playwright show-report output/ui-snap/report` |
 | `npm run ui:rebaseline` | Rebuilds the committed baselines on a GitHub Actions runner and commits only the images that changed. Run it on a branch other than `main`, with every change committed and pushed, and signed in to the GitHub CLI. It waits for the run to finish, which can take tens of minutes, and does not push |
+| `npm run pr:land <number>` | Waits for a pull request's checks, then merges it with a merge commit if every check passed on the same head. It merges nothing otherwise, and says why. A merge to `main` that changes more than documentation, tests or CI publishes a release. Keep the computer on while it waits. Add `--dry-run` to check without merging (`node scripts/pr-land.mjs <number> --dry-run` in PowerShell). Needs the GitHub CLI |
 | `npm run native:check` | Rust formatting, static checks and tests |
 | `npm run tauri -- info` | Diagnoses the Tauri development environment |
 

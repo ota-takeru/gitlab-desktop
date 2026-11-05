@@ -123,6 +123,7 @@ mainへpushすると、検査後にActionsがタグ・インストーラー・�
 | `npm run ui:snap:update` | 意図した見た目の変更後に、この端末の基準画像を撮り直す。コミット済みの基準画像は `npm run ui:rebaseline` で更新する |
 | `npm run ui:check` | 見た目を変えてpushする前の手順は[見た目を変えたとき](#見た目を変えたとき)を参照。コミット済みの基準画像（`tests/visual/screenshots`）と比較する。CIが使うのと同じ画像である。スクリーンショットの比較だけを行い、CIのほかの画面検査は含まない。失敗したテストは1回再試行する。ポート1420でサーバーが動いていると失敗するので、先に止める。差分は `npx playwright show-report output/ui-snap/report` で開く |
 | `npm run ui:rebaseline` | GitHub Actionsのランナーで基準画像を作り直し、変わった画像だけをコミットする。`main` 以外のブランチで、変更をすべてコミットしてpushし、GitHub CLIにログインした状態で実行する。CIの完了まで待ち、数十分かかることがある。pushはしない |
+| `npm run pr:land <番号>` | PRのチェックの完了を待ち、同じheadですべて合格していればマージコミットでマージする。それ以外ではマージせず、理由を表示する。文書・テスト・CI以外を変えたマージはmainでリリースを公開する。待つ間はPCを起動しておく。マージせずに確かめるときは `--dry-run` を付ける（PowerShellでは `node scripts/pr-land.mjs <番号> --dry-run`）。GitHub CLIが必要 |
 | `npm run native:check` | Rustの書式・静的検査・テスト |
 | `npm run tauri -- info` | Tauri開発環境の診断 |
 
