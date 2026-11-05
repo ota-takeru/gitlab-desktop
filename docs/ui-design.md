@@ -96,7 +96,7 @@ The state button is chosen by these checks, in order:
 
 A merge can be sent only when `detailed_merge_status` is `mergeable`, the user has permission to merge and no rebase is running. The header's merge button reads "set auto-merge" while a pipeline is running or waiting to start and nothing else blocks the merge.
 
-When neither a merge nor auto-merge can be sent, the merge button stays clickable, unless another write is running or writes are locked (for example, while the result of a post is unknown). Its tooltip gives the reason. Clicking it leads to the merge panel.
+When neither a merge nor auto-merge can be sent, the merge button stays clickable, unless another write, other than a reaction or marking a notification as read, is running, or writes are locked (for example, while the result of a post is unknown). Its tooltip gives the reason. Clicking it leads to the merge panel.
 
 The menu holds title, labels and milestone. On an open MR, it also holds Draft and close. When the source branch of an open MR is behind and GitLab does not require a rebase, it also holds an optional rebase.
 
