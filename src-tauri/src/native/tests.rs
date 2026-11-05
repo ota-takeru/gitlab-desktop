@@ -661,6 +661,41 @@ fn projects_input(session: &LiveSession, mode: ReadMode) -> QueryInput {
 }
 
 #[tokio::test]
+async fn a_saved_answer_goes_to_the_screen_as_it_was_saved() {
+    let (state, session) = test_state(Url::parse("http://127.0.0.1:9/api/v4/").unwrap());
+    let cached = || projects_input(&session, ReadMode::CacheOnly);
+    assert_eq!(state.answer(cached()).await.unwrap(), "null");
+
+    let snapshot = Snapshot {
+        data: serde_json::json!([{ "id": "1", "name": "プロジェクト" }]),
+        fetched_at: now_ms(),
+        source: "network".into(),
+        next_page: Some(2),
+        total_pages: Some(3),
+        completeness: "page".into(),
+    };
+    let saved = serde_json::to_string(&snapshot).unwrap();
+    let account = session.account.clone();
+    let key = serde_json::to_string(&cached().query).unwrap();
+    state
+        .blocking(move |inner| inner.store.put(&account, &key, &snapshot))
+        .await
+        .unwrap();
+    assert_eq!(state.answer(cached()).await.unwrap(), saved);
+
+    let input = cached();
+    session.cancelled.cancel();
+    state
+        .blocking(|inner| {
+            inner.active = None;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    assert_eq!(state.answer(input).await.unwrap_err().code, "AUTH_REQUIRED");
+}
+
+#[tokio::test]
 async fn late_network_response_cannot_recreate_logged_out_cache() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

@@ -1,6 +1,6 @@
 use crate::dto::AppError;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::{de::IgnoredAny, Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -64,6 +64,54 @@ pub struct CacheRule {
     pub project_id: Option<String>,
     pub iid: Option<String>,
     pub pipeline_id: Option<String>,
+}
+
+/// A snapshot written out for saving, so the work is done before the store is locked.
+pub struct EncodedSnapshot {
+    text: String,
+    fetched_at: u64,
+}
+
+pub fn encode_snapshot(snapshot: &Snapshot) -> Result<EncodedSnapshot, AppError> {
+    let text = serde_json::to_string(snapshot).map_err(|_| storage_error())?;
+    if text.len() > 8 * 1024 * 1024 {
+        return Err(
+            AppError::new("TOO_LARGE", "保存するデータが上限を超えました。")
+                .key("native.storage.tooLarge"),
+        );
+    }
+    Ok(EncodedSnapshot {
+        text,
+        fetched_at: snapshot.fetched_at,
+    })
+}
+
+pub fn parse_snapshot(text: &str) -> Result<Snapshot, AppError> {
+    serde_json::from_str(text).map_err(|_| storage_error())
+}
+
+/// Confirms saved text is a whole snapshot without building it. The text goes to the
+/// screen as it is, and a damaged row must still fail here as a storage error.
+pub fn check_snapshot(text: &str) -> Result<(), AppError> {
+    // `Snapshot`'s fields and types. Inside `data` only the syntax is read, and no value is built.
+    #[derive(Deserialize)]
+    struct Shape {
+        #[serde(rename = "data")]
+        _data: IgnoredAny,
+        #[serde(rename = "fetchedAt")]
+        _fetched_at: u64,
+        #[serde(rename = "source")]
+        _source: String,
+        #[serde(rename = "nextPage")]
+        _next_page: Option<u32>,
+        #[serde(rename = "totalPages")]
+        _total_pages: Option<u32>,
+        #[serde(rename = "completeness")]
+        _completeness: String,
+    }
+    serde_json::from_str::<Shape>(text)
+        .map(|_| ())
+        .map_err(|_| storage_error())
 }
 
 pub struct Store(Connection);
@@ -148,36 +196,30 @@ impl Store {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn get(&mut self, account: &str, key: &str) -> Result<Option<Snapshot>, AppError> {
-        self.get_since(account, key, 0)
+        self.saved_text(account, key)?
+            .map(|text| {
+                let mut snapshot = parse_snapshot(&text)?;
+                snapshot.source = "cache".into();
+                Ok(snapshot)
+            })
+            .transpose()
     }
 
-    /// Like `get`, but only an answer fetched at or after `since` (ms); an
-    /// older one is skipped in SQL instead of being read and parsed.
-    pub fn get_since(
-        &mut self,
-        account: &str,
-        key: &str,
-        since: u64,
-    ) -> Result<Option<Snapshot>, AppError> {
+    /// The unexpired answer for `key` as it was saved. Checking and parsing it are
+    /// left to the caller, so they do not hold back other reads of the store.
+    pub fn saved_text(&self, account: &str, key: &str) -> Result<Option<String>, AppError> {
         // Expired rows are skipped here and deleted by the next write, so a read
         // does not have to scan the whole cache.
-        let text: Option<String> = self
-            .0
+        self.0
             .query_row(
                 "SELECT snapshot FROM cache WHERE account=? AND key=? AND fetched >= ?",
-                params![account, key, retention_cutoff().max(since as i64)],
+                params![account, key, retention_cutoff()],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|_| storage_error())?;
-        text.map(|text| {
-            let mut snapshot: Snapshot =
-                serde_json::from_str(&text).map_err(|_| storage_error())?;
-            snapshot.source = "cache".into();
-            Ok(snapshot)
-        })
-        .transpose()
+            .map_err(|_| storage_error())
     }
 
     /// When the unexpired answer for `key` was saved, without reading the answer itself.
@@ -194,14 +236,18 @@ impl Store {
         Ok(fetched.map(|fetched| u64::try_from(fetched).unwrap_or(0)))
     }
 
+    #[cfg(test)]
     pub fn put(&mut self, account: &str, key: &str, snapshot: &Snapshot) -> Result<(), AppError> {
-        let text = serde_json::to_string(snapshot).map_err(|_| storage_error())?;
-        if text.len() > 8 * 1024 * 1024 {
-            return Err(
-                AppError::new("TOO_LARGE", "保存するデータが上限を超えました。")
-                    .key("native.storage.tooLarge"),
-            );
-        }
+        self.put_encoded(account, key, &encode_snapshot(snapshot)?)
+    }
+
+    pub fn put_encoded(
+        &mut self,
+        account: &str,
+        key: &str,
+        encoded: &EncodedSnapshot,
+    ) -> Result<(), AppError> {
+        let text = &encoded.text;
         self.0
             .execute(
                 "INSERT OR REPLACE INTO cache(account,key,snapshot,fetched,size) VALUES(?,?,?,?,?)",
@@ -209,7 +255,7 @@ impl Store {
                     account,
                     key,
                     text,
-                    snapshot.fetched_at as i64,
+                    encoded.fetched_at as i64,
                     (text.len() + key.len() + account.len() + 256) as i64
                 ],
             )

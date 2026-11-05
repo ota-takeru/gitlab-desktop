@@ -10,7 +10,7 @@ vi.mock('@tauri-apps/api/core', async () => {
   return { ...actual, invoke: invokeMock, isTauri: isTauriMock }
 })
 
-import { cancelGitLabRequest, clearGitLabCache, connectGitLab, connectGitLabFromGlab, createRequestId, disconnectGitLab, getGitLabAvatar, getGitLabImage, listGlabConnections, mutateGitLab, normalizeGitLabError, openExternalUrl, openGitLabUrl, openTokenCreationPage, queryCacheFirst, restoreGitLabSession } from './gitlab'
+import { cancelGitLabRequest, clearGitLabCache, connectGitLab, connectGitLabFromGlab, createRequestId, disconnectGitLab, getGitLabAvatar, getGitLabImage, listGlabConnections, mutateGitLab, normalizeGitLabError, openExternalUrl, openGitLabUrl, openTokenCreationPage, queryCacheFirst, queryGitLab, restoreGitLabSession } from './gitlab'
 import { GitLabCommandError } from '../types/gitlab'
 
 const action: GitLabAction = { body: '本文', iid: '1', kind: 'comment', projectId: 'project-1', thread: false }
@@ -35,6 +35,28 @@ describe('mutateGitLab', () => {
     expect(invokeMock).toHaveBeenCalledWith('mutate_gitlab', {
       input: { action, localDraftKey: 'project-1:draft', requestId: 'request-2', sessionId: 'session-1' },
     })
+  })
+})
+
+describe('queryGitLab', () => {
+  const query = { iid: '1', kind: 'mr', projectId: 'project-1' } as const
+  const saved = { completeness: 'complete', data: { id: '1' }, fetchedAt: 1, nextPage: null, source: 'network' }
+
+  beforeEach(() => {
+    invokeMock.mockReset()
+    isTauriMock.mockReturnValue(true)
+  })
+
+  it('marks an answer read from the saved data as cached', async () => {
+    invokeMock.mockResolvedValue(saved)
+    await expect(queryGitLab({ mode: 'cache', query, sessionId: 'session-1' })).resolves.toEqual({ ...saved, source: 'cache' })
+  })
+
+  it('leaves a network answer and a cache miss as they are', async () => {
+    invokeMock.mockResolvedValue(saved)
+    await expect(queryGitLab({ mode: 'network', query, sessionId: 'session-1' })).resolves.toEqual(saved)
+    invokeMock.mockResolvedValue(null)
+    await expect(queryGitLab({ mode: 'cache', query, sessionId: 'session-1' })).resolves.toBeNull()
   })
 })
 

@@ -1,7 +1,10 @@
 use crate::dto::{Action, AppError, Query, Session, User};
 use crate::gitlab_api;
 use crate::local_git;
-use crate::storage::{now_ms, storage_error, CacheRule, LocalDraft, Snapshot, Store};
+use crate::storage::{
+    check_snapshot, encode_snapshot, now_ms, parse_snapshot, storage_error, CacheRule,
+    EncodedSnapshot, LocalDraft, Snapshot, Store,
+};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -385,6 +388,24 @@ async fn run_blocking<T: Send + 'static>(
     tauri::async_runtime::spawn_blocking(move || {
         let mut inner = inner.lock().map_err(|_| storage_error())?;
         job(&mut inner)
+    })
+    .await
+    .map_err(|_| storage_error())?
+}
+
+fn query_key(query: &Query) -> Result<String, AppError> {
+    let key = serde_json::to_string(query).map_err(|_| cancelled())?;
+    if key.len() > 8192 {
+        return Err(AppError::new("INVALID_INPUT", "検索条件が長すぎます。")
+            .key("native.query.searchTooLong"));
+    }
+    Ok(key)
+}
+
+async fn encode_off_thread(snapshot: Snapshot) -> Result<(Snapshot, EncodedSnapshot), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let encoded = encode_snapshot(&snapshot)?;
+        Ok((snapshot, encoded))
     })
     .await
     .map_err(|_| storage_error())?
@@ -833,21 +854,39 @@ impl NativeState {
         Ok(())
     }
 
+    /// The JSON of a read's answer for the screen. A saved answer is already that
+    /// JSON, so it is sent as it is instead of being parsed and written out again.
+    pub async fn answer(&self, input: QueryInput) -> Result<String, AppError> {
+        if input.mode == ReadMode::CacheOnly {
+            let saved = self.saved_answer(input).await?;
+            return Ok(saved.unwrap_or_else(|| "null".into()));
+        }
+        let answer = self.query(input).await?;
+        serde_json::to_string(&answer).map_err(|_| storage_error())
+    }
+
+    async fn saved_answer(&self, input: QueryInput) -> Result<Option<String>, AppError> {
+        let session = self.active(&input.session_id)?;
+        let key = query_key(&input.query)?;
+        let inner = self.inner.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let text = {
+                let inner = inner.lock().map_err(|_| storage_error())?;
+                ensure_active(&inner, &session)?;
+                inner.store.saved_text(&session.account, &key)?
+            };
+            if let Some(text) = &text {
+                check_snapshot(text)?;
+            }
+            Ok(text)
+        })
+        .await
+        .map_err(|_| storage_error())?
+    }
+
     pub async fn query(&self, input: QueryInput) -> Result<Option<Snapshot>, AppError> {
         let session = self.active(&input.session_id)?;
-        let key = serde_json::to_string(&input.query).map_err(|_| cancelled())?;
-        if key.len() > 8192 {
-            return Err(AppError::new("INVALID_INPUT", "検索条件が長すぎます。")
-                .key("native.query.searchTooLong"));
-        }
-        if input.mode == ReadMode::CacheOnly {
-            return self
-                .blocking(move |inner| {
-                    ensure_active(inner, &session)?;
-                    inner.store.get(&session.account, &key)
-                })
-                .await;
-        }
+        let key = query_key(&input.query)?;
         let (pending, slots) = if input.background {
             (&session.background_pending, &session.background_slots)
         } else {
@@ -879,7 +918,7 @@ impl NativeState {
             let dedup_key = key.clone();
             // Only the save time is read unless an identical read saved meanwhile,
             // so a large saved answer is not parsed before every network read.
-            if let Some(mut snapshot) = self
+            if let Some(text) = self
                 .blocking(move |inner| {
                     ensure_active(inner, &dedup_session)?;
                     if inner
@@ -889,13 +928,14 @@ impl NativeState {
                     {
                         return Ok(None);
                     }
-                    Ok(inner
-                        .store
-                        .get(&dedup_session.account, &dedup_key)?
-                        .filter(|snapshot| snapshot.fetched_at >= queued_at))
+                    inner.store.saved_text(&dedup_session.account, &dedup_key)
                 })
                 .await?
             {
+                let mut snapshot =
+                    tauri::async_runtime::spawn_blocking(move || parse_snapshot(&text))
+                        .await
+                        .map_err(|_| storage_error())??;
                 snapshot.source = "network".into();
                 return Ok(Some(snapshot));
             }
@@ -955,24 +995,24 @@ impl NativeState {
             };
             // Job logs can hold secrets printed by CI scripts, so they stay in memory only.
             let persist = !matches!(input.query, Query::JobTrace { .. });
-            let copy = snapshot.clone();
             let (client, api_base) = (session.client.clone(), session.api_base.clone());
             let ended = session.cancelled.clone();
             let session = session.clone();
-            let save = move |inner: &mut Inner| {
+            let save = move |inner: &mut Inner, encoded: Option<EncodedSnapshot>| {
                 ensure_active(inner, &session)?;
                 if session.revision.load(Ordering::SeqCst) != revision {
                     return Err(cancelled());
                 }
-                if !persist {
-                    return Ok(());
+                match encoded {
+                    Some(encoded) => inner.store.put_encoded(&session.account, &key, &encoded),
+                    None => Ok(()),
                 }
-                inner.store.put(&session.account, &key, &copy)
             };
             if let Query::Diffs { .. } = input.query {
                 // A diff page is shown at once; whether its head moved during the
                 // read is confirmed afterwards, and only a confirmed page is saved.
                 // The lock stays held so an identical read waits for that save.
+                let copy = snapshot.clone();
                 let inner = self.inner.clone();
                 let query = input.query.clone();
                 tauri::async_runtime::spawn(async move {
@@ -982,12 +1022,23 @@ impl NativeState {
                         _ = ended.cancelled() => false,
                     };
                     if confirmed {
-                        let _ = run_blocking(inner, save).await;
+                        if let Ok((_, encoded)) = encode_off_thread(copy).await {
+                            let _ =
+                                run_blocking(inner, move |inner| save(inner, Some(encoded))).await;
+                        }
                     }
                 });
-            } else {
-                self.blocking(save).await?;
+                return Ok(Some(snapshot));
             }
+            if !persist {
+                self.blocking(move |inner| save(inner, None)).await?;
+                return Ok(Some(snapshot));
+            }
+            // Written out before the store is locked, so a large answer does not
+            // hold back the saved answers other screens are waiting for.
+            let (snapshot, encoded) = encode_off_thread(snapshot).await?;
+            self.blocking(move |inner| save(inner, Some(encoded)))
+                .await?;
             Ok(Some(snapshot))
         };
         tokio::select! { result = work => result, _ = session.cancelled.cancelled()=>Err(cancelled()), _ = registration.token.cancelled()=>Err(cancelled()) }
