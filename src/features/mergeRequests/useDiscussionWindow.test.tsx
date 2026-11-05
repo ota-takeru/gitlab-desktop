@@ -283,6 +283,62 @@ describe('useDiscussionWindow', () => {
     expect(current.value?.discussions.at(-1)?.id).toBe('p12-30')
   })
 
+  it('keeps the shown threads until a page revealed by a new page count has been read', async () => {
+    mocks.pages = { 1: { data: threads('p1', 30), nextPage: null, totalPages: 1 } }
+    const { current, view } = renderWindow()
+    await waitFor(() => expect(current.value?.ready).toBe(true))
+
+    const states: boolean[] = []
+    const track = (window: DiscussionWindow) => { current.value = window; states.push(window.ready) }
+    mocks.pages[1] = { data: threads('p1', 30), nextPage: 2, totalPages: 2 }
+    view.rerender(<Harness onWindow={track} />)
+    await waitFor(() => expect(mocks.requested).toContain(2))
+    expect(current.value?.discussions).toHaveLength(30)
+    expect(current.value?.latestPage).toBe(1)
+    expect(current.value?.latest?.data).toHaveLength(30)
+    expect(current.value?.newestPages).toEqual([1, 2])
+    // The new page is read as often as the newest one.
+    expect(mocks.refreshIntervals[2]).toBeUndefined()
+
+    // A comment posted now may be on the new page, so reading the newest again covers both.
+    act(() => { void current.value?.refreshLatest() })
+    expect(mocks.refreshes).toEqual([1, 2])
+
+    mocks.pages[2] = { data: threads('p2', 1), nextPage: null, totalPages: 2 }
+    view.rerender(<Harness onWindow={track} />)
+    await waitFor(() => expect(current.value?.latestPage).toBe(2))
+    expect(current.value?.latest?.data[0].id).toBe('p2-1')
+    expect(current.value?.discussions).toHaveLength(31)
+    expect(states).not.toContain(false)
+  })
+
+  it('keeps the shown threads and no error when a page revealed by a new page count cannot be read', async () => {
+    mocks.pages = { 1: { data: threads('p1', 30), nextPage: null, totalPages: 1 } }
+    const { current, view } = renderWindow()
+    await waitFor(() => expect(current.value?.ready).toBe(true))
+
+    mocks.pages[1] = { data: threads('p1', 30), nextPage: 2, totalPages: 2 }
+    mocks.errors[2] = new GitLabCommandError({ code: 'NETWORK', message: 'offline' })
+    view.rerender(<Harness onWindow={(window) => { current.value = window }} />)
+    await waitFor(() => expect(mocks.requested).toContain(2))
+    await waitFor(() => expect(current.value?.reading).toBe(false))
+    expect(current.value?.ready).toBe(true)
+    expect(current.value?.discussions).toHaveLength(30)
+    expect(current.value?.error).toBeNull()
+  })
+
+  it('shows the loading state when a new page count leaves no read page in the range', async () => {
+    mocks.pages = { 1: { data: threads('p1', 30), nextPage: null, totalPages: 1 } }
+    const { current, view } = renderWindow()
+    await waitFor(() => expect(current.value?.ready).toBe(true))
+
+    mocks.pages[1] = { data: threads('p1', 30), nextPage: 2, totalPages: 20 }
+    view.rerender(<Harness onWindow={(window) => { current.value = window }} />)
+    await waitFor(() => expect(mocks.requested).toContain(20))
+    expect(current.value?.ready).toBe(false)
+    expect(current.value?.latestPage).toBe(20)
+  })
+
   it('keeps shown threads when a refresh reveals a new newest page', async () => {
     mocks.pages = { 1: { data: threads('p1', 30), nextPage: null, totalPages: 1 } }
     const { current, view } = renderWindow()

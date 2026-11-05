@@ -829,7 +829,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
       case 'resolve':
       case 'applySuggestions':
         // An applied suggestion shows as applied in its thread and moves the MR head above.
-        queries.push({ iid, kind: 'discussions', page: discussionWindow.latestPage, projectId: resourceId })
+        queries.push(...discussionWindow.newestPages.map((page): GitLabQuery => ({ iid, kind: 'discussions', page, projectId: resourceId })))
         break
       case 'saveDraft':
       case 'editDraft':
@@ -869,7 +869,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         if (!unknownAction.noteId) queries.push({ iid, kind: 'mrAwards', projectId: resourceId })
         else if (noteAwardsQuery) queries.push(noteAwardsQuery)
         else if (mergeRequest.projectPath) queries.push({ iid, kind: 'noteAwards', projectPath: mergeRequest.projectPath, sinceNoteId: unknownAction.noteId })
-        else queries.push({ iid, kind: 'discussions', page: discussionWindow.latestPage, projectId: resourceId })
+        else queries.push(...discussionWindow.newestPages.map((page): GitLabQuery => ({ iid, kind: 'discussions', page, projectId: resourceId })))
         break
       case 'markTodoDone':
         queries.push({ kind: 'todos', page: 1 })

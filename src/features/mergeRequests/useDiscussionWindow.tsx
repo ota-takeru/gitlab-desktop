@@ -26,6 +26,8 @@ export interface DiscussionWindow {
   /** Snapshot of the newest page; used for freshness and notifications. */
   latest: GitLabSnapshot<Discussion[]> | null
   latestPage: number
+  /** The newest page read and any later page being read; a new thread may be on any of them. */
+  newestPages: number[]
   loadedPages: number[]
   hasOlder: boolean
   loadingOlder: boolean
@@ -35,13 +37,13 @@ export interface DiscussionWindow {
   loadOlder: () => void
   /** Retries the older page that failed to load. */
   retryOlder: () => void
-  /** Refreshes the newest page; resolves once its new threads arrive (or after REFRESH_WAIT_MS), so a posted comment shows before its text leaves the composer. */
+  /** Refreshes `newestPages`; resolves once their new threads arrive (or after REFRESH_WAIT_MS), so a posted comment shows before its text leaves the composer. */
   refreshLatest: () => Promise<void>
   /** Refreshes every loaded page, while the window is active; resolves as refreshLatest does. */
   refreshAll: () => Promise<void>
   /** A loaded page is being read, so a comment not found yet may still arrive. */
   reading: boolean
-  /** Refreshes the page holding the discussion (and the newest page for new threads); resolves as refreshLatest does. */
+  /** Refreshes the page holding the discussion (and `newestPages` for new threads); resolves as refreshLatest does. */
   refreshDiscussion: (discussionId: string | null) => Promise<void>
   /** Renders the page observers; keep it mounted while discussions should stay live. */
   observers: React.ReactNode
@@ -99,7 +101,10 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
     const context = total !== null && total > 1 && low === total && (fixedLow === null || store.get(total - 1)?.loading) ? [total - 1] : []
     const searched = search && (total === null || search.read > total) ? [search.read] : []
     const observed = total === null ? searched : [...context, ...Array.from({ length: total - low + 1 }, (_, index) => low + index), ...searched]
-    const newestPage = total ?? search?.read ?? 1
+    // Once the first view is fixed, a last page not read yet stays out of the way: the newest page
+    // read within the range remains the newest, so the threads shown stay until the new page arrives.
+    const newestRead = fixedLow !== null && total !== null && !store.get(total)?.data ? observed.filter((page) => page >= low && store.get(page)?.data).at(-1) : undefined
+    const newestPage = newestRead ?? total ?? search?.read ?? 1
     const newestState = store.get(newestPage)
     const newestKnown = Boolean(total !== null && newestState?.data)
     // The newest threads show as soon as they are read; a context page still loading (or failed)
@@ -123,6 +128,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
       limitReached: total !== null && low === floor && floor > 1,
       loadingOlder: Boolean(fixedLow !== null && !lowState?.data && !lowState?.error),
       low,
+      newestPages: observed.filter((page) => page >= newestPage),
       observed,
       olderError: fixedLow !== null && low < newestPage ? lowState?.error ?? null : null,
       reading: observed.some((page) => store.get(page)?.loading || store.get(page)?.refreshing),
@@ -155,12 +161,12 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
       const timer = globalThis.setTimeout(done, REFRESH_WAIT_MS)
     })
   }, [store])
-  const refreshLatest = useCallback(() => refreshPage(state.latestPage), [refreshPage, state.latestPage])
+  const refreshLatest = useCallback(async () => { await Promise.all(state.newestPages.map(refreshPage)) }, [refreshPage, state.newestPages])
   const refreshAll = useCallback(async () => { if (active) await Promise.all(state.observed.map(refreshPage)) }, [active, refreshPage, state.observed])
   const refreshDiscussion = useCallback(async (discussionId: string | null) => {
     const holder = discussionId ? store.entries().find(([page, value]) => page >= state.low && value.data?.some((discussion) => discussion.id === discussionId)) : undefined
-    await Promise.all([holder && holder[0] !== state.latestPage ? refreshPage(holder[0]) : undefined, refreshPage(state.latestPage)])
-  }, [refreshPage, state.latestPage, state.low, store])
+    await Promise.all([holder && holder[0] < state.latestPage ? refreshPage(holder[0]) : undefined, refreshLatest()])
+  }, [refreshLatest, refreshPage, state.latestPage, state.low, store])
 
   const observers = active
     // Older pages refresh less often than the newest one, and at once after a write that touches them.
@@ -176,6 +182,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
     limitReached: state.limitReached,
     loadOlder,
     loadedPages: state.observed,
+    newestPages: state.newestPages,
     loading: !state.ready && !state.error,
     loadingOlder: state.loadingOlder,
     observers,
