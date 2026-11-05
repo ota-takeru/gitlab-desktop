@@ -120,11 +120,19 @@ Individual commands:
 | `npm test` | Frontend behavior tests |
 | `npm run build` | TypeScript and Vite build |
 | `npm run ui:snap` | Captures each section of the UI catalog and the real MR list, discussion and diff shown with fixed data in light and dark × 960×640 / 1280×840, and the loading, failed, empty and stale-cache states in light and dark × 1280×840, and compares them with baseline images. Locally it compares with this device's baselines (`output/ui-snap/baselines`, recorded on the first run), and in CI with `tests/visual/screenshots`. Review differences in `output/ui-snap/report` |
-| `npm run ui:snap:update` | Recaptures this device's baselines after an intended visual change. CI baselines are updated with `npm run ui:rebaseline` |
-| `npm run ui:check` | Compares the screens with the committed baselines (`tests/visual/screenshots`), as CI does. Run it before pushing a visual change. To pass `playwright test` arguments, run `node scripts/ui-check.mjs <arguments>`, since PowerShell drops the `--` that npm needs. It refuses to use a dev server already on port 1420, so stop that server first. Differences are in `output/ui-snap/report` |
-| `npm run ui:rebaseline` | Rebuilds the CI baselines on the CI runner for the pushed branch, by running UI Preview with `update_snapshots`, and commits only the images that changed. It does not push. Look at the listed images before pushing. Needs the GitHub CLI |
+| `npm run ui:snap:update` | Recaptures this device's baselines after an intended visual change. The committed baselines are updated with `npm run ui:rebaseline` |
+| `npm run ui:check` | Compares the screens with the committed baselines (`tests/visual/screenshots`), the images CI uses. It covers only the screenshot comparison, not the other visual checks CI runs, and it retries a failed test once. Stop any server on port 1420 first, or it fails. Open the differences with `npx playwright show-report output/ui-snap/report` |
+| `npm run ui:rebaseline` | Rebuilds the committed baselines on a GitHub Actions runner and commits only the images that changed. Run it on a branch other than `main`, with every change committed and pushed, and signed in to the GitHub CLI. It waits for the run to finish (up to 30 minutes) and does not push |
 | `npm run native:check` | Rust formatting, static checks and tests |
 | `npm run tauri -- info` | Diagnoses the Tauri development environment |
+
+After a visual change:
+
+1. Run `npm run ui:check`. It can also show small differences caused by this machine's font rendering.
+2. If only the intended screens differ, commit and push.
+3. Run `npm run ui:rebaseline`, open each listed file in `tests/visual/screenshots` to confirm only the intended change, and push.
+
+To pass `ui:check` an argument that starts with `-`, run the script itself, such as `node scripts/ui-check.mjs --grep "client stale"`. In PowerShell, `npm run` drops the `--` such an argument needs.
 
 ## Code and design
 
