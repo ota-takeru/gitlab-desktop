@@ -244,7 +244,7 @@ Each refetch of a list does not reset the scroll position or selection. When a r
 3. When a new shared component or variant is made, add state examples to the UI catalog.
 4. Pass the theme, type and lint checks and representative behavior tests.
 5. Check light and dark, narrow/normal width, long Japanese text and long paths, and keyboard operation.
-6. When the look of a shared component changes, record this device's baseline with `npm run ui:snap` before the change, and check the screenshot diff of representative screens with `npm run ui:snap` after the change. Compare with the committed baselines before pushing, and rebuild them if the diff is intended; the steps are under the commands in the [README](../README.md). Font rendering differs per device, so the committed baselines are made in CI. Sections of the UI catalog with a `catalog-*` id are captured automatically.
+6. When the look of a shared component changes, record this device's baseline with `npm run ui:snap` before the change, and check the screenshot diff of representative screens with `npm run ui:snap` after the change. Compare with the committed baselines before pushing, and rebuild them if the diff is intended; the steps are in [After a visual change](../README.md#after-a-visual-change) in the README. Font rendering differs per device, so the committed baselines are made in CI. Sections of the UI catalog with a `catalog-*` id are captured automatically.
 
 Static checks add, to the current detection of hard-coded colors and direct HTTP, a rule that direct invoke is not used outside the IPC layer. Creating a MUI theme per screen is prohibited. Not every color and dimension is assumed to be guaranteed by regular expressions alone; shared components and review are used together.
 
