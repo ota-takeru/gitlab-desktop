@@ -120,7 +120,9 @@ Individual commands:
 | `npm test` | Frontend behavior tests |
 | `npm run build` | TypeScript and Vite build |
 | `npm run ui:snap` | Captures each section of the UI catalog and the real MR list, discussion and diff shown with fixed data in light and dark × 960×640 / 1280×840, and the loading, failed, empty and stale-cache states in light and dark × 1280×840, and compares them with baseline images. Locally it compares with this device's baselines (`output/ui-snap/baselines`, recorded on the first run), and in CI with `tests/visual/screenshots`. Review differences in `output/ui-snap/report` |
-| `npm run ui:snap:update` | Recaptures this device's baselines after an intended visual change. CI baselines (`tests/visual/screenshots`) are updated by running GitHub Actions' UI Preview manually with `update_snapshots` and committing its artifact |
+| `npm run ui:snap:update` | Recaptures this device's baselines after an intended visual change. CI baselines are updated with `npm run ui:rebaseline` |
+| `npm run ui:check` | Compares the screens with the committed baselines (`tests/visual/screenshots`), as CI does. Run it before pushing a visual change. To pass `playwright test` arguments, run `node scripts/ui-check.mjs <arguments>`, since PowerShell drops the `--` that npm needs. It refuses to use a dev server already on port 1420, so stop that server first. Differences are in `output/ui-snap/report` |
+| `npm run ui:rebaseline` | Rebuilds the CI baselines on the CI runner for the pushed branch, by running UI Preview with `update_snapshots`, and commits only the images that changed. It does not push. Look at the listed images before pushing. Needs the GitHub CLI |
 | `npm run native:check` | Rust formatting, static checks and tests |
 | `npm run tauri -- info` | Diagnoses the Tauri development environment |
 

@@ -120,7 +120,9 @@ mainへpushすると、検査後にActionsがタグ・インストーラー・�
 | `npm test` | フロントエンドの動作テスト |
 | `npm run build` | TypeScriptとViteビルド |
 | `npm run ui:snap` | UIカタログの各節と、固定データで表示した実際のMR一覧・議論・差分を明暗 × 960×640 / 1280×840 で、取得中・失敗・空・古いキャッシュの状態を明暗 × 1280×840 で撮影し、基準画像と比較。ローカルではこの端末の基準（`output/ui-snap/baselines`、初回に記録）と比べ、CIでは `tests/visual/screenshots` と比べる。差分は `output/ui-snap/report` で確認 |
-| `npm run ui:snap:update` | 意図した見た目の変更後に、この端末の基準画像を撮り直す。CIの基準画像（`tests/visual/screenshots`）は、GitHub Actions の UI Preview を `update_snapshots` 付きで手動実行し、成果物を取り込んで更新する |
+| `npm run ui:snap:update` | 意図した見た目の変更後に、この端末の基準画像を撮り直す。CIの基準画像は `npm run ui:rebaseline` で更新する |
+| `npm run ui:check` | CIと同じく、コミット済みの基準画像（`tests/visual/screenshots`）と比較する。見た目を変えたらpush前に実行する。`playwright test` の引数を渡すときは `node scripts/ui-check.mjs <引数>` を使う。PowerShellはnpmに必要な `--` を取り除くため。ポート1420で動いている開発サーバーは使わないので、先に止める。差分は `output/ui-snap/report` で確認 |
+| `npm run ui:rebaseline` | pushしたブランチについて、UI Preview を `update_snapshots` 付きで実行してCIランナーで基準画像を作り直し、変わった画像だけをコミットする。pushはしない。pushの前に、表示された画像を確認する。GitHub CLIが必要 |
 | `npm run native:check` | Rustの書式・静的検査・テスト |
 | `npm run tauri -- info` | Tauri開発環境の診断 |
 
