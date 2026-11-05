@@ -91,7 +91,7 @@ The state button is chosen by these checks, in order:
 1. A closed MR gets reopen.
 2. Any other MR that is not open, meaning merged or locked, gets no button.
 3. An MR with auto-merge set gets cancel auto-merge.
-4. While `detailed_merge_status` is `need_rebase`, the button is rebase, unless a rebase is already running or the head SHA is unknown.
+4. While `detailed_merge_status` is `need_rebase`, the button is rebase, unless a rebase is already running or the head SHA is unknown. It appears whatever the user's permission, and GitLab refuses it when they may not rebase.
 5. Otherwise the button is merge, which leads to the merge panel.
 
 A merge can be sent only when `detailed_merge_status` is `mergeable`, the user has permission to merge and no rebase is running. The header's merge button reads "set auto-merge" while a pipeline is running or waiting to start and nothing else blocks the merge.
