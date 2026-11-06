@@ -11,6 +11,7 @@ import { BlameCell } from './BlamePanel'
 import { blameCellStyles } from './blameLines'
 import { DiffGap, type GapExpansion } from './DiffGap'
 import { diffGaps, type DiffGapInfo } from './diffGaps'
+import { DiffScrollbar } from './DiffScrollbar'
 import { lineHasThreads } from './diffLineThreads'
 import type { ParsedLine } from './diffParser'
 import { diffBaseStyles, matchesPosition, positionLineId, quietBand, renderCode } from './diffShared'
@@ -58,6 +59,7 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
   // Rows are plain elements styled from this one block: a file can hold many
   // thousands of rows, and per-row styled components dominate render time.
   return (
+    <>
     <Box ref={scrollRef} sx={[(theme) => ({ ...diffBaseStyles(theme),
       // Long code lines wrap, so the page stays the only scroll.
       '& .diff-rows': { minWidth: 0 },
@@ -115,6 +117,8 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
         })}
       </div>
     </Box>
+    {wrap ? null : <DiffScrollbar content={`${longest}:${blameEnabled}`} target={scrollRef} />}
+    </>
   )
 }
 
@@ -171,14 +175,15 @@ const NO_MATCHES: ReadonlySet<number> = new Set()
 const chunkStyles = { '& .diff-chunk:not([data-threads])': { contentVisibility: 'auto' } }
 
 /**
- * With long lines kept on one line, the view scrolls sideways by itself. A thread under a line stays as wide as
- * the view and in place, so its text is not spread over the width of the longest line.
+ * With long lines kept on one line, the view scrolls sideways by itself, with `DiffScrollbar` for its bar.
+ * A thread under a line stays as wide as the view and in place, so its text is not spread over the width of the longest line.
  */
 const unwrappedStyles = {
   // The view is the scroll a comment editor's toolbar sticks in now, so the page's sticky rows above must not push it down.
   '--composer-sticky-top': '0px',
   containerType: 'inline-size',
   overflowX: 'auto',
+  scrollbarWidth: 'none',
   '& .diff-threads': { boxSizing: 'border-box', left: 0, position: 'sticky', width: '100cqw' },
 }
 
@@ -337,6 +342,7 @@ export function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chos
   const heights = useMemo(() => pieces.map((piece) => piece.reduce((sum, row) => sum + Math.max(row.left ? wrappedLines(row.left.text, columns) : 1, row.right ? wrappedLines(row.right.text, columns) : 1) * ROW_HEIGHT + (row.gap && row.gap.count > 0 ? GAP_HEIGHT : 0), 0)), [columns, pieces])
   const inRow = (row: SplitRow, index: number) => row.leftIndex === index || row.rightIndex === index
   return (
+    <>
     <Box ref={scrollRef} sx={[(theme) => ({ ...diffBaseStyles(theme),
       '& .split-row': { display: 'grid', gridTemplateColumns: blameEnabled ? '106px 72px minmax(0, 1fr) 106px 72px minmax(0, 1fr)' : '72px minmax(0, 1fr) 72px minmax(0, 1fr)', minHeight: 20 },
       ...blameCellStyles(theme),
@@ -395,6 +401,8 @@ export function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chos
         />
       })}
     </Box>
+    {sideWidths ? <DiffScrollbar content={`${sideWidths.left}:${sideWidths.right}:${blameEnabled}`} target={scrollRef} /> : null}
+    </>
   )
 }
 

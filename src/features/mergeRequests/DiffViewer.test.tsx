@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { useState } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAppTheme } from '../../theme'
 import type { Diff, Position } from '../../types/gitlab'
@@ -33,6 +33,9 @@ function fileRow(path: string): RegExp {
   return new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&')}(、|$)`, 'u')
 }
 
+/** The path in the file heading. */
+const shownPath = () => document.querySelector('bdi')?.textContent
+
 function makeDiff(diff: string, oldPath = 'src/example.ts', newPath = oldPath): Diff {
   return { oldPath, newPath, diff, newFile: oldPath === '/dev/null', deletedFile: newPath === '/dev/null', renamedFile: oldPath !== newPath, tooLarge: false, collapsed: false }
 }
@@ -53,8 +56,7 @@ describe('DiffViewer', () => {
     const diff = makeDiff('@@ -1 +1 @@\n-old\n+new\n')
     render(<DiffViewer diffs={[diff]} onComment={vi.fn()} onSelectFile={vi.fn()} selectedFile={null} selectedPosition={undefined} view="diff" onViewChange={vi.fn()} />)
     expect(screen.queryByText('ファイルを選択')).not.toBeInTheDocument()
-    expect(screen.getByText('src/example.ts')).toBeInTheDocument()
-    expect(screen.getByText('example.ts')).toBeInTheDocument()
+    expect(shownPath()).toBe('src/example.ts')
     // The file list is shown only in wide containers; it still marks the displayed file.
     expect(screen.getByRole('button', { hidden: true, name: fileRow('src/example.ts') })).toHaveClass('Mui-selected')
   })
@@ -135,6 +137,134 @@ describe('DiffViewer', () => {
     localStorage.setItem('gitlab-desktop:diff-ignore-whitespace', 'true')
     renderMany([makeDiff('@@ -1,2 +1,2 @@\n-a\n-b\n+ a\n+c\n', 'src/one.ts'), makeDiff('@@ -1 +1,2 @@\n a\n+b\n', 'src/two.ts')])
     expect(screen.getByLabelText('追加2行、削除1行')).toBeInTheDocument()
+  })
+
+  it('keeps a long path on one line and shows all of it on hover', async () => {
+    const path = 'src/features/a/very/long/path/with/many/folders/LongFileName.test.tsx'
+    const view = renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n', path))
+    const shown = view.container.querySelector('bdi') as HTMLElement
+    const [folders, name] = Array.from(shown.children)
+    expect(name).toHaveTextContent('LongFileName.test.tsx')
+    // The folders give way before the file's name.
+    expect(getComputedStyle(folders).whiteSpace).toBe('nowrap')
+    expect(getComputedStyle(name).whiteSpace).toBe('nowrap')
+    expect(Number(getComputedStyle(folders).flexShrink)).toBeGreaterThan(Number(getComputedStyle(name).flexShrink))
+    fireEvent.mouseOver(shown)
+    expect((await screen.findByRole('tooltip')).textContent).toBe(path)
+    // The list's rows show the whole path on hover too.
+    expect(screen.getByRole('button', { hidden: true, name: fileRow(path) })).toHaveAttribute('title', path)
+  })
+
+  describe('with the file tree beside the diff', () => {
+    let realObserver: typeof ResizeObserver
+    beforeEach(() => {
+      realObserver = globalThis.ResizeObserver
+      // A pane wide enough for the tree at a wider choice.
+      globalThis.ResizeObserver = class {
+        constructor(private readonly report: ResizeObserverCallback) {}
+        observe() { this.report([{ contentRect: { width: 1400 } } as ResizeObserverEntry], this as unknown as ResizeObserver) }
+        unobserve() {}
+        disconnect() {}
+      } as unknown as typeof ResizeObserver
+    })
+    afterEach(() => { globalThis.ResizeObserver = realObserver })
+    const diff = makeDiff('@@ -1 +1 @@\n-old\n+new\n')
+
+    it('changes the width of the tree by dragging its edge, and remembers it', () => {
+      const view = renderViewer(diff)
+      const edge = screen.getByRole('separator', { name: 'ファイル一覧の幅' })
+      const tree = screen.getByRole('navigation', { name: '変更ファイル' })
+      expect(tree.style.flexBasis).toBe('240px')
+      fireEvent.pointerDown(edge, { button: 0, clientX: 300 })
+      fireEvent.pointerMove(edge, { clientX: 400 })
+      expect(tree.style.flexBasis).toBe('340px')
+      fireEvent.pointerUp(edge)
+      expect(localStorage.getItem('gitlab-desktop:diff-file-tree-width')).toBe('340')
+      view.unmount()
+      renderViewer(diff)
+      expect(screen.getByRole('navigation', { name: '変更ファイル' }).style.flexBasis).toBe('340px')
+    })
+
+    it('saves no width for a click on the edge that moves nothing', () => {
+      renderViewer(diff)
+      const edge = screen.getByRole('separator', { name: 'ファイル一覧の幅' })
+      fireEvent.pointerDown(edge, { button: 0, clientX: 300 })
+      fireEvent.pointerUp(edge)
+      expect(localStorage.getItem('gitlab-desktop:diff-file-tree-width')).toBeNull()
+    })
+
+    it('changes the width with the keyboard and back to the default with a double click, within its limits', () => {
+      renderViewer(diff)
+      const edge = screen.getByRole('separator', { name: 'ファイル一覧の幅' })
+      const tree = screen.getByRole('navigation', { name: '変更ファイル' })
+      fireEvent.keyDown(edge, { key: 'ArrowRight' })
+      expect(tree.style.flexBasis).toBe('256px')
+      fireEvent.keyDown(edge, { key: 'Home' })
+      expect(tree.style.flexBasis).toBe('160px')
+      fireEvent.keyDown(edge, { key: 'ArrowLeft' })
+      expect(tree.style.flexBasis).toBe('160px')
+      fireEvent.keyDown(edge, { key: 'End' })
+      expect(tree.style.flexBasis).toBe('600px')
+      fireEvent.doubleClick(edge)
+      expect(tree.style.flexBasis).toBe('240px')
+    })
+  })
+
+  it('opens the tree over the diff where it does not fit beside it, and closes it on choosing a file', () => {
+    const onlyFile = makeDiff('@@ -1 +1 @@\n-old\n+new\n', 'src/one.ts')
+    renderMany([onlyFile, makeDiff('@@ -1 +1 @@\n-old\n+new\n', 'src/two.ts')])
+    expect(screen.queryByRole('navigation', { name: '変更ファイル' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'ファイルツリーを表示' }))
+    const tree = screen.getByRole('navigation', { name: '変更ファイル' })
+    fireEvent.click(within(tree).getByRole('button', { name: fileRow('src/two.ts') }))
+    expect(shownPath()).toBe('src/two.ts')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('opens the contents from the file heading and moves to the chosen entry', () => {
+    const scrolled = vi.fn()
+    Element.prototype.scrollIntoView = scrolled
+    renderViewer(makeDiff('@@ -1,1 +1,2 @@ function first()\n a\n+b\n@@ -20,1 +21,3 @@\n c\n+export class Second {\n+}\n'))
+    fireEvent.click(screen.getByRole('button', { name: 'このファイルの目次を表示' }))
+    const contents = screen.getByRole('navigation', { name: '目次' })
+    expect(within(contents).getByRole('button', { name: '1行目: function first()' })).toBeInTheDocument()
+    fireEvent.click(within(contents).getByRole('button', { name: '21行目: class Second' }))
+    expect(scrolled).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }))
+    expect(scrolled.mock.contexts.at(-1)).toHaveAttribute('data-line-index', '2')
+    // Closes as the reader goes to the place.
+    expect(screen.queryByRole('navigation', { name: '目次' })).not.toBeInTheDocument()
+  })
+
+  it('moves to the rendered block holding a chosen Markdown heading', () => {
+    const scrolled = vi.fn()
+    Element.prototype.scrollIntoView = scrolled
+    renderViewer(makeDiff('@@ -1,2 +1,3 @@\n # Title\n+## Added heading\n same\n@@ -30,1 +31,2 @@\n end\n+## Last heading\n', 'README.md'))
+    fireEvent.click(screen.getByRole('button', { name: 'このファイルの目次を表示' }))
+    fireEvent.click(within(screen.getByRole('navigation', { name: '目次' })).getByRole('button', { name: '31行目: Last heading' }))
+    const target = scrolled.mock.contexts.at(-1) as HTMLElement
+    expect(target.dataset.fileAnchor).toBe('32')
+  })
+
+  it('offers no contents in the whole-file view', () => {
+    renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n'), { fileContent: 'new\n', view: 'file' })
+    // It keeps its place in the heading, out of sight and out of the tab order.
+    expect(screen.queryByRole('button', { name: 'このファイルの目次を表示' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the sideways scrollbar in view and in step with the diff while lines stay on one row', () => {
+    const view = renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n'))
+    expect(view.container.querySelector('[data-testid="diff-scrollbar"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '長い行を折り返す' }))
+    const bar = view.container.querySelector('[data-testid="diff-scrollbar"]') as HTMLElement
+    expect(getComputedStyle(bar).position).toBe('sticky')
+    expect(getComputedStyle(bar).overflowX).toBe('scroll')
+    const diff = bar.previousElementSibling as HTMLElement
+    bar.scrollLeft = 40
+    fireEvent.scroll(bar)
+    expect(diff.scrollLeft).toBe(40)
+    diff.scrollLeft = 12
+    fireEvent.scroll(diff)
+    expect(bar.scrollLeft).toBe(12)
   })
 
   it('keeps long lines on one line when wrapping is off, and remembers the choice', () => {
@@ -260,7 +390,7 @@ describe('DiffViewer', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '差分内を検索' }), { target: { value: 'needle' } })
     fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
 
-    expect(screen.getByText('src/b.ts')).toBeInTheDocument()
+    expect(shownPath()).toBe('src/b.ts')
     const activeRow = screen.getAllByTestId('diff-split-row').find((row) => row.dataset.searchActive === 'true')
     expect(activeRow).toHaveTextContent('old needle')
     expect(activeRow).toHaveTextContent('new needle')
@@ -278,7 +408,7 @@ describe('DiffViewer', () => {
     expect(within(navigation).getByRole('button', { name: fileRow('src/feature/b.ts'), hidden: true })).toBeInTheDocument()
     expect(within(navigation).queryByRole('button', { name: fileRow('src/other.ts'), hidden: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '次の一致ファイル' }))
-    expect(screen.getByText('src/feature/b.ts')).toBeInTheDocument()
+    expect(shownPath()).toBe('src/feature/b.ts')
 
     fireEvent.change(screen.getByRole('textbox', { name: 'ファイル名を検索' }), { target: { value: 'does-not-exist' } })
     expect(within(navigation).getByText('一致するファイルはありません。')).toBeInTheDocument()
@@ -339,7 +469,9 @@ describe('DiffViewer', () => {
 
       width = 700
       act(() => observers.forEach((report) => report()))
-      expect(screen.queryByRole('button', { name: /ファイルツリーを/u })).not.toBeInTheDocument()
+      // Too narrow to sit beside the diff: the button stays, and opens the tree over it.
+      expect(screen.queryByRole('navigation', { name: '変更ファイル' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'ファイルツリーを表示' })).toHaveAttribute('aria-haspopup', 'dialog')
     } finally {
       vi.unstubAllGlobals()
     }
