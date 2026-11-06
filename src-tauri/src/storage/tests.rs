@@ -31,6 +31,47 @@ fn cache_is_account_scoped_expires_and_clears() {
     assert!(store.get("a", "query").unwrap().is_none());
 }
 #[test]
+fn saved_text_must_be_a_whole_snapshot() {
+    let snapshot = Snapshot {
+        data: serde_json::json!([{"id":"1"}]),
+        fetched_at: now_ms(),
+        source: "network".into(),
+        next_page: None,
+        total_pages: None,
+        completeness: "complete".into(),
+    };
+    let text = serde_json::to_string(&snapshot).unwrap();
+    assert!(check_snapshot(&text).is_ok());
+    for damaged in [&text[..text.len() / 2], "", "null", "[]", r#"{"data":[]}"#] {
+        assert_eq!(
+            check_snapshot(damaged).unwrap_err().code,
+            "STORAGE",
+            "{damaged}"
+        );
+    }
+    let wrong_time =
+        r#"{"data":[],"fetchedAt":"soon","source":"network","completeness":"complete"}"#;
+    assert_eq!(check_snapshot(wrong_time).unwrap_err().code, "STORAGE");
+    // It agrees with parsing a whole snapshot on every field's type.
+    for wrong_type in [
+        r#"{"data":[],"fetchedAt":1,"source":1,"completeness":"complete"}"#,
+        r#"{"data":[],"fetchedAt":1,"source":"network","completeness":1}"#,
+        r#"{"data":[],"fetchedAt":1,"source":"network","completeness":"page","nextPage":"2"}"#,
+        r#"{"data":[],"fetchedAt":1,"source":"network","completeness":"page","totalPages":-1}"#,
+    ] {
+        assert!(parse_snapshot(wrong_type).is_err(), "{wrong_type}");
+        assert_eq!(
+            check_snapshot(wrong_type).unwrap_err().code,
+            "STORAGE",
+            "{wrong_type}"
+        );
+    }
+    assert!(check_snapshot(
+        r#"{"data":null,"fetchedAt":1,"source":"network","completeness":"page","nextPage":null}"#
+    )
+    .is_ok());
+}
+#[test]
 fn clearing_queries_keeps_the_answers_no_rule_selects() {
     let mut store = Store::init(Connection::open_in_memory().unwrap()).unwrap();
     let snapshot = Snapshot {

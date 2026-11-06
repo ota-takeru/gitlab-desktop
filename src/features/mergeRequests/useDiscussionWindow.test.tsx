@@ -1,6 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ScreenReadinessContext } from '../../components/screenReadinessContext'
 import { GitLabCommandError, type Discussion } from '../../types/gitlab'
 import { OLDER_PAGE_REFRESH_MS, useDiscussionWindow, type DiscussionWindow } from './useDiscussionWindow'
 
@@ -53,6 +54,33 @@ function renderWindow() {
   const view = render(<Harness onWindow={(window) => { current.value = window }} />)
   return { current, view }
 }
+
+it('tells when saved threads may still arrive, and not while only the network is left', async () => {
+  for (const key of Object.keys(mocks.pages)) delete mocks.pages[Number(key)]
+  let current: DiscussionWindow | undefined
+  const view = render(<Harness onWindow={(window) => { current = window }} />)
+  // The page is known to have nothing saved once it has checked.
+  await waitFor(() => expect(current?.readingSaved).toBe(false))
+  expect(current?.loading).toBe(true)
+
+  mocks.pages[1] = { data: threads('p1', 3), nextPage: null, totalPages: 1 }
+  view.rerender(<Harness onWindow={(window) => { current = window }} />)
+  await waitFor(() => expect(current?.discussions).toHaveLength(3))
+  expect(current?.readingSaved).toBe(false)
+})
+
+it('holds a waiting screen from a page arriving until its threads have rendered', async () => {
+  for (const key of Object.keys(mocks.pages)) delete mocks.pages[Number(key)]
+  mocks.pages[1] = { data: threads('p1', 3), nextPage: null, totalPages: 1 }
+  const release = vi.fn()
+  const hold = vi.fn(() => release)
+  let current: DiscussionWindow | undefined
+  render(<ScreenReadinessContext.Provider value={hold}><Harness onWindow={(window) => { current = window }} /></ScreenReadinessContext.Provider>)
+
+  expect(hold).toHaveBeenCalled()
+  await waitFor(() => expect(current?.discussions).toHaveLength(3))
+  await waitFor(() => expect(release).toHaveBeenCalledTimes(hold.mock.calls.length))
+})
 
 describe('useDiscussionWindow', () => {
   beforeEach(() => {

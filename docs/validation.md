@@ -193,6 +193,84 @@ The cause of transitions getting slower as stored data grows was measured with d
 
 The read records were parsed in full on every render, so they are now parsed only when the stored content changes. Updating the read records on the MR screen also runs only when the discussions change, not on every render. The cache counted the total size of all entries on every read, so expired entries are now excluded by a read condition, and capacity cleanup is done on write using only the index. Rendered Markdown is reused for up to 2,000 comment bodies. Re-rendering the whole list of 60 discussions and 180 comments still takes about 360 to 420 ms in jsdom, and this remains.
 
+## Reading a saved answer from the cache
+
+Added 2026-11-05. A saved answer is a GitLab response stored as JSON text in the SQLite cache.
+
+**Result:** Rust no longer rebuilds the JSON on a cache read, and the store's lock is held for less time. A whole read of a string-heavy 3.83 MB answer showed no clear gain. The step timings suggest a larger gain for answers made of many small fields, but no whole read of such an answer was measured. Neither was the wait for the lock.
+
+### What changed
+
+All cache work goes through one SQLite connection behind one lock.
+
+| Operation | Before | After |
+| --- | --- | --- |
+| Cache-only read | Under the lock: read the row and parse it. Then write it out as JSON again | Under the lock: read the row. Outside it: check the text and send it unchanged |
+| Saving an answer | Under the lock: write out the JSON and store the row | Outside the lock: write out the JSON. Under the lock: store the row |
+| A network read that reuses an identical read's saved answer | Under the lock: read the row and parse it | Under the lock: read the row. Outside it: parse it. It is still written out as JSON afterwards |
+
+The code is `saved_answer` and `query` in `native.rs`, and `check_snapshot` in `storage.rs`.
+
+`check_snapshot` still reads the whole text, so it takes longer on larger answers. A row fails as a storage error if its JSON is malformed, a required field is missing, or a field has the wrong type. `nextPage` and `totalPages` may be absent. Inside `data` only the syntax is read, so out-of-range numbers, very deep nesting and lone surrogates now pass on a cache-only read. The app does not write such values, and `JSON.parse` accepts them. The reuse path in the table still parses the row, so it still fails on them.
+
+The `source` field says where an answer came from, and the saved text keeps the value it was saved with. Rust used to set it to `cache` on a cache-only read. `query_gitlab` now returns `network` there, and `queryGitLab` in `src/lib/gitlab.ts` marks the answer as `cache`. Code that calls `query_gitlab` directly cannot rely on `source`.
+
+### Timings
+
+These are medians on a development PC running Windows 11, using synthetic data. Nothing here was measured on a real GitLab connection. The scripts were not kept in the repository. The sizes of real answers were not examined; 8 MB is the largest answer the cache saves.
+
+The steps were timed in standalone programs, on items of about 900 bytes each, so these answers have many small fields. Ranges are the medians of two runs. The `IgnoredAny`, SQLite and `JSON.parse` rows are from one run.
+
+| Step | 200 KB | 8 MB | Measured with |
+| --- | --- | --- | --- |
+| Read the row from SQLite | 0.2 ms | Not measured | Python `sqlite3`, 600 rows of 200 KB, OS file cache warm |
+| Parse into a JSON value | 0.8 to 1.1 ms | 27 to 38 ms | Release build of `serde_json` |
+| Write the value as JSON | 0.4 to 0.5 ms | 15 to 20 ms | Same |
+| Read the whole text without building values | 0.2 ms | 7.5 ms | Same, with `IgnoredAny`, standing in for `check_snapshot` |
+| `JSON.parse` | 0.6 ms | 24 ms | Node.js 24, not WebView2 |
+
+The whole read was timed from `invoke` to the parsed answer in WebView2, in release builds, one read at a time. The answer was 3.83 MB: 100 items with a 40,000-character description each, so most of it is long strings and there is less to parse than in the table above. Each run made 40 reads.
+
+| Read path | Median of each run |
+| --- | --- |
+| Before, reproduced | 41, 46, 58 ms |
+| After | 37, 39, 89 ms |
+| After, three runs on earlier test builds | 43, 48, 50 ms |
+
+These runs cannot show whether reads got faster:
+
+- The ranges overlap.
+- The order was fixed: the runs on earlier test builds came first, then the three "after" runs, then the three "before" runs. The earlier test builds had the same read path. The 89 ms run was the first after a build, and its cause is unknown.
+- The "before" build is not the old code. It added the old conversion after the new check, outside the lock, so it includes extra work and has different locking.
+
+All of these runs predate the final `check_snapshot`, which also checks the types of `source`, `completeness`, `nextPage` and `totalPages`. They were not repeated with it.
+
+The app runs `quick_check` over the whole database file at every start, before any saved answer can be read. Opening the 117 MB file of 600 rows and running it took 113 and 180 ms: one run on each of two files, with a warm OS file cache, in Python `sqlite3`.
+
+### What was tried and left alone
+
+Moving `fetched` ahead of the `snapshot` column was timed once on 200 KB rows, and so was setting `mmap_size` to 256 MB and `cache_size` to 32 MB. Reads took 0.16 to 0.38 ms with no consistent direction, in the same Python `sqlite3` setup. The differences are a fraction of a millisecond per row, so these settings were not changed. Larger rows were not tried.
+
+### Behaviour checked in the app
+
+A test build with its own data folder ran against a local fake GitLab server. It allowed plain HTTP, which released builds do not. A script drove it over the WebView2 debug port and passed in three runs of the "after" build:
+
+- An answer, a cache miss and an error each reached WebView2 in the expected form.
+- With the server stopped and the app restarted, the screen drew the saved answer and labelled it as saved.
+
+That build predates the final `check_snapshot`, whose added type checks are covered by unit tests only.
+
+### Not measured
+
+- The wait for the lock when several screens read or save at once.
+- A whole read of an answer made of many small fields, such as a list or a discussion.
+- A real GitLab connection, and the sizes of real answers.
+- The transfer from Rust to WebView2 on its own.
+- Reading an 8 MB row from SQLite.
+- Rendering after the read.
+- Reads and `quick_check` with a cold OS file cache.
+
+
 
 ## Start-up code and tab switching
 
@@ -225,3 +303,46 @@ Long tasks in the two rapid-click scenarios fell from 5.8 s and 8.0 s to 2.7 s a
 The location was read with useSyncExternalStore, which React always renders at once, so every click rendered the whole workspace (about 1,100 to 1,250 components) inside the click. The screens now follow the location in a transition, which a later click interrupts; the MR tab strip moves to the clicked tab at once by itself. GitLab answers (useGitLabQuery), loaded discussion and diff pages, activity, notifications and the personal workspace also render in transitions. Showing an MR recorded it as recently viewed, and the record rendered every screen that reads the workspace; the visit records (`recent`, `shown`), which no screen shows, no longer do. A composer starting to hold back updates rendered the whole workspace for the update button; only the update controls render now. Moving the pointer onto the expanded sidebar rendered the navigation.
 
 What remains: the commit of a transition (DOM changes, and the effects of the screen being hidden and the one being shown) runs in one task, so a long frame still appears once when a switch finishes and when a new MR mounts; the MUI tab strip renders twice more after a click to place its indicator.
+
+## Opening a long discussion
+
+Added 2026-11-05. Before this change, opening the Discussion tab mounted every thread together: `content-visibility: auto` skips layout and paint, but not React's render and mount of threads out of view. How threads mount now is described under "Long discussions" in the [UI design](ui-design.md). Section 14 of [Architecture](architecture.md) sets no number for opening a discussion.
+
+Measured on 2026-11-06 with the fixture client (the client's screens on fixed data with no GitLab connection, `?fixture=ready`). The answer was synthetic: 60 threads with 3 comments each (140 KB), arriving at once and opening at the newest thread, on a first open of the discussion with every comment unread. The build used production React without minifying and ran in headless Microsoft Edge (Playwright) at 1280×840. "Off" is the same code with deferred mounting switched off; "on" has it on. They were alternated, and the table gives medians of 5 pairs at normal CPU speed and 2 pairs with the CPU slowed 4×. Each run lasted from the click on the tab until every thread had mounted and no long task had started for 1.5 s. Long tasks were read with a `PerformanceObserver`. The scripts are not in the repository.
+
+| Target | Normal CPU: off | On | Slowed 4×: off | On |
+| --- | --- | --- | --- | --- |
+| Click to the first comment | 1,602 ms | 680 ms | 9,628 ms | 4,040 ms |
+| Longest task | 514 ms | 243 ms | 3,102 ms | 1,080 ms |
+| All long tasks added up | 749 ms | 321 ms | 8,025 ms | 12,714 ms |
+| Click to every thread mounted | 1,736 ms | 2,283 ms | 9,800 ms | 25,574 ms |
+
+Other jobs were running on the PC and their load was not recorded. With deferred mounting off at normal speed, the first comment took 1,420 to 2,356 ms, so use the table for direction and rough size only.
+
+What can be said:
+
+- The first comment appeared sooner and the longest task was shorter in all 7 pairs. At normal speed the medians are about 2.4 times sooner and 2.1 times shorter.
+- Every thread took longer to mount in 3 of the 5 pairs at normal speed and in both pairs with the CPU slowed 4×, where the median is about 2.6 times as long.
+- Whether the total work fell cannot be told. The added-up long tasks fell at normal speed and rose with the CPU slowed 4×, and they also depend on how the work was split into tasks.
+
+Checked in the same browser and build at normal CPU speed:
+
+| Check | Result |
+| --- | --- |
+| The discussion ends up at the newest thread once all threads have mounted | In 5 of 5 runs, the last thread was where it is with deferred mounting off (top 188 px, `scrollTop` 45,532) |
+| N (next unresolved thread), pressed with 55 of 60 threads waiting | In 3 of 3 runs, the first comment of the first thread had the focus; that thread was waiting, far from where the discussion opens |
+| Scrolling up 20 wheel steps of 900 px during mounting | An empty box was on screen in 29 of 180 frames, at most 3 at once |
+| Returning to a Discussion tab built again under memory pressure | The same thread at the same offset (`scrollTop` 9,000) |
+
+Not checked:
+
+- WebView2, which is what the product runs on, and a real GitLab connection.
+- A PC with less other work.
+- That the opening position does not move on screen during mounting. Only its place after mounting was compared.
+- A discussion opening at an unread comment in the middle. A unit test covers only that its thread mounts at once.
+- A comment being edited or a reply being written while threads wait, which has no test either.
+- Moving with N, P or the thread outline to a folded thread that is waiting. N was checked only on a thread that is open.
+- Where the reader's place goes when threads above mount after the reader has scrolled.
+- How long a tab built again under memory pressure takes, as it mounts all its threads together.
+- Other numbers of threads. The values in the UI design (12 threads, 4 on each side, 110 px per row, 1,000 px from the view) were not derived from measurements.
+- What the remaining longest task consists of.

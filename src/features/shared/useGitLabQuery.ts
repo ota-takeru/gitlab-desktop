@@ -16,6 +16,8 @@ export interface GitLabQueryState<T> {
   data: T | null
   snapshot: GitLabSnapshot<T> | null
   loading: boolean
+  /** No answer yet, and the saved data has not been checked. */
+  checkingSavedData: boolean
   refreshing: boolean
   /** The data belongs to the previous query of a `keepPrevious` caller while the current one loads. */
   previous: boolean
@@ -134,6 +136,7 @@ export function useGitLabQuery<Q extends GitLabQuery>(
   }, [hasQuery, refetch])
 
   return {
+    checkingSavedData: waitingForSavedData,
     data: snapshot?.data ?? null,
     error: queryError,
     loading: loaded.isPending && !snapshot,

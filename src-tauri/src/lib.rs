@@ -18,7 +18,7 @@ use native::{
     ConnectInput, LocalRepository, LocalRepositorySearch, MutationInput, NativeState,
     PendingOperation, QueryInput, UploadInput,
 };
-use storage::{LocalDraft, Snapshot};
+use storage::LocalDraft;
 
 // A damaged/newer database must leave a usable error screen instead of
 // aborting the process or silently replacing private data with an empty DB.
@@ -92,8 +92,9 @@ async fn disconnect_gitlab(
 async fn query_gitlab(
     state: tauri::State<'_, ApplicationState>,
     input: QueryInput,
-) -> Result<Option<Snapshot>, AppError> {
-    state.native()?.query(input).await
+) -> Result<tauri::ipc::Response, AppError> {
+    let answer = state.native()?.answer(input).await?;
+    Ok(tauri::ipc::Response::new(answer))
 }
 #[tauri::command]
 async fn mutate_gitlab(

@@ -119,9 +119,11 @@ export async function queryGitLab<Q extends GitLabQuery>({
 }: QueryGitLabInput<Q>): Promise<GitLabSnapshot<GitLabQueryData<Q>> | null> {
   ensureDesktop()
   try {
-    return await invoke<GitLabSnapshot<GitLabQueryData<Q>> | null>('query_gitlab', {
+    const snapshot = await invoke<GitLabSnapshot<GitLabQueryData<Q>> | null>('query_gitlab', {
       input: { background, mode, query, requestId, sessionId },
     })
+    // Rust sends a saved answer as it was saved, still marked with where it first came from.
+    return snapshot && mode === 'cache' ? { ...snapshot, source: 'cache' } : snapshot
   } catch (error) {
     throw normalizeGitLabError(error)
   }

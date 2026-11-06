@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KeepAlive } from './KeepAlive'
@@ -29,6 +29,9 @@ it('drops the screens beyond a lowered limit without waiting for the next screen
   expect(container.querySelector('[data-screen-active="true"]')).toHaveTextContent('c')
 })
 
+// jsdom has no AnimationEvent, so React listens for the prefixed name.
+const endFade = (element: Element) => fireEvent(element, new Event('webkitAnimationEnd', { bubbles: true }))
+
 function Holding({ held, label }: { held: boolean; label: string }) {
   const hold = useScreenReadiness()
   useEffect(() => { if (held && hold) return hold() }, [held, hold])
@@ -52,9 +55,57 @@ describe('revealWhenReady', () => {
 
     rerender(view('b', false))
     act(() => { vi.advanceTimersToNextFrame() })
-    expect(screenOf(container, 'a')).toHaveStyle({ display: 'none' })
+    // It fades in on top of the screen before it, so no blank pane shows between the two.
+    expect(screenOf(container, 'a')).not.toHaveStyle({ display: 'none' })
     expect(screenOf(container, 'b')).not.toHaveStyle({ opacity: '0' })
+    expect(screenOf(container, 'b')).toHaveStyle({ animation: 'gitlab-fade-in 150ms ease-out', position: 'absolute' })
+
+    endFade(screenOf(container, 'b'))
+    expect(screenOf(container, 'a')).toHaveStyle({ display: 'none' })
+    expect(screenOf(container, 'b')).not.toHaveStyle({ position: 'absolute' })
     expect(screenOf(container, 'b')).toHaveStyle({ animation: 'gitlab-fade-in 150ms ease-out' })
+  })
+
+  it('keeps the screen before one coming back under it until its fade ends', () => {
+    const { container, rerender } = render(view('a', false))
+    rerender(view('b', false))
+    act(() => { vi.advanceTimersToNextFrame() })
+    endFade(screenOf(container, 'b'))
+
+    rerender(view('a', false))
+    expect(screenOf(container, 'b')).not.toHaveStyle({ display: 'none' })
+    expect(screenOf(container, 'a')).toHaveStyle({ position: 'absolute' })
+    endFade(screenOf(container, 'a'))
+    expect(screenOf(container, 'b')).toHaveStyle({ display: 'none' })
+  })
+
+  it('does not take a fade inside the screen for its own', () => {
+    const { container, rerender } = render(<KeepAlive activeKey="a" max={3}><span>a</span></KeepAlive>)
+    rerender(<KeepAlive activeKey="b" max={3}><span>b</span></KeepAlive>)
+    endFade(screenOf(container, 'b').querySelector('span')!)
+    expect(screenOf(container, 'a')).not.toHaveStyle({ display: 'none' })
+  })
+
+  it('stops covering the screen before it when a fade never reports an end', () => {
+    const { container, rerender } = render(view('a', false))
+    rerender(view('b', false))
+    act(() => { vi.advanceTimersToNextFrame() })
+    act(() => { vi.advanceTimersByTime(499) })
+    expect(screenOf(container, 'a')).not.toHaveStyle({ display: 'none' })
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screenOf(container, 'a')).toHaveStyle({ display: 'none' })
+    expect(screenOf(container, 'b')).not.toHaveStyle({ position: 'absolute' })
+  })
+
+  it('tells the caller to keep showing what was there until a new screen has faded in', () => {
+    const onPending = vi.fn()
+    const { container, rerender } = render(view(null, false, onPending))
+    rerender(view('a', true, onPending))
+    rerender(view('a', false, onPending))
+    act(() => { vi.advanceTimersToNextFrame() })
+    expect(onPending).toHaveBeenLastCalledWith(true)
+    endFade(screenOf(container, 'a'))
+    expect(onPending).toHaveBeenLastCalledWith(false)
   })
 
   it('shows a held screen after a second at most', () => {
@@ -73,12 +124,14 @@ describe('revealWhenReady', () => {
     expect(onPending).toHaveBeenLastCalledWith(true)
     rerender(view('a', false, onPending))
     act(() => { vi.advanceTimersToNextFrame() })
+    endFade(screenOf(container, 'a'))
     expect(onPending).toHaveBeenLastCalledWith(false)
 
     rerender(view('b', false, onPending))
     act(() => { vi.advanceTimersToNextFrame() })
     rerender(view('a', true, onPending))
     expect(screenOf(container, 'a')).not.toHaveStyle({ opacity: '0' })
+    endFade(screenOf(container, 'a'))
     expect(screenOf(container, 'b')).toHaveStyle({ display: 'none' })
   })
 

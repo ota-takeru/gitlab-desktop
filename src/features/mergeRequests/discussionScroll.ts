@@ -16,10 +16,16 @@ export function findScrollContainer(element: HTMLElement | null): HTMLElement | 
   return null
 }
 
-/** Bottom edge of the sticky MR header inside the scroll container, in viewport coordinates. */
+/**
+ * Bottom edge of the sticky MR header inside the scroll container, in viewport coordinates.
+ * The header can be carried out of view: while a tab fades in over the one before it, the header's
+ * parent is only as tall as the tab before. Where it sticks is then still where the content starts.
+ */
 function contentTop(host: HTMLElement): number {
+  const hostTop = host.getBoundingClientRect().top
   const header = host.querySelector<HTMLElement>('[data-sticky-header="true"]')
-  return header ? header.getBoundingClientRect().bottom : host.getBoundingClientRect().top
+  if (!header) return hostTop
+  return Math.max(header.getBoundingClientRect().bottom, hostTop + header.offsetHeight)
 }
 
 export function findNote(root: ParentNode, noteId: string | null | undefined): HTMLElement | null {
@@ -44,21 +50,28 @@ export function scrollToNearest(host: HTMLElement, element: HTMLElement): void {
 /**
  * Opening position: the first unread comment when there is one, otherwise the
  * newest comment's thread with its end at the bottom of the view (or its top
- * under the header when the thread is taller than the view).
+ * under the header when the thread is taller than the view). Returns what it placed.
  */
-export function positionAtLatest(host: HTMLElement, root: ParentNode, unreadNoteId: string | null, latestNoteId: string | null): void {
+export function positionAtLatest(host: HTMLElement, root: ParentNode, unreadNoteId: string | null, latestNoteId: string | null): HTMLElement | null {
   const unread = findNote(root, unreadNoteId)
   if (unread) {
     scrollToTop(host, unread)
-    return
+    return unread
   }
   const latest = findNote(root, latestNoteId)
   const thread = latest?.closest<HTMLElement>('[data-discussion-id]') ?? Array.from(root.querySelectorAll<HTMLElement>('[data-discussion-id]')).at(-1) ?? null
-  if (!thread) return
+  if (!thread) return null
   const rect = thread.getBoundingClientRect()
   const top = contentTop(host)
   const bottom = host.getBoundingClientRect().bottom
   host.scrollTop += rect.height + GAP * 2 > bottom - top ? rect.top - top - GAP : rect.bottom - bottom + GAP * 2
+  return thread
+}
+
+/** A thread or comment with its current offset, to keep it still whatever else is in view. */
+export function anchorAt(host: HTMLElement, element: HTMLElement): ScrollAnchor | null {
+  const id = element.closest<HTMLElement>('[data-discussion-id]')?.dataset.discussionId
+  return id ? { id, noteId: element.dataset.noteId, offset: element.getBoundingClientRect().top - contentTop(host) } : null
 }
 
 export interface ScrollAnchor { id: string; offset: number; noteId?: string }

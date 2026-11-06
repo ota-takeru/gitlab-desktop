@@ -28,6 +28,8 @@ export function useDiscussionCode({ discussions, enabled, headSha, iid, projectI
   const query = useMemo<DiffsQuery | null>(() => requestPage && headSha ? { headSha, iid, kind: 'diffs', page: requestPage, projectId } : null, [headSha, iid, projectId, requestPage])
   const request = useGitLabQuery<DiffsQuery>(sessionId, query)
   const searching = requestPage !== null && !request.error
+  // A page read from the saved data reaches `pages` a commit after the read has it.
+  const readingSaved = searching && (request.checkingSavedData || Boolean(request.data))
   const find = useCallback((path: string) => {
     for (const page of Object.values(pages)) {
       const diff = page.data.find((item) => item.newPath === path || item.oldPath === path)
@@ -36,7 +38,7 @@ export function useDiscussionCode({ discussions, enabled, headSha, iid, projectI
     return undefined
   }, [pages])
   if (!enabled || !sessionId) return undefined
-  const current: CurrentDiffs = { find, searching }
+  const current: CurrentDiffs = { find, readingSaved, searching }
   return (position) => hasLine(position) ? <DiscussionCode current={position.headSha === headSha ? current : null} position={position} projectId={projectId} sessionId={sessionId} /> : null
 }
 

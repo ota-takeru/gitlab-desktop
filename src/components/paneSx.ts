@@ -15,6 +15,13 @@ export const fadeInSx = {
   '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
 } as const
 
+/** Content that replaces a faint placeholder: it starts partly visible, as fading from nothing would first dim the pane below the placeholder. */
+export const contentFadeInSx = {
+  '@keyframes gitlab-content-fade-in': { from: { opacity: 0.4 }, to: { opacity: 1 } },
+  animation: 'gitlab-content-fade-in 150ms ease-out',
+  '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+} as const
+
 /** The scrolling results of a list; rows of the previous page or conditions stay, dimmed, until the new ones arrive. */
 export function paneResultsSx(previous: boolean) {
   return { flex: 1, minHeight: 0, minWidth: 0, opacity: previous ? 0.6 : 1, overflowY: 'auto', transition: 'opacity 120ms', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } } as const

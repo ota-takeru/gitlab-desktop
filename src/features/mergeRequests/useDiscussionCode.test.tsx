@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { act, render, screen } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 
+import { ScreenReadinessContext } from '../../components/screenReadinessContext'
 import { createAppTheme } from '../../theme'
 import type { Diff, DiffsQuery, Discussion, GitLabSnapshot, Position } from '../../types/gitlab'
 import { diffExcerpt } from './diffExcerpt'
@@ -79,6 +80,30 @@ it('reads the first diff page when the commented file is not loaded yet', () => 
   expect(screen.getByRole('status')).toHaveTextContent('コードを読み込み中…')
   // A full excerpt's height, so the code arriving does not move the place the discussion opened at.
   expect(screen.getByRole('status').parentElement).toHaveStyle({ minHeight: '140px' })
+})
+
+it('holds a waiting screen only while the saved diff is being read or has not reached the code yet', () => {
+  const release = vi.fn()
+  const hold = vi.fn(() => release)
+  const discussions = [discussionAt(position({ newLine: 4 }))]
+  const client = new QueryClient()
+  const tree = () => <QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><ScreenReadinessContext.Provider value={hold}><Harness discussions={discussions} headSha={head} /></ScreenReadinessContext.Provider></ThemeProvider></QueryClientProvider>
+  const reading = (answer: object) => queryMock.mockImplementation((_session: string, query: { kind?: string } | null) => query?.kind === 'diffs' ? answer : result(null))
+
+  reading({ ...result(null), checkingSavedData: true })
+  const view = render(tree())
+  expect(hold).toHaveBeenCalledTimes(1)
+
+  // The read has the saved page, and the code does not show it yet.
+  reading(result([diff]))
+  view.rerender(tree())
+  expect(release).not.toHaveBeenCalled()
+
+  // Nothing saved: only the network is left, which a screen does not wait for.
+  reading(result(null))
+  view.rerender(tree())
+  expect(release).toHaveBeenCalledTimes(1)
+  expect(hold).toHaveBeenCalledTimes(1)
 })
 
 it('shows an outdated comment in the file as it was at the commented commit', () => {

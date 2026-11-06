@@ -1,17 +1,22 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import { useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 
+import { delayedRevealSx } from '../../components/paneSx'
+import { useScreenReadiness } from '../../components/screenReadinessContext'
 import type { Diff, FileQuery, Position } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { splitFileLines, type ParsedLine } from './diffParser'
 import { diffExcerpt, LINES_AFTER, LINES_BEFORE } from './diffExcerpt'
+import { useFadeAfterLoading } from './useFadeAfterLoading'
 import { useT } from '../../i18n/useT'
 
 export interface CurrentDiffs {
   find: (path: string) => Diff | undefined
   /** True until every commented file is found or no further page can help. */
   searching: boolean
+  /** Searching a page that comes from the saved data, not yet from the network. */
+  readingSaved: boolean
 }
 
 /**
@@ -21,8 +26,9 @@ export interface CurrentDiffs {
 export function DiscussionCode({ current, position, projectId, sessionId }: { current: CurrentDiffs | null; position: Position; projectId: string; sessionId: string }) {
   const diff = current?.find(position.newPath || position.oldPath)
   const excerpt = useMemo(() => diff && !diff.tooLarge ? diffExcerpt(diff, position) : null, [diff, position])
-  if (excerpt) return <DiffExcerpt lines={excerpt.lines} target={excerpt.target} />
-  if (current?.searching) return <CodeLoading />
+  const fade = useFadeAfterLoading(!excerpt && Boolean(current?.searching && !current.readingSaved))
+  if (excerpt) return <Box sx={fade}><DiffExcerpt lines={excerpt.lines} target={excerpt.target} /></Box>
+  if (current?.searching) return <CodeLoading readingSaved={current.readingSaved} />
   return <FileExcerpt outdated={!current} position={position} projectId={projectId} sessionId={sessionId} />
 }
 
@@ -74,13 +80,14 @@ function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: b
   const query = useMemo<FileQuery | null>(() => sha && path ? { kind: 'file', path, projectId, sha } : null, [path, projectId, sha])
   const result = useGitLabQuery<FileQuery>(sessionId, query)
   const lines = useMemo(() => result.data ? splitFileLines(result.data.content) : null, [result.data])
+  const fade = useFadeAfterLoading(Boolean(query) && !lines && !result.error && !result.checkingSavedData)
   if (!query) return null
   if (result.error && !lines) return <CodeMessage>{t('review.code.error', { message: result.error.message })}</CodeMessage>
   if (!lines) return <CodeLoading />
   if (line < 1 || line > lines.length) return <CodeMessage>{t('review.code.lineMissing')}</CodeMessage>
   const start = Math.max(1, line - LINES_BEFORE)
   const end = Math.min(lines.length, line + LINES_AFTER)
-  return <Box>
+  return <Box sx={fade}>
     {outdated ? <Typography color="textSecondary" component="div" sx={{ px: 1, py: 0.5 }} variant="caption">{t('review.code.outdated', { sha: sha.slice(0, 8) })}</Typography> : null}
     <Box aria-label={t('review.code.label')} component="figure" role="group" sx={{ m: 0 }}>
       {lines.slice(start - 1, end).map((text, index) => {
@@ -98,10 +105,17 @@ function FileExcerpt({ outdated, position, projectId, sessionId }: { outdated: b
   </Box>
 }
 
-/** Holds a full excerpt's height, so the code arriving does not push away the place the discussion opened at. */
-function CodeLoading() {
+/**
+ * Holds a full excerpt's height, so the code arriving does not push away the place the discussion opened at.
+ * A screen waiting to show waits for saved code here, inside the tab it belongs to; the words show only for a longer wait.
+ */
+function CodeLoading({ readingSaved = false }: { readingSaved?: boolean }) {
   const t = useT()
-  return <Box sx={{ minHeight: (LINES_BEFORE + 1 + LINES_AFTER) * 20 }}><CodeMessage>{t('review.code.loading')}</CodeMessage></Box>
+  const holdScreen = useScreenReadiness()
+  useEffect(() => {
+    if (readingSaved && holdScreen) return holdScreen()
+  }, [holdScreen, readingSaved])
+  return <Box sx={{ ...delayedRevealSx, minHeight: (LINES_BEFORE + 1 + LINES_AFTER) * 20 }}><CodeMessage>{t('review.code.loading')}</CodeMessage></Box>
 }
 
 function CodeMessage({ children }: { children: ReactNode }) {
