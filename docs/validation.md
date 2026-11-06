@@ -193,7 +193,6 @@ The cause of transitions getting slower as stored data grows was measured with d
 
 The read records were parsed in full on every render, so they are now parsed only when the stored content changes. Updating the read records on the MR screen also runs only when the discussions change, not on every render. The cache counted the total size of all entries on every read, so expired entries are now excluded by a read condition, and capacity cleanup is done on write using only the index. Rendered Markdown is reused for up to 2,000 comment bodies. Re-rendering the whole list of 60 discussions and 180 comments still takes about 360 to 420 ms in jsdom, and this remains.
 
-
 ## Reading a saved answer from the cache
 
 Added 2026-11-05. A saved answer is a GitLab response stored as JSON text in the SQLite cache.

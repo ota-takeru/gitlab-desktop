@@ -44,6 +44,8 @@ export interface DiscussionWindow {
   refreshAll: () => Promise<void>
   /** A loaded page is being read, so a comment not found yet may still arrive. */
   reading: boolean
+  /** Nothing to show yet, but saved threads may still arrive: a page has not checked the saved data, or its threads have not rendered. */
+  readingSaved: boolean
   /** Refreshes the page holding the discussion (and `newestPages` for new threads); resolves as refreshLatest does. */
   refreshDiscussion: (discussionId: string | null) => Promise<void>
   /** Renders the page observers; keep it mounted while discussions should stay live. */
@@ -133,6 +135,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
       observed,
       olderError: fixedLow !== null && low < newestPage ? lowState?.error ?? null : null,
       reading: observed.some((page) => store.get(page)?.loading || store.get(page)?.refreshing),
+      readingSaved: !ready && !newestState?.error && observed.some((page) => { const current = store.get(page); return !current || current.checkingSavedData || Boolean(current.data) }),
       ready,
       total,
     }
@@ -171,7 +174,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
 
   const observers = active
     // Older pages refresh less often than the newest one, and at once after a write that touches them.
-    ? state.observed.map((page) => <DiscussionPageObserver iid={iid} key={page} page={page} projectId={projectId} refreshIntervalMs={page >= state.latestPage ? undefined : OLDER_PAGE_REFRESH_MS} sessionId={sessionId} store={store} />)
+    ? state.observed.map((page) => <DiscussionPageObserver iid={iid} key={page} page={page} projectId={projectId} refreshIntervalMs={page >= state.latestPage ? undefined : OLDER_PAGE_REFRESH_MS} sessionId={sessionId} shown={state.ready} store={store} />)
     : null
 
   return {
@@ -189,6 +192,7 @@ export function useDiscussionWindow(sessionId: string | null, projectId: string,
     observers,
     olderError: state.olderError,
     reading: state.reading,
+    readingSaved: state.readingSaved,
     ready: state.ready,
     refreshAll,
     refreshDiscussion,

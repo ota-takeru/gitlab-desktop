@@ -5,6 +5,8 @@ export interface PageState {
   snapshot: GitLabSnapshot<Discussion[]> | null
   error: GitLabCommandError | null
   loading: boolean
+  /** No answer yet, and the saved data has not been checked. */
+  checkingSavedData?: boolean
   refreshing: boolean
   refresh: () => void
 }
@@ -22,7 +24,7 @@ export class PageStore {
     const previous = this.pages.get(page)
     this.pages.set(page, next)
     // The refresh callback may be recreated on every render; only data changes notify.
-    if (previous && previous.data === next.data && previous.error === next.error && previous.loading === next.loading && previous.refreshing === next.refreshing && previous.snapshot?.fetchedAt === next.snapshot?.fetchedAt && previous.snapshot?.totalPages === next.snapshot?.totalPages && previous.snapshot?.nextPage === next.snapshot?.nextPage && previous.snapshot?.source === next.snapshot?.source) return
+    if (previous && previous.data === next.data && previous.error === next.error && previous.loading === next.loading && previous.checkingSavedData === next.checkingSavedData && previous.refreshing === next.refreshing && previous.snapshot?.fetchedAt === next.snapshot?.fetchedAt && previous.snapshot?.totalPages === next.snapshot?.totalPages && previous.snapshot?.nextPage === next.snapshot?.nextPage && previous.snapshot?.source === next.snapshot?.source) return
     this.version += 1
     this.listeners.forEach((listener) => listener())
   }

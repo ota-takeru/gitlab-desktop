@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fadeInSx } from '../../components/paneSx'
+import { contentFadeInSx } from '../../components/paneSx'
 
 /** A placeholder shown longer than this was seen; the content after it fades in. Saved data arrives sooner. */
 const SEEN_MS = 100
@@ -12,5 +12,5 @@ export function useFadeAfterLoading(placeholder: boolean) {
     const timer = setTimeout(() => setSeen(true), SEEN_MS)
     return () => clearTimeout(timer)
   }, [placeholder])
-  return seen ? fadeInSx : undefined
+  return seen ? contentFadeInSx : undefined
 }

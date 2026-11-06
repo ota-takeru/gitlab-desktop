@@ -1,17 +1,24 @@
 import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
+import { useEffect } from 'react'
 
 import { hairline, panelFrame } from '../../components/hairline'
 import { Row } from '../../components/Row'
+import { useScreenReadiness } from '../../components/screenReadinessContext'
 
 const bar = (width: string, height = 12) => <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, height, width }} />
 
 /**
  * The shape of threads or diffs while they are read from GitLab, shown at once: a screen
  * waits for saved data before it shows (see ScreenReadinessGate), so this only stands in
- * for a network read, and the content replaces it in the same place.
+ * for a network read, and the content replaces it in the same place. `readingSaved` makes the
+ * screen around it wait, for reads kept outside that screen.
  */
-export function LoadingSkeleton({ label, variant }: { label: string; variant: 'discussion' | 'changes' }) {
+export function LoadingSkeleton({ label, readingSaved = false, variant }: { label: string; readingSaved?: boolean; variant: 'discussion' | 'changes' }) {
+  const holdScreen = useScreenReadiness()
+  useEffect(() => {
+    if (readingSaved && holdScreen) return holdScreen()
+  }, [holdScreen, readingSaved])
   return <Box aria-label={label} role="status" sx={{ py: 1 }}>
     {variant === 'discussion' ? <Stack spacing={1.5}>{['55%', '80%', '40%'].map((width) => <Stack key={width} spacing={1} sx={{ ...panelFrame(), borderRadius: 1, p: 1.5 }}>
       <Row spacing={1}><Box sx={{ bgcolor: 'action.hover', borderRadius: '50%', flexShrink: 0, height: 24, width: 24 }} />{bar('25%')}</Row>

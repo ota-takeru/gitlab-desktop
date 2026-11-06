@@ -634,10 +634,10 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
               {/* A list or one MR fills the width; the list stays mounted under an open MR so its input, scroll and J/K order survive.
                   Recently visited lists and MRs also stay mounted, hidden, so going back to one shows it at once.
                   Under an MR about to show, the list leaves the flow: the MR comes into the flow a commit before the list hides, and must not lay out narrow beside it. */}
-              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative', ...(selected && mrRevealPending && { inset: 0, position: 'absolute' }) }}>
+              <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative', ...(selected && mrRevealPending && { inset: 0, isolation: 'isolate', position: 'absolute' }) }}>
                 {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy.
                     A list shown for the first time shows once its saved data is read; the list before it stays until then. */}
-                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} max={memoryConstrained ? 1 : 6} revealWhenReady={!memoryConstrained} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} arrivalBackground="surface.list" max={memoryConstrained ? 1 : 6} revealWhenReady={!memoryConstrained} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}

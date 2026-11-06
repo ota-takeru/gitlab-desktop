@@ -730,7 +730,8 @@ it('returns the focus to the MR row it was opened from', async () => {
   render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
 
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
-  expect(await screen.findByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument()
+  // The list stays under the MR while it fades in, so only the MR's own pane is searched.
+  await waitFor(() => expect(within(document.querySelector<HTMLElement>('main[data-screen-active="true"]')!).getByRole('heading', { name: 'Add searchable list' })).toBeInTheDocument())
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
   await renderBack()
