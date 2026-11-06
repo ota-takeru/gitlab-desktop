@@ -27,6 +27,8 @@ export interface DiffHunk {
   oldCount: number
   newStart: number
   newCount: number
+  /** The text after the closing `@@`: the enclosing function or heading, as Git found it. */
+  section?: string
 }
 
 export interface ParsedDiff {
@@ -44,9 +46,10 @@ interface HunkState {
   newRemaining: number
   lineStart: number
   valid: boolean
+  section?: string
 }
 
-const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:.*)$/u
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/u
 const NO_NEWLINE_METADATA = /^\\ No newline at end of file$/u
 
 function parseSafeInteger(value: string): number | undefined {
@@ -64,7 +67,7 @@ function parseHunkHeader(raw: string): HunkState | undefined {
   if (oldLine === undefined || oldCount === undefined || newLine === undefined || newCount === undefined) return undefined
   if ((oldCount > 0 && oldLine === 0) || (newCount > 0 && newLine === 0)
     || !Number.isSafeInteger(oldLine + oldCount) || !Number.isSafeInteger(newLine + newCount)) return undefined
-  return { oldLine, newLine, oldRemaining: oldCount, newRemaining: newCount, lineStart: 0, valid: true }
+  return { oldLine, newLine, oldRemaining: oldCount, newRemaining: newCount, lineStart: 0, valid: true, section: match[5].trim() || undefined }
 }
 
 function markHunkUncommentable(lines: ParsedLine[], hunk: HunkState): void {
@@ -108,7 +111,7 @@ export function parseDiff(diff: string, oldPath: string, newPath: string): Parse
       finishHunk()
       header.lineStart = lines.length
       hunk = header
-      hunks.push({ newCount: header.newRemaining, newStart: header.newLine, oldCount: header.oldRemaining, oldStart: header.oldLine })
+      hunks.push({ newCount: header.newRemaining, newStart: header.newLine, oldCount: header.oldRemaining, oldStart: header.oldLine, ...(header.section ? { section: header.section } : {}) })
       continue
     }
 
