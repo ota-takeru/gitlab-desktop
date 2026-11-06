@@ -95,4 +95,12 @@ describe('discussion scroll positions', () => {
     restoreAnchor(host, host, anchor!)
     expect(host.scrollTop).toBe(750)
   })
+
+  it('measures from where the header sticks when the header has been carried out of view', () => {
+    const host = setup([{ id: 'a', top: 1000, height: 200 }])
+    const header = host.querySelector('header')!
+    header.getBoundingClientRect = () => ({ bottom: -17900, height: 100, left: 0, right: 0, top: -18000, width: 0, x: 0, y: -18000, toJSON: () => ({}) })
+    Object.defineProperty(header, 'offsetHeight', { value: 100 })
+    expect(captureAnchor(host, host)).toEqual({ id: 'a', offset: 900 })
+  })
 })

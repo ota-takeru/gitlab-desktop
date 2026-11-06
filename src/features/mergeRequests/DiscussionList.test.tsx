@@ -659,4 +659,88 @@ describe('DiscussionList code beside line comments', () => {
     await waitFor(() => expect(onUploadAttachment).toHaveBeenCalledWith(file))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'コメントを編集' })).toHaveValue('元の本文\n![clipboard.png](/uploads/clipboard.png)'))
   })
+
+  describe('a long discussion opened for the first time', () => {
+    const threads = (count: number) => Array.from({ length: count }, (_, index) => createDiscussion([
+      createNote(`long-${index}`, otherUser, { createdAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString() }),
+    ], `long-discussion-${index}`))
+    const mountedNotes = () => Array.from(document.querySelectorAll<HTMLElement>('li[data-note-id]'), (note) => note.dataset.noteId)
+    const renderLong = (discussions: Discussion[], props: { deferOffscreen?: boolean; focusNoteId?: string; openingNoteId?: string; settled?: boolean } = {}) => render(
+      <ThemeProvider theme={createAppTheme('dark')}>
+        <DiscussionList currentUserId={currentUser.id} deferOffscreen discussions={discussions} onDelete={vi.fn()} onEdit={vi.fn()} onFocusNoteDone={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} settled {...props} />
+      </ThemeProvider>,
+    )
+
+    beforeEach(() => {
+      vi.stubGlobal('IntersectionObserver', class {
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      })
+      return () => { vi.unstubAllGlobals() }
+    })
+
+    it('mounts the threads around the newest first, keeps every thread in place, and the rest follow', async () => {
+      renderLong(threads(20))
+      expect(mountedNotes()).toEqual(['long-15', 'long-16', 'long-17', 'long-18', 'long-19'])
+      expect(document.querySelectorAll('[data-discussion-id]')).toHaveLength(20)
+      await waitFor(() => expect(mountedNotes()).toHaveLength(20), { timeout: 15_000 })
+      expect(document.querySelector('[aria-busy]')).toBeNull()
+    })
+
+    it('waits until the discussion has settled at its opening position', async () => {
+      const view = renderLong(threads(20), { settled: false })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+      expect(mountedNotes()).toHaveLength(5)
+      view.rerender(
+        <ThemeProvider theme={createAppTheme('dark')}>
+          <DiscussionList currentUserId={currentUser.id} deferOffscreen discussions={threads(20)} onDelete={vi.fn()} onEdit={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} settled />
+        </ThemeProvider>,
+      )
+      await waitFor(() => expect(mountedNotes()).toHaveLength(20), { timeout: 15_000 })
+    })
+
+    it('mounts the threads around the comment it opens at, and around the last thread', () => {
+      const discussions = threads(30)
+      renderLong(discussions, { openingNoteId: 'long-10', settled: false })
+      expect(mountedNotes()).toContain('long-10')
+      expect(mountedNotes()).toContain('long-29')
+      expect(mountedNotes()).toContain('long-6')
+      expect(mountedNotes()).not.toContain('long-3')
+    })
+
+    it('mounts a linked comment far from the start at once', async () => {
+      renderLong(threads(30), { focusNoteId: 'long-2', settled: false })
+      await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'long-2'))
+      expect(document.activeElement?.tagName).toBe('LI')
+    })
+
+    it('hands the focus to the comment when moving to a thread not mounted yet', () => {
+      renderLong(threads(20), { settled: false })
+      const thread = document.querySelector<HTMLElement>('[data-discussion-id="long-discussion-1"]')
+      const target = thread?.querySelector<HTMLElement>('[data-note-id]')
+      expect(target?.tagName).toBe('DIV')
+      act(() => target?.focus())
+      expect(document.activeElement?.tagName).toBe('LI')
+      expect(document.activeElement).toHaveAttribute('data-note-id', 'long-1')
+    })
+
+    it('does not answer for a comment of a folded thread, which is not on the page once mounted', () => {
+      const discussions = threads(20)
+      discussions[3] = createDiscussion([createNote('folded', otherUser, { resolvable: true, resolved: true })], 'folded-discussion')
+      renderLong(discussions, { settled: false })
+      expect(document.querySelector('[data-discussion-id="folded-discussion"] [aria-busy]')).not.toBeNull()
+      expect(document.querySelector('[data-note-id="folded"]')).toBeNull()
+    })
+
+    it('mounts a discussion of a few threads together', () => {
+      renderLong(threads(12), { settled: false })
+      expect(mountedNotes()).toHaveLength(12)
+    })
+
+    it('mounts every thread together when reopened at a saved place', () => {
+      renderLong(threads(20), { deferOffscreen: false, settled: false })
+      expect(mountedNotes()).toHaveLength(20)
+    })
+  })
 })

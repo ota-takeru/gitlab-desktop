@@ -16,7 +16,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useConfirm } from '../../components/feedbackContext'
 import { edgeRow } from '../../components/edges'
@@ -31,7 +31,9 @@ import { useStableCallback } from '../shared/useStableCallback'
 import { GitLabUserAvatar } from '../shared/GitLabUserAvatar'
 import { GitLabUserLink } from '../../components/GitLabUserLink'
 import { firstLine } from '../../components/rows'
-import { captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest, type ScrollAnchor } from './discussionScroll'
+import { DeferredThread } from './DeferredThread'
+import { anchorAt, captureAnchor, findNote, findScrollContainer, restoreAnchor, scrollToNearest, type ScrollAnchor } from './discussionScroll'
+import { createThreadRevealQueue } from './threadRevealQueue'
 import { CommentChangeStatus } from './CommentChangeStatus'
 import { positionLabel as formatPositionLabel } from './diffLineThreads'
 import { plainExcerpt } from './discussionText'
@@ -98,7 +100,24 @@ interface DiscussionListProps {
   onUploadAttachment?: (file: File) => Promise<string | null>
   /** The discussion has loaded and been placed at its opening position. */
   settled?: boolean
+  /**
+   * A long discussion mounts the threads away from its opening position after it, between frames.
+   * Not for one reopened at a saved place: that is a distance, which needs the threads above at their heights.
+   */
+  deferOffscreen?: boolean
+  /** The comment the discussion opens at: its thread and those around it mount first. */
+  openingNoteId?: string | null
+  /** What the discussion was placed at, kept still while the threads around it mount, until the reader moves. */
+  openingRef?: React.RefObject<HTMLElement | null>
 }
+
+/** Up to this many new threads are mounted together, as the wait for them is short. */
+const THREADS_AT_ONCE = 12
+/** Mounted with the thread the discussion opens at, on each side, to fill the view. */
+const THREADS_AROUND_START = 4
+const THREAD_HEADER_HEIGHT = 37
+const ESTIMATED_NOTE_HEIGHT = 110
+const noThreads: ReadonlySet<string> = new Set()
 
 export interface NoteReactions {
   /** Each comment's reactions; an entry keeps its identity while unchanged, so the other comments do not render again. */
@@ -124,7 +143,7 @@ export interface OlderDiscussions {
 /** Start loading older threads when the reader scrolls within this distance of the top. */
 const LOAD_OLDER_THRESHOLD = 600
 
-export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, detachedDiscussionId, discussions, disabled = false, editingNoteId, filter: filterProp, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFilterChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
+export function DiscussionList({ projectId, iid, headSha, sessionId, currentUserId, openingNoteId = null, openingRef, deferOffscreen = false, detachedDiscussionId, discussions, disabled = false, editingNoteId, filter: filterProp, focusNoteId, mentionParticipants, noteEditBufferKey, older, onDelete, onEdit, onEditingNoteChange, onFilterChange, onFocusNoteDone, onMarkRead, onOpenPosition, onReply, onResolve, onUploadAttachment, reactions, renderCodeContext, replyComposer, replyDiscussionId, settled = false, suggestionActions, unreadNoteIds = [] }: DiscussionListProps) {
   const t = useT()
   const [localEditingId, setLocalEditingId] = useState<string | null>(null)
   const editing = onEditingNoteChange ? editingNoteId ?? null : localEditingId
@@ -142,6 +161,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   const listRef = useRef<HTMLDivElement | null>(null)
   const restoreScrollRef = useRef<{ element: HTMLElement; top: number; left: number } | null>(null)
   const anchorRef = useRef<ScrollAnchor | null>(null)
+  const holdingOpeningRef = useRef(false)
   const olderRef = useRef(older)
   const { setUnsafe } = useAutoUpdateSafety('note-edit')
   // The comments are memoized; the callbacks they get keep one identity and run the caller's latest ones.
@@ -177,7 +197,14 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
   // A thread is folded when first shown resolved; one already open stays open when someone else resolves it.
   const unseenThreads = commentDiscussions.filter(({ discussion }) => !(discussion.id in collapsedThreads))
   if (unseenThreads.length) setCollapsedThreads((current) => ({ ...Object.fromEntries(unseenThreads.map(({ discussion, notes }) => [discussion.id, isResolved(notes)])), ...current }))
-
+  const [revealQueue] = useState(createThreadRevealQueue)
+  const [waitingThreads, setWaitingThreads] = useState(noThreads)
+  if (deferOffscreen && unseenThreads.length > THREADS_AT_ONCE && typeof IntersectionObserver !== 'undefined') {
+    // The last thread too: the discussion opens there when the opening comment is folded away.
+    const starts = [commentDiscussions.findIndex(({ notes }) => notes.some((note) => note.id === openingNoteId)), commentDiscussions.length - 1].filter((start) => start >= 0)
+    const around = new Set(starts.flatMap((start) => commentDiscussions.slice(Math.max(0, start - THREADS_AROUND_START), start + THREADS_AROUND_START + 1)).map(({ discussion }) => discussion.id))
+    setWaitingThreads((current) => new Set([...current, ...unseenThreads.map(({ discussion }) => discussion.id).filter((id) => !around.has(id))]))
+  }
   useEffect(() => {
     setUnsafe(Boolean(editing))
   }, [editing, setUnsafe])
@@ -186,12 +213,32 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     olderRef.current = older
   }, [older])
 
-  // Threads out of view skip styling and layout only after the opening position is set and a frame has recorded
-  // every thread's height, which a skipped one keeps; showing a long discussion again then lays out only what is in view.
+  // Threads out of view skip styling and layout only after the opening position is set, every thread has mounted and a
+  // frame has recorded every thread's height, which a skipped one keeps; showing a long discussion again then lays out
+  // only what is in view, and a saved position (a distance) still fits when the tab is built again.
   useEffect(() => {
     if (!settled) return
-    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => listRef.current?.setAttribute('data-skip-offscreen', 'true')) })
+    let frame = 0
+    revealQueue.start(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => listRef.current?.setAttribute('data-skip-offscreen', 'true')) })
+    })
     return () => cancelAnimationFrame(frame)
+  }, [revealQueue, settled])
+
+  // Threads mounting and code arriving around where the discussion opens would otherwise push it out of view,
+  // as what is kept still is the thread at the top edge.
+  const holdOpening = useEffectEvent(() => {
+    const host = findScrollContainer(listRef.current)
+    const opening = openingRef?.current
+    if (!host || !opening || !waitingThreads.size) return
+    const anchor = anchorAt(host, opening)
+    if (!anchor) return
+    holdingOpeningRef.current = true
+    anchorRef.current = anchor
+  })
+  useEffect(() => {
+    if (settled) holdOpening()
   }, [settled])
 
   // Track the thread at the top of the view so content inserted above it
@@ -203,11 +250,13 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     if (!host || !root) return
     let userIntent = false
     let frame = 0
-    const markIntent = () => { userIntent = true }
+    const release = () => { holdingOpeningRef.current = false }
+    const markIntent = () => { userIntent = true; release() }
     const onScroll = () => {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
-        anchorRef.current = captureAnchor(host, root)
+        // Taken again here, what is held would be measured after a thread above it has grown, before it is put back.
+        if (!holdingOpeningRef.current) anchorRef.current = captureAnchor(host, root)
         const current = olderRef.current
         if (userIntent && current?.hasOlder && !current.loading && !current.error && host.scrollTop < LOAD_OLDER_THRESHOLD) current.onLoad()
       })
@@ -217,6 +266,8 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
     host.addEventListener('touchstart', markIntent, { passive: true })
     host.addEventListener('pointerdown', markIntent)
     host.addEventListener('keydown', markIntent)
+    // N / P, the outline and jumps move to a comment by focusing it.
+    root.addEventListener('focusin', release)
     // Content that changes size by itself (an image loading, a code context arriving) is kept from moving the reading position too.
     const resizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { if (anchorRef.current) restoreAnchor(host, root, anchorRef.current) })
     resizes?.observe(root)
@@ -228,6 +279,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
       host.removeEventListener('touchstart', markIntent)
       host.removeEventListener('pointerdown', markIntent)
       host.removeEventListener('keydown', markIntent)
+      root.removeEventListener('focusin', release)
     }
   }, [])
 
@@ -358,10 +410,14 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         const firstNote = notes[0]
         const threadLabel = positionLabel ?? t('review.discussion.threadLabel', { author: firstNote?.author.name ?? '' })
         const codeContext = position && !isCollapsed ? renderCodeContext?.(position) : null
+        // What the opening position, a jump or an open editor looks for in the page is there at once.
+        const needed = discussion.id === detachedDiscussionId || containsEditingNote || replying
+          || notes.some((note) => note.id === openingNoteId || note.id === pendingJumpNoteId || note.id === focusNoteId)
         const thread = (
           // A thread skipped out of view keeps the height it was last laid out at; one added since takes an estimate
           // until shown, and the anchor above keeps the thread being read still when that changes.
           <Box component="article" key={discussion.id} data-discussion-id={discussion.id} sx={{ scrollMarginTop: 'calc(var(--detail-header-height, 0px) + 8px)', bgcolor: 'surface.raised', ...panelFrame({ color: resolved ? 'divider' : 'surface.borderStrong' }), borderRadius: 1, containIntrinsicSize: 'auto 240px', minWidth: 0, overflow: 'clip', '[data-skip-offscreen="true"] > &': { contentVisibility: 'auto' } }}>
+            <DeferredThread estimatedHeight={isCollapsed ? THREAD_HEADER_HEIGHT : THREAD_HEADER_HEIGHT + noteRows.length * ESTIMATED_NOTE_HEIGHT} firstNoteId={isCollapsed ? undefined : firstNote?.id} queue={revealQueue} wait={waitingThreads.has(discussion.id) && !needed}>
             {isThreadCollapsible(notes) ? (
               <Bar spacing={1} sx={{ ...(isCollapsed ? {} : hairline('bottom')), justifyContent: 'space-between', minHeight: 36, px: 1.5, py: 0.5 }}>
                 <Row spacing={1} sx={{ flex: '1 1 auto', minWidth: 0 }}>
@@ -441,6 +497,7 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
                 </Row>
               ) : null}
             </Row> : null}
+            </DeferredThread>
           </Box>
         )
         return discussion.id === detachedDiscussionId && olderRow ? <Fragment key={discussion.id}>{thread}{olderRow}</Fragment> : thread
