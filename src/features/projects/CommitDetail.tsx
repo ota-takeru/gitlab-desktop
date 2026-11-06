@@ -17,7 +17,7 @@ import { PaneHeader } from '../../components/Pane'
 import { paneGutter, paneResultsSx } from '../../components/paneSx'
 import { Bar, Row } from '../../components/Row'
 import { useT } from '../../i18n/useT'
-import { isEditableTarget } from '../../lib/eventTargets'
+import { isEditableTarget, isInsideControlGroup } from '../../lib/eventTargets'
 import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import { commitUrl, normalizeGitLabError, openGitLabUrl } from '../../lib/gitlab'
 import type { CommitDiffQuery, CommitMergeRequestsQuery, FileQuery, RepositoryCommitQuery } from '../../types/gitlab'
@@ -75,7 +75,8 @@ export function CommitDetail({ navigation, newer, older, onBack, onOpenMergeRequ
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     // A popover's keys bubble here through React although it is outside on screen.
     if (event.altKey || event.ctrlKey || event.metaKey || isEditableTarget(event.target) || !event.currentTarget.contains(event.target as Node)) return
-    if (event.key === 'Escape') onBack()
+    // As in the rest of the app, Esc closes what has the focus before it leaves the screen.
+    if (event.key === 'Escape') { if (!isInsideControlGroup(event.target)) onBack() }
     else if (event.key === 'j' && older) onSelect(older)
     else if (event.key === 'k' && newer) onSelect(newer)
   }

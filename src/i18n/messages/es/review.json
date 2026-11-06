@@ -39,6 +39,8 @@
   "diff.outline.hide": "Ocultar el contenido de este archivo",
   "diff.outline.entry": "Línea {line}: {label}",
   "diff.outline.omitted": "{count} más sin mostrar",
+  "diff.maximize": "Maximizar la diferencia",
+  "diff.restore": "Restaurar la diferencia (Esc)",
   "diff.summary.files": "{count, plural, one {# archivo modificado} many {# archivos modificados} other {# archivos modificados}}",
   "diff.summary.uncounted": "{count, plural, one {# archivo sin diff no se cuenta} many {# archivos sin diff no se cuentan} other {# archivos sin diff no se cuentan}}",
   "diff.markReviewedHint": "Al marcar un archivo como visto se abre el siguiente archivo sin ver. Vuelve a quedar sin ver cuando cambia el SHA del head o el diff del archivo.",

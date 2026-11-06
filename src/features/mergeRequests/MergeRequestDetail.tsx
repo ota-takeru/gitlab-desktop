@@ -468,10 +468,18 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
     const inDiff = activeTab === 'changes'
     const threads = Array.from(sectionRef.current?.querySelectorAll<HTMLElement>(inDiff ? '[data-diff-thread]' : '[data-discussion-id]') ?? [])
       .filter((element) => unresolved.has((inDiff ? element.dataset.diffThread : element.dataset.discussionId) ?? ''))
-    // Positions are measured from the header's lower edge, where a thread lands after scrolling to it.
-    const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 0
-    const offsets = threads.map((thread) => thread.getBoundingClientRect().top - headerBottom)
-    let index = direction === 1 ? offsets.findIndex((offset) => offset > 12) : offsets.flatMap((offset, at) => offset < 4 ? [at] : []).at(-1) ?? -1
+    // Positions are measured from where a thread lands, its scroll margin below the top of the scroll, so a reached thread is 8px past 0.
+    // The margin knows what sticks above it: the header, the commits and the file heading. A maximized diff is its own scroll.
+    const scrollTop = (sectionRef.current?.querySelector('[data-diff-maximized]') ?? headerRef.current)?.getBoundingClientRect().top ?? 0
+    const offsets = threads.map((thread) => thread.getBoundingClientRect().top - scrollTop - (Number.parseFloat(getComputedStyle(thread).scrollMarginTop) || 0) + 8)
+    // Near the end of the page a thread cannot reach that place, so the one just reached and still on screen counts as reached.
+    const reached = threads.findIndex((thread) => {
+      const { bottom, top } = thread.getBoundingClientRect()
+      return thread.contains(document.activeElement) && bottom > scrollTop && top < window.innerHeight
+    })
+    let index = reached >= 0
+      ? reached + direction < threads.length ? reached + direction : -1
+      : direction === 1 ? offsets.findIndex((offset) => offset > 12) : offsets.flatMap((offset, at) => offset < 4 ? [at] : []).at(-1) ?? -1
     // Past the last thread of the shown file, the diff continues in the next file that has one.
     if (index < 0 && inDiff && stepToUnresolvedFile(unresolvedDiscussions, direction)) return
     if (!threads.length) {
@@ -1089,7 +1097,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         </Stack> : null}
       </Box>
 
-      <Stack spacing={1} sx={{ pb: 2, pt: activeTab === 'changes' ? 1 : 2, px: 2 }}>
+      <Stack spacing={1} sx={{ pb: 2, pt: activeTab === 'changes' ? 1.5 : 2, px: 2 }}>
         {noteAwardsQuery && noteAwardsResult.error ? <Alert action={<Button color="inherit" onClick={noteAwardsResult.refresh}>{t('mergeRequest.reactions.retry')}</Button>} severity="warning">{noteAwardsResult.data ? t('mergeRequest.reactions.refreshFailed', { error: noteAwardsResult.error.message }) : t('mergeRequest.reactions.noteLoadFailed', { error: noteAwardsResult.error.message })}</Alert> : null}
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.reactions.truncated')}</Alert> : null}
         {/* Visited tabs stay mounted, hidden, so switching back shows them at once with their scroll, input and highlighted code.

@@ -65,7 +65,7 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
       '& .diff-rows': { minWidth: 0 },
       ...chunkStyles,
       ...blameCellStyles(theme),
-      '& .diff-row': { '--row-bg': theme.palette.background.paper, alignItems: 'stretch', backgroundColor: 'var(--row-bg)', color: theme.palette.text.primary, display: 'flex', minHeight: 20 },
+      '& .diff-row': { '--row-bg': theme.palette.background.paper, alignItems: 'stretch', backgroundColor: 'var(--row-bg)', color: theme.palette.diff?.text, display: 'flex', minHeight: 20 },
       '& .diff-row[data-kind="add"]': { '--row-bg': theme.palette.diff?.addedBackground, color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"]': { '--row-bg': theme.palette.diff?.deletedBackground, color: theme.palette.diff?.deletedText },
       '& .diff-row[data-selected="true"]': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
@@ -76,7 +76,7 @@ export function UnifiedDiff({ activeSearchMatch, allowComments, blameEnabled, ch
       '& .diff-row[data-range="true"] .diff-gutter': { backgroundColor: theme.palette.action.selected, boxShadow: `inset 3px 0 0 ${theme.palette.primary.main}` },
       '& .diff-number': { color: theme.palette.text.secondary, padding: '0 6px', textAlign: 'right', userSelect: 'none', width: 44 },
       '& .diff-row:hover .diff-action, & .diff-row:focus-within .diff-action, & .diff-row[data-selected="true"] .diff-action': { opacity: 1 },
-      '& .diff-code': { color: theme.palette.text.primary, flex: 1, minWidth: 0, overflowWrap: 'anywhere', paddingRight: '24px', whiteSpace: 'pre-wrap' },
+      '& .diff-code': { color: theme.palette.diff?.text, flex: 1, minWidth: 0, overflowWrap: 'anywhere', paddingRight: '24px', whiteSpace: 'pre-wrap' },
       '& .diff-row[data-kind="add"] .diff-prefix': { color: theme.palette.diff?.addedText },
       '& .diff-row[data-kind="remove"] .diff-prefix': { color: theme.palette.diff?.deletedText },
     }), !wrap && ((theme) => ({
@@ -354,7 +354,7 @@ export function SplitDiff({ activeSearchMatch, allowComments, blameEnabled, chos
       // As in the unified view: room for a 5-digit number, then the 26px of the comment button.
       '& .split-number': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.secondary, padding: '0 26px 0 6px', position: 'relative', textAlign: 'right', userSelect: 'none' },
       '& .split-number[data-side="new"]': hairline('left', { color: theme.palette.divider, position: false }),
-      '& .split-code': { backgroundColor: theme.palette.background.paper, color: theme.palette.text.primary, overflowWrap: 'anywhere', padding: '0 10px 0 6px', whiteSpace: 'pre-wrap' },
+      '& .split-code': { backgroundColor: theme.palette.background.paper, color: theme.palette.diff?.text, overflowWrap: 'anywhere', padding: '0 10px 0 6px', whiteSpace: 'pre-wrap' },
       '& [data-kind="remove"]': { backgroundColor: theme.palette.diff?.deletedBackground },
       '& .split-number[data-kind="remove"]': { color: theme.palette.diff?.deletedText },
       '& [data-kind="add"]': { backgroundColor: theme.palette.diff?.addedBackground },

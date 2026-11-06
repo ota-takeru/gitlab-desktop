@@ -34,7 +34,7 @@ export function DiscussionCode({ current, position, projectId, sessionId }: { cu
 
 /** The diff viewer's code: its type, 20px rows and 44px line-number columns. */
 const codeSx = {
-  color: 'text.primary',
+  color: 'diff.text',
   fontFamily: 'code.fontFamily',
   fontSize: 'code.fontSize',
   lineHeight: '20px',

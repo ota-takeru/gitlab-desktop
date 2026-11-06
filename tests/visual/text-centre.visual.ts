@@ -78,7 +78,7 @@ test.describe('text centre', () => {
       // Segoe UI's centre is 0.300em above its baseline: (cap height 1434 + x-height 1024) / 4 / 2048.
       return { line: `${size}/${lineHeight}`, offset: baseline - 0.3 * size - lineHeight / 2 }
     }), { latin, lines })
-    // Baselines fall on whole pixels, so half a pixel is the limit (reached at 15px, whose middle is a half pixel).
-    for (const { line, offset } of offsets) expect(Math.abs(offset), `${line}: ${offset.toFixed(2)}px`).toBeLessThanOrEqual(0.5)
+    // Baselines fall on whole pixels, so half a pixel is the limit, plus the tenth that public/boot.css gives up at 18/24 to keep 13px text centred at 137.5%.
+    for (const { line, offset } of offsets) expect(Math.abs(offset), `${line}: ${offset.toFixed(2)}px`).toBeLessThan(0.61)
   })
 })

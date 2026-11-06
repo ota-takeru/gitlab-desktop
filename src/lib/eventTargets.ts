@@ -3,6 +3,11 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [contenteditable="true"]') !== null)
 }
 
+/** Esc closes what has the focus (a composer, its toolbar, a menu) before anything around it. */
+export function isInsideControlGroup(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-composer], [role="toolbar"], [role="menu"], [role="menubar"], [role="listbox"], form') !== null
+}
+
 /** An open menu or listbox owns letter keys (MUI only consumes letters that match an item). */
 export function isInsideMenu(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[role="menu"], [role="menubar"], [role="listbox"]') !== null

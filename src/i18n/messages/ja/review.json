@@ -39,6 +39,8 @@
   "diff.outline.hide": "このファイルの目次を隠す",
   "diff.outline.entry": "{line}行目: {label}",
   "diff.outline.omitted": "ほか{count}件は表示していません",
+  "diff.maximize": "差分を最大表示",
+  "diff.restore": "最大表示を解除 (Esc)",
   "diff.summary.files": "{count}ファイル変更",
   "diff.summary.uncounted": "差分のない{count}ファイルは行数に含みません",
   "diff.markReviewedHint": "確認済みにすると次の未確認ファイルを開きます。head SHAまたはファイル差分が変わると未確認に戻ります。",

@@ -1170,6 +1170,21 @@ describe('stepping through unresolved threads', () => {
       await waitFor(() => expect(focusedThread()).toBe('readme'))
     })
 
+    it('steps on from a thread that could not scroll up to where threads land, as near the end of a file', async () => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ bottom: 340, height: 40, left: 0, right: 0, toJSON: () => ({}), top: 300, width: 0, x: 0, y: 300 })
+      detailMocks.diffPages = { 1: [file('src/example.ts')] }
+      detailMocks.discussions[1] = [thread('first', 'src/example.ts', 1, 'いち'), thread('second', 'src/example.ts', 2, 'に')]
+      renderDetail('changes')
+      await screen.findByRole('article', { name: 'いちの人のスレッド' })
+
+      fireEvent.keyDown(document.body, { key: 'n' })
+      await waitFor(() => expect(focusedThread()).toBe('first'))
+      fireEvent.keyDown(document.body, { key: 'n' })
+      await waitFor(() => expect(focusedThread()).toBe('second'))
+      fireEvent.keyDown(document.body, { key: 'p' })
+      await waitFor(() => expect(focusedThread()).toBe('first'))
+    })
+
     it('lists the files of every diff page together and opens one from a later page at its thread', async () => {
       detailMocks.diffPages = { 1: [file('README.md')], 2: [file('src/example.ts')] }
       detailMocks.discussions[1] = [thread('example', 'src/example.ts', 2, 'えぐざんぷる')]

@@ -106,7 +106,8 @@ export function diffOutline(lines: ParsedLine[], hunks: DiffHunk[], markdown: bo
   if (entries.length <= MAX_ENTRIES) return { entries, omitted: 0 }
   // Too many: the top level says more about the file than what is nested in it.
   const outer = entries.filter((entry) => !entry.nested)
-  const kept = outer.length <= MAX_ENTRIES ? outer : outer.slice(0, MAX_ENTRIES)
+  // Spread over the whole file, so the list still follows the view to its end.
+  const kept = outer.length <= MAX_ENTRIES ? outer : Array.from({ length: MAX_ENTRIES }, (_, at) => outer[Math.floor(at * outer.length / MAX_ENTRIES)])
   return { entries: kept, omitted: entries.length - kept.length }
 }
 

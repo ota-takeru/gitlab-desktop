@@ -17,6 +17,8 @@ interface SyntaxPalette {
 }
 
 interface DiffPalette {
+  /** Code on unchanged lines; on the dark theme a step below comments, so they stand out from the code. */
+  text: string
   addedBackground: string
   deletedBackground: string
   addedText: string
@@ -140,7 +142,7 @@ declare module '@mui/material/Button' {
 // GitHub-like token colours, readable on both the plain and the added/removed diff backgrounds.
 const syntaxTokens: Record<PaletteMode, SyntaxPalette> = {
   light: { keyword: '#cf222e', string: '#0a3069', comment: '#57606a', number: '#0550ae', title: '#7339d0', type: '#953800', attribute: '#0550ae', tag: '#116329', variable: '#953800' },
-  dark: { keyword: '#ff7b72', string: '#a5d6ff', comment: '#9da5b0', number: '#79c0ff', title: '#d2a8ff', type: '#ffa657', attribute: '#79c0ff', tag: '#7ee787', variable: '#ffa657' },
+  dark: { keyword: '#f0766d', string: '#94c0e4', comment: '#9da5b0', number: '#6eace4', title: '#bc97e4', type: '#e49550', attribute: '#6eace4', tag: '#72cf7b', variable: '#e49550' },
 }
 
 interface Tokens {
@@ -197,7 +199,7 @@ const tokens: Record<PaletteMode, Tokens> = {
     ink: '#1b1f24', inkBody: '#333a42', inkMuted: '#5d6672', border: '#e3e6ea', borderStrong: '#cfd4da', inputBorder: '#848c96',
     primary: '#2860c4', primaryStrong: '#1f56b8', primaryFill: '#2f6fde', primaryFillHover: '#2459b8', accent: '#6f45d8',
     success: '#1a7440', warning: '#8c5800', error: '#b5352f', info: '#0a6676', tooltip: '#24292f',
-    diff: { addedBackground: '#e6f4ea', deletedBackground: '#fbe9eb', addedText: '#1a6b34', deletedText: '#a3242f', searchMatchBackground: '#fff0b3', searchMatchText: '#1b1f24' },
+    diff: { text: '#1b1f24', addedBackground: '#e6f4ea', deletedBackground: '#fbe9eb', addedText: '#1a6b34', deletedText: '#a3242f', searchMatchBackground: '#fff0b3', searchMatchText: '#1b1f24' },
     avatar: [
       { background: '#e3e8f4', text: '#3a4a6b' },
       { background: '#e0efec', text: '#2f5a52' },
@@ -207,11 +209,11 @@ const tokens: Record<PaletteMode, Tokens> = {
     place: { mergeRequests: '#2860c4', projects: '#0b6e5f', notifications: '#9a5700' },
   },
   dark: {
-    canvas: '#232529', nav: '#101113', list: '#1a1b1f', surface: '#232529', raised: '#2e3036',
-    ink: '#e3e6ea', inkBody: '#c8cdd4', inkMuted: '#9ca3ad', border: '#3a3d45', borderStrong: '#4d515a', inputBorder: '#7e848e',
+    canvas: '#1a1c20', nav: '#0c0d0f', list: '#131417', surface: '#1a1c20', raised: '#2a2c32',
+    ink: '#eceef1', inkBody: '#e2e5e9', inkMuted: '#a1a8b2', border: '#3a3d45', borderStrong: '#4d515a', inputBorder: '#7e848e',
     primary: '#7aa7ee', primaryStrong: '#a3c2f5', primaryFill: '#2e66c8', primaryFillHover: '#2858b0', accent: '#a990ea',
-    success: '#5cbf8e', warning: '#dca54f', error: '#f07c7c', info: '#5bb8d4', tooltip: '#2e3036',
-    diff: { addedBackground: '#1d3527', deletedBackground: '#3c2428', addedText: '#e3e6ea', deletedText: '#e3e6ea', searchMatchBackground: '#5c4a12', searchMatchText: '#e3e6ea' },
+    success: '#5cbf8e', warning: '#dca54f', error: '#f07c7c', info: '#5bb8d4', tooltip: '#2a2c32',
+    diff: { text: '#c6cad0', addedBackground: '#17392a', deletedBackground: '#452128', addedText: '#c6cad0', deletedText: '#c6cad0', searchMatchBackground: '#5c4a12', searchMatchText: '#eceef1' },
     avatar: [
       { background: '#2d3446', text: '#b9c6e4' },
       { background: '#263b37', text: '#a9d3c9' },
@@ -240,7 +242,7 @@ export function createAppTheme(mode: PaletteMode, locale: Locale = 'ja') {
   const first = cjkFonts[locale] ?? japaneseFonts
   const languageFonts = [first, ...Object.values(cjkFonts).filter((fonts) => fonts !== first)].join(', ')
   const palette = tokens[mode]
-  const selected = mode === 'dark' ? alpha(palette.ink, 0.09) : alpha(palette.primary, 0.1)
+  const selected = alpha(palette.primary, mode === 'dark' ? 0.18 : 0.1)
   // Text on the main colour: white on the light theme's dark blue, dark ink on the dark theme's light blue.
   const onMain = mode === 'dark' ? palette.nav : '#ffffff'
 

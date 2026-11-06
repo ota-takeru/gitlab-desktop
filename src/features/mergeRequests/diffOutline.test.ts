@@ -51,6 +51,9 @@ describe('diffOutline', () => {
     expect(entries.every((entry) => !entry.nested)).toBe(true)
     // The first definition names the hunk, so it is not listed twice: 1 hunk and 799 definitions.
     expect(omitted).toBe(800 - 300)
+    // Spread over the whole file, so the list follows the view to its end.
+    expect(entries.at(-1)!.line).toBeGreaterThan(790)
+    expect(entries.every((entry, index) => index === 0 || entry.lineIndex > entries[index - 1].lineIndex)).toBe(true)
   })
 
   it('points a removed line at the next line of the new side, for rendered Markdown', () => {

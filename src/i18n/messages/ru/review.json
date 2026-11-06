@@ -39,6 +39,8 @@
   "diff.outline.hide": "Скрыть содержание этого файла",
   "diff.outline.entry": "Строка {line}: {label}",
   "diff.outline.omitted": "Ещё {count} не показано",
+  "diff.maximize": "Развернуть различия",
+  "diff.restore": "Свернуть различия (Esc)",
   "diff.summary.files": "{count, plural, one {Изменён # файл} few {Изменено # файла} many {Изменено # файлов} other {Изменено # файла}}",
   "diff.summary.uncounted": "{count, plural, one {# файл без diff не учтён} few {# файла без diff не учтены} many {# файлов без diff не учтены} other {# файла без diff не учтены}}",
   "diff.markReviewedHint": "Когда файл отмечен как просмотренный, открывается следующий непросмотренный файл. Отметка снимается, если меняется SHA head или diff файла.",

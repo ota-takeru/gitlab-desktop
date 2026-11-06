@@ -151,8 +151,45 @@ describe('DiffViewer', () => {
     expect(Number(getComputedStyle(folders).flexShrink)).toBeGreaterThan(Number(getComputedStyle(name).flexShrink))
     fireEvent.mouseOver(shown)
     expect((await screen.findByRole('tooltip')).textContent).toBe(path)
-    // The list's rows show the whole path on hover too.
-    expect(screen.getByRole('button', { hidden: true, name: fileRow(path) })).toHaveAttribute('title', path)
+    fireEvent.mouseLeave(shown.parentElement!)
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    // The list's rows show the whole path on hover too, anywhere on the row, and no browser tooltip beside it.
+    const row = screen.getByRole('button', { hidden: true, name: fileRow(path) })
+    expect(row).not.toHaveAttribute('title')
+    fireEvent.mouseOver(row)
+    expect((await screen.findByRole('tooltip')).textContent).toBe(path)
+  })
+
+  it('covers the window when maximized, and Esc restores it without leaving the merge request', () => {
+    const left = vi.fn()
+    window.addEventListener('keydown', left)
+    try {
+      const view = renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n'))
+      fireEvent.click(screen.getByRole('button', { name: '差分を最大表示' }))
+      const maximized = screen.getByRole('button', { name: '最大表示を解除 (Esc)' })
+      expect(maximized).toHaveAttribute('aria-pressed', 'true')
+      const overlay = Array.from(view.container.querySelectorAll('div')).find((element) => getComputedStyle(element).position === 'fixed')
+      expect(overlay).toContainElement(maximized)
+      fireEvent.keyDown(document.body, { key: 'Escape' })
+      expect(left).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: '差分を最大表示' })).toHaveAttribute('aria-pressed', 'false')
+      // Not maximized, Esc is the app's again.
+      fireEvent.keyDown(document.body, { key: 'Escape' })
+      expect(left).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('keydown', left)
+    }
+  })
+
+  it('lets a focused comment editor have Esc before the maximized view', () => {
+    renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n'))
+    fireEvent.click(screen.getByRole('button', { name: '差分を最大表示' }))
+    const composer = document.createElement('div')
+    composer.dataset.composer = ''
+    document.body.append(composer)
+    fireEvent.keyDown(composer, { key: 'Escape' })
+    composer.remove()
+    expect(screen.getByRole('button', { name: '最大表示を解除 (Esc)' })).toBeInTheDocument()
   })
 
   describe('with the file tree beside the diff', () => {
@@ -169,6 +206,32 @@ describe('DiffViewer', () => {
     })
     afterEach(() => { globalThis.ResizeObserver = realObserver })
     const diff = makeDiff('@@ -1 +1 @@\n-old\n+new\n')
+
+    it('keeps a chosen table of contents entry current until the reader moves the page', async () => {
+      Element.prototype.scrollIntoView = vi.fn()
+      const view = renderViewer(makeDiff('@@ -1,1 +1,2 @@ function first()\n a\n+b\n@@ -20,1 +21,3 @@\n c\n+export class Second {\n+}\n'))
+      const contents = screen.getByRole('navigation', { name: '目次' })
+      const entry = (name: string) => within(contents).getByRole('button', { name })
+      // The first line stays at the top of the view, as when the file is too short to scroll to the chosen line.
+      const atTop = view.container.querySelector('.diff-row')!
+      document.elementsFromPoint = () => [atTop]
+      try {
+        await waitFor(() => expect(entry('1行目: function first()')).toHaveAttribute('aria-current', 'location'))
+        fireEvent.click(entry('21行目: class Second'))
+        expect(entry('21行目: class Second')).toHaveAttribute('aria-current', 'location')
+        fireEvent.scroll(window)
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        expect(entry('21行目: class Second')).toHaveAttribute('aria-current', 'location')
+        // Wheeling the list moves only the list.
+        fireEvent.wheel(contents)
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        expect(entry('21行目: class Second')).toHaveAttribute('aria-current', 'location')
+        fireEvent.wheel(atTop)
+        await waitFor(() => expect(entry('1行目: function first()')).toHaveAttribute('aria-current', 'location'))
+      } finally {
+        Reflect.deleteProperty(document, 'elementsFromPoint')
+      }
+    })
 
     it('changes the width of the tree by dragging its edge, and remembers it', () => {
       const view = renderViewer(diff)
