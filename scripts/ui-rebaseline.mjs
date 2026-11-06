@@ -39,8 +39,8 @@ function findDispatchedRun(branch, sha, startedAt) {
   throw new Error('The rebuild was requested, but its run did not appear on GitHub.')
 }
 
-/** Rebuilds the baselines on the CI runner for the pushed branch and commits only those that changed. Nothing is pushed. */
-function main() {
+/** Rebuilds the baselines on the CI runner for the pushed branch and commits only those that changed, returning their names. Nothing is pushed. */
+export function rebuildBaselines() {
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   if (branch === 'main' || branch === 'HEAD') throw new Error('Check out the branch whose baselines should change; main and a detached HEAD are refused.')
   if (git('status', '--porcelain')) throw new Error('Commit or set aside the working tree changes first, so the rebuild matches this checkout.')
@@ -58,14 +58,11 @@ function main() {
   try {
     execFileSync('gh', ['run', 'download', runId, '--name', ARTIFACT, '--dir', dir], { stdio: 'inherit' })
     const changed = changedBaselines(dir, BASELINES)
-    if (!changed.length) {
-      console.log('No baseline changed.')
-      return
-    }
+    if (!changed.length) return []
     for (const name of changed) copyFileSync(join(dir, name), join(BASELINES, name))
     git('add', ...changed.map((name) => `${BASELINES}/${name}`))
     git('commit', '-m', 'Rebuild the changed screenshots on the CI runner')
-    console.log(`Committed ${changed.length} baseline(s). Look at each one before pushing:\n${changed.map((name) => `  ${name}`).join('\n')}`)
+    return changed
   } finally {
     rmSync(dir, { force: true, recursive: true })
   }
@@ -73,7 +70,8 @@ function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    main()
+    const changed = rebuildBaselines()
+    console.log(changed.length ? `Committed ${changed.length} baseline(s). Look at each one before pushing:\n${changed.map((name) => `  ${name}`).join('\n')}` : 'No baseline changed.')
   } catch (error) {
     console.error(error instanceof Error ? error.message : error)
     process.exit(1)

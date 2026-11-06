@@ -13,7 +13,7 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(page).toHaveURL(/#client\/user\?username=akari.t$/u)
         const mrRow = page.locator('[data-screen-active="true"] [data-list-row="true"][data-mr-id="101-42"]')
         await expect(mrRow).toBeVisible()
-        await expect(page).toHaveScreenshot(`client-user-mrs-${suffix}.png`)
+        await expect.soft(page).toHaveScreenshot(`client-user-mrs-${suffix}.png`)
 
         // A tab about to show waits beside the previous one for a moment: only the active screen's tab counts.
         const projectTab = page.locator('[data-screen-active="true"]').getByRole('tab', { name: 'プロジェクト', exact: true })
@@ -21,7 +21,7 @@ for (const theme of ['light', 'dark'] as const) {
         await page.keyboard.press('Enter')
         await expect(projectTab).toHaveAttribute('aria-selected', 'true')
         await expect(page.getByRole('button', { name: /^個人ツール .*akari\.t\/tools/u })).toBeVisible()
-        await expect(page).toHaveScreenshot(`client-user-projects-${suffix}.png`)
+        await expect.soft(page).toHaveScreenshot(`client-user-projects-${suffix}.png`)
         await page.getByRole('button', { name: /^個人ツール .*akari\.t\/tools/u }).click()
         await expect(page.getByRole('tab', { name: 'コード', exact: true })).toBeVisible()
         await page.goBack()
@@ -32,7 +32,7 @@ for (const theme of ['light', 'dark'] as const) {
         await page.getByRole('button', { name: '@akari.tに戻る', exact: true }).click()
         await expect(page.getByRole('tab', { name: '作成したMR', exact: true })).toBeVisible()
         await page.goto(`/?theme=${theme}#foundation/catalog?section=user-navigation`)
-        await expect(page.locator('#catalog-user-navigation')).toHaveScreenshot(`user-navigation-${suffix}.png`)
+        await expect.soft(page.locator('#catalog-user-navigation')).toHaveScreenshot(`user-navigation-${suffix}.png`)
       })
     })
   }

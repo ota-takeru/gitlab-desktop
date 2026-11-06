@@ -1,7 +1,7 @@
 import { translate } from '../../i18n/i18n'
 import type { Diff, Discussion, Draft, Position } from '../../types/gitlab'
 import type { ThreadView } from './DiffThreads'
-import type { ParsedLine } from './diffParser'
+import type { DiffLineCounts, ParsedLine } from './diffParser'
 
 /** Places line comments of a diff file by line, for the threads shown under diff lines. */
 
@@ -83,8 +83,8 @@ export function threadCountsByFile(discussions: Discussion[] | undefined, diffs:
 }
 
 /** The row's name carries its review state, which the marks show only visually. */
-export function fileRowLabel(path: string, threads: FileThreadCount | undefined, reviewed: boolean): string {
-  return [path, threads?.total ? threadLabel(threads) : null, reviewed ? translate('review.fileTree.reviewed') : null].filter(Boolean).join(translate('common.list.separator'))
+export function fileRowLabel(path: string, threads: FileThreadCount | undefined, reviewed: boolean, lines?: DiffLineCounts | null): string {
+  return [path, lines ? translate('review.diff.lineCounts', { added: lines.added, removed: lines.removed }) : null, threads?.total ? threadLabel(threads) : null, reviewed ? translate('review.fileTree.reviewed') : null].filter(Boolean).join(translate('common.list.separator'))
 }
 
 export function threadLabel({ total, unresolved }: FileThreadCount): string {

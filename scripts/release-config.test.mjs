@@ -67,7 +67,7 @@ test('documentation-only pushes and other branches are not released', () => {
 })
 
 test('pushes that change only tests, baselines, CI or test settings are not released', () => {
-  const unchangedApp = ['tests/visual/a11y.visual.ts', 'tests/visual/screenshots/sidebar-dark-960x640.png', 'src/features/App.test.tsx', 'src/test/setup.ts', 'src-tauri/src/native/tests.rs', '.github/workflows/ci.yml', '.github/dependabot.yml', 'vitest.config.ts', 'playwright.config.ts', 'scripts/release-config.test.mjs']
+  const unchangedApp = ['tests/visual/a11y.visual.ts', 'tests/visual/screenshots/sidebar-dark-960x640.png', 'src/features/App.test.tsx', 'src/test/setup.ts', 'src-tauri/src/native/tests.rs', '.github/workflows/ci.yml', '.github/dependabot.yml', 'vitest.config.ts', 'playwright.config.ts', 'scripts/release-config.test.mjs', 'scripts/pr-land.mjs', 'scripts/ui-check.mjs', 'scripts/ui-rebaseline.mjs']
   strictEqual(decideRelease({ ...mainPush, changedPaths: unchangedApp }).shouldRelease, false)
   for (const shipped of ['src/features/App.tsx', 'src-tauri/src/native.rs', 'package.json', 'package-lock.json', 'src-tauri/Cargo.lock', 'vite.config.ts', 'scripts/release-main.mjs', 'src-tauri/tauri.conf.json']) {
     strictEqual(decideRelease({ ...mainPush, changedPaths: [...unchangedApp, shipped] }).autoBump, true, shipped)

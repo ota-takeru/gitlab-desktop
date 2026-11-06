@@ -275,3 +275,29 @@ export function splitFileLines(content: string): string[] {
   if (lines.at(-1) === '') lines.pop()
   return lines
 }
+
+export interface DiffLineCounts {
+  added: number
+  removed: number
+}
+
+/**
+ * Added and removed lines of a diff, without building its rows: every file of a
+ * merge request is counted when it opens. Only lines inside a hunk are records,
+ * so the `---`/`+++` file headers before the first hunk do not count.
+ */
+export function countDiffLines(diff: string): DiffLineCounts {
+  const counts = { added: 0, removed: 0 }
+  let inHunk = false
+  for (let start = 0; start < diff.length;) {
+    const newline = diff.indexOf('\n', start)
+    const first = diff[start]
+    if (first === '@' && diff.startsWith('@@', start)) inHunk = true
+    else if (first === 'd' && diff.startsWith('diff --git ', start)) inHunk = false
+    else if (inHunk && first === '+') counts.added += 1
+    else if (inHunk && first === '-') counts.removed += 1
+    if (newline < 0) break
+    start = newline + 1
+  }
+  return counts
+}

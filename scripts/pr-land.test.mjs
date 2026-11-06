@@ -1,7 +1,7 @@
 import { deepEqual } from 'node:assert'
 import { test } from 'node:test'
 
-import { isDryRun, landingBlockers } from './pr-land.mjs'
+import { isDryRun, landingBlockers, onlyBaselinesDiffer } from './pr-land.mjs'
 
 test('takes a dry run from the argument or from npm, which keeps the flag for itself', () => {
   deepEqual(isDryRun(['12', '--dry-run'], {}), true)
@@ -23,4 +23,25 @@ test('names everything that stops a merge', () => {
   deepEqual(landingBlockers({ ...open, isDraft: true }, passed, 'a'), ['it is a draft'])
   deepEqual(landingBlockers({ ...open, mergeable: 'CONFLICTING' }, passed, 'a'), ['GitHub reports it as CONFLICTING'])
   deepEqual(landingBlockers({ ...open, state: 'MERGED' }, passed, 'a'), ['it is MERGED'])
+})
+
+const visual = 'Screenshot comparison and accessibility'
+const compare = 'Compare the catalog and client screens with their baselines'
+const visualFailed = [...passed, { bucket: 'fail', name: visual }]
+
+test('rebuilds the baselines only when the screenshot comparison is all that failed', () => {
+  deepEqual(onlyBaselinesDiffer(open, visualFailed, 'a', [compare]), true)
+})
+
+test('keeps every other failure as a stop', () => {
+  deepEqual(onlyBaselinesDiffer(open, passed, 'a', []), false)
+  deepEqual(onlyBaselinesDiffer(open, visualFailed, 'a', ['Check accessibility of the client screens']), false)
+  deepEqual(onlyBaselinesDiffer(open, visualFailed, 'a', ['Check accessibility of the client screens', compare]), false)
+  deepEqual(onlyBaselinesDiffer(open, visualFailed, 'a', []), false)
+  deepEqual(onlyBaselinesDiffer(open, [...visualFailed, { bucket: 'fail', name: 'Rust' }], 'a', [compare]), false)
+  deepEqual(onlyBaselinesDiffer(open, [...passed, { bucket: 'pending', name: visual }], 'a', [compare]), false)
+  deepEqual(onlyBaselinesDiffer(open, [{ bucket: 'fail', name: visual }], 'a', [compare]), false)
+  deepEqual(onlyBaselinesDiffer(open, visualFailed, 'b', [compare]), false)
+  deepEqual(onlyBaselinesDiffer({ ...open, isDraft: true }, visualFailed, 'a', [compare]), false)
+  deepEqual(onlyBaselinesDiffer({ ...open, mergeable: 'CONFLICTING' }, visualFailed, 'a', [compare]), false)
 })
