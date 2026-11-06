@@ -1089,7 +1089,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
         </Stack> : null}
       </Box>
 
-      <Stack spacing={1} sx={{ pb: 2, pt: activeTab === 'changes' ? 1 : 2, px: 2 }}>
+      <Stack spacing={1} sx={{ pb: 2, pt: activeTab === 'changes' ? 1.5 : 2, px: 2 }}>
         {noteAwardsQuery && noteAwardsResult.error ? <Alert action={<Button color="inherit" onClick={noteAwardsResult.refresh}>{t('mergeRequest.reactions.retry')}</Button>} severity="warning">{noteAwardsResult.data ? t('mergeRequest.reactions.refreshFailed', { error: noteAwardsResult.error.message }) : t('mergeRequest.reactions.noteLoadFailed', { error: noteAwardsResult.error.message })}</Alert> : null}
         {noteAwardsQuery && noteAwardsResult.snapshot?.completeness === 'truncated' ? <Alert severity="info">{t('mergeRequest.reactions.truncated')}</Alert> : null}
         {/* Visited tabs stay mounted, hidden, so switching back shows them at once with their scroll, input and highlighted code.
