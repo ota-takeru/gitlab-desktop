@@ -41,7 +41,7 @@ import { UpdatePanel, UpdateSidebarButton } from '../components/UpdatePanel'
 import { setLocalePreference, translate, type MessageKey } from '../i18n/i18n'
 import { localeNames, supportedLocales, systemLocale, type LocalePreference } from '../i18n/locales'
 import { useLocalePreference, useT } from '../i18n/useT'
-import { isEditableTarget, isInsideMenu } from '../lib/eventTargets'
+import { isEditableTarget, isInsideControlGroup, isInsideMenu } from '../lib/eventTargets'
 import { clearLocalDrafts } from '../lib/localDrafts'
 import { getRuntimeInfo, isTauri } from '../lib/runtime'
 import type { UnsentTarget } from '../lib/windowSafety'
@@ -1104,7 +1104,3 @@ function parseTab(value: string | undefined): ReviewTab | undefined {
 }
 
 /** Composers, toolbars, menus and forms handle Esc themselves. `data-composer` marks a composer's whole region. */
-function isInsideControlGroup(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[data-composer], [role="toolbar"], [role="menu"], [role="menubar"], [role="listbox"], form') !== null
-}
-

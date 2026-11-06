@@ -11,6 +11,9 @@ import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRigh
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined'
 import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined'
 import TocRoundedIcon from '@mui/icons-material/TocRounded'
+import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded'
+import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
+import type { Theme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
@@ -25,7 +28,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import InputAdornment from '@mui/material/InputAdornment'
-import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { hairline, panelFrame } from '../../components/hairline'
 import { gridLine } from '../../theme'
@@ -33,24 +36,25 @@ import type { Diff, Discussion, Draft, FileQuery, Position } from '../../types/g
 import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { ColumnResizeHandle } from './ColumnResizeHandle'
 import { DiffFileTree, FileThreadMark } from './DiffFileTree'
-import { FILE_LIST_MODE_KEY, readFileListMode, type FileListMode } from './diffFileOrder'
+import { FILE_LIST_MODE_KEY, readFileListMode, splitPath, type FileListMode } from './diffFileOrder'
 import type { GapExpansion } from './DiffGap'
 import { SplitDiff, UnifiedDiff, type LineSelection, type RowSelection } from './DiffRows'
 import { DiffOutlineList } from './DiffOutlineList'
 import { diffOutline, outlineEntryAt, type DiffOutline, type OutlineEntry } from './diffOutline'
 import { firstVisibleFileLine, LineCounts, matchesPosition, positionLineId, scrollNearestBy } from './diffShared'
 import { FullFileView } from './FullFileView'
+import { PathTooltip } from './PathTooltip'
 import { useDiffTokens } from './useDiffTokens'
 import { BlameProvider } from './BlamePanel'
 import type { HistoryCursor } from './lineHistory'
 import { LineHistoryView } from './LineHistoryView'
 import { FetchedMarkdownDiffPreview, MarkdownDiffPreview } from './MarkdownDiffPreview'
-import { isEditableTarget, isInsideMenu } from '../../lib/eventTargets'
+import { isEditableTarget, isInsideControlGroup, isInsideMenu } from '../../lib/eventTargets'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { markdownDiffNeedsFile } from './markdownDiff'
 import { firstChangedFileLine } from './fullFileAnnotations'
 import type { ThreadActions } from './DiffThreads'
-import { fileRowLabel, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine, type FileThreadCount } from './diffLineThreads'
+import { fileRowLabel, fileRowNotes, lineKey, pendingDraftsByLine, threadCountsByFile, threadsByLine, type FileThreadCount } from './diffLineThreads'
 import { languageForPath } from '../../lib/syntaxHighlight'
 import { countDiffLines, ignoreWhitespace as ignoreWhitespaceChanges, parseDiff, type DiffHunk, type DiffLineCounts, type ParsedDiff, type ParsedLine } from './diffParser'
 import { canReadOmittedDiff, isDiffOmitted, OmittedDiffReader, type OmittedDiffRead } from './omittedDiff'
@@ -66,6 +70,9 @@ import { Row } from '../../components/Row'
 /** Below the MR header, which stays at the top of the detail while it scrolls. */
 const BELOW_DETAIL_HEADER = 'calc(var(--detail-header-height, 0px) + 8px)'
 const EMPTY_PARSED_DIFF: ParsedDiff = { lines: [], status: 'valid' }
+/** Over the whole window and its own scroll, with the same elements, so open comment editors and opened lines stay as they are. */
+const MAXIMIZED_SX = { '--detail-header-height': '0px', bgcolor: 'background.default', inset: 0, overflowX: 'hidden', overflowY: 'auto', p: 1, position: 'fixed', zIndex: (theme: Theme) => theme.zIndex.drawer + 1 }
+const READER_MOVES = ['wheel', 'pointerdown', 'keydown'] as const
 
 interface DiffViewerProps {
   allowComments?: boolean
@@ -234,7 +241,10 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const composer = useMemo(() => commentsEnabled && lineComposer ? { key: lineKey(lineComposer.position), node: lineComposer.node, position: lineComposer.position } : undefined, [commentsEnabled, lineComposer])
   const draftsByLine = useMemo(() => pendingDraftsByLine(pendingDrafts, selectedDiff, discussionHeadSha), [discussionHeadSha, pendingDrafts, selectedDiff])
   const threadSessionId = fileSource?.sessionId
-  const threadView = useMemo(() => (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: onOpenDiscussion, sessionId: threadSessionId, suggestionActions, threads: lineThreads.byLine } : undefined, [composer, discussions, draftsByLine, lineThreads.byLine, onOpenDiscussion, parsed.status, suggestionActions, threadActions, threadSessionId])
+  const [maximized, setMaximized] = useState(false)
+  // A discussion opens in the tab under the maximized diff.
+  const openDiscussion = useMemo(() => onOpenDiscussion && ((id: string) => { setMaximized(false); onOpenDiscussion(id) }), [onOpenDiscussion])
+  const threadView = useMemo(() => (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: openDiscussion, sessionId: threadSessionId, suggestionActions, threads: lineThreads.byLine } : undefined, [composer, discussions, draftsByLine, lineThreads.byLine, openDiscussion, parsed.status, suggestionActions, threadActions, threadSessionId])
 
   // Lines chosen for a comment: the open editor's lines, or a range being chosen
   // with Shift+click, Shift+↑/↓ on the 「+」 buttons, or by dragging over the gutter.
@@ -538,6 +548,56 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     return () => observer.disconnect()
   }, [])
 
+  /** The row under the file heading when the view changes size, and how far below the heading it starts. */
+  const maximizeAnchor = useRef<{ node: HTMLElement; offset: number } | null>(null)
+  const toggleMaximized = useStableCallback(() => {
+    const panel = fileTopRef.current?.getBoundingClientRect()
+    const headerBottom = fileHeaderRef.current?.getBoundingClientRect().bottom
+    const shown = panel && headerBottom !== undefined ? document.elementsFromPoint?.(panel.left + panel.width / 2, headerBottom + 1) ?? [] : []
+    // A thread or the row of omitted lines can be there instead of a line.
+    const node = shown.map((element) => element.closest<HTMLElement>('.diff-row, .split-row, [data-file-anchor], [data-file-line]')).find(Boolean)
+      ?? shown.find((element): element is HTMLElement => element instanceof HTMLElement && element !== fileTopRef.current && Boolean(fileTopRef.current?.contains(element)) && !fileHeaderRef.current?.contains(element))
+    maximizeAnchor.current = node && headerBottom !== undefined ? { node, offset: node.getBoundingClientRect().top - headerBottom } : null
+    setMaximized((value) => !value)
+  })
+  useLayoutEffect(() => {
+    const anchor = maximizeAnchor.current
+    const header = fileHeaderRef.current
+    const panel = fileTopRef.current
+    maximizeAnchor.current = null
+    if (!anchor || !header || !panel) return
+    const keepPlace = () => {
+      if (!anchor.node.isConnected) { stop(); return }
+      // Twice: the heading only sticks once the first move has taken it past its place in the page.
+      for (let pass = 0; pass < 2; pass += 1) scrollNearestBy(anchor.node, anchor.node.getBoundingClientRect().top - header.getBoundingClientRect().bottom - anchor.offset)
+    }
+    // The new width rewraps the lines, and the pieces off screen take their new heights later, so the place is held until the reader moves.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(keepPlace)
+    const stop = () => {
+      observer?.disconnect()
+      for (const type of READER_MOVES) window.removeEventListener(type, stop, true)
+    }
+    keepPlace()
+    observer?.observe(panel)
+    for (const type of READER_MOVES) window.addEventListener(type, stop, { capture: true, passive: true })
+    return stop
+  }, [maximized])
+  // Capture runs before the app's Esc, which would return to the list. What has the focus closes first, as there.
+  const choosingLines = choice?.focus != null
+  useEffect(() => {
+    if (!maximized) return
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || isInsideControlGroup(event.target) || document.querySelector('.MuiModal-root:not(.MuiModal-hidden)')) return
+      // A line choice being extended from its button ends first.
+      if (choosingLines && event.target instanceof Element && event.target.closest('[data-line-action]')) return
+      event.preventDefault()
+      event.stopPropagation()
+      toggleMaximized()
+    }
+    window.addEventListener('keydown', close, true)
+    return () => window.removeEventListener('keydown', close, true)
+  }, [choosingLines, maximized, toggleMaximized])
+
   const selectRelative = (delta: number) => {
     const next = diffs[displayedIndex + delta]
     if (next) onSelectFile(next.newPath || next.oldPath)
@@ -631,7 +691,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
 
   return (
-    <Box ref={rootRef}>
+    <Box data-diff-maximized={maximized ? 'true' : undefined} ref={rootRef} sx={maximized ? MAXIMIZED_SX : undefined}>
       {diffs.length ? <Row spacing={1} sx={{ flexWrap: 'wrap', mb: 1, px: 0.5 }} useFlexGap>
         <Typography color="textSecondary" variant="caption">{t('review.diff.summary.files', { count: diffs.length })}</Typography>
         <LineCounts added={lineTotals.added} label={t('review.diff.lineCounts', { added: lineTotals.added, removed: lineTotals.removed })} removed={lineTotals.removed} />
@@ -648,12 +708,12 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             <Tooltip title={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')}><IconButton aria-expanded={treeFits ? undefined : treePopoverOpen} aria-haspopup={treeFits ? undefined : 'dialog'} aria-label={treeShown ? t('review.fileTree.hide') : t('review.fileTree.show')} aria-pressed={treeFits ? treeShown : undefined} onClick={toggleTree}><ViewSidebarOutlinedIcon /></IconButton></Tooltip>
             <Tooltip title={t('review.diff.previousFileTooltip')}><span><IconButton aria-keyshortcuts="[" aria-label={t('review.diff.previousFile')} disabled={displayedIndex <= 0} onClick={() => selectRelative(-1)}><KeyboardArrowLeftRoundedIcon /></IconButton></span></Tooltip>
             <Tooltip title={t('review.diff.nextFileTooltip')}><span><IconButton aria-keyshortcuts="]" aria-label={t('review.diff.nextFile')} disabled={displayedIndex < 0 || displayedIndex >= diffs.length - 1} onClick={() => selectRelative(1)}><KeyboardArrowRightRoundedIcon /></IconButton></span></Tooltip>
-            <Row spacing={1} sx={{ flex: '1 1 280px', minWidth: 0 }}>
-              <Tooltip title={displayedPath ?? ''}><HeadingPath path={displayedPath ?? t('review.diff.selectFile')} /></Tooltip>
+            <PathTooltip path={displayedPath} placement="bottom-start"><Row spacing={1} sx={{ flex: '1 1 220px', minWidth: 0 }}>
+              <HeadingPath path={displayedPath ?? t('review.diff.selectFile')} />
               {diffs.length > 1 ? <Typography color="textSecondary" sx={{ flexShrink: 0 }} variant="caption">{displayedIndex + 1}/{diffs.length}</Typography> : null}
               {/* Nothing to count until a diff GitLab left out has been compared here. */}
               {selectedDiff && (comparedDiff || !isDiffOmitted(selectedDiff)) ? <LineCounts {...lineCounts} label={t('review.diff.lineCounts', { added: lineCounts.added, removed: lineCounts.removed })} sx={diffOnlySx} /> : null}
-            </Row>
+            </Row></PathTooltip>
             {reviewState.enabled && selectedDiff && !selectedDiff.collapsed && !selectedDiff.tooLarge && parsed.status === 'valid' ? <Tooltip describeChild title={t('review.diff.markReviewedHint')}><Button aria-pressed={reviewState.isReviewed(displayedPath ?? '')} onClick={toggleReviewed} size="small" variant="outlined">{reviewState.isReviewed(displayedPath ?? '') ? t('review.fileTree.reviewed') : t('review.diff.markReviewed')}</Button></Tooltip> : null}
             <Tooltip describeChild title={whitespaceIgnored ? t('review.diff.whitespace.ignoredHint') : t('review.diff.whitespace.hint')}><ToggleButton onChange={toggleWhitespace} selected={whitespaceIgnored} size="small" sx={{ flexShrink: 0, py: 0.25, ...diffOnlySx }} value="ignore-whitespace">{t('review.diff.whitespace.toggle')}</ToggleButton></Tooltip>
             {/* The rendered Markdown preview has no code rows to wrap. */}
@@ -669,6 +729,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               <ToggleButton value="diff">{t('review.diff.view.diff')}</ToggleButton>
               <ToggleButton value="file">{t('review.diff.view.file')}</ToggleButton>
             </ToggleButtonGroup> : null}
+            <Tooltip title={maximized ? t('review.diff.restore') : t('review.diff.maximize')}><IconButton aria-keyshortcuts={maximized ? 'Escape' : undefined} aria-label={maximized ? t('review.diff.restore') : t('review.diff.maximize')} aria-pressed={maximized} onClick={toggleMaximized}>{maximized ? <CloseFullscreenRoundedIcon /> : <OpenInFullRoundedIcon />}</IconButton></Tooltip>
           </Row>
            {/* One dense row: the search fields take the height of a toolbar, not of a form. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}>
@@ -735,13 +796,13 @@ const NO_OUTLINE: DiffOutline = { entries: [], omitted: 0 }
  * A path on one line. Its folders give way first and its file name last, so a long path keeps the name in view.
  * Two parts rather than a right-to-left line: such a line's text stays where it was when the width changes.
  */
-const HeadingPath = forwardRef<HTMLElement, { path: string } & React.HTMLAttributes<HTMLElement>>(function HeadingPath({ path, ...tooltipProps }, ref) {
+function HeadingPath({ path }: { path: string }) {
   const { directory, name } = splitPath(path)
-  return <Box {...tooltipProps} component="bdi" dir="ltr" ref={ref} sx={{ alignItems: 'center', display: 'flex', minWidth: 0 }}>
+  return <Box component="bdi" dir="ltr" sx={{ alignItems: 'center', display: 'flex', minWidth: 0 }}>
     {directory ? <Typography color="textSecondary" component="span" noWrap sx={{ flexShrink: 100000, fontFamily: 'code.fontFamily', minWidth: 0 }} variant="body2">{directory}/</Typography> : null}
     <Typography component="span" noWrap sx={{ flexShrink: 1, fontFamily: 'code.fontFamily', fontWeight: 600, minWidth: 0 }} variant="body2">{name}</Typography>
   </Box>
-})
+}
 
 /** The rendered change block nearest a line; with no new-side line left, the last, as what it removed ends the file. */
 function markdownBlockFor(blocks: HTMLElement[], line: number | null): HTMLElement | null {
@@ -756,7 +817,7 @@ const FileList = memo(function FileList({ displayedPath, entries, isReviewed, li
               const { directory, name } = splitPath(path)
               const kind = diff.tooLarge ? t('review.fileTree.kind.tooLarge') : diff.untracked ? t('review.fileTree.kind.untracked') : diff.newFile ? t('review.fileTree.kind.new') : diff.deletedFile ? t('review.fileTree.kind.deleted') : diff.renamedFile ? t('review.fileTree.kind.renamed', { path: diff.oldPath }) : null
               const lines = lineCounts.get(path)
-              return <ListItemButton aria-label={fileRowLabel(path, threadCount(path), isReviewed(path), lines)} key={`${diff.oldPath}\0${path}`} onClick={() => onSelect(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }} title={diff.renamedFile ? `${diff.oldPath} → ${path}` : path}><ListItemText primary={<Row spacing={1} sx={{ minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography>{lines ? <LineCounts {...lines} /> : null}<FileThreadMark count={threadCount(path)} />{isReviewed(path) ? <Tooltip title={t('review.fileTree.reviewed')}><DoneRoundedIcon aria-label={t('review.fileTree.reviewed')} color="success" fontSize="small" /></Tooltip> : null}</Row>} secondary={<Typography color="textSecondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton>
+              return <PathTooltip key={`${diff.oldPath}\0${path}`} notes={fileRowNotes(threadCount(path), isReviewed(path))} oldPath={diff.renamedFile ? diff.oldPath : undefined} path={path}><ListItemButton aria-label={fileRowLabel(path, threadCount(path), isReviewed(path), lines)} onClick={() => onSelect(path)} selected={path === displayedPath} sx={{ px: 1, py: 0.5 }}><ListItemText primary={<Row spacing={1} sx={{ minWidth: 0 }}><FileKindMark diff={diff} /><Typography noWrap sx={{ flex: 1, fontWeight: path === displayedPath ? 600 : 400 }} variant="body2">{name}</Typography>{lines ? <LineCounts {...lines} /> : null}<FileThreadMark count={threadCount(path)} />{isReviewed(path) ? <DoneRoundedIcon aria-label={t('review.fileTree.reviewed')} color="success" fontSize="small" /> : null}</Row>} secondary={<Typography color="textSecondary" component="span" noWrap sx={{ display: 'block', pl: 2 }} variant="caption">{[kind, directory].filter(Boolean).join(' · ') || '/'}</Typography>} sx={{ m: 0 }} /></ListItemButton></PathTooltip>
   })}</>
 })
 
@@ -885,7 +946,3 @@ function scrollParentOf(node: HTMLElement | null): HTMLElement {
   return (document.scrollingElement ?? document.documentElement) as HTMLElement
 }
 
-function splitPath(path: string): { directory: string; name: string } {
-  const index = path.lastIndexOf('/')
-  return index < 0 ? { directory: '', name: path } : { directory: path.slice(0, index), name: path.slice(index + 1) }
-}

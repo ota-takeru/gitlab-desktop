@@ -66,3 +66,8 @@ export function diffFileOrder(diffs: Diff[]): Diff[] {
   const entries = diffs.map((diff) => ({ diff, path: diff.newPath || diff.oldPath }))
   return (readFileListMode() === 'list' ? entries : fileTreeOrder(entries)).map(({ diff }) => diff)
 }
+
+export function splitPath(path: string): { directory: string; name: string } {
+  const index = path.lastIndexOf('/')
+  return index < 0 ? { directory: '', name: path } : { directory: path.slice(0, index), name: path.slice(index + 1) }
+}

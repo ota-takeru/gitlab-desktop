@@ -39,6 +39,8 @@
   "diff.outline.hide": "Hide the contents of this file",
   "diff.outline.entry": "Line {line}: {label}",
   "diff.outline.omitted": "{count} more not listed",
+  "diff.maximize": "Maximize the diff",
+  "diff.restore": "Restore the diff (Esc)",
   "diff.summary.files": "{count, plural, one {# file changed} other {# files changed}}",
   "diff.summary.uncounted": "{count, plural, one {# file without a diff is not counted} other {# files without a diff are not counted}}",
   "diff.markReviewedHint": "Marking a file as viewed opens the next unviewed file. It goes back to unviewed when the head SHA or the file diff changes.",

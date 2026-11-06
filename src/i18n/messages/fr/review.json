@@ -39,6 +39,8 @@
   "diff.outline.hide": "Masquer le sommaire de ce fichier",
   "diff.outline.entry": "Ligne {line} : {label}",
   "diff.outline.omitted": "{count} de plus non affichés",
+  "diff.maximize": "Agrandir le diff",
+  "diff.restore": "Réduire le diff (Échap)",
   "diff.summary.files": "{count, plural, one {# fichier modifié} many {# fichiers modifiés} other {# fichiers modifiés}}",
   "diff.summary.uncounted": "{count, plural, one {# fichier sans diff n’est pas compté} many {# fichiers sans diff ne sont pas comptés} other {# fichiers sans diff ne sont pas comptés}}",
   "diff.markReviewedHint": "Marquer un fichier comme consulté ouvre le fichier non consulté suivant. Il redevient non consulté lorsque le SHA du head ou le diff du fichier change.",

@@ -39,6 +39,8 @@
   "diff.outline.hide": "Inhalt dieser Datei ausblenden",
   "diff.outline.entry": "Zeile {line}: {label}",
   "diff.outline.omitted": "{count} weitere nicht aufgeführt",
+  "diff.maximize": "Diff maximieren",
+  "diff.restore": "Diff verkleinern (Esc)",
   "diff.summary.files": "{count, plural, one {# Datei geändert} other {# Dateien geändert}}",
   "diff.summary.uncounted": "{count, plural, one {# Datei ohne Diff ist nicht mitgezählt} other {# Dateien ohne Diff sind nicht mitgezählt}}",
   "diff.markReviewedHint": "Wenn Sie eine Datei als angesehen markieren, wird die nächste nicht angesehene Datei geöffnet. Sie gilt wieder als nicht angesehen, wenn sich der Head-SHA oder der Datei-Diff ändert.",

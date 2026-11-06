@@ -87,6 +87,11 @@ export function fileRowLabel(path: string, threads: FileThreadCount | undefined,
   return [path, lines ? translate('review.diff.lineCounts', { added: lines.added, removed: lines.removed }) : null, threads?.total ? threadLabel(threads) : null, reviewed ? translate('review.fileTree.reviewed') : null].filter(Boolean).join(translate('common.list.separator'))
 }
 
+/** What a file row's marks mean, for its tooltip. */
+export function fileRowNotes(threads: FileThreadCount | undefined, reviewed: boolean): string[] {
+  return [threads?.total ? threadLabel(threads) : null, reviewed ? translate('review.fileTree.reviewed') : null].filter((note) => note !== null)
+}
+
 export function threadLabel({ total, unresolved }: FileThreadCount): string {
   return unresolved ? translate('review.fileTree.threadsUnresolved', { total, unresolved }) : translate('review.fileTree.threads', { total })
 }
