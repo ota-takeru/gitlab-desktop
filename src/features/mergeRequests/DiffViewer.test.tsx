@@ -158,6 +158,9 @@ describe('DiffViewer', () => {
     expect(row).not.toHaveAttribute('title')
     fireEvent.mouseOver(row)
     expect((await screen.findByRole('tooltip')).textContent).toBe(path)
+    // A scroll carries the row away, so the tooltip goes with no fade rather than following it.
+    fireEvent.scroll(row.parentElement!)
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
   })
 
   it('covers the window when maximized, and Esc restores it without leaving the merge request', () => {
