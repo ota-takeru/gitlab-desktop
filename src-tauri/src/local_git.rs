@@ -581,7 +581,9 @@ pub fn find_clone(roots: &[PathBuf], instance: &Url, project_path: &str) -> Opti
             break;
         }
         let git = folder.join(".git");
-        if git.exists() {
+        // A `.git` folder without HEAD is not a repository: a tool can leave
+        // one holding only `info/exclude`, and the folders below it are searched.
+        if git.is_file() || git.join("HEAD").is_file() {
             // A `git worktree` has a `.git` file that points into its clone.
             let config = if git.is_dir() {
                 Some(git.join("config"))
@@ -1135,11 +1137,26 @@ mod tests {
             let git = directory.join(path).join(".git");
             std::fs::create_dir_all(&git).unwrap();
             std::fs::write(
+                git.join("HEAD"),
+                "ref: refs/heads/main
+",
+            )
+            .unwrap();
+            std::fs::write(
                 git.join("config"),
                 format!("[core]\n\tbare = false\n[remote \"origin\"]\n\turl = {url}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"),
             )
             .unwrap();
         };
+        // A `.git` folder holding only `info/exclude`, left in the scan folder
+        // by a tool, is not a clone: the folders below it are still searched.
+        std::fs::create_dir_all(directory.join(".git").join("info")).unwrap();
+        std::fs::write(
+            directory.join(".git").join("info").join("exclude"),
+            "*.log
+",
+        )
+        .unwrap();
         clone("other", "https://gitlab.example.com/group/other.git");
         clone("group/app", "git@gitlab.example.com:group/app.git");
         clone("a/b/c/deep", "https://gitlab.example.com/group/deep.git");
