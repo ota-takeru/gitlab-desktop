@@ -13,6 +13,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { frame } from '../../components/hairline'
+import { gridLine } from '../../theme'
 import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import type { Commit, Diff, Discussion, Draft, MrVersion, Position } from '../../types/gitlab'
 import type { ThreadActions } from './DiffThreads'
@@ -248,7 +249,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
 
   const item = (active: boolean) => ({ bgcolor: active ? 'surface.selected' : 'transparent', ...frame({ color: active ? 'primary.main' : 'divider' }), borderRadius: 1, color: active ? 'text.primary' : 'text.secondary', flexShrink: 0, fontWeight: active ? 600 : 400, minHeight: 28, px: 1, '&:hover': { bgcolor: active ? 'surface.selected' : 'action.hover', outlineColor: active ? 'primary.main' : 'surface.borderStrong' } })
   const inRange = (step: number) => step >= start && step < end
-  const label = { color: 'text.secondary', fontSize: 'caption.fontSize', left: '50%', lineHeight: 1.4, pointerEvents: 'none', position: 'absolute', transform: 'translateX(-50%)', whiteSpace: 'nowrap' } as const
+  const label = { color: 'text.secondary', fontSize: 'caption.fontSize', left: '50%', lineHeight: gridLine(4), pointerEvents: 'none', position: 'absolute', transform: 'translateX(-50%)', whiteSpace: 'nowrap' } as const
   const handleLabel = (index: number) => index === start ? t('review.changes.rangeStart') : index === end ? t('review.changes.rangeEnd') : null
   // One tab stop for the whole row (the end of the range); ←/→ Home/End move between items.
   const tabStop = end >= 0 ? end : 0
@@ -304,26 +305,31 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     const at = points[index]
     const isEnd = index === start || index === end
     const handle = handleLabel(index)
-    return <ButtonBase
-      aria-label={handle ? t('review.changes.pointWithEnd', { end: handle, name: at.name }) : t('review.changes.point', { name: at.name })}
-      data-commit-item
-      data-point-index={index}
+    // The labels sit beside the button, not in it, so the button's name is all a screen reader hears of the point.
+    return <Box
       key={`point:${at.id}`}
-      onClick={() => { if (dragged.current) dragged.current = false; else movePoint(index) }}
-      tabIndex={index === tabStop ? 0 : -1}
-      {...dragHandlers(index)}
       sx={{
-        alignSelf: 'stretch', borderRadius: 1, cursor: isEnd && !showingLocal ? 'grab' : 'pointer', flexShrink: 0, position: 'relative', touchAction: 'none', width: 24,
+        alignSelf: 'stretch', flexShrink: 0, position: 'relative', width: 24,
         // The line of the row runs through the point; inside the range it takes the range's colour.
         '&::before, &::after': { content: '""', height: 2, position: 'absolute', top: 'calc(50% - 1px)', width: '50%' },
         '&::before': { bgcolor: index > 0 && inRange(index - 1) ? 'primary.main' : 'divider', left: 0 },
         '&::after': { bgcolor: index < steps.length && inRange(index) ? 'primary.main' : 'divider', right: 0 },
       }}
     >
-      <Box component="span" sx={{ bgcolor: isEnd ? 'primary.main' : 'text.secondary', borderRadius: '50%', height: isEnd ? 14 : 8, position: 'relative', width: isEnd ? 14 : 8, zIndex: 1 }} />
-      {handle ? <Box component="span" sx={{ ...label, bottom: 'calc(50% + 10px)', color: 'primary.main', fontWeight: 600 }}>{handle}</Box> : null}
-      {at.tag ? <Box component="span" sx={{ ...label, top: 'calc(50% + 10px)' }}>{at.tag}</Box> : null}
-    </ButtonBase>
+      <ButtonBase
+        aria-label={handle ? t('review.changes.pointWithEnd', { end: handle, name: at.name }) : t('review.changes.point', { name: at.name })}
+        data-commit-item
+        data-point-index={index}
+        onClick={() => { if (dragged.current) dragged.current = false; else movePoint(index) }}
+        tabIndex={index === tabStop ? 0 : -1}
+        {...dragHandlers(index)}
+        sx={{ borderRadius: 1, cursor: isEnd && !showingLocal ? 'grab' : 'pointer', inset: 0, position: 'absolute', touchAction: 'none', zIndex: 1 }}
+      >
+        <Box component="span" sx={{ bgcolor: isEnd ? 'primary.main' : 'text.secondary', borderRadius: '50%', height: isEnd ? 14 : 8, width: isEnd ? 14 : 8 }} />
+      </ButtonBase>
+      {handle ? <Box aria-hidden component="span" sx={{ ...label, bottom: 'calc(50% + 10px)', color: 'primary.main', fontWeight: 600 }}>{handle}</Box> : null}
+      {at.tag ? <Box aria-hidden component="span" sx={{ ...label, top: 'calc(50% + 10px)' }}>{at.tag}</Box> : null}
+    </Box>
   }
   const step = (index: number) => {
     const at = steps[index]
@@ -332,9 +338,9 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     const { commit } = at
     const time = commit.committedAt || commit.createdAt
     const active = inRange(index)
-    return <Box key={commit.id} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative', '&:hover > .range-actions, &:focus-within > .range-actions': { display: 'flex' } }}>
+    return <Box key={commit.id} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative', '&:hover > .range-actions, &:focus-within > .range-actions': { visibility: 'visible' } }}>
       <Tooltip describeChild title={`${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={active} color="inherit" data-commit-item onClick={() => onSelect(commit.id)} sx={{ ...item(active), justifyContent: 'flex-start', gap: 1, maxWidth: 240 }} tabIndex={-1}><Box component="span" sx={{ color: 'primary.main', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', flexShrink: 0 }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
-      <Row aria-label={t('review.changes.rangeActions', { sha: shortSha(commit.id) })} className="range-actions" role="group" spacing={0.25} sx={{ bgcolor: 'background.paper', borderRadius: 1, bottom: '100%', display: 'none', left: '50%', p: 0.25, position: 'absolute', transform: 'translateX(-50%)', whiteSpace: 'nowrap', zIndex: 3, ...frame({ color: 'surface.borderStrong' }) }}>
+      <Row aria-label={t('review.changes.rangeActions', { sha: shortSha(commit.id) })} className="range-actions" role="group" spacing={0.25} sx={{ bgcolor: 'background.paper', borderRadius: 1, bottom: '100%', left: '50%', visibility: 'hidden', p: 0.25, position: 'absolute', transform: 'translateX(-50%)', whiteSpace: 'nowrap', zIndex: 3, ...frame({ color: 'surface.borderStrong' }) }}>
         <Button color="inherit" onClick={() => fromHere(index)} size="small" sx={{ minHeight: 0, py: 0 }}>{t('review.changes.fromHere')}</Button>
         <Button color="inherit" onClick={() => onSelect(commit.id)} size="small" sx={{ minHeight: 0, py: 0 }}>{t('review.changes.onlyThis')}</Button>
         <Button color="inherit" onClick={() => toHere(index)} size="small" sx={{ minHeight: 0, py: 0 }}>{t('review.changes.toHere')}</Button>
@@ -375,7 +381,7 @@ function RebasedVersions({ active, items, more, numberOf, onPick }: { active: bo
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   return <Box sx={{ alignSelf: 'center', flexShrink: 0, mr: 1, position: 'relative' }}>
-    {active ? <Box component="span" sx={{ bottom: '100%', color: 'primary.main', fontSize: 'caption.fontSize', fontWeight: 600, left: '50%', lineHeight: 1.4, mb: 0.25, position: 'absolute', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>{t('review.changes.rangeStart')}</Box> : null}
+    {active ? <Box component="span" sx={{ bottom: '100%', color: 'primary.main', fontSize: 'caption.fontSize', fontWeight: 600, left: '50%', lineHeight: gridLine(4), position: 'absolute', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>{t('review.changes.rangeStart')}</Box> : null}
     <Button aria-haspopup="menu" aria-pressed={active} color="inherit" data-commit-item endIcon={<ExpandMoreRoundedIcon />} onClick={(event) => setAnchor(event.currentTarget)} size="small" sx={{ bgcolor: active ? 'surface.selected' : 'transparent', borderRadius: 1, color: active ? 'text.primary' : 'text.secondary', ...frame({ color: active ? 'primary.main' : 'divider' }) }} tabIndex={-1}>{t('review.changes.rebasedVersions')}</Button>
     <Menu anchorEl={anchor} onClose={() => setAnchor(null)} open={Boolean(anchor)}>
       {items.map((version) => {
