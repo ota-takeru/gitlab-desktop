@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -210,6 +210,24 @@ describe('LocalChanges', () => {
     fireEvent.click(screen.getByRole('button', { name: '紐付ける' }))
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'ローカルの変更を読み直す' })).toHaveFocus())
+  })
+
+  it('shows the last diff at once when the view opens again, while it is read again', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValueOnce(changes).mockImplementationOnce(() => new Promise(() => undefined))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = <QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><LocalChanges headSha={'a'.repeat(40)} onSelectFile={vi.fn()} projectId="7" projectPath="group/app" selectedFile={null} sessionId="s1" sourceBranch="feature" userId="u1" /></ThemeProvider></QueryClientProvider>
+    const first = render(view)
+    expect(await screen.findByText('two')).toBeInTheDocument()
+    first.unmount()
+    // The view is closed for a moment, long enough for a discarded result to go.
+    await act(() => new Promise((resolve) => { setTimeout(resolve, 20) }))
+
+    render(view)
+    expect(screen.getByText('two')).toBeInTheDocument()
+    expect(await screen.findByText('読み直し中…')).toBeInTheDocument()
+    expect(mocks.getLocalChanges).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('ローカルの変更を読み込み中…')).not.toBeInTheDocument()
   })
 
   it('keeps the last diff when reading again fails, and says so', async () => {
