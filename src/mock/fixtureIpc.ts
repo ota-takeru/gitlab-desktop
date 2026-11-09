@@ -216,7 +216,8 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'discussions': return find(request).discussions
       case 'notes': return find(request).discussions.flatMap((discussion) => discussion.notes)
       case 'noteDiscussion': return find(request).discussions.find((discussion) => discussion.notes.some((note) => note.id === request.noteId)) ?? null
-      case 'commits': return find(request).commits.map(({ createdAt, id, title }) => ({ createdAt, committedAt: createdAt, id, title }))
+      // Newest first, as GitLab lists an MR's commits.
+      case 'commits': return find(request).commits.map(({ createdAt, id, title }) => ({ createdAt, committedAt: createdAt, id, title })).reverse()
       case 'drafts': return drafts.get(keyOf(request)) ?? []
       case 'diffs': return find(request).diffs
       case 'commitDiff': return fixtureCommitDiff(request.sha, projectFiles(request.projectId))
@@ -304,12 +305,13 @@ export function installFixtureIpc(state: FixtureState): void {
           state: 'collected',
         })).reverse()
       }
-      // The files changed by the commits after the chosen version, the latest change of each.
+      // The files changed by the commits after the start (a commit or the target branch) up to the end, the latest change of each.
       case 'versionCompare': {
-        const { commits } = find(request)
-        const from = commits.findIndex((commit) => commit.id === request.fromSha)
-        if (from < 0) return notFound()
-        const byPath = new Map(commits.slice(from + 1).flatMap((commit) => commit.diffs).map((diff) => [diff.newPath, diff]))
+        const { commits, mergeRequest } = find(request)
+        const from = request.fromSha === mergeRequest.diffRefs?.baseSha ? -1 : commits.findIndex((commit) => commit.id === request.fromSha)
+        const to = commits.findIndex((commit) => commit.id === request.toSha)
+        if ((from < 0 && request.fromSha !== mergeRequest.diffRefs?.baseSha) || to < 0) return notFound()
+        const byPath = new Map(commits.slice(from + 1, to + 1).flatMap((commit) => commit.diffs).map((diff) => [diff.newPath, diff]))
         return [...byPath.values()]
       }
     }

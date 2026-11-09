@@ -87,8 +87,8 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   const client = useQueryClient()
   const { found, foundKey, linked, repository, repositoryKey, searchNow } = useLinkedRepository(sessionId, projectId, projectPath)
   // The working tree changes outside the app, so it is read again each time the view opens
-  // and when the window regains focus.
-  const changes = useQuery({ enabled: Boolean(linked), gcTime: 0, queryFn: () => getLocalChanges(sessionId, projectId, headSha, sourceBranch), queryKey: ['localChanges', sessionId, projectId, headSha, sourceBranch, linked?.path], staleTime: 0 })
+  // and when the window regains focus. The last diff read stays in memory and is shown until then.
+  const changes = useQuery({ enabled: Boolean(linked), queryFn: () => getLocalChanges(sessionId, projectId, headSha, sourceBranch), queryKey: ['localChanges', sessionId, projectId, headSha, sourceBranch, linked?.path], staleTime: 0 })
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [viewChoice, setViewChoice] = useState<{ path: string; view: 'diff' | 'file' } | null>(null)
@@ -107,7 +107,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   const shownPath = shown ? (shown.newPath || shown.oldPath) : ''
   const view = viewChoice?.path === shownPath ? viewChoice.view : 'diff'
   // One query per file, read again with the changes, so a refresh keeps showing the current body until the new one arrives.
-  const file = useQuery({ enabled: readable, gcTime: 0, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? '', sourceBranch), queryKey: ['localFile', sessionId, projectId, sourceBranch, shown?.newPath], staleTime: 0 })
+  const file = useQuery({ enabled: readable, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? '', sourceBranch), queryKey: ['localFile', sessionId, projectId, sourceBranch, shown?.newPath], staleTime: 0 })
   const reload = () => {
     if (changes.isFetching) return
     void changes.refetch()

@@ -642,6 +642,55 @@ describe('DiscussionList code beside line comments', () => {
     await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'fresh'))
   })
 
+  it('keeps a linked comment where the jump left it when a thread above it in view grows', async () => {
+    // Content positions; each element's top on screen is its position less the scroll.
+    const layout: Record<string, { top: number; height: number }> = {
+      'discussion-above': { top: 0, height: 300 }, above: { top: 0, height: 300 },
+      'discussion-middle': { top: 700, height: 200 }, middle: { top: 700, height: 200 },
+      'discussion-target': { top: 1000, height: 100 }, target: { top: 1000, height: 100 },
+    }
+    let scrollTop = 0
+    const resized: (() => void)[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resized.push(callback) }
+      disconnect() {}
+      observe() {}
+    })
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.testid === 'host') return { bottom: 500, height: 500, left: 0, right: 0, top: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) }
+      const place = layout[this.dataset.noteId ?? this.dataset.discussionId ?? '']
+      const top = place ? place.top - scrollTop : 0
+      return { bottom: top + (place?.height ?? 0), height: place?.height ?? 0, left: 0, right: 0, top, width: 0, x: 0, y: 0, toJSON: () => ({}) }
+    })
+    try {
+      const discussions = [
+        createDiscussion([createNote('above', otherUser)], 'discussion-above'),
+        createDiscussion([createNote('middle', otherUser)], 'discussion-middle'),
+        createDiscussion([createNote('target', otherUser)], 'discussion-target'),
+      ]
+      render(
+        <ThemeProvider theme={createAppTheme('dark')}>
+          <div data-testid="host" ref={(host) => { if (host) Object.defineProperty(host, 'scrollTop', { configurable: true, get: () => scrollTop, set: (value: number) => { scrollTop = value } }) }} style={{ overflowY: 'auto' }}>
+            <DiscussionList currentUserId={currentUser.id} discussions={discussions} focusNoteId="target" onDelete={vi.fn()} onEdit={vi.fn()} onFocusNoteDone={vi.fn()} onReply={vi.fn()} onResolve={vi.fn()} />
+          </div>
+        </ThemeProvider>,
+      )
+      await waitFor(() => expect(document.activeElement).toHaveAttribute('data-note-id', 'target'))
+      const landed = layout.target.top - scrollTop
+      expect(landed).toBeLessThan(500)
+
+      // Code arriving in the thread between the top edge and the comment.
+      layout['discussion-middle'].height += 200
+      layout['discussion-target'].top += 200
+      layout.target.top += 200
+      act(() => resized.forEach((callback) => callback()))
+      expect(layout.target.top - scrollTop).toBe(landed)
+    } finally {
+      rect.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('uploads an image pasted into an edit and puts its Markdown in the text', async () => {
     const owned = createNote('owned', currentUser, { body: '元の本文' })
     const file = new File(['image'], 'clipboard.png', { type: 'image/png' })

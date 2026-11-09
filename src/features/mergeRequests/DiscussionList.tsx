@@ -292,7 +292,13 @@ export function DiscussionList({ projectId, iid, headSha, sessionId, currentUser
         if (host) scrollToNearest(host, target)
         else target.scrollIntoView?.({ behavior: 'auto', block: 'nearest' })
         // The view moved without a scroll event yet; the next run must keep this position, not the one before the jump.
-        if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current)
+        // The comment jumped to is held where it landed, as the opening comment is: threads mounting and code arriving
+        // above it would otherwise push it out of view, as what is kept still is the thread at the top edge.
+        const held = host ? anchorAt(host, target) : null
+        if (held) {
+          anchorRef.current = held
+          holdingOpeningRef.current = true
+        } else if (host && listRef.current) anchorRef.current = captureAnchor(host, listRef.current)
         setPendingJumpNoteId(null)
         setFlash({ noteId: pendingJumpNoteId, at: Date.now() })
         restoreScrollRef.current = null
