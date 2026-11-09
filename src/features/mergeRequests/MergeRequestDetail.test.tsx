@@ -688,11 +688,11 @@ describe('suggestions and versions', () => {
 
     // The clone's state is read as the tab opens, before the view is chosen.
     expect(await screen.findByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toHaveAttribute('aria-pressed', 'false')
-    expect(localMocks.getLocalStatus).toHaveBeenCalledWith('session-42', '7', 'head-abc')
+    expect(localMocks.getLocalStatus).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature')
     fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' }))
 
     expect(await screen.findByText('local line')).toBeInTheDocument()
-    expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc')
+    expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature')
     expect(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('ローカルの作業ツリー')).toBeInTheDocument()
     expect(screen.getByText(/MRの最新より1コミット先（未push）/u)).toBeInTheDocument()

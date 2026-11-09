@@ -28,7 +28,7 @@ const changes = { aheadCount: 0, branch: 'feature', comparedSha: 'a'.repeat(40),
 
 function renderLocal(projectPath: string | null = 'group/app') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><LocalChanges headSha={'a'.repeat(40)} onSelectFile={vi.fn()} projectId="7" projectPath={projectPath} selectedFile={null} sessionId="s1" userId="u1" /></ThemeProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><LocalChanges headSha={'a'.repeat(40)} onSelectFile={vi.fn()} projectId="7" projectPath={projectPath} selectedFile={null} sessionId="s1" sourceBranch="feature" userId="u1" /></ThemeProvider></QueryClientProvider>)
 }
 
 describe('LocalChanges', () => {
@@ -52,7 +52,7 @@ describe('LocalChanges', () => {
 
     expect(await screen.findByText('two')).toBeInTheDocument()
     expect(mocks.linkLocalRepository).toHaveBeenCalledWith('s1', '7', 'group/app', '"C:\\repos\\app"')
-    expect(mocks.getLocalChanges).toHaveBeenCalledWith('s1', '7', 'a'.repeat(40))
+    expect(mocks.getLocalChanges).toHaveBeenCalledWith('s1', '7', 'a'.repeat(40), 'feature')
     expect(screen.getByText('C:/repos/app')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /行にコメント/u })).not.toBeInTheDocument()
   })
@@ -99,6 +99,25 @@ describe('LocalChanges', () => {
     expect(screen.queryByText(/git fetchしてから/u)).not.toBeInTheDocument()
   })
 
+  it('warns when the clone is on another branch that contains the MR head', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue({ ...changes, aheadCount: 2, branch: 'stacked' })
+    renderLocal()
+
+    expect(await screen.findByText('ローカルではMRのソースブランチ feature ではなく stacked をcheckoutしています。ここの差分には、このMR以外の変更が含まれることがあります。')).toBeInTheDocument()
+    // Its commits are not counted as the MR's unpushed work.
+    expect(screen.queryByText(/未push/u)).not.toBeInTheDocument()
+  })
+
+  it('names the git worktree read instead of the linked folder', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue({ ...changes, repositoryPath: 'C:/repos/app-feature' })
+    renderLocal()
+
+    expect(await screen.findByText('C:/repos/app-feature')).toBeInTheDocument()
+    expect(screen.queryByText('C:/repos/app')).not.toBeInTheDocument()
+  })
+
   it('links the folder chosen in the system picker', async () => {
     mocks.getLocalRepository.mockResolvedValue(null)
     mocks.pickLocalRepositoryFolder.mockResolvedValue('C:\\repos\\app')
@@ -137,7 +156,7 @@ describe('LocalChanges', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ファイル全体' }))
 
     expect(await screen.findByText('second line of the file')).toBeInTheDocument()
-    expect(mocks.getLocalFile).toHaveBeenCalledWith('s1', '7', 'memo.txt')
+    expect(mocks.getLocalFile).toHaveBeenCalledWith('s1', '7', 'memo.txt', 'feature')
   })
 
   it('keeps showing the whole file while it is read again with the changes', async () => {
@@ -233,6 +252,10 @@ describe('local changes found without opening the view', () => {
     expect(summarizeLocalStatus({ ...status, branch: 'main', changedCount: 4, containsMrHead: false }, 'feature')).toEqual({ label: '別ブランチ', tone: 'quiet' })
     expect(summarizeLocalStatus({ ...status, aheadCount: null, changedCount: 1, containsMrHead: false, mrHeadPresent: false }, 'feature')).toEqual({ label: '未コミット1 · 未fetch', tone: 'changes' })
     expect(summarizeLocalStatus({ ...status, aheadCount: 3, containsMrHead: false }, 'feature')).toEqual({ label: '要pull', tone: 'warning' })
+    // A branch made from the MR head contains it too, but its commits and edits are not this MR's.
+    expect(summarizeLocalStatus({ ...status, aheadCount: 2, branch: 'stacked', changedCount: 1 }, 'feature')).toEqual({ label: '別ブランチ', tone: 'quiet' })
+    // A detached HEAD on the MR head, as after checking out its commit, is still read as the MR's.
+    expect(summarizeLocalStatus({ ...status, branch: null, changedCount: 1 }, 'feature')).toEqual({ label: '未コミット1', tone: 'changes' })
   })
 
   it('reads the linked clone at once and again when the window regains focus', async () => {
@@ -241,7 +264,7 @@ describe('local changes found without opening the view', () => {
     renderBadge()
 
     expect(await screen.findByRole('button', { name: 'ローカルの変更未コミット1' })).toBeInTheDocument()
-    expect(mocks.getLocalStatus).toHaveBeenCalledWith('s1', '7', 'a'.repeat(40))
+    expect(mocks.getLocalStatus).toHaveBeenCalledWith('s1', '7', 'a'.repeat(40), 'feature')
     fireEvent.focus(window)
     expect(await screen.findByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toBeInTheDocument()
     expect(mocks.findLocalRepository).not.toHaveBeenCalled()
@@ -267,7 +290,7 @@ describe('local changes found without opening the view', () => {
     mocks.getLocalRepository.mockResolvedValue(null)
     mocks.pickLocalRepositoryFolder.mockResolvedValue('C:\\src')
     mocks.setLocalScanFolders.mockImplementation(async (_session: string, folders: string[]) => folders)
-    mocks.getLocalChanges.mockResolvedValue(changes)
+    mocks.getLocalChanges.mockResolvedValue({ ...changes, repositoryPath: 'C:/src/app' })
     renderLocal()
 
     const section = await screen.findByRole('region', { name: 'cloneを探すフォルダ' })

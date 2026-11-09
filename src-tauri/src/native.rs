@@ -1520,8 +1520,9 @@ impl NativeState {
         id: String,
         project: String,
         head_sha: String,
+        source_branch: Option<String>,
     ) -> Result<serde_json::Value, AppError> {
-        self.read_linked(id, project, head_sha, LocalRead::Changes)
+        self.read_linked(id, project, head_sha, source_branch, LocalRead::Changes)
             .await
     }
 
@@ -1532,8 +1533,9 @@ impl NativeState {
         id: String,
         project: String,
         head_sha: String,
+        source_branch: Option<String>,
     ) -> Result<serde_json::Value, AppError> {
-        self.read_linked(id, project, head_sha, LocalRead::Status)
+        self.read_linked(id, project, head_sha, source_branch, LocalRead::Status)
             .await
     }
 
@@ -1542,6 +1544,7 @@ impl NativeState {
         id: String,
         project: String,
         head_sha: String,
+        source_branch: Option<String>,
         read: LocalRead,
     ) -> Result<serde_json::Value, AppError> {
         let linked = self
@@ -1569,6 +1572,7 @@ impl NativeState {
             return Err(AppError::new("INVALID_INPUT", &format!("紐付けたフォルダのgitリモートが {} を指していません。紐付けをやり直してください。", linked.project_path)).key("native.localGit.linkedRemoteMismatch").value("projectPath", &linked.project_path));
         }
         let result = async {
+            let root = worktree_on(root, source_branch.as_deref()).await?;
             match read {
                 LocalRead::Changes => local_git::local_changes(&root, &head_sha).await,
                 LocalRead::Status => local_git::local_status(&root, &head_sha).await,
@@ -1709,6 +1713,18 @@ impl NativeState {
     }
 }
 
+/// The work tree to read for an MR: the one of the linked clone's work trees
+/// (the clone or a `git worktree` of it) that has the MR's source branch
+/// checked out, else the linked folder.
+async fn worktree_on(root: PathBuf, source_branch: Option<&str>) -> Result<PathBuf, AppError> {
+    match source_branch.filter(|branch| !branch.is_empty()) {
+        Some(branch) => Ok(local_git::worktree_for_branch(&root, branch)
+            .await?
+            .unwrap_or(root)),
+        None => Ok(root),
+    }
+}
+
 /// What is read from a linked clone.
 enum LocalRead {
     Changes,
@@ -1723,6 +1739,7 @@ impl NativeState {
         id: String,
         project: String,
         path: String,
+        source_branch: Option<String>,
     ) -> Result<serde_json::Value, AppError> {
         let linked = self
             .local_repository(id.clone(), project)
@@ -1738,8 +1755,9 @@ impl NativeState {
         let _pending = session.pending.clone().try_acquire_owned().map_err(|_| {
             AppError::new("RATE_LIMITED", "処理待ちが多すぎます。").key("native.queue.busy")
         })?;
+        let root = worktree_on(PathBuf::from(&linked.path), source_branch.as_deref()).await?;
         let file = tauri::async_runtime::spawn_blocking(move || {
-            local_git::read_worktree_file(Path::new(&linked.path), &path)
+            local_git::read_worktree_file(&root, &path)
         })
         .await
         .map_err(|_| storage_error())??;

@@ -121,6 +121,7 @@
   "local.staleError": "Der zuletzt gelesene Diff wird angezeigt. Neuladen fehlgeschlagen: {message}",
   "local.loading": "Lokale Änderungen werden geladen…",
   "local.missingMrHead": "Der lokale HEAD enthält den MR-Head-Commit {sha} nicht. Änderungen, die nur im MR vorhanden sind, werden hier als rückgängig gemacht angezeigt.",
+  "local.otherBranch": "Im Klon ist {branch} ausgecheckt, nicht der Quell-Branch {source} des MR. Die Änderungen hier können Arbeit enthalten, die nicht zu diesem MR gehört.",
   "local.truncated": "Der Diff ist zu groß und wurde abgeschnitten. Einige Dateien werden nicht angezeigt.",
   "local.untrackedOmitted": "{count, plural, one {# nicht verfolgte Datei wurde} other {# nicht verfolgte Dateien wurden}} wegen Überschreitung des Anzahl- oder Größenlimits aus dem Diff ausgelassen.",
   "local.untrackedOmittedMore": "{count} oder mehr nicht verfolgte Dateien wurden wegen Überschreitung des Anzahl- oder Größenlimits aus dem Diff ausgelassen.",

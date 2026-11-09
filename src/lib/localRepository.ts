@@ -54,9 +54,15 @@ export function unlinkLocalRepository(sessionId: string, projectId: string): Pro
   return call('unlink_local_repository', { projectId, sessionId })
 }
 
+/**
+ * The reads below take the MR's source branch: of the linked clone and its
+ * `git worktree`s, the one with that branch checked out is read, else the
+ * linked folder.
+ */
+
 /** One file of the linked clone's working tree, as it is now. */
-export function getLocalFile(sessionId: string, projectId: string, path: string): Promise<{ content: string }> {
-  return call('get_local_file', { path, projectId, sessionId })
+export function getLocalFile(sessionId: string, projectId: string, path: string, sourceBranch?: string): Promise<{ content: string }> {
+  return call('get_local_file', { path, projectId, sessionId, sourceBranch })
 }
 
 /** The folder chosen in the system folder picker, or null when cancelled. */
@@ -64,8 +70,8 @@ export function pickLocalRepositoryFolder(): Promise<string | null> {
   return call('pick_local_repository_folder', { title: translate('common.localRepository.pickFolderTitle') })
 }
 
-export function getLocalChanges(sessionId: string, projectId: string, headSha: string): Promise<LocalChanges> {
-  return call('get_local_changes', { headSha, projectId, sessionId })
+export function getLocalChanges(sessionId: string, projectId: string, headSha: string, sourceBranch?: string): Promise<LocalChanges> {
+  return call('get_local_changes', { headSha, projectId, sessionId, sourceBranch })
 }
 
 /** A short summary of the linked clone against the MR head, read without a diff. */
@@ -83,8 +89,8 @@ export interface LocalStatus {
   countMore: boolean
 }
 
-export function getLocalStatus(sessionId: string, projectId: string, headSha: string): Promise<LocalStatus> {
-  return call('get_local_status', { headSha, projectId, sessionId })
+export function getLocalStatus(sessionId: string, projectId: string, headSha: string, sourceBranch?: string): Promise<LocalStatus> {
+  return call('get_local_status', { headSha, projectId, sessionId, sourceBranch })
 }
 
 /** The folders searched for clones of projects that are not linked yet. */
@@ -152,7 +158,8 @@ export async function findOwnLocalRepositories(sessionId: string, userId: string
 
 /** What the 「ローカルの変更」 button says about the clone: work not yet pushed, or why it cannot be compared. */
 export function summarizeLocalStatus(status: LocalStatus, sourceBranch?: string): { label: string; tone: 'changes' | 'warning' | 'quiet' } {
-  if (!status.containsMrHead && status.branch !== sourceBranch) return { label: translate('common.localRepository.otherBranch'), tone: 'quiet' }
+  // A branch made from the MR head also contains it, so its work is told apart by its name.
+  if (onOtherBranch(status.branch, sourceBranch) || (!status.containsMrHead && status.branch !== sourceBranch)) return { label: translate('common.localRepository.otherBranch'), tone: 'quiet' }
   const uncommitted = status.changedCount + status.untrackedCount
   const ahead = status.containsMrHead ? status.aheadCount ?? 0 : 0
   const parts = [
@@ -162,4 +169,9 @@ export function summarizeLocalStatus(status: LocalStatus, sourceBranch?: string)
   ].filter(Boolean)
   if (!parts.length) return { label: translate('common.localRepository.noChanges'), tone: 'quiet' }
   return { label: parts.join(' · '), tone: uncommitted || status.countMore || ahead ? 'changes' : 'warning' }
+}
+
+/** Whether the clone is on a named branch other than the MR's source branch. A detached HEAD is not. */
+export function onOtherBranch(branch: string | null, sourceBranch?: string): boolean {
+  return Boolean(sourceBranch && branch && branch !== sourceBranch)
 }

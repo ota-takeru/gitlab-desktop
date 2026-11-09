@@ -121,6 +121,7 @@
   "local.staleError": "Dernier diff lu affiché. Échec du rechargement : {message}",
   "local.loading": "Chargement des modifications locales…",
   "local.missingMrHead": "Le HEAD local ne contient pas le commit head {sha} de la MR. Les modifications présentes uniquement dans la MR apparaissent ici comme annulées.",
+  "local.otherBranch": "Le clone a {branch} en cours, et non la branche source {source} de la MR. Les modifications affichées peuvent inclure du travail étranger à cette MR.",
   "local.truncated": "Le diff est trop volumineux et a été tronqué. Certains fichiers ne sont pas affichés.",
   "local.untrackedOmitted": "{count, plural, one {# fichier non suivi a été exclu} many {# fichiers non suivis ont été exclus} other {# fichiers non suivis ont été exclus}} du diff, car la limite de nombre ou de taille était dépassée.",
   "local.untrackedOmittedMore": "{count} fichiers non suivis ou plus ont été exclus du diff, car la limite de nombre ou de taille était dépassée.",

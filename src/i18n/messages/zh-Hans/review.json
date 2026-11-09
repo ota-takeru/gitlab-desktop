@@ -121,6 +121,7 @@
   "local.staleError": "正在显示上次读取的差异。重新加载失败：{message}",
   "local.loading": "正在加载本地更改…",
   "local.missingMrHead": "本地 HEAD 不包含 MR head 提交 {sha}。仅存在于 MR 中的更改在此处会显示为已还原。",
+  "local.otherBranch": "本地检出的是 {branch}，而不是 MR 的源分支 {source}。这里的变更可能包含不属于此 MR 的内容。",
   "local.truncated": "差异过大，已被截断。部分文件未显示。",
   "local.untrackedOmitted": "{count, plural, other {# 个未跟踪文件}}因超出数量或大小限制而未包含在差异中。",
   "local.untrackedOmittedMore": "{count} 个或更多未跟踪文件因超出数量或大小限制而未包含在差异中。",

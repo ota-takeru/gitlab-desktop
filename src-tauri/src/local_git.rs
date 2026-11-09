@@ -266,6 +266,42 @@ pub fn remote_matches(remote: &str, instance: &Url, project_path: &str) -> bool 
     remote_host.eq_ignore_ascii_case(host) && path.eq_ignore_ascii_case(project_path)
 }
 
+/// The work tree of `root`'s repository that has `branch` checked out: the
+/// clone itself or one of its `git worktree`s. None when no work tree is on it.
+pub async fn worktree_for_branch(root: &Path, branch: &str) -> Result<Option<PathBuf>, AppError> {
+    let program = resolve_program()?;
+    let output = run(
+        &program,
+        root,
+        &["worktree", "list", "--porcelain"],
+        MAX_SMALL_OUTPUT,
+    )
+    .await?;
+    if !output.success {
+        return Err(explain(&output));
+    }
+    Ok(worktree_with_branch(&output.stdout, branch).filter(|path| path.is_dir()))
+}
+
+/// The work tree on `refs/heads/<branch>` in `git worktree list --porcelain`
+/// output, whose entries are separated by empty lines.
+fn worktree_with_branch(bytes: &[u8], branch: &str) -> Option<PathBuf> {
+    let wanted = format!("refs/heads/{branch}");
+    let text = decode_lossy(bytes);
+    text.split("\n\n").find_map(|entry| {
+        let mut path = None;
+        let mut on_branch = false;
+        for line in entry.lines() {
+            if let Some(value) = line.strip_prefix("worktree ") {
+                path = Some(unquote(value));
+            } else if let Some(value) = line.strip_prefix("branch ") {
+                on_branch = value == wanted;
+            }
+        }
+        path.filter(|_| on_branch).map(PathBuf::from)
+    })
+}
+
 fn valid_sha(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
@@ -545,11 +581,18 @@ pub fn find_clone(roots: &[PathBuf], instance: &Url, project_path: &str) -> Opti
             break;
         }
         let git = folder.join(".git");
-        if git.is_dir() {
-            if config_remotes(&git.join("config"))
-                .iter()
-                .any(|remote| remote_matches(remote, instance, project_path))
-            {
+        if git.exists() {
+            // A `git worktree` has a `.git` file that points into its clone.
+            let config = if git.is_dir() {
+                Some(git.join("config"))
+            } else {
+                linked_git_config(&folder, &git)
+            };
+            if config.is_some_and(|config| {
+                config_remotes(&config)
+                    .iter()
+                    .any(|remote| remote_matches(remote, instance, project_path))
+            }) {
                 return Some(folder);
             }
             continue;
@@ -567,6 +610,23 @@ pub fn find_clone(roots: &[PathBuf], instance: &Url, project_path: &str) -> Opti
         queue.extend(children);
     }
     None
+}
+
+/// The config file of the repository a `.git` file (`gitdir: <path>`) points
+/// to: the clone's own config for a `git worktree`, whose git folder names the
+/// clone's in `commondir`.
+fn linked_git_config(folder: &Path, git_file: &Path) -> Option<PathBuf> {
+    let small =
+        std::fs::metadata(git_file).is_ok_and(|metadata| metadata.len() <= MAX_SMALL_OUTPUT as u64);
+    let text = small
+        .then(|| std::fs::read_to_string(git_file).ok())
+        .flatten()?;
+    let git_dir = folder.join(text.trim().strip_prefix("gitdir:")?.trim());
+    let common = std::fs::read_to_string(git_dir.join("commondir"))
+        .ok()
+        .map(|common| git_dir.join(common.trim()))
+        .unwrap_or(git_dir);
+    Some(common.join("config"))
 }
 
 /// The remote URLs in a git config file of at most 64 KiB.
@@ -1112,5 +1172,140 @@ mod tests {
         assert_eq!(hidden, None);
         assert_eq!(nested, None);
         assert_eq!(elsewhere, None);
+    }
+
+    #[test]
+    fn worktrees_are_found_through_their_clone_config() {
+        let directory =
+            std::env::temp_dir().join(format!("gitlab-desktop-worktree-{}", uuid::Uuid::new_v4()));
+        // The clone is outside the scan folder; only its worktree is below it.
+        let common = directory.join("elsewhere").join("app").join(".git");
+        let git_dir = common.join("worktrees").join("feature");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(
+            common.join("config"),
+            "[remote \"origin\"]
+	url = https://gitlab.example.com/group/app.git
+",
+        )
+        .unwrap();
+        std::fs::write(
+            git_dir.join("commondir"),
+            "../..
+",
+        )
+        .unwrap();
+        let worktree = directory.join("scan").join("app-feature");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::write(
+            worktree.join(".git"),
+            format!(
+                "gitdir: {}
+",
+                git_dir.display()
+            ),
+        )
+        .unwrap();
+        let instance = Url::parse("https://gitlab.example.com").unwrap();
+        let roots = [directory.join("scan")];
+        let found = find_clone(&roots, &instance, "group/app");
+        let other = find_clone(&roots, &instance, "group/other");
+        std::fs::remove_dir_all(&directory).ok();
+        assert_eq!(found, Some(worktree));
+        assert_eq!(other, None);
+    }
+
+    #[test]
+    fn worktree_listings_name_the_tree_on_the_branch() {
+        let listing = b"worktree /repo
+HEAD 1111111111111111111111111111111111111111
+branch refs/heads/main
+
+worktree /repo-wt
+HEAD 2222222222222222222222222222222222222222
+branch refs/heads/feature/x
+
+worktree /repo-detached
+HEAD 3333333333333333333333333333333333333333
+detached
+
+";
+        assert_eq!(
+            worktree_with_branch(listing, "feature/x"),
+            Some(PathBuf::from("/repo-wt"))
+        );
+        assert_eq!(
+            worktree_with_branch(listing, "main"),
+            Some(PathBuf::from("/repo"))
+        );
+        // A branch name is matched whole, not as a prefix of another.
+        assert_eq!(worktree_with_branch(listing, "feature"), None);
+    }
+
+    /// Runs the real `git` when one is installed.
+    #[test]
+    fn worktree_for_branch_finds_a_git_worktree() {
+        let Ok(program) = resolve_program() else {
+            return;
+        };
+        let directory =
+            std::env::temp_dir().join(format!("gitlab-desktop-wt-{}", uuid::Uuid::new_v4()));
+        let clone = directory.join("clone");
+        std::fs::create_dir_all(&clone).unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new(&program)
+                .arg("-C")
+                .arg(&clone)
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{args:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        std::fs::write(
+            clone.join("a.txt"),
+            "one
+",
+        )
+        .unwrap();
+        git(&["add", "a.txt"]);
+        git(&["commit", "-q", "-m", "first"]);
+        let worktree = directory.join("feature tree");
+        git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            worktree.to_str().unwrap(),
+        ]);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (feature, main, missing) = runtime.block_on(async {
+            (
+                worktree_for_branch(&clone, "feature").await.unwrap(),
+                worktree_for_branch(&worktree, "main").await.unwrap(),
+                worktree_for_branch(&clone, "other").await.unwrap(),
+            )
+        });
+        let real = |path: Option<PathBuf>| path.and_then(|path| path.canonicalize().ok());
+        let (feature, main) = (real(feature), real(main));
+        let (expected_feature, expected_main) =
+            (worktree.canonicalize().ok(), clone.canonicalize().ok());
+        std::fs::remove_dir_all(&directory).ok();
+        assert!(feature.is_some());
+        assert_eq!(feature, expected_feature);
+        assert_eq!(main, expected_main);
+        assert_eq!(missing, None);
     }
 }

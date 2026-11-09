@@ -94,7 +94,7 @@ export function installFixtureIpc(state: FixtureState): void {
         if (!linked) throw { code: 'NOT_FOUND', message: 'このプロジェクトにはローカルリポジトリが紐付けられていません。' } satisfies GitLabErrorShape
         return {
           aheadCount: 1,
-          branch: 'feature/local-fixture',
+          branch: payload.sourceBranch ? String(payload.sourceBranch) : 'feature/local-fixture',
           comparedSha: String(payload.headSha),
           containsMrHead: true,
           diffs: [
@@ -117,7 +117,7 @@ export function installFixtureIpc(state: FixtureState): void {
       case 'pick_local_repository_folder': return 'C:\\repos\\fixture-project'
       case 'get_local_status': {
         if (!localRepositories.has(String(payload.projectId))) throw { code: 'NOT_FOUND', message: 'このプロジェクトにはローカルリポジトリが紐付けられていません。' } satisfies GitLabErrorShape
-        return { aheadCount: 1, branch: 'feature/local-fixture', changedCount: 1, containsMrHead: true, countMore: false, localHead: 'f'.repeat(40), mrHeadPresent: true, untrackedCount: 1 }
+        return { aheadCount: 1, branch: payload.sourceBranch ? String(payload.sourceBranch) : 'feature/local-fixture', changedCount: 1, containsMrHead: true, countMore: false, localHead: 'f'.repeat(40), mrHeadPresent: true, untrackedCount: 1 }
       }
       case 'get_local_scan_folders': return localScanFolders
       case 'set_local_scan_folders':

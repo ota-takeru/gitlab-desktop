@@ -254,10 +254,11 @@ async fn get_local_changes(
     session_id: String,
     project_id: String,
     head_sha: String,
+    source_branch: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
     state
         .native()?
-        .local_changes(session_id, project_id, head_sha)
+        .local_changes(session_id, project_id, head_sha, source_branch)
         .await
 }
 #[tauri::command]
@@ -266,10 +267,11 @@ async fn get_local_status(
     session_id: String,
     project_id: String,
     head_sha: String,
+    source_branch: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
     state
         .native()?
-        .local_status(session_id, project_id, head_sha)
+        .local_status(session_id, project_id, head_sha, source_branch)
         .await
 }
 #[tauri::command]
@@ -309,10 +311,11 @@ async fn get_local_file(
     session_id: String,
     project_id: String,
     path: String,
+    source_branch: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
     state
         .native()?
-        .local_file(session_id, project_id, path)
+        .local_file(session_id, project_id, path, source_branch)
         .await
 }
 /// Shows the system folder picker. The dialog plugin's own commands are not
