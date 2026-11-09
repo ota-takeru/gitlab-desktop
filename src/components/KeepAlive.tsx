@@ -1,6 +1,6 @@
 import Box from '@mui/material/Box'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { Activity, memo, useEffect, useLayoutEffect, useState, type ElementType, type ReactNode, type SyntheticEvent } from 'react'
+import { Activity, memo, useEffect, useLayoutEffect, useRef, useState, type ElementType, type ReactNode, type SyntheticEvent } from 'react'
 import { fadeInSx } from './paneSx'
 import { ScreenReadinessGate } from './ScreenReadiness'
 
@@ -93,9 +93,17 @@ export function KeepAlive({ activeKey, arrivalBackground = 'background.default',
   const revealPendingAlone = (pending || arriving) && current.previous === null
   // Before paint, so the caller's screen does not disappear for a frame.
   useLayoutEffect(() => { onRevealPendingChange?.(revealPendingAlone) }, [onRevealPendingChange, revealPendingAlone])
+  const arrivingRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (current.arriving === null) return
-    const timer = setTimeout(() => setScreens(arrived(current.arriving as string)), ARRIVAL_LIMIT_MS)
+    const key = current.arriving
+    // A fade still running waits for its end: a screen whose first render blocks the page for longer than
+    // the limit starts its fade only after it, and hiding the screen under it then shows a blank pane.
+    const check = () => {
+      if (arrivingRef.current?.getAnimations?.().some((animation) => animation.playState === 'running')) timer = setTimeout(check, ARRIVAL_LIMIT_MS)
+      else setScreens(arrived(key))
+    }
+    let timer = setTimeout(check, ARRIVAL_LIMIT_MS)
     return () => clearTimeout(timer)
   }, [current.arriving])
   return <>{current.order.map((key) => {
@@ -110,7 +118,7 @@ export function KeepAlive({ activeKey, arrivalBackground = 'background.default',
     // A waiting screen is laid out at its full size, transparent, so it measures itself and can take focus as when it shows.
     // A screen coming back from display: none starts the fade again, so every switch fades in.
     // It fades in on top of the screen before it, which hides only when the fade ends: hiding it first shows a blank pane.
-    return <Box component={component} data-screen-active={active ? 'true' : 'false'} key={key} onAnimationCancel={fadeEnded} onAnimationEnd={fadeEnded} sx={[...(Array.isArray(sx) ? sx : [sx]), !active && !shown && { display: 'none' }, under && { isolation: 'isolate' }, waiting && { inset: 0, opacity: 0, pointerEvents: 'none', position: 'absolute' }, active && arriving && { bgcolor: arrivalBackground, inset: 0, position: 'absolute', zIndex: 1 }, active && !waiting && fadeInSx]}>
+    return <Box component={component} data-screen-active={active ? 'true' : 'false'} key={key} ref={active && arriving ? arrivingRef : undefined} onAnimationCancel={fadeEnded} onAnimationEnd={fadeEnded} sx={[...(Array.isArray(sx) ? sx : [sx]), !active && !shown && { display: 'none' }, under && { isolation: 'isolate' }, waiting && { inset: 0, opacity: 0, pointerEvents: 'none', position: 'absolute' }, active && arriving && { bgcolor: arrivalBackground, inset: 0, position: 'absolute', zIndex: 1 }, active && !waiting && fadeInSx]}>
       <Activity mode={active || shown ? 'visible' : 'hidden'}>
         <ScreenReadinessGate onReady={reveal} waiting={waiting}>
           <LastContent hidden={!active} renderKey={active ? renderKey : undefined}>{active ? children : null}</LastContent>

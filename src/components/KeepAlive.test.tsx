@@ -97,6 +97,19 @@ describe('revealWhenReady', () => {
     expect(screenOf(container, 'b')).not.toHaveStyle({ position: 'absolute' })
   })
 
+  it('keeps covering the screen before it while a late fade still runs', () => {
+    const { container, rerender } = render(view('a', false))
+    rerender(view('b', false))
+    let running = true
+    Object.assign(screenOf(container, 'b'), { getAnimations: () => running ? [{ playState: 'running' }] : [] })
+    act(() => { vi.advanceTimersToNextFrame() })
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screenOf(container, 'a')).not.toHaveStyle({ display: 'none' })
+    running = false
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(screenOf(container, 'a')).toHaveStyle({ display: 'none' })
+  })
+
   it('tells the caller to keep showing what was there until a new screen has faded in', () => {
     const onPending = vi.fn()
     const { container, rerender } = render(view(null, false, onPending))
