@@ -121,6 +121,7 @@
   "local.staleError": "Exibindo o último diff lido. Falha ao recarregar: {message}",
   "local.loading": "Carregando alterações locais…",
   "local.missingMrHead": "O HEAD local não contém o commit de head do MR {sha}. As alterações existentes apenas no MR são exibidas aqui como revertidas.",
+  "local.otherBranch": "O clone está com {branch} em checkout, não com o branch de origem {source} do MR. As alterações aqui podem incluir trabalho que não faz parte deste MR.",
   "local.truncated": "O diff é grande demais e foi cortado. Alguns arquivos não são exibidos.",
   "local.untrackedOmitted": "{count, plural, one {# arquivo não rastreado foi deixado} other {# arquivos não rastreados foram deixados}} de fora do diff por exceder o limite de quantidade ou tamanho.",
   "local.untrackedOmittedMore": "{count} ou mais arquivos não rastreados foram deixados de fora do diff por exceder o limite de quantidade ou tamanho.",

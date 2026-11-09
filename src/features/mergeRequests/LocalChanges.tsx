@@ -13,7 +13,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RelativeTime } from '../../components/RelativeTime'
 import { delayedRevealSx } from '../../components/paneSx'
 import { shortSha } from '../../lib/format'
-import { findLocalRepository, findOwnLocalRepositories, getLocalChanges, getLocalFile, getLocalRepository, getLocalScanFolders, getLocalStatus, linkLocalRepository, pickLocalRepositoryFolder, setLocalScanFolders, summarizeLocalStatus, unlinkLocalRepository, type LocalRepository, type OwnProjectSearch } from '../../lib/localRepository'
+import { findLocalRepository, findOwnLocalRepositories, getLocalChanges, getLocalFile, getLocalRepository, getLocalScanFolders, getLocalStatus, linkLocalRepository, onOtherBranch, pickLocalRepositoryFolder, setLocalScanFolders, summarizeLocalStatus, unlinkLocalRepository, type LocalRepository, type OwnProjectSearch } from '../../lib/localRepository'
 import { normalizeGitLabError } from '../../lib/gitlab'
 import { DiffViewer } from './DiffViewer'
 import { useT } from '../../i18n/useT'
@@ -66,7 +66,7 @@ function useLinkedRepository(sessionId: string, projectId: string, projectPath: 
 export function LocalStatusBadge({ headSha, projectId, projectPath, sessionId, sourceBranch }: { headSha: string; projectId: string; projectPath: string | null; sessionId: string; sourceBranch?: string }) {
   const t = useT()
   const { found, linked, repository } = useLinkedRepository(sessionId, projectId, projectPath)
-  const status = useQuery({ enabled: Boolean(linked), queryFn: () => getLocalStatus(sessionId, projectId, headSha), queryKey: ['localStatus', sessionId, projectId, headSha, linked?.path], staleTime: 0 })
+  const status = useQuery({ enabled: Boolean(linked), queryFn: () => getLocalStatus(sessionId, projectId, headSha, sourceBranch), queryKey: ['localStatus', sessionId, projectId, headSha, sourceBranch, linked?.path], staleTime: 0 })
   useWindowFocus(() => {
     if (linked) void status.refetch()
     else if (repository.data === null && projectPath) void found.refetch()
@@ -82,13 +82,13 @@ export function LocalStatusBadge({ headSha, projectId, projectPath, sessionId, s
  * (unpushed commits, uncommitted edits and untracked files) against the MR head. Read-only:
  * nothing here comments, marks files reviewed, fetches or changes the clone.
  */
-export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, selectedFile, sessionId, userId }: { headSha: string; onSelectFile: (path: string) => void; projectId: string; projectPath: string | null; selectedFile: string | null; sessionId: string; userId: string }) {
+export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, selectedFile, sessionId, sourceBranch, userId }: { headSha: string; onSelectFile: (path: string) => void; projectId: string; projectPath: string | null; selectedFile: string | null; sessionId: string; sourceBranch?: string; userId: string }) {
   const t = useT()
   const client = useQueryClient()
   const { found, foundKey, linked, repository, repositoryKey, searchNow } = useLinkedRepository(sessionId, projectId, projectPath)
   // The working tree changes outside the app, so it is read again each time the view opens
   // and when the window regains focus.
-  const changes = useQuery({ enabled: Boolean(linked), gcTime: 0, queryFn: () => getLocalChanges(sessionId, projectId, headSha), queryKey: ['localChanges', sessionId, projectId, headSha, linked?.path], staleTime: 0 })
+  const changes = useQuery({ enabled: Boolean(linked), gcTime: 0, queryFn: () => getLocalChanges(sessionId, projectId, headSha, sourceBranch), queryKey: ['localChanges', sessionId, projectId, headSha, sourceBranch, linked?.path], staleTime: 0 })
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [viewChoice, setViewChoice] = useState<{ path: string; view: 'diff' | 'file' } | null>(null)
@@ -107,7 +107,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   const shownPath = shown ? (shown.newPath || shown.oldPath) : ''
   const view = viewChoice?.path === shownPath ? viewChoice.view : 'diff'
   // One query per file, read again with the changes, so a refresh keeps showing the current body until the new one arrives.
-  const file = useQuery({ enabled: readable, gcTime: 0, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? ''), queryKey: ['localFile', sessionId, projectId, shown?.newPath], staleTime: 0 })
+  const file = useQuery({ enabled: readable, gcTime: 0, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? '', sourceBranch), queryKey: ['localFile', sessionId, projectId, sourceBranch, shown?.newPath], staleTime: 0 })
   const reload = () => {
     if (changes.isFetching) return
     void changes.refetch()
@@ -136,24 +136,27 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
   }
   const data = changes.data
   const error = changes.error ? normalizeGitLabError(changes.error) : null
+  const otherBranch = data ? onOtherBranch(data.branch, sourceBranch) : false
+  // The work tree read: a `git worktree` of the linked clone when that one is on the MR's branch.
+  const readPath = data?.repositoryPath ?? linked.path
   // Facts about the clone, on one line so the diff starts close to the comparison targets.
   const facts = data ? [
     <>{t('review.local.branch')} <Box component="span" sx={codeSx}>{data.branch ?? t('review.local.detachedHead')}</Box></>,
     data.localHead ? <>HEAD <Box component="span" sx={codeSx}>{shortSha(data.localHead)}</Box></> : null,
-    data.containsMrHead && data.aheadCount ? t('review.local.ahead', { count: data.aheadCount }) : null,
+    data.containsMrHead && !otherBranch && data.aheadCount ? t('review.local.ahead', { count: data.aheadCount }) : null,
     data.untrackedIncluded ? t('review.local.untrackedIncluded', { count: data.untrackedIncluded }) : null,
   ].filter(Boolean) : []
   // The same facts as text, for the tooltip when the line is cut off.
   const factsText = data ? [
     `${t('review.local.branch')} ${data.branch ?? t('review.local.detachedHead')}`,
     data.localHead ? `HEAD ${shortSha(data.localHead)}` : null,
-    data.containsMrHead && data.aheadCount ? t('review.local.ahead', { count: data.aheadCount }) : null,
+    data.containsMrHead && !otherBranch && data.aheadCount ? t('review.local.ahead', { count: data.aheadCount }) : null,
     data.untrackedIncluded ? t('review.local.untrackedIncluded', { count: data.untrackedIncluded }) : null,
   ].filter(Boolean).join(' · ') : ''
   return (
     <Stack spacing={1}>
       <Row spacing={1} sx={{ minWidth: 0 }}>
-        <Tooltip title={linked.path}><Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', minWidth: 48 }} variant="caption"><Box component="span" sx={codeSx}>{linked.path}</Box></Typography></Tooltip>
+        <Tooltip title={readPath}><Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', minWidth: 48 }} variant="caption"><Box component="span" sx={codeSx}>{readPath}</Box></Typography></Tooltip>
         <Tooltip title={factsText}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 auto', minWidth: 0 }} variant="caption">{facts.map((fact, index) => <span key={index}>{index ? ' · ' : ''}{fact}</span>)}</Typography></Tooltip>
         {changes.isFetching && data ? <Typography color="textSecondary" role="status" sx={{ flexShrink: 0 }} variant="caption">{t('review.local.reloading')}</Typography> : changes.dataUpdatedAt && data ? <Box sx={{ flexShrink: 0 }}><RelativeTime prefix={t('review.local.readAt')} value={new Date(changes.dataUpdatedAt).toISOString()} /></Box> : null}
         <Tooltip title={t('review.local.reloadTooltip')}><span><IconButton aria-disabled={changes.isFetching} aria-label={t('review.local.reload')} onClick={reload} ref={focusOnMount('linked')}><RefreshRoundedIcon /></IconButton></span></Tooltip>
@@ -163,6 +166,7 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
       {error && !data ? <Alert severity="error">{t('review.local.readError', { message: error.message })}</Alert> : null}
       {error && data ? <Alert severity="warning">{t('review.local.staleError', { message: error.message })}</Alert> : null}
       {changes.isPending && !error ? <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">{t('review.local.loading')}</Typography> : null}
+      {data && otherBranch ? <Alert severity="warning">{t('review.local.otherBranch', { branch: data.branch ?? '', source: sourceBranch ?? '' })}</Alert> : null}
       {data && !data.containsMrHead ? <Alert severity="warning">{t('review.local.missingMrHead', { sha: shortSha(data.comparedSha) })}</Alert> : null}
       {data?.truncated ? <Alert severity="warning">{t('review.local.truncated')}</Alert> : null}
       {data && (data.untrackedCount > data.untrackedIncluded || data.untrackedMore) ? <Alert severity="warning">{t(data.untrackedMore ? 'review.local.untrackedOmittedMore' : 'review.local.untrackedOmitted', { count: data.untrackedCount - data.untrackedIncluded })}</Alert> : null}

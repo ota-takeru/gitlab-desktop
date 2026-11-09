@@ -121,6 +121,7 @@
   "local.staleError": "前回読み取った差分を表示中です。読み直しに失敗しました: {message}",
   "local.loading": "ローカルの変更を読み込み中…",
   "local.missingMrHead": "ローカルのHEADはMRの最新コミット {sha} を含んでいません。MRにだけある変更は、ここでは取り消しとして表示されます。",
+  "local.otherBranch": "ローカルではMRのソースブランチ {source} ではなく {branch} をcheckoutしています。ここの差分には、このMR以外の変更が含まれることがあります。",
   "local.truncated": "差分が大きすぎるため途中で打ち切りました。一部のファイルが表示されていません。",
   "local.untrackedOmitted": "未追跡のファイルのうち{count}件は、件数か大きさの上限を超えたため差分に含めていません。",
   "local.untrackedOmittedMore": "未追跡のファイルのうち{count}件以上は、件数か大きさの上限を超えたため差分に含めていません。",

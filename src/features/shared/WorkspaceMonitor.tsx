@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { translate } from '../../i18n/i18n'
 import { notifyWorkspace } from '../../lib/notifications'
@@ -59,6 +60,7 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
   const query = useMemo(() => session ? ({ kind: 'notes' as const, projectId: mergeRequest.projectId, iid: mergeRequest.iid, page: 1 }) : null, [mergeRequest.iid, mergeRequest.projectId, session])
   const result = useGitLabQuery(session?.id ?? null, query, { background: true, refreshIntervalMs: false })
   const { refresh } = result
+  const queryClient = useQueryClient()
   const updatedAt = useRef(mergeRequest.updatedAt)
   useEffect(() => {
     if (updatedAt.current === mergeRequest.updatedAt) return
@@ -69,6 +71,7 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
   const mrKey = mrRefKey(mergeRequest)
   useEffect(() => () => { if (sessionId) forgetActivity(sessionId, mrKey) }, [mrKey, sessionId])
   const previous = useRef<Set<string> | null>(null)
+  const othersComments = useRef<string | null>(null)
   // Recording what was seen reads the workspace as it is now, without rerunning the effect
   // (and every other watched MR's) each time the workspace changes.
   const observe = useEffectEvent((notes: Note[]) => workspace.observe(mergeRequest, notes))
@@ -79,6 +82,11 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
     publishActivity(session.id, mrKey, items.filter((item) => Date.parse(item.createdAt) > since))
     if (result.snapshot?.source !== 'network' || result.error) return
     observe(result.data)
+    // A comment by someone else added or edited: the MR's newest threads, open or kept, are read
+    // again, so it is on screen without reloading. Older pages follow on their own refresh.
+    const comments = result.data.filter((note) => !note.system && note.author.id !== session.user.id).map((note) => `${note.id}@${note.updatedAt ?? note.createdAt}`).join(' ')
+    if (othersComments.current !== null && othersComments.current !== comments) void queryClient.invalidateQueries({ predicate: (query) => isLastDiscussionsPageOf(query, session.id, mergeRequest) })
+    othersComments.current = comments
     if (previous.current) {
       const known = previous.current
       // Only newer than what was seen, so an older event coming onto the page is not new.
@@ -92,6 +100,15 @@ function WatchedActivity({ mergeRequest, notify }: { mergeRequest: MergeRequest;
       if (notify && added.length && !currentlyOpen) void notifyWorkspace(translate('common.notifications.newActivity', { count: added.length }), url).catch(() => undefined)
     }
     previous.current = new Set(items.map((item) => item.id))
-  }, [mergeRequest, mrKey, notify, result.data, result.error, result.snapshot?.source, session])
+  }, [mergeRequest, mrKey, notify, queryClient, result.data, result.error, result.snapshot?.source, session])
   return null
+}
+
+/** A discussions page of the MR that has no page after it: where GitLab puts new threads. */
+function isLastDiscussionsPageOf(query: { queryKey: readonly unknown[]; state: { data: unknown } }, sessionId: string, mergeRequest: MergeRequest): boolean {
+  const key = query.queryKey
+  if (key[0] !== 'gitlab' || key[1] !== sessionId || typeof key[2] !== 'string' || !key[2].includes('"kind":"discussions"')) return false
+  const read = JSON.parse(key[2]) as { projectId?: unknown; iid?: unknown }
+  const snapshot = (query.state.data as { snapshot?: { nextPage: number | null } | null } | undefined)?.snapshot
+  return read.projectId === mergeRequest.projectId && read.iid === mergeRequest.iid && Boolean(snapshot) && !snapshot?.nextPage
 }

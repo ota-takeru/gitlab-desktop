@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, renderHook } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GitLabQuery, GitLabSession, GitLabTodo, MergeRequest, Note, Position } from '../../types/gitlab'
@@ -41,6 +43,9 @@ vi.mock('./useGitLabQuery', () => ({
 vi.mock('../../lib/notifications', () => ({
   notifyWorkspace: mocks.notifyWorkspace,
 }))
+
+let queryClient: QueryClient
+const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 
 const session: GitLabSession = {
   id: 'session-1',
@@ -128,10 +133,11 @@ describe('WorkspaceMonitor', () => {
     mocks.refresh.mockReset()
     mocks.startActivity.mockReset()
     window.location.hash = ''
+    queryClient = new QueryClient()
   })
 
   it('disables queries when activity and notifications are off and follows the twenty most recently updated MRs without notifying', () => {
-    const view = render(<WorkspaceMonitor />)
+    const view = render(<WorkspaceMonitor />, { wrapper })
 
     expect(mocks.queryCalls).toHaveLength(4)
     expect(mocks.queryCalls.every((call) => call.query === null)).toBe(true)
@@ -159,7 +165,7 @@ describe('WorkspaceMonitor', () => {
     const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60_000).toISOString()
     // A comment older than fourteen days is left out as well as the system note that is no event.
     setResult(noteQuery('120'), [note('note-1', '9', hoursAgo(2)), note('note-2', '9', hoursAgo(1), undefined, true), note('note-old', '9', hoursAgo(15 * 24))], 'cache')
-    const view = render(<WorkspaceMonitor />)
+    const view = render(<WorkspaceMonitor />, { wrapper })
     const loaded = renderHook(() => useLoadedActivity('session-1'))
 
     expect(loaded.result.current.map((item) => item.id)).toEqual(['note-1'])
@@ -175,6 +181,41 @@ describe('WorkspaceMonitor', () => {
     expect(loaded.result.current).toEqual([])
   })
 
+  it("reads the MR's last threads page again only when someone else's comment is added or edited", () => {
+    mocks.settings.showActivity = true
+    setMergeRequests([mr(120)])
+    const first = note('note-1', '9', '2026-10-01T09:00:00Z')
+    setResult(noteQuery('120'), [first])
+    const page = (sessionId: string, iid: string, number: number) => ['gitlab', sessionId, JSON.stringify({ iid, kind: 'discussions', page: number, projectId: '7' })]
+    const saved = (nextPage: number | null) => ({ error: null, snapshot: { completeness: 'page', data: [], fetchedAt: 1, nextPage, source: 'network' } })
+    const older = page('session-1', '120', 1)
+    const last = page('session-1', '120', 2)
+    const otherMr = page('session-1', '121', 2)
+    const otherSession = page('session-2', '120', 2)
+    const invalidated = () => [older, last, otherMr, otherSession].map((queryKey) => queryClient.getQueryState(queryKey)?.isInvalidated)
+    const reset = () => {
+      queryClient.setQueryData(older, saved(2))
+      for (const queryKey of [last, otherMr, otherSession]) queryClient.setQueryData(queryKey, saved(null))
+    }
+    reset()
+    const view = render(<WorkspaceMonitor />, { wrapper })
+    const comeBack = (notes: Note[]) => {
+      setResult(noteQuery('120'), notes)
+      view.rerender(<WorkspaceMonitor />)
+    }
+
+    // The user's own comment and a system note (a push) change nothing on screen that is not already read.
+    comeBack([first, note('note-2', '42', '2026-10-02T09:00:00Z'), note('note-3', '9', '2026-10-02T10:00:00Z', undefined, true)])
+    expect(invalidated()).toEqual([false, false, false, false])
+
+    comeBack([first, note('note-4', '9', '2026-10-03T09:00:00Z')])
+    expect(invalidated()).toEqual([false, true, false, false])
+
+    reset()
+    comeBack([{ ...first, updatedAt: '2026-10-04T09:00:00Z' }, note('note-4', '9', '2026-10-03T09:00:00Z')])
+    expect(invalidated()).toEqual([false, true, false, false])
+  })
+
   it('notifies only after network changes for new todos and new comments and events by others', async () => {
     mocks.settings.notifyComments = true
     mocks.settings.notifyTodos = true
@@ -184,7 +225,7 @@ describe('WorkspaceMonitor', () => {
     setResult(todosQuery, [todo('todo-1')])
     setMergeRequests([], onlyMr)
     setResult(noteQuery('120'), initialNotes)
-    const view = render(<WorkspaceMonitor />)
+    const view = render(<WorkspaceMonitor />, { wrapper })
 
     expect(mocks.notifyWorkspace).not.toHaveBeenCalled()
 
@@ -215,7 +256,7 @@ describe('WorkspaceMonitor', () => {
     mocks.settings.notifyComments = true
     setMergeRequests([], [], [mr(120)])
     setResult(noteQuery('120'), [note('note-1', '9', '2026-10-01T09:00:00Z')])
-    const view = render(<WorkspaceMonitor />)
+    const view = render(<WorkspaceMonitor />, { wrapper })
 
     window.location.hash = '#client/mr?projectId=7&iid=120'
     setResult(noteQuery('120'), [

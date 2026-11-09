@@ -121,6 +121,7 @@
   "local.staleError": "Mostrando el último diff leído. Error al recargar: {message}",
   "local.loading": "Cargando cambios locales…",
   "local.missingMrHead": "El HEAD local no contiene el commit head de la MR {sha}. Los cambios que solo están en la MR se muestran aquí como revertidos.",
+  "local.otherBranch": "El clon tiene {branch} activa, no la rama de origen {source} del MR. Los cambios mostrados pueden incluir trabajo que no forma parte de este MR.",
   "local.truncated": "El diff es demasiado grande y se truncó. Algunos archivos no se muestran.",
   "local.untrackedOmitted": "{count, plural, one {# archivo sin seguimiento se excluyó} other {# archivos sin seguimiento se excluyeron}} del diff por superar el límite de cantidad o tamaño.",
   "local.untrackedOmittedMore": "{count} o más archivos sin seguimiento se excluyeron del diff por superar el límite de cantidad o tamaño.",

@@ -121,6 +121,7 @@
   "local.staleError": "正在顯示上次讀取的差異。重新載入失敗：{message}",
   "local.loading": "正在載入本機變更…",
   "local.missingMrHead": "本機 HEAD 不包含 MR head 提交 {sha}。僅存在於 MR 中的變更在此會顯示為已還原。",
+  "local.otherBranch": "本機簽出的是 {branch}，而不是 MR 的來源分支 {source}。這裡的變更可能包含不屬於此 MR 的內容。",
   "local.truncated": "差異過大而遭截斷。部分檔案不會顯示。",
   "local.untrackedOmitted": "{count, plural, other {有 # 個未追蹤的檔案}}因超過數量或大小上限而未列入差異。",
   "local.untrackedOmittedMore": "有 {count} 個以上未追蹤的檔案因超過數量或大小上限而未列入差異。",

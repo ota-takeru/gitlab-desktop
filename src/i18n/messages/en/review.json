@@ -121,6 +121,7 @@
   "local.staleError": "Showing the last diff read. Reloading failed: {message}",
   "local.loading": "Loading local changes…",
   "local.missingMrHead": "The local HEAD does not contain the MR head commit {sha}. Changes only in the MR are shown here as reverted.",
+  "local.otherBranch": "The clone has {branch} checked out, not the MR's source branch {source}. The changes here may include work that is not part of this MR.",
   "local.truncated": "The diff is too large and was cut off. Some files are not shown.",
   "local.untrackedOmitted": "{count, plural, one {# untracked file was} other {# untracked files were}} left out of the diff for exceeding the count or size limit.",
   "local.untrackedOmittedMore": "{count} or more untracked files were left out of the diff for exceeding the count or size limit.",
