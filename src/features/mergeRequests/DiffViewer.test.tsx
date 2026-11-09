@@ -158,9 +158,24 @@ describe('DiffViewer', () => {
     expect(row).not.toHaveAttribute('title')
     fireEvent.mouseOver(row)
     expect((await screen.findByRole('tooltip')).textContent).toBe(path)
-    // A scroll carries the row away, so the tooltip goes with no fade rather than following it.
-    fireEvent.scroll(row.parentElement!)
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    // A scroll brings another row under the pointer, and the tooltip goes to it rather than following the row away.
+    const next = screen.getAllByRole('button', { hidden: true }).find((button) => button !== row && button.closest('[data-path-tooltip]') === button)!
+    const elementFromPoint = vi.fn(() => next)
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: elementFromPoint })
+    try {
+      fireEvent.pointerMove(row, { clientX: 10, clientY: 20 })
+      fireEvent.scroll(row.parentElement!)
+      expect(elementFromPoint).toHaveBeenCalledWith(10, 20)
+      await waitFor(() => expect(screen.getAllByRole('tooltip').map((tooltip) => tooltip.textContent)).not.toContain(path))
+      // The next row is one of the path's folders.
+      expect(path.startsWith(screen.getByRole('tooltip').textContent!.replace(/\/$/, ''))).toBe(true)
+      // Off the rows, a scroll leaves no tooltip.
+      elementFromPoint.mockReturnValue(document.body)
+      fireEvent.scroll(row.parentElement!)
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    } finally {
+      Reflect.deleteProperty(document, 'elementFromPoint')
+    }
   })
 
   it('covers the window when maximized, and Esc restores it without leaving the merge request', () => {
