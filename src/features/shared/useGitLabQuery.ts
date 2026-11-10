@@ -80,6 +80,8 @@ export function useGitLabQuery<Q extends GitLabQuery>(
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: (current) => {
       const failure = current.state.error ?? current.state.data?.error
+      // Comments may have been added while the user was in another window, so they are read again on every return.
+      if (autoRefresh && !failure && query?.kind === 'discussions') return 'always'
       const interval = failure ? FAILED_REFRESH_INTERVAL_MS : refreshIntervalMs || 60_000
       return autoRefresh && !isAccessDenied(failure) && Date.now() - Math.max(current.state.dataUpdatedAt, current.state.errorUpdatedAt) > interval
     },
