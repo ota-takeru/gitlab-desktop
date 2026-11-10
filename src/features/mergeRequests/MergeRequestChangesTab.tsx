@@ -567,7 +567,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   const hasTags = ordered.some((commit) => commit.id !== head && versionLabel(commit.id))
   return <Stack spacing={0.5}>
     <Row spacing={0.5} sx={{ minWidth: 0 }}>
-      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}>
+      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain' }}>
         <Row onLostPointerCapture={() => endGesture(true)} onPointerCancel={() => endGesture(false)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => endGesture(true)} ref={rowRef} spacing={ROW_GAP / 8} sx={{ minHeight: 32, minWidth: 'max-content', pb: hasTags ? 2.5 : 0.5, position: 'relative', pt: 0.5, px: 2, touchAction: 'pan-x', userSelect: 'none' }}>
           {/* One tinted piece per commit, 2px apart, each with the same corners, so even the whole MR reads as separate commits. */}
           {shownBand && range ? pieces(shownBand).map((piece) => <Box aria-hidden key={piece.key} sx={{ bgcolor: 'surface.selected', borderRadius: 1, height: shownBand.height, left: piece.left, pointerEvents: 'none', position: 'absolute', top: shownBand.top, transition: preview ? 'none' : `left 160ms ${GROW_EASE}, width 160ms ${GROW_EASE}`, width: piece.width, zIndex: 1, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }} />) : null}
