@@ -166,6 +166,8 @@
   "changes.loading": "Chargement des modifications…",
   "changes.fileError": "Impossible de charger le fichier entier : {message}",
   "changes.nextCommits": "Commits plus anciens",
+  "changes.showCommits": "Afficher les commits",
+  "changes.hideCommits": "Masquer les commits",
   "changes.scrollLeftTooltip": "Défiler vers la gauche",
   "changes.scrollLeft": "Faire défiler la bande de commits vers la gauche",
   "changes.scrollRightTooltip": "Défiler vers la droite",

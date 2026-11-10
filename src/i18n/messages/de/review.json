@@ -166,6 +166,8 @@
   "changes.loading": "Änderungen werden geladen…",
   "changes.fileError": "Die ganze Datei konnte nicht geladen werden: {message}",
   "changes.nextCommits": "Ältere Commits",
+  "changes.showCommits": "Commits anzeigen",
+  "changes.hideCommits": "Commits ausblenden",
   "changes.scrollLeftTooltip": "Nach links scrollen",
   "changes.scrollLeft": "Commit-Leiste nach links scrollen",
   "changes.scrollRightTooltip": "Nach rechts scrollen",

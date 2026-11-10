@@ -166,6 +166,8 @@
   "changes.loading": "Loading changes…",
   "changes.fileError": "Could not load the whole file: {message}",
   "changes.nextCommits": "Older commits",
+  "changes.showCommits": "Show commits",
+  "changes.hideCommits": "Hide commits",
   "changes.scrollLeftTooltip": "Scroll left",
   "changes.scrollLeft": "Scroll the commit strip left",
   "changes.scrollRightTooltip": "Scroll right",

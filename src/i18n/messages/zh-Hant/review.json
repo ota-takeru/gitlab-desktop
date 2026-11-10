@@ -166,6 +166,8 @@
   "changes.loading": "正在載入變更…",
   "changes.fileError": "無法載入整個檔案：{message}",
   "changes.nextCommits": "更早的提交",
+  "changes.showCommits": "顯示提交",
+  "changes.hideCommits": "隱藏提交",
   "changes.scrollLeftTooltip": "向左捲動",
   "changes.scrollLeft": "向左捲動提交列",
   "changes.scrollRightTooltip": "向右捲動",

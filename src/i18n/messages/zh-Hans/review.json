@@ -166,6 +166,8 @@
   "changes.loading": "正在加载变更…",
   "changes.fileError": "无法加载完整文件：{message}",
   "changes.nextCommits": "更早的提交",
+  "changes.showCommits": "显示提交",
+  "changes.hideCommits": "隐藏提交",
   "changes.scrollLeftTooltip": "向左滚动",
   "changes.scrollLeft": "向左滚动提交栏",
   "changes.scrollRightTooltip": "向右滚动",

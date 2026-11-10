@@ -23,6 +23,7 @@ import { formatAbsoluteTime, shortSha } from '../../lib/format'
 import type { Commit, Diff, Discussion, Draft, MrVersion, Position } from '../../types/gitlab'
 import type { ThreadActions } from './DiffThreads'
 import { DiffViewer } from './DiffViewer'
+import { DiffMaximizeContext, MAXIMIZED_SX } from './diffMaximize'
 import type { MoreCommits } from './useCommitPages'
 import type { ReviewedFileContext } from './useReviewedFiles'
 import type { SuggestionActions } from './SuggestionBlock'
@@ -57,6 +58,12 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
   const showingLocal = Boolean(local?.active)
   const showTimeline = !commitsError || commits.length > 0
   const diffsFade = useFadeAfterLoading(changesLoading && !diffs.length)
+  // Maximized, the diff covers the window with the commit row folded above it; choosing another commit keeps it maximized.
+  const [maximized, setMaximized] = useState(false)
+  const [commitsOpen, setCommitsOpen] = useState(false)
+  const maximize = useMemo(() => ({ maximized, setMaximized }), [maximized])
+  const timelineShown = showTimeline && (!maximized || commitsOpen)
+  const stickyRow = showTimeline || maximized
   // The commit row stays in view under the MR header; the diff's own sticky rows start below it.
   const rootRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -70,12 +77,16 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     const observer = new ResizeObserver(update)
     observer.observe(timeline)
     return () => observer.disconnect()
-  }, [showTimeline])
+  }, [stickyRow])
   return (
-    <Stack ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)' }}>
+    <DiffMaximizeContext.Provider value={maximize}>
+    <Stack data-diff-maximized={maximized ? 'true' : undefined} ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)', ...(maximized ? MAXIMIZED_SX : {}) }}>
       {commitsError && !commits.length ? <Alert severity="error">{t('review.changes.commitsError', { message: commitsError.message })}</Alert> : null}
       {commitsError && commits.length ? <Alert severity="warning">{t('review.changes.commitsStale', { message: commitsError.message })}</Alert> : null}
-      {showTimeline ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: `calc(var(--mr-header-height) + ${TIMELINE_GAP}px)`, zIndex: 2, '&::before': { bgcolor: 'background.default', content: '""', height: TIMELINE_GAP, left: 0, position: 'absolute', right: 0, top: -TIMELINE_GAP } }}><CommitTimeline baseSha={compareBaseSha} commits={commits} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versions={versions} /></Box> : null}
+      {stickyRow ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: `calc(var(--mr-header-height) + ${TIMELINE_GAP}px)`, zIndex: 2, '&::before': { bgcolor: 'background.default', content: '""', height: TIMELINE_GAP, left: 0, position: 'absolute', right: 0, top: -TIMELINE_GAP } }}>
+        {maximized ? <Button aria-expanded={commitsOpen} onClick={() => setCommitsOpen((open) => !open)} size="small" startIcon={commitsOpen ? <ExpandMoreRoundedIcon /> : <ChevronRightRoundedIcon />}>{commitsOpen ? t('review.changes.hideCommits') : t('review.changes.showCommits')}</Button> : null}
+        {timelineShown ? <CommitTimeline baseSha={compareBaseSha} commits={commits} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versions={versions} /> : null}
+      </Box> : null}
       <Stack spacing={1.5} sx={{ '--detail-header-height': 'calc(var(--mr-header-height) + var(--commit-timeline-height, 0px))' }}>
       {showingLocal ? local?.content : <>
       {changesTruncated ? <Alert severity="warning">{t('review.changes.truncated')}</Alert> : null}
@@ -89,6 +100,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
       </>}
       </Stack>
     </Stack>
+    </DiffMaximizeContext.Provider>
   )
 }
 

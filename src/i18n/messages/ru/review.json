@@ -166,6 +166,8 @@
   "changes.loading": "Загрузка изменений…",
   "changes.fileError": "Не удалось загрузить весь файл: {message}",
   "changes.nextCommits": "Более старые коммиты",
+  "changes.showCommits": "Показать коммиты",
+  "changes.hideCommits": "Скрыть коммиты",
   "changes.scrollLeftTooltip": "Прокрутить влево",
   "changes.scrollLeft": "Прокрутить ленту коммитов влево",
   "changes.scrollRightTooltip": "Прокрутить вправо",

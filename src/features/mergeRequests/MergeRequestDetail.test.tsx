@@ -1133,6 +1133,20 @@ describe('MergeRequestDetail header, results and pending review', () => {
     expect(screen.getByText('コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。')).toBeInTheDocument()
   })
 
+  it('folds the commit row over the maximized diff, and stays maximized when another commit is chosen there', async () => {
+    detailMocks.commits = [{ id: 'aaaaaaaa1', title: '最初のコミット' }, { id: 'bbbbbbbb2', title: '次のコミット内容' }]
+    renderDetail('changes')
+    fireEvent.click(await screen.findByRole('button', { name: '差分を最大表示' }))
+    const overlay = document.querySelector('[data-diff-maximized]')
+    expect(overlay).toContainElement(screen.getByRole('button', { name: '最大表示を解除 (Esc)' }))
+    expect(screen.queryByRole('toolbar', { name: '比較対象' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'コミットを表示' }))
+    expect(overlay).toContainElement(screen.getByRole('toolbar', { name: '比較対象' }))
+    fireEvent.click(screen.getByRole('button', { name: /次のコミット内容/u }))
+    expect(document.querySelector('[data-diff-maximized]')).toBe(overlay)
+    expect(screen.getByRole('button', { name: 'コミットを隠す' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('adds older commits to the row as its end comes near, keeping the ones listed', async () => {
     const observers: { callback: IntersectionObserverCallback; disconnect: () => void }[] = []
     vi.stubGlobal('IntersectionObserver', class {
