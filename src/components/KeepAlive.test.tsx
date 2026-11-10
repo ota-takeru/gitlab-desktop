@@ -32,6 +32,21 @@ it('drops the screens beyond a lowered limit without waiting for the next screen
 // jsdom has no AnimationEvent, so React listens for the prefixed name.
 const endFade = (element: Element) => fireEvent(element, new Event('webkitAnimationEnd', { bubbles: true }))
 
+it('keeps the screen showing under the next one until it has faded in, even with a limit of one', () => {
+  const onPending = vi.fn()
+  const view = (active: string) => <KeepAlive activeKey={active} max={1} onRevealPendingChange={onPending}>{active}</KeepAlive>
+  const { container, rerender } = render(view('a'))
+  rerender(view('b'))
+  // The caller is not told to show what was there instead: the screen before it still shows under it.
+  expect(container.children).toHaveLength(2)
+  expect(container.children[0]).not.toHaveStyle({ display: 'none' })
+  expect(onPending).toHaveBeenLastCalledWith(false)
+
+  endFade(container.children[1])
+  expect(container.children).toHaveLength(1)
+  expect(container.querySelector('[data-screen-active="true"]')).toHaveTextContent('b')
+})
+
 function Holding({ held, label }: { held: boolean; label: string }) {
   const hold = useScreenReadiness()
   useEffect(() => { if (held && hold) return hold() }, [held, hold])
