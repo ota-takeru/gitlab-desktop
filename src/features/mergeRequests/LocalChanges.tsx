@@ -82,13 +82,13 @@ export function LocalStatusBadge({ headSha, projectId, projectPath, sessionId, s
  * (unpushed commits, uncommitted edits and untracked files) against the MR head. Read-only:
  * nothing here comments, marks files reviewed, fetches or changes the clone.
  */
-export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, selectedFile, sessionId, sourceBranch, userId }: { headSha: string; onSelectFile: (path: string) => void; projectId: string; projectPath: string | null; selectedFile: string | null; sessionId: string; sourceBranch?: string; userId: string }) {
+export function LocalChanges({ fromSha, headSha, onSelectFile, projectId, projectPath, selectedFile, sessionId, sourceBranch, userId }: { /** Compared from this commit instead of the MR head. */ fromSha?: string; headSha: string; onSelectFile: (path: string) => void; projectId: string; projectPath: string | null; selectedFile: string | null; sessionId: string; sourceBranch?: string; userId: string }) {
   const t = useT()
   const client = useQueryClient()
   const { found, foundKey, linked, repository, repositoryKey, searchNow } = useLinkedRepository(sessionId, projectId, projectPath)
   // The working tree changes outside the app, so it is read again each time the view opens
   // and when the window regains focus. The last diff read stays in memory and is shown until then.
-  const changes = useQuery({ enabled: Boolean(linked), queryFn: () => getLocalChanges(sessionId, projectId, headSha, sourceBranch), queryKey: ['localChanges', sessionId, projectId, headSha, sourceBranch, linked?.path], staleTime: 0 })
+  const changes = useQuery({ enabled: Boolean(linked), queryFn: () => getLocalChanges(sessionId, projectId, headSha, sourceBranch, fromSha), queryKey: ['localChanges', sessionId, projectId, headSha, sourceBranch, fromSha, linked?.path], staleTime: 0 })
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
   const [viewChoice, setViewChoice] = useState<{ path: string; view: 'diff' | 'file' } | null>(null)
@@ -167,11 +167,11 @@ export function LocalChanges({ headSha, onSelectFile, projectId, projectPath, se
       {error && data ? <Alert severity="warning">{t('review.local.staleError', { message: error.message })}</Alert> : null}
       {changes.isPending && !error ? <Typography color="textSecondary" role="status" sx={{ ...delayedRevealSx, py: 2 }} variant="body2">{t('review.local.loading')}</Typography> : null}
       {data && otherBranch ? <Alert severity="warning">{t('review.local.otherBranch', { branch: data.branch ?? '', source: sourceBranch ?? '' })}</Alert> : null}
-      {data && !data.containsMrHead ? <Alert severity="warning">{t('review.local.missingMrHead', { sha: shortSha(data.comparedSha) })}</Alert> : null}
+      {data && !data.containsMrHead ? <Alert severity="warning">{t('review.local.missingMrHead', { sha: shortSha(headSha) })}</Alert> : null}
       {data?.truncated ? <Alert severity="warning">{t('review.local.truncated')}</Alert> : null}
       {data && (data.untrackedCount > data.untrackedIncluded || data.untrackedMore) ? <Alert severity="warning">{t(data.untrackedMore ? 'review.local.untrackedOmittedMore' : 'review.local.untrackedOmitted', { count: data.untrackedCount - data.untrackedIncluded })}</Alert> : null}
       {data && !data.diffs.length && !data.truncated ? <Typography color="textSecondary" role="status" variant="body2">{t('review.local.noDiff')}</Typography> : null}
-      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isLoading} key={`local:${headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={(next) => setViewChoice({ path: shownPath, view: next })} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
+      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isLoading} key={`local:${fromSha ?? headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={(next) => setViewChoice({ path: shownPath, view: next })} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
       {view === 'file' && shown?.deletedFile ? <Typography color="textSecondary" role="status" variant="body2">{t('review.local.fileDeleted')}</Typography> : null}
       {view === 'file' && file.error ? <Alert severity="error">{t('review.local.fileReadError', { message: normalizeGitLabError(file.error).message })}</Alert> : null}
     </Stack>

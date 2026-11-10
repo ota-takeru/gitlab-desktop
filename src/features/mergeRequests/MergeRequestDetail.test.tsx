@@ -670,7 +670,7 @@ describe('suggestions and versions', () => {
       const box = (title: RegExp) => within(row).getByRole('button', { name: title })
       await within(row).findByRole('button', { name: /最初のコミット/u })
       // Oldest at the left, and the band over every commit: the whole MR.
-      expect(within(row).getAllByRole('button').filter((button) => button.dataset.cellIndex && button.textContent?.includes('コミット')).map((button) => button.textContent)).toEqual(['aaaaaaaa最初のコミット', 'bbbbbbbb二番目のコミット', 'head-abc最新のコミット'])
+      expect(within(row).getAllByRole('button').filter((button) => button.dataset.cellIndex && button.textContent?.includes('コミット')).map((button) => button.textContent)).toEqual(['最初のコミット', '二番目のコミット', '最新のコミット'])
       for (const title of [/最初のコミット/u, /二番目のコミット/u, /最新のコミット/u]) expect(box(title)).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByText('ターゲット base-abc → 最新 head-abc')).toBeInTheDocument()
 
@@ -740,6 +740,8 @@ describe('suggestions and versions', () => {
   })
 
   it('shows the linked clone against the MR head read-only, without loading the MR diff', async () => {
+    detailMocks.commits = [{ id: 'head-abc', title: '最新のコミット' }]
+    onTestFinished(() => { detailMocks.commits = [] })
     localMocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/project', projectPath: 'group/project' })
     localMocks.getLocalChanges.mockResolvedValue({ aheadCount: 1, branch: 'feature', comparedSha: 'head-abc', containsMrHead: true, diffs: [{ ...detailMocks.diff, diff: '@@ -1,2 +1,3 @@\n line one\n line two\n+local line\n' }], localHead: 'c'.repeat(40), repositoryPath: 'C:/repos/project', truncated: false, untrackedCount: 2, untrackedIncluded: 0, untrackedMore: false })
     localMocks.getLocalStatus.mockResolvedValue({ aheadCount: 1, branch: 'feature', changedCount: 0, containsMrHead: true, countMore: false, localHead: 'c'.repeat(40), mrHeadPresent: true, untrackedCount: 2 })
@@ -753,7 +755,7 @@ describe('suggestions and versions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' }))
 
     expect(await screen.findByText('local line')).toBeInTheDocument()
-    expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature')
+    expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature', undefined)
     expect(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('最新 head-abc → ローカルの作業ツリー')).toBeInTheDocument()
     expect(screen.getByText(/MRの最新より1コミット先（未push）/u)).toBeInTheDocument()
@@ -773,6 +775,13 @@ describe('suggestions and versions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' }))
     expect(screen.getByText('local line')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toHaveAttribute('aria-pressed', 'true')
+
+    // The arrow left of it takes the commits before it too: from the target branch to the working tree.
+    fireEvent.click(screen.getByRole('button', { name: '最初からここまで' }))
+    await waitFor(() => expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature', 'base-abc'))
+    expect(screen.getByText('head-abc 〜 ローカルの作業ツリー（1件）')).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent(/選んだコミットからローカルの作業ツリーまでの変更です/u)
+    expect(screen.queryByRole('button', { name: '最初からここまで' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'MR全体' })).toHaveAttribute('aria-pressed', 'false')
   })
 })
@@ -1134,16 +1143,16 @@ describe('MergeRequestDetail header, results and pending review', () => {
     detailMocks.commitPages = {
       1: [{ id: 'aaaaaaaa1', title: '一番新しいコミット' }, { id: 'bbbbbbbb2', title: '二番目のコミット' }],
       // A push moved the second commit down, so it comes again here.
-      2: [{ id: 'bbbbbbbb2', title: '二番目のコミット' }, { id: 'cccccccc3', title: '古いコミット' }],
+      2: [{ id: 'bbbbbbbb2', title: '二番目のコミット' }, { id: 'cccccccc3', title: '三番目のコミット' }],
       3: [{ id: 'dddddddd4', title: '一番古いコミット' }],
     }
     const reach = () => act(() => observers.at(-1)?.callback([{ isIntersecting: true } as IntersectionObserverEntry], observers.at(-1) as unknown as IntersectionObserver))
     try {
       renderDetail('changes')
       await screen.findByRole('button', { name: /一番新しいコミット/u })
-      expect(screen.queryByRole('button', { name: /^cccccccc/u })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /三番目のコミット/u })).not.toBeInTheDocument()
       reach()
-      expect(await screen.findByRole('button', { name: /^cccccccc?.*古いコミット/u })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: /三番目のコミット/u })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /一番新しいコミット/u })).toBeInTheDocument()
       expect(screen.getAllByRole('button', { name: /二番目のコミット/u })).toHaveLength(1)
       reach()

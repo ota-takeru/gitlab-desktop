@@ -255,10 +255,11 @@ async fn get_local_changes(
     project_id: String,
     head_sha: String,
     source_branch: Option<String>,
+    from_sha: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
     state
         .native()?
-        .local_changes(session_id, project_id, head_sha, source_branch)
+        .local_changes(session_id, project_id, head_sha, source_branch, from_sha)
         .await
 }
 #[tauri::command]

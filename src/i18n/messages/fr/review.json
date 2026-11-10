@@ -195,6 +195,8 @@
   "changes.local": "Modifications locales",
   "changes.commitNote": "Les commentaires de ligne ne sont pas disponibles lors de l’affichage d’un seul commit. Affichez la MR entière pour commenter.",
   "changes.localNote": "Modifications du head de la MR vers l’arbre de travail local (commits non poussés, modifications non commitées et fichiers non suivis). Les commentaires de ligne ne sont pas disponibles ici, et les fichiers ne sont pas marqués comme consultés.",
+  "changes.localRangeNote": "Modifications des commits choisis vers l’arbre de travail local (les commits de la plage, plus les commits non poussés, les modifications non commitées et les fichiers non suivis ; en cas de rebase entre-temps, des modifications de la branche cible sont incluses). Les commentaires de ligne ne sont pas disponibles ici, et les fichiers ne sont pas enregistrés comme consultés.",
+  "changes.readOnly": "Lecture seule",
   "versions.error": "Impossible de charger les versions : {message}",
   "versions.optionNumbered": "Version {number} · {sha} · {time} jusqu’à la plus récente",
   "versions.option": "{sha} · {time} jusqu’à la plus récente",

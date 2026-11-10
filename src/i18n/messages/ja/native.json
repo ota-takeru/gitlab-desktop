@@ -102,6 +102,8 @@
   "localGit.gitMissing": "gitが見つかりません。Git for WindowsをインストールしてPATHへ追加してください。",
   "localGit.headMissing": "MRの最新コミット {sha} がローカルにありません。git fetchしてから再読み込みしてください。",
   "localGit.invalidHead": "MRの最新コミットが正しくありません。",
+  "localGit.invalidStart": "比較の起点のコミットが正しくありません。",
+  "localGit.startMissing": "比較の起点のコミット {sha} がローカルにありません。git fetchしてから再読み込みしてください。",
   "localGit.linkedFolderMissing": "紐付けたローカルリポジトリのフォルダが見つかりません。紐付けをやり直してください。",
   "localGit.linkedRemoteMismatch": "紐付けたフォルダのgitリモートが {projectPath} を指していません。紐付けをやり直してください。",
   "localGit.notLinked": "このプロジェクトにはローカルリポジトリが紐付けられていません。",

@@ -195,6 +195,8 @@
   "changes.local": "ローカルの変更",
   "changes.commitNote": "コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。",
   "changes.localNote": "MRの最新からローカルの作業ツリーまでの変更です（未pushのコミット、未コミットの変更、未追跡ファイル）。この表示では行コメントできず、確認済みの記録にも含めません。",
+  "changes.localRangeNote": "選んだコミットからローカルの作業ツリーまでの変更です（範囲のコミットに加え、未pushのコミット、未コミットの変更、未追跡ファイルを含みます。間にリベースがあればターゲットブランチ由来の変更も含まれます）。この表示では行コメントできず、確認済みの記録にも含めません。",
+  "changes.readOnly": "閲覧のみ",
   "versions.error": "バージョンを取得できませんでした: {message}",
   "versions.optionNumbered": "バージョン{number} · {sha} · {time} から最新まで",
   "versions.option": "{sha} · {time} から最新まで",

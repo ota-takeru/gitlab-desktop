@@ -195,6 +195,8 @@
   "changes.local": "本地更改",
   "changes.commitNote": "查看单个提交时无法使用行评论。请查看整个 MR 以发表评论。",
   "changes.localNote": "从 MR head 到本地工作树的变更（未推送的提交、未提交的更改和未跟踪的文件）。此处无法使用行评论，文件也不会被记录为已查看。",
+  "changes.localRangeNote": "从所选提交到本地工作树的变更（包括范围内的提交，以及未推送的提交、未提交的更改和未跟踪的文件；如果其间发生过变基，也会包含来自目标分支的变更）。此处无法使用行评论，文件也不会被记录为已查看。",
+  "changes.readOnly": "仅查看",
   "versions.error": "无法加载版本：{message}",
   "versions.optionNumbered": "版本 {number} · {sha} · {time} 至最新",
   "versions.option": "{sha} · {time} 至最新",

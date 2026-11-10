@@ -306,14 +306,26 @@ fn valid_sha(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-/// The working tree of `root` against `head_sha`, with the facts needed to
-/// read it truthfully: the local branch and HEAD, whether HEAD contains the MR
-/// head, and how many untracked files could be added as new files.
-pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppError> {
+/// The working tree of `root` against `head_sha`, or against `from_sha` when it
+/// is given (the commit a range of the MR's commits starts after), with the
+/// facts needed to read it truthfully: the local branch and HEAD, whether HEAD
+/// contains the MR head, and how many untracked files could be added as new
+/// files. Those facts are always about the MR head.
+pub async fn local_changes(
+    root: &Path,
+    head_sha: &str,
+    from_sha: Option<&str>,
+) -> Result<Value, AppError> {
     if !valid_sha(head_sha) {
         return Err(
             AppError::new("INVALID_INPUT", "MRの最新コミットが正しくありません。")
                 .key("native.localGit.invalidHead"),
+        );
+    }
+    if from_sha.is_some_and(|sha| !valid_sha(sha)) {
+        return Err(
+            AppError::new("INVALID_INPUT", "比較の起点のコミットが正しくありません。")
+                .key("native.localGit.invalidStart"),
         );
     }
     if !root.is_dir() {
@@ -324,21 +336,7 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
         .key("native.localGit.linkedFolderMissing"));
     }
     let program = resolve_program()?;
-    let commit = format!("{head_sha}^{{commit}}");
-    let present = run(
-        &program,
-        root,
-        &["cat-file", "-e", &commit],
-        MAX_SMALL_OUTPUT,
-    )
-    .await?;
-    if !present.success {
-        if !present.stderr.trim().is_empty() && !present.stderr.contains(head_sha) {
-            let error = explain(&present);
-            if error.code != "UNSUPPORTED" {
-                return Err(error);
-            }
-        }
+    if !commit_present(&program, root, head_sha).await? {
         return Err(AppError::new(
             "NOT_FOUND",
             &format!(
@@ -348,6 +346,19 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
         )
         .key("native.localGit.headMissing")
         .value("sha", &head_sha[..8]));
+    }
+    if let Some(from_sha) = from_sha {
+        if !commit_present(&program, root, from_sha).await? {
+            return Err(AppError::new(
+                "NOT_FOUND",
+                &format!(
+                    "比較の起点のコミット {} がローカルにありません。git fetchしてから再読み込みしてください。",
+                    &from_sha[..8]
+                ),
+            )
+            .key("native.localGit.startMissing")
+            .value("sha", &from_sha[..8]));
+        }
     }
     let (local_head, branch, contains_head, ahead) =
         head_facts(&program, root, Some(head_sha)).await?;
@@ -384,7 +395,7 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
             "-M",
             "--src-prefix=a/",
             "--dst-prefix=b/",
-            head_sha,
+            from_sha.unwrap_or(head_sha),
             "--",
         ],
         MAX_DIFF_BYTES,
@@ -418,7 +429,7 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
     });
     Ok(json!({
         "repositoryPath": root.to_string_lossy(),
-        "comparedSha": head_sha,
+        "comparedSha": from_sha.unwrap_or(head_sha),
         "localHead": local_head,
         "branch": branch,
         "containsMrHead": contains_head,
@@ -429,6 +440,26 @@ pub async fn local_changes(root: &Path, head_sha: &str) -> Result<Value, AppErro
         "diffs": diffs,
         "truncated": truncated,
     }))
+}
+
+/// Whether `sha` names a commit in the clone. A failure other than a missing
+/// object is reported as it is.
+async fn commit_present(program: &Path, root: &Path, sha: &str) -> Result<bool, AppError> {
+    let commit = format!("{sha}^{{commit}}");
+    let present = run(
+        program,
+        root,
+        &["cat-file", "-e", &commit],
+        MAX_SMALL_OUTPUT,
+    )
+    .await?;
+    if !present.success && !present.stderr.trim().is_empty() && !present.stderr.contains(sha) {
+        let error = explain(&present);
+        if error.code != "UNSUPPORTED" {
+            return Err(error);
+        }
+    }
+    Ok(present.success)
 }
 
 /// The clone's HEAD and branch, and, when the MR head is present locally,
@@ -1015,6 +1046,7 @@ mod tests {
         let head = git(&["rev-parse", "HEAD"]).trim().to_owned();
         std::fs::write(directory.join("a.txt"), "one\ntwo\n").unwrap();
         git(&["commit", "-q", "-am", "second"]);
+        let second = git(&["rev-parse", "HEAD"]).trim().to_owned();
         std::fs::write(directory.join("a.txt"), "one\ntwo\nthree\n").unwrap();
         std::fs::write(directory.join("untracked.txt"), "x\ny").unwrap();
         std::fs::write(directory.join("image.bin"), [0u8, 1, 2]).unwrap();
@@ -1025,8 +1057,16 @@ mod tests {
         let root = runtime
             .block_on(repository_root(directory.to_str().unwrap()))
             .unwrap();
-        let result = runtime.block_on(local_changes(&root, &head)).unwrap();
-        let missing = runtime.block_on(local_changes(&root, &"0".repeat(40)));
+        let result = runtime.block_on(local_changes(&root, &head, None)).unwrap();
+        // The second commit as the MR head, and the first commit as the start of a range.
+        let from_head = runtime
+            .block_on(local_changes(&root, &second, None))
+            .unwrap();
+        let from_first = runtime
+            .block_on(local_changes(&root, &second, Some(&head)))
+            .unwrap();
+        let missing = runtime.block_on(local_changes(&root, &"0".repeat(40), None));
+        let start_missing = runtime.block_on(local_changes(&root, &head, Some(&"0".repeat(40))));
         let status = runtime.block_on(local_status(&root, &head)).unwrap();
         let status_missing = runtime
             .block_on(local_status(&root, &"0".repeat(40)))
@@ -1064,6 +1104,20 @@ mod tests {
             "@@ -0,0 +1,2 @@\n+x\n+y\n\\ No newline at end of file\n"
         );
         assert_eq!(missing.unwrap_err().code, "NOT_FOUND");
+        assert_eq!(from_head["comparedSha"], second.as_str());
+        assert_eq!(
+            from_head["diffs"][0]["diff"],
+            "@@ -1,2 +1,3 @@\n one\n two\n+three\n"
+        );
+        assert_eq!(from_first["comparedSha"], head.as_str());
+        assert_eq!(
+            from_first["diffs"][0]["diff"],
+            "@@ -1 +1,3 @@\n one\n+two\n+three\n"
+        );
+        // The facts stay about the MR head.
+        assert_eq!(from_first["aheadCount"], 0);
+        let start_missing = start_missing.unwrap_err();
+        assert_eq!(start_missing.code, "NOT_FOUND");
     }
 
     #[test]

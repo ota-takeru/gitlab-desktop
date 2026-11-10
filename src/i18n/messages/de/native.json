@@ -102,6 +102,8 @@
   "localGit.gitMissing": "git wurde nicht gefunden. Installieren Sie Git for Windows und fügen Sie es zu PATH hinzu.",
   "localGit.headMissing": "Der neueste Commit {sha} des Merge Requests ist nicht im lokalen Repository. Führen Sie git fetch aus und laden Sie dann neu.",
   "localGit.invalidHead": "Der neueste Commit des Merge Requests ist ungültig.",
+  "localGit.invalidStart": "Der Commit, ab dem verglichen wird, ist ungültig.",
+  "localGit.startMissing": "Der Commit {sha}, ab dem verglichen wird, ist nicht im lokalen Repository. Führen Sie git fetch aus und laden Sie dann neu.",
   "localGit.linkedFolderMissing": "Der verknüpfte Ordner des lokalen Repositorys wurde nicht gefunden. Verknüpfen Sie ihn erneut.",
   "localGit.linkedRemoteMismatch": "Das git-Remote des verknüpften Ordners verweist nicht auf {projectPath}. Verknüpfen Sie ihn erneut.",
   "localGit.notLinked": "Mit diesem Projekt ist kein lokales Repository verknüpft.",

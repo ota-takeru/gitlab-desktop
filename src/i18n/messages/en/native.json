@@ -102,6 +102,8 @@
   "localGit.gitMissing": "git wasn't found. Install Git for Windows and add it to PATH.",
   "localGit.headMissing": "The merge request's latest commit {sha} isn't in the local repository. Run git fetch, then reload.",
   "localGit.invalidHead": "The merge request's latest commit is not valid.",
+  "localGit.invalidStart": "The commit the comparison starts from is not valid.",
+  "localGit.startMissing": "The commit the comparison starts from, {sha}, isn't in the local repository. Run git fetch, then reload.",
   "localGit.linkedFolderMissing": "The linked local repository folder wasn't found. Link it again.",
   "localGit.linkedRemoteMismatch": "The linked folder's git remote doesn't point to {projectPath}. Link it again.",
   "localGit.notLinked": "No local repository is linked to this project.",

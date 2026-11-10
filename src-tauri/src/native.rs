@@ -1513,17 +1513,25 @@ impl NativeState {
         .await
     }
 
-    /// The linked clone's working tree against the MR head. It is read fresh
-    /// each time and never saved: it is the user's local source, not GitLab data.
+    /// The linked clone's working tree against the MR head, or against the
+    /// commit a range starts after (`from_sha`). It is read fresh each time and
+    /// never saved: it is the user's local source, not GitLab data.
     pub async fn local_changes(
         &self,
         id: String,
         project: String,
         head_sha: String,
         source_branch: Option<String>,
+        from_sha: Option<String>,
     ) -> Result<serde_json::Value, AppError> {
-        self.read_linked(id, project, head_sha, source_branch, LocalRead::Changes)
-            .await
+        self.read_linked(
+            id,
+            project,
+            head_sha,
+            source_branch,
+            LocalRead::Changes(from_sha),
+        )
+        .await
     }
 
     /// A summary of the linked clone against the MR head (branch, unpushed
@@ -1574,7 +1582,9 @@ impl NativeState {
         let result = async {
             let root = worktree_on(root, source_branch.as_deref()).await?;
             match read {
-                LocalRead::Changes => local_git::local_changes(&root, &head_sha).await,
+                LocalRead::Changes(from_sha) => {
+                    local_git::local_changes(&root, &head_sha, from_sha.as_deref()).await
+                }
                 LocalRead::Status => local_git::local_status(&root, &head_sha).await,
             }
         };
@@ -1727,7 +1737,7 @@ async fn worktree_on(root: PathBuf, source_branch: Option<&str>) -> Result<PathB
 
 /// What is read from a linked clone.
 enum LocalRead {
-    Changes,
+    Changes(Option<String>),
     Status,
 }
 

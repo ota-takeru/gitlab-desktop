@@ -195,6 +195,8 @@
   "changes.local": "本機變更",
   "changes.commitNote": "檢視單一提交時無法使用行留言。請檢視整個 MR 以留言。",
   "changes.localNote": "從 MR head 到本機工作樹的變更（未推送的提交、未提交的變更與未追蹤的檔案）。此處無法使用行留言，檔案也不會記錄為已檢視。",
+  "changes.localRangeNote": "從所選提交到本機工作樹的變更（包括範圍內的提交，以及未推送的提交、未提交的變更與未追蹤的檔案；如果其間發生過變基，也會包含來自目標分支的變更）。此處無法使用行留言，檔案也不會記錄為已檢視。",
+  "changes.readOnly": "僅檢視",
   "versions.error": "無法載入版本：{message}",
   "versions.optionNumbered": "版本 {number} · {sha} · {time} 至最新",
   "versions.option": "{sha} · {time} 至最新",

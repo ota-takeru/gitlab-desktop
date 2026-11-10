@@ -102,6 +102,8 @@
   "localGit.gitMissing": "找不到 git。請安裝 Git for Windows 並將其加入 PATH。",
   "localGit.headMissing": "合併請求的最新提交 {sha} 不在本機存放庫中。請執行 git fetch 後重新載入。",
   "localGit.invalidHead": "合併請求的最新提交無效。",
+  "localGit.invalidStart": "比較起點的提交無效。",
+  "localGit.startMissing": "比較起點的提交 {sha} 不在本機存放庫中。請執行 git fetch 後重新載入。",
   "localGit.linkedFolderMissing": "找不到已連結的本機存放庫資料夾。請重新連結。",
   "localGit.linkedRemoteMismatch": "已連結資料夾的 git 遠端未指向 {projectPath}。請重新連結。",
   "localGit.notLinked": "此專案未連結任何本機存放庫。",

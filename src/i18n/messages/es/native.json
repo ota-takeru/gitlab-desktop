@@ -102,6 +102,8 @@
   "localGit.gitMissing": "No se encontró git. Instala Git for Windows y añádelo al PATH.",
   "localGit.headMissing": "El último commit {sha} de la solicitud de fusión no está en el repositorio local. Ejecuta git fetch y recarga.",
   "localGit.invalidHead": "El último commit de la solicitud de fusión no es válido.",
+  "localGit.invalidStart": "El commit desde el que se compara no es válido.",
+  "localGit.startMissing": "El commit {sha} desde el que se compara no está en el repositorio local. Ejecuta git fetch y recarga.",
   "localGit.linkedFolderMissing": "No se encontró la carpeta del repositorio local vinculado. Vuelve a vincularla.",
   "localGit.linkedRemoteMismatch": "El remoto de git de la carpeta vinculada no apunta a {projectPath}. Vuelve a vincularla.",
   "localGit.notLinked": "No hay ningún repositorio local vinculado a este proyecto.",

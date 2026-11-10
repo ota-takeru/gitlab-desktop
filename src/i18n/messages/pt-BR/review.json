@@ -195,6 +195,8 @@
   "changes.local": "Alterações locais",
   "changes.commitNote": "Comentários de linha não estão disponíveis ao visualizar um único commit. Visualize o MR inteiro para comentar.",
   "changes.localNote": "Alterações do head do MR até a árvore de trabalho local (commits sem push, alterações sem commit e arquivos não rastreados). Comentários de linha não estão disponíveis aqui, e os arquivos não são registrados como visualizados.",
+  "changes.localRangeNote": "Alterações dos commits escolhidos até a árvore de trabalho local (os commits do intervalo, além de commits sem push, alterações sem commit e arquivos não rastreados; se houve um rebase no meio, alterações do branch de destino também são incluídas). Comentários de linha não estão disponíveis aqui, e os arquivos não são registrados como vistos.",
+  "changes.readOnly": "Somente leitura",
   "versions.error": "Não foi possível carregar as versões: {message}",
   "versions.optionNumbered": "Versão {number} · {sha} · {time} até a mais recente",
   "versions.option": "{sha} · {time} até a mais recente",

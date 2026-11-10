@@ -102,6 +102,8 @@
   "localGit.gitMissing": "O git não foi encontrado. Instale o Git for Windows e adicione-o ao PATH.",
   "localGit.headMissing": "O commit mais recente do merge request, {sha}, não está no repositório local. Execute git fetch e recarregue.",
   "localGit.invalidHead": "O commit mais recente do merge request não é válido.",
+  "localGit.invalidStart": "O commit a partir do qual a comparação começa não é válido.",
+  "localGit.startMissing": "O commit {sha}, a partir do qual a comparação começa, não está no repositório local. Execute git fetch e recarregue.",
   "localGit.linkedFolderMissing": "A pasta do repositório local vinculada não foi encontrada. Vincule-a novamente.",
   "localGit.linkedRemoteMismatch": "O remote git da pasta vinculada não aponta para {projectPath}. Vincule-a novamente.",
   "localGit.notLinked": "Nenhum repositório local está vinculado a este projeto.",

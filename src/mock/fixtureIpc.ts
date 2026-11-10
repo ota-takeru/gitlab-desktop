@@ -95,7 +95,7 @@ export function installFixtureIpc(state: FixtureState): void {
         return {
           aheadCount: 1,
           branch: payload.sourceBranch ? String(payload.sourceBranch) : 'feature/local-fixture',
-          comparedSha: String(payload.headSha),
+          comparedSha: String(payload.fromSha ?? payload.headSha),
           containsMrHead: true,
           diffs: [
             { collapsed: false, deletedFile: false, diff: '@@ -0,0 +1,2 @@\n+# 手元のメモ\n+未追跡のファイルです。\n', newFile: true, newPath: 'notes/todo.md', oldPath: 'notes/todo.md', renamedFile: false, tooLarge: false, untracked: true },

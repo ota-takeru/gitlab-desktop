@@ -3,6 +3,7 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import LaptopRoundedIcon from '@mui/icons-material/LaptopRounded'
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -112,7 +113,9 @@ interface LocalChoice {
   /** The clone's state, read without opening the view. */
   badge?: React.ReactNode
   content: React.ReactNode
-  onSelect: () => void
+  /** The commit the working tree is compared from when it ends a range of the MR's commits (null: the MR head). */
+  from: string | null
+  onSelect: (from?: string) => void
 }
 
 /** One place on the row: the versions before a rebase, older commits not read yet, a commit, or the local changes. */
@@ -121,16 +124,19 @@ type RowCell = { kind: 'rebased' } | { kind: 'more' } | { kind: 'commit'; commit
 /** Where a box or a run of boxes sits in the row, in px. */
 interface BandBox { height: number; left: number; top: number; width: number }
 
-/** The row's measured pieces: the range shown, and the range a button would give. */
-interface RowLayout { aimed: BandBox | null; range: BandBox | null }
+/** The row's measured pieces: the range shown, where it parts between its commits (where one piece ends and the next starts, in px), and the range a button would give. */
+interface RowLayout { aimed: BandBox | null; partings: [number, number][]; range: BandBox | null }
 
 /** A drag across boxes to choose them. */
 interface RowGesture { anchor: number; x: number; moved: boolean }
 
-// The range reaches this far into the 12px gap beside an end that can grow, and leans this far towards the end
-// whose button is under the pointer (further while it is pressed). The button sits midway between the range's
-// edge and the box's text, which starts after the text button's 12px inset.
-const GROW_REACH = 8
+// Every piece of the range, and the tint under the pointer, reaches this far past its box on both sides, so the
+// space between two pieces is the same as between a piece and a tinted box (8px in the 16px gap). At a growing end
+// it leaves room for the button, which sits midway between the piece's edge and the box's text (after the text
+// button's 12px inset). The range leans this far towards the end whose button is under the pointer (further while
+// it is pressed).
+const ROW_GAP = 16
+const GROW_REACH = 4
 const BOX_INSET = 12
 const GROW_PULL = 6
 const GROW_PULL_PRESSED = 10
@@ -179,7 +185,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     if (moreCell >= 0 && ordered[0]?.parentIds?.[0] === from) return firstCommit
     return rebasedCell
   }
-  const shown: [number, number] | null = showingLocal ? [localCell, localCell]
+  const shown: [number, number] | null = showingLocal ? [local?.from ? startAt(local.from) : localCell, localCell]
     : selected ? [commitCell(selected), commitCell(selected)]
     : versions.compareFrom ? [startAt(versions.compareFrom), versions.compareTo ? commitCell(versions.compareTo) : headCell]
     : [baseCell, headCell]
@@ -202,7 +208,13 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     if (a < 0 || b < a) return
     const last = cells[b]
     // The working tree is compared with the MR head only, so its box is chosen alone.
-    if (last.kind === 'local') { if (a === b) local?.onSelect(); return }
+    // The working tree alone is compared with the MR head; with commits before it, from the commit the range starts after.
+    if (last.kind === 'local') {
+      if (a === b) { local?.onSelect(); return }
+      const from = fromOf(a)
+      if (from) local?.onSelect(from)
+      return
+    }
     if (last.kind !== 'commit') return
     const first = cells[a]
     if (a === b && first.kind === 'commit') { onSelect(first.commit.id); return }
@@ -224,8 +236,8 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   const anchorCell = commitCell(anchorSha)
   const anchorShown = anchorCell >= start && anchorCell <= end ? anchorCell : -1
   // An end that can grow to the end of the row has a button just outside the range.
-  const growable = !preview && range !== null && cells[range[1]]?.kind === 'commit'
-  const growStart = growable && range !== null && range[0] > baseCell
+  const growable = !preview && range !== null && (cells[range[1]]?.kind === 'commit' || cells[range[1]]?.kind === 'local')
+  const growStart = growable && range !== null && baseCell >= 0 && range[0] > baseCell
   const growEnd = growable && range !== null && range[1] < headCell
   // The pointer (or focus) on one of those buttons: the range it would give is shown before anything changes.
   const [aim, setAim] = useState<{ pressed: boolean; side: 'start' | 'end' } | null>(null)
@@ -244,7 +256,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     let nearest = -1
     let distance = Infinity
     cellRefs.current.forEach((element, index) => {
-      if (cells[index]?.kind !== 'commit') return
+      if (cells[index]?.kind !== 'commit' && cells[index]?.kind !== 'local') return
       const box = element.getBoundingClientRect()
       const away = Math.abs(box.left + box.width / 2 - x)
       if (away < distance) { distance = away; nearest = index }
@@ -295,8 +307,8 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     if (target.closest('[data-version-tag], [data-range-grow]')) return
     const element = target.closest<HTMLElement>('[data-cell-index]')
     const index = element ? Number(element.dataset.cellIndex) : -1
-    if (index < 0 || cells[index]?.kind !== 'commit') return
-    if (event.shiftKey && range && cells[range[1]].kind === 'commit') {
+    if (index < 0 || (cells[index]?.kind !== 'commit' && cells[index]?.kind !== 'local')) return
+    if (event.shiftKey && range && (cells[range[1]].kind === 'commit' || cells[range[1]].kind === 'local')) {
       skipClick.current = true
       // From the commit chosen last, when it is in the range; otherwise the range grows to the commit clicked.
       const from = anchorShown >= 0 ? anchorShown : index < range[0] ? range[1] : range[0]
@@ -335,6 +347,13 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       }
       const next: RowLayout = {
         aimed: aimStart >= 0 ? place(aimStart, aimEnd) : null,
+        // Between each pair of neighbouring boxes in the range: one piece ends `GROW_REACH` past the first box and
+        // the next starts `GROW_REACH` before the second.
+        partings: start >= 0 ? Array.from({ length: Math.max(0, end - start) }, (_, offset): [number, number] | null => {
+          const a = cellRefs.current.get(start + offset)?.getBoundingClientRect()
+          const b = cellRefs.current.get(start + offset + 1)?.getBoundingClientRect()
+          return a && b ? [Math.round(a.right - origin.left) + GROW_REACH, Math.round(b.left - origin.left) - GROW_REACH] : null
+        }).filter((cut): cut is [number, number] => cut !== null) : [],
         range: start >= 0 ? place(start, end) : null,
       }
       setLayout((current) => current && JSON.stringify(current) === JSON.stringify(next) ? current : next)
@@ -348,12 +367,18 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     return () => observer.disconnect()
   }, [start, end, aimStart, aimEnd, cells.length])
 
-  // A box has no frame of its own: the one tinted piece behind the range says what is chosen. Under the pointer, a box
+  // A box has no frame of its own: the tinted pieces behind the range say what is chosen. Under the pointer, a box
   // outside the range is tinted; a box inside a range of several commits is outlined as the piece a click would leave
-  // (that commit alone), the same outline a grow button shows, set 2px inside so it never runs along the range's own
-  // edge; the one commit shown alone does not react.
+  // (that commit alone), the same outline a grow button shows, set 3px inside; the one commit shown alone does not
+  // react. Both are drawn in the shape of a piece (the box and `reach` past it on each side), so a tinted box sits in
+  // the row exactly as a chosen one does.
   // A box the button would add turns as the range would reach it, nearest first.
-  const box = (inBand: boolean, delay = 0, hover: 'tint' | 'outline' | 'none' = 'tint') => ({ borderRadius: 1, color: inBand ? 'text.primary' : 'text.secondary', cursor: hover === 'none' ? 'default' : 'pointer', flexShrink: 0, fontWeight: 400, minHeight: 28, minWidth: 0, position: 'relative', px: 1, transition: `background-color 120ms, color 140ms ${delay}ms`, zIndex: 2, '&:hover': hover === 'tint' ? { bgcolor: 'action.hover', color: 'text.primary' } : hover === 'outline' ? { bgcolor: 'transparent', outline: '1px solid', outlineColor: 'primary.main', outlineOffset: -3 } : { bgcolor: 'transparent' } })
+  const box = (inBand: boolean, delay = 0, hover: 'tint' | 'outline' | 'none' = 'tint', reach = GROW_REACH) => ({
+    bgcolor: 'transparent', borderRadius: 1, color: inBand ? 'text.primary' : 'text.secondary', cursor: hover === 'none' ? 'default' : 'pointer', flexShrink: 0, fontWeight: 400, minHeight: 28, minWidth: 0, position: 'relative', px: 1, transition: `color 140ms ${delay}ms`, zIndex: 2,
+    '&::before': { borderRadius: 1, bottom: 0, content: '""', left: -reach, outline: '1px solid transparent', outlineOffset: -3, pointerEvents: 'none', position: 'absolute', right: -reach, top: 0, transition: 'background-color 120ms, outline-color 120ms', zIndex: -1 },
+    '&:hover': { bgcolor: 'transparent', color: hover === 'tint' ? 'text.primary' : undefined },
+    '&:hover::before': hover === 'tint' ? { bgcolor: 'action.hover' } : hover === 'outline' ? { outlineColor: 'primary.main' } : {},
+  })
   // One tab stop for the row (the last box of the range); ←/→ Home/End move between boxes.
   const tabStop = end >= 0 ? end : firstCommit
   const moveFocus = (event: React.KeyboardEvent<HTMLElement>) => {
@@ -405,16 +430,19 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   }
   const scrollable = overflow.left || overflow.right
 
-  // The range reaches into the gap beside a growing end, where that end's button sits between its edge and the box's text.
-  const bandOf = (box: BandBox, startButton: boolean, endButton: boolean) => {
-    const left = box.left - (startButton ? GROW_REACH : 0)
-    return { height: box.height, left, top: box.top, width: box.left + box.width + (endButton ? GROW_REACH : 0) - left }
-  }
+  // The range reaches past its boxes on both sides by the same amount as each piece inside it.
+  const bandOf = (box: BandBox) => ({ height: box.height, left: box.left - GROW_REACH, top: box.top, width: box.width + GROW_REACH * 2 })
   const pull = activeAim ? (activeAim.pressed ? GROW_PULL_PRESSED : GROW_PULL) : 0
-  const rangeBand = layout?.range ? bandOf(layout.range, growStart, growEnd) : null
+  const rangeBand = layout?.range ? bandOf(layout.range) : null
   // Over a button, the range leans a little towards the end it would reach.
   const shownBand = rangeBand && activeAim ? { ...rangeBand, left: rangeBand.left - (activeAim.side === 'start' ? pull : 0), width: rangeBand.width + pull } : rangeBand
-  const aimedBand = layout?.aimed && activeAim ? bandOf(layout.aimed, activeAim.side === 'end' && growStart, activeAim.side === 'start' && growEnd) : null
+  // The range split at the partings into one piece per commit; the outer ends keep the range's own reach and lean.
+  const pieces = (band: { left: number; width: number }) => {
+    const cuts = layout?.partings ?? []
+    const edges = [band.left, ...cuts.flat(), band.left + band.width]
+    return Array.from({ length: cuts.length + 1 }, (_, index) => ({ key: start + index, left: edges[index * 2], width: edges[index * 2 + 1] - edges[index * 2] }))
+  }
+  const aimedBand = layout?.aimed && activeAim ? bandOf(layout.aimed) : null
   const growButton = (side: 'start' | 'end') => {
     if (!range || !layout?.range) return null
     const on = activeAim?.side === side
@@ -441,7 +469,11 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
           // No fill of its own under the pointer: the range leaning towards it and the outline say enough, and a filled
           // square on the tinted range would read as a third surface.
           // The lighter blue stands out from the tinted range in the dark theme too.
-          borderRadius: 1, color: on ? 'primary.light' : 'text.secondary', height: 20, left: x - 8, position: 'absolute', top: layout.range.top + layout.range.height / 2 - 10, transform: on && activeAim?.pressed ? 'scale(0.9)' : 'none', transition: `left 160ms ${GROW_EASE}, background-color 120ms, color 120ms, transform 120ms ${GROW_EASE}`, width: 16, zIndex: 3,
+          borderRadius: 1, color: on ? 'primary.light' : 'text.secondary', height: layout.range.height, left: x - 10, position: 'absolute', top: layout.range.top, transform: on && activeAim?.pressed ? 'scale(0.9)' : 'none', transition: `left 160ms ${GROW_EASE}, background-color 120ms, color 120ms, transform 120ms ${GROW_EASE}`, width: 20, zIndex: 3,
+          // The button takes the full height of the row, and its hit area reaches a little past the range's edge and
+          // over the start of the box's text, so it is easy to take without the arrow looking any bigger. The box
+          // under it is already in the range, so a click there loses little.
+          '&::before': { bottom: 0, content: '""', position: 'absolute', top: 0, ...(side === 'start' ? { left: -6, right: -8 } : { left: -8, right: -6 }) },
           '& svg': { fontSize: 16, transform: on ? `translateX(${side === 'start' ? -2 : 2}px)` : 'none', transition: `transform 160ms ${GROW_EASE}` },
           '@media (prefers-reduced-motion: reduce)': { transition: 'none', '& svg': { transition: 'none' } },
         }}
@@ -461,18 +493,18 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     if (at.kind === 'local') return local ? [
       // Apart from the commits: the working tree is not on GitLab.
       <Divider flexItem key="local-divider" orientation="vertical" sx={{ my: 1.5 }} />,
-      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item onClick={local.onSelect} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? 'none' : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
+      range && index === range[0] && growStart ? growButton('start') : null,
+      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item onClick={() => { if (skipClick.current) skipClick.current = false; else { setAnchorSha(null); local.onSelect() } }} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? (end > start ? 'outline' : 'none') : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
     ] : null
     const { commit } = at
     const time = commit.committedAt || commit.createdAt
     const latest = commit.id === head
     const tag = latest ? undefined : versionLabel(commit.id)
-    const anchor = index === anchorShown
     return [
       range && index === range[0] && growStart ? growButton('start') : null,
       <Box key={commit.id} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative' }}>
         {/* Above the row like the arrows' tips, and a little late, so passing over the row does not cover the tabs above. */}
-        <Tooltip describeChild enterDelay={600} placement="top" title={`${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item onClick={() => { if (skipClick.current) skipClick.current = false; else { setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', gap: 1, maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ color: inBand || wanted ? 'text.primary' : 'text.secondary', fontFamily: 'code.fontFamily', fontSize: 'caption.fontSize', fontWeight: anchor ? 600 : 400, flexShrink: 0, transition: `color 140ms ${delay}ms` }}>{shortSha(commit.id)}</Box><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
+        <Tooltip describeChild enterDelay={600} placement="top" title={`${shortSha(commit.id)} ${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item onClick={() => { if (skipClick.current) skipClick.current = false; else { setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
         {tag ? <Tooltip title={t('review.changes.versionFrom', { version: tag })}><ButtonBase data-version-tag onClick={() => { setAnchorSha(null); choose(index + 1, headCell) }} sx={{ ...tagSx, borderRadius: 1, px: 0.5, transition: 'color 120ms', '&:hover, &.Mui-focusVisible': { color: 'primary.main', textDecoration: 'underline' } }}>{tag}</ButtonBase></Tooltip> : null}
       </Box>,
       range && index === range[1] && growEnd ? growButton('end') : null,
@@ -481,7 +513,13 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
 
   const status = (() => {
     if (whole) return `${baseSha ? `${t('review.changes.target')} ${shortSha(baseSha)}` : t('review.changes.target')} → ${t('review.changes.latest')}${head ? ` ${shortSha(head)}` : ''}`
-    if (showingLocal) return `${t('review.changes.latest')}${head ? ` ${shortSha(head)}` : ''} → ${t('review.changes.workingTree')}`
+    if (showingLocal && !local?.from) return `${t('review.changes.latest')}${head ? ` ${shortSha(head)}` : ''} → ${t('review.changes.workingTree')}`
+    if (showingLocal && local?.from) {
+      const to = t('review.changes.workingTree')
+      const first = range ? cells[range[0]] : undefined
+      if (first?.kind === 'commit' && range) return t('review.changes.rangeOfCommits', { count: range[1] - range[0], from: shortSha(first.commit.id), to })
+      return t('review.changes.rangeAfter', { from: local.from === baseSha ? `${t('review.changes.target')} ${shortSha(baseSha)}` : shortSha(local.from), to })
+    }
     if (!versions.compareFrom) return ''
     const to = shortSha(versions.compareTo ?? head ?? '')
     const first = range ? cells[range[0]] : undefined
@@ -490,12 +528,14 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     return t('review.changes.rangeAfter', { from, to })
   })()
   const selectedTitle = selected ? commits.find((commit) => commit.id === selected)?.title : undefined
+  const readOnlyNote = selected ? t('review.changes.commitNote') : showingLocal ? t(local?.from ? 'review.changes.localRangeNote' : 'review.changes.localNote') : versions.compareFrom ? t('review.changes.rangeNote') : null
   const hasTags = ordered.some((commit) => commit.id !== head && versionLabel(commit.id))
   return <Stack spacing={0.5}>
     <Row spacing={0.5} sx={{ minWidth: 0 }}>
       <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}>
-        <Row onLostPointerCapture={() => endGesture(true)} onPointerCancel={() => endGesture(false)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => endGesture(true)} ref={rowRef} spacing={1.5} sx={{ minHeight: 32, minWidth: 'max-content', pb: hasTags ? 2.5 : 0.5, position: 'relative', pt: 0.5, px: 2, touchAction: 'pan-x', userSelect: 'none' }}>
-          {shownBand && range ? <Box aria-hidden sx={{ bgcolor: 'surface.selected', borderRadius: 1, height: shownBand.height, left: shownBand.left, pointerEvents: 'none', position: 'absolute', top: shownBand.top, transition: preview ? 'none' : `left 160ms ${GROW_EASE}, width 160ms ${GROW_EASE}`, width: shownBand.width, zIndex: 1, '@media (prefers-reduced-motion: reduce)': { animation: 'none', transition: 'none' } }} /> : null}
+        <Row onLostPointerCapture={() => endGesture(true)} onPointerCancel={() => endGesture(false)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => endGesture(true)} ref={rowRef} spacing={ROW_GAP / 8} sx={{ minHeight: 32, minWidth: 'max-content', pb: hasTags ? 2.5 : 0.5, position: 'relative', pt: 0.5, px: 2, touchAction: 'pan-x', userSelect: 'none' }}>
+          {/* One tinted piece per commit, 2px apart, each with the same corners, so even the whole MR reads as separate commits. */}
+          {shownBand && range ? pieces(shownBand).map((piece) => <Box aria-hidden key={piece.key} sx={{ bgcolor: 'surface.selected', borderRadius: 1, height: shownBand.height, left: piece.left, pointerEvents: 'none', position: 'absolute', top: shownBand.top, transition: preview ? 'none' : `left 160ms ${GROW_EASE}, width 160ms ${GROW_EASE}`, width: piece.width, zIndex: 1, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }} />) : null}
           {aimedBand ? <Box aria-hidden key={activeAim?.side} sx={{ animation: `${activeAim?.side === 'start' ? growLeft : growRight} 240ms ${GROW_EASE}`, borderRadius: 1, height: aimedBand.height, left: aimedBand.left, pointerEvents: 'none', position: 'absolute', top: aimedBand.top, width: aimedBand.width, zIndex: 1, ...frame({ color: 'primary.main' }), '@media (prefers-reduced-motion: reduce)': { animation: 'none', transition: 'none' } }} /> : null}
           {loading && !ordered.length ? <Typography color="textSecondary" sx={{ px: 1 }} variant="caption">{t('review.changes.loadingCommits')}</Typography> : cells.map((_, index) => cell(index))}
         </Row>
@@ -504,19 +544,21 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       {scrollable ? <Tooltip title={t('review.changes.scrollRightTooltip')}><span><IconButton aria-label={t('review.changes.scrollRight')} disabled={!overflow.right} onClick={() => scrollBy(1)}><ChevronRightRoundedIcon /></IconButton></span></Tooltip> : null}
     </Row>
     <Row spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-      <Button aria-pressed={whole} color="inherit" onClick={() => { setAnchorSha(null); onSelect(null) }} size="small" sx={{ ...box(false), bgcolor: whole ? 'surface.selected' : 'transparent', color: whole ? 'primary.main' : 'text.secondary' }}>{t('review.changes.wholeMr')}</Button>
+      <Button aria-pressed={whole} color="inherit" onClick={() => { setAnchorSha(null); onSelect(null) }} size="small" sx={{ ...box(false, 0, 'tint', 0), bgcolor: whole ? 'surface.selected' : 'transparent', '&:hover': { bgcolor: whole ? 'surface.selected' : 'transparent', color: 'text.primary' }, color: whole ? 'primary.main' : 'text.secondary' }}>{t('review.changes.wholeMr')}</Button>
       <Typography color="textSecondary" variant="caption">
         {selected ? t('review.changes.showingCommit') : t('review.changes.showing')} <Box component="span" sx={{ color: 'text.primary', fontFamily: 'code.fontFamily', verticalAlign: 'top' }}>{selected ? shortSha(selected) : status}</Box>
         {/* The row shortens a long title; the commit shown has it in full here. */}
         {selectedTitle ? <Box component="span" sx={{ color: 'text.primary', ml: 1 }}>{selectedTitle}</Box> : null}
       </Typography>
+      {/* A view other than the whole MR cannot take comments: a short mark says so, and its tip (or a screen reader) has the whole note. */}
+      {readOnlyNote ? <Tooltip describeChild title={readOnlyNote}><Typography color="textSecondary" component="span" role="note" sx={{ alignItems: 'center', cursor: 'help', display: 'inline-flex', gap: 0.5 }} tabIndex={0} variant="caption"><VisibilityOutlinedIcon aria-hidden fontSize="small" />{t('review.changes.readOnly')}<Box component="span" sx={visuallyHiddenSx}>{readOnlyNote}</Box></Typography></Tooltip> : null}
       {versions.error && !versions.items.length ? <Typography color="error" variant="caption">{t('review.versions.error', { message: versions.error.message })}</Typography> : null}
     </Row>
-    {selected ? <Typography color="textSecondary" role="note" variant="caption">{t('review.changes.commitNote')}</Typography> : null}
-    {showingLocal ? <Typography color="textSecondary" role="note" variant="caption">{t('review.changes.localNote')}</Typography> : null}
-    {versions.compareFrom && !selected ? <Typography color="textSecondary" role="note" variant="caption">{t('review.changes.rangeNote')}</Typography> : null}
   </Stack>
 }
+
+/** Read by screen readers only. */
+const visuallyHiddenSx = { clip: 'rect(0 0 0 0)', height: '1px', overflow: 'hidden', position: 'absolute', whiteSpace: 'nowrap', width: '1px' } as const
 
 /** Versions whose head is not on the row (pushed before a rebase), as a start for the range. */
 function RebasedVersions({ active, items, more, numberOf, onPick }: { active: boolean; items: MrVersion[]; more: boolean; numberOf: (version: MrVersion) => number | null; onPick: (sha: string) => void }) {

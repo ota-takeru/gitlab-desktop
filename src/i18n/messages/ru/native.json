@@ -102,6 +102,8 @@
   "localGit.gitMissing": "git не найден. Установите Git for Windows и добавьте его в PATH.",
   "localGit.headMissing": "Последнего коммита запроса на слияние {sha} нет в локальном репозитории. Выполните git fetch и перезагрузите.",
   "localGit.invalidHead": "Последний коммит запроса на слияние недопустим.",
+  "localGit.invalidStart": "Коммит, с которого начинается сравнение, недопустим.",
+  "localGit.startMissing": "Коммита {sha}, с которого начинается сравнение, нет в локальном репозитории. Выполните git fetch и перезагрузите.",
   "localGit.linkedFolderMissing": "Папка связанного локального репозитория не найдена. Свяжите её снова.",
   "localGit.linkedRemoteMismatch": "git remote связанной папки не указывает на {projectPath}. Свяжите её снова.",
   "localGit.notLinked": "С этим проектом не связан локальный репозиторий.",

@@ -195,6 +195,8 @@
   "changes.local": "Lokale Änderungen",
   "changes.commitNote": "Zeilenkommentare sind bei der Ansicht eines einzelnen Commits nicht verfügbar. Zeigen Sie den gesamten MR an, um zu kommentieren.",
   "changes.localNote": "Änderungen vom MR-Head bis zum lokalen Arbeitsverzeichnis (nicht gepushte Commits, nicht committete Änderungen und nicht verfolgte Dateien). Zeilenkommentare sind hier nicht verfügbar, und Dateien werden nicht als angesehen erfasst.",
+  "changes.localRangeNote": "Änderungen von den gewählten Commits bis zum lokalen Arbeitsverzeichnis (die Commits im Bereich sowie nicht gepushte Commits, nicht committete Änderungen und nicht verfolgte Dateien; gab es dazwischen ein Rebase, sind auch Änderungen aus dem Zielbranch enthalten). Zeilenkommentare sind hier nicht verfügbar, und Dateien werden nicht als angesehen erfasst.",
+  "changes.readOnly": "Nur ansehen",
   "versions.error": "Versionen konnten nicht geladen werden: {message}",
   "versions.optionNumbered": "Version {number} · {sha} · {time} bis neueste",
   "versions.option": "{sha} · {time} bis neueste",
