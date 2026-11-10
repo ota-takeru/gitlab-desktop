@@ -61,16 +61,20 @@ function keptScreens(screens: KeptScreens, activeKey: string | null, max: number
   let others = 0
   const recent = [...(activeKey === null ? [] : [activeKey]), ...screens.recent.filter((key) => key !== activeKey)]
     .filter((key) => key === activeKey || kept.has(key) || ++others < Math.max(1, max))
-  const order = [...screens.order.filter((key) => recent.includes(key)), ...(activeKey === null || screens.order.includes(activeKey) ? [] : [activeKey])]
-  if (activeKey === screens.active) return { ...screens, kept: keep.join(' '), max, order, previous: screens.previous !== null && order.includes(screens.previous) ? screens.previous : null, recent }
+  const switching = activeKey !== screens.active
+  // The screen showing stays mounted, past `max` too, until the new one has arrived over it: dropped at once, it
+  // would leave nothing under a screen fading in or out of sight.
+  const showing = switching && activeKey !== null ? (screens.pending === null ? screens.active : screens.previous) : null
+  const order = [...screens.order.filter((key) => recent.includes(key) || key === showing), ...(activeKey === null || screens.order.includes(activeKey) ? [] : [activeKey])]
+  if (!switching) return { ...screens, kept: keep.join(' '), max, order, previous: screens.previous !== null && order.includes(screens.previous) ? screens.previous : null, recent }
   // Another new screen chosen while one waits keeps the screen that was showing.
   const pending = revealWhenReady && activeKey !== null && !screens.order.includes(activeKey) ? activeKey : null
-  const showing = screens.pending === null ? screens.active : screens.previous
-  const previous = activeKey !== null && showing !== null && order.includes(showing) ? showing : null
+  const previous = showing !== null && order.includes(showing) ? showing : null
   return { active: activeKey, arriving: pending === null ? activeKey : null, kept: keep.join(' '), max, order, pending, previous, recent }
 }
 
-const arrived = (key: string) => (latest: KeptScreens): KeptScreens => latest.arriving === key ? { ...latest, arriving: null, previous: null } : latest
+// The screen it covered goes too, when only the arrival kept it.
+const arrived = (key: string) => (latest: KeptScreens): KeptScreens => latest.arriving === key ? { ...latest, arriving: null, order: latest.order.filter((screen) => latest.recent.includes(screen)), previous: null } : latest
 
 /**
  * Screens visited recently stay mounted but hidden, so returning to one shows

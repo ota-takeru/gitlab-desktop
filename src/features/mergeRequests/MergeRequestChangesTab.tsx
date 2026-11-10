@@ -65,6 +65,8 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
   const maximize = useMemo(() => ({ maximized, setMaximized }), [maximized])
   const timelineShown = showTimeline && (!maximized || commitsOpen)
   const stickyRow = showTimeline || maximized
+  // Maximized, the row sits at the very top of the view, with nothing above it to show through.
+  const timelineGap = maximized ? 0 : TIMELINE_GAP
   // The commit row stays in view under the MR header; the diff's own sticky rows start below it.
   const rootRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -72,13 +74,13 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     const root = rootRef.current
     const timeline = timelineRef.current
     if (!root) return
-    const update = () => root.style.setProperty('--commit-timeline-height', `${timeline ? timeline.offsetHeight + TIMELINE_GAP : 0}px`)
+    const update = () => root.style.setProperty('--commit-timeline-height', `${timeline ? timeline.offsetHeight + timelineGap : 0}px`)
     update()
     if (!timeline || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(update)
     observer.observe(timeline)
     return () => observer.disconnect()
-  }, [stickyRow])
+  }, [stickyRow, timelineGap])
   // A shown diff has its own Esc, which comes first; while none is drawn (loading, failed, no local clone), Esc still restores.
   useEffect(() => {
     if (!maximized) return
@@ -96,7 +98,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     <Stack data-diff-maximized={maximized ? 'true' : undefined} ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)', ...(maximized ? MAXIMIZED_SX : {}) }}>
       {commitsError && !commits.length ? <Alert severity="error">{t('review.changes.commitsError', { message: commitsError.message })}</Alert> : null}
       {commitsError && commits.length ? <Alert severity="warning">{t('review.changes.commitsStale', { message: commitsError.message })}</Alert> : null}
-      {stickyRow ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: `calc(var(--mr-header-height) + ${TIMELINE_GAP}px)`, zIndex: 2, '&::before': { bgcolor: 'background.default', content: '""', height: TIMELINE_GAP, left: 0, position: 'absolute', right: 0, top: -TIMELINE_GAP } }}>
+      {stickyRow ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: `calc(var(--mr-header-height) + ${timelineGap}px)`, zIndex: 2, '&::before': { bgcolor: 'background.default', content: '""', height: timelineGap, left: 0, position: 'absolute', right: 0, top: -timelineGap } }}>
         {maximized ? <Button aria-expanded={commitsOpen} onClick={() => setCommitsOpen((open) => !open)} size="small" startIcon={commitsOpen ? <ExpandMoreRoundedIcon /> : <ChevronRightRoundedIcon />}>{commitsOpen ? t('review.changes.hideCommits') : t('review.changes.showCommits')}</Button> : null}
         {timelineShown ? <CommitTimeline baseSha={compareBaseSha} commits={commits} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versions={versions} /> : null}
       </Box> : null}
@@ -454,6 +456,14 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     scroller?.scrollBy?.({ behavior: 'smooth', left: direction * scroller.clientWidth * 0.8 })
   }
   const scrollable = overflow.left || overflow.right
+  // A clicked box moves to the middle of the row, so the commits on both sides of it stay in view.
+  const centre = (element: HTMLElement) => {
+    const scroller = scrollerRef.current
+    if (!scroller) return
+    const view = scroller.getBoundingClientRect()
+    const box = element.getBoundingClientRect()
+    scroller.scrollBy?.({ behavior: 'smooth', left: box.left + box.width / 2 - (view.left + view.width / 2) })
+  }
 
   // The range reaches past its boxes on both sides by the same amount as each piece inside it.
   const bandOf = (box: BandBox) => ({ height: box.height, left: box.left - GROW_REACH, top: box.top, width: box.width + GROW_REACH * 2 })
@@ -519,7 +529,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       // Apart from the commits: the working tree is not on GitLab.
       <Divider flexItem key="local-divider" orientation="vertical" sx={{ my: 1.5 }} />,
       range && index === range[0] && growStart ? growButton('start') : null,
-      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item onClick={() => { if (skipClick.current) skipClick.current = false; else { setAnchorSha(null); local.onSelect() } }} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? (end > start ? 'outline' : 'none') : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
+      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(null); local.onSelect() } }} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? (end > start ? 'outline' : 'none') : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
     ] : null
     const { commit } = at
     const time = commit.committedAt || commit.createdAt
@@ -529,7 +539,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       range && index === range[0] && growStart ? growButton('start') : null,
       <Box key={commit.id} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative' }}>
         {/* Above the row like the arrows' tips, and a little late, so passing over the row does not cover the tabs above. */}
-        <Tooltip describeChild enterDelay={600} placement="top" title={`${shortSha(commit.id)} ${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item onClick={() => { if (skipClick.current) skipClick.current = false; else { setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
+        <Tooltip describeChild enterDelay={600} placement="top" title={`${shortSha(commit.id)} ${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
         {tag ? <Tooltip title={t('review.changes.versionFrom', { version: tag })}><ButtonBase data-version-tag onClick={() => { setAnchorSha(null); choose(index + 1, headCell) }} sx={{ ...tagSx, borderRadius: 1, px: 0.5, transition: 'color 120ms', '&:hover, &.Mui-focusVisible': { color: 'primary.main', textDecoration: 'underline' } }}>{tag}</ButtonBase></Tooltip> : null}
       </Box>,
       range && index === range[1] && growEnd ? growButton('end') : null,
@@ -557,7 +567,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   const hasTags = ordered.some((commit) => commit.id !== head && versionLabel(commit.id))
   return <Stack spacing={0.5}>
     <Row spacing={0.5} sx={{ minWidth: 0 }}>
-      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}>
+      <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain' }}>
         <Row onLostPointerCapture={() => endGesture(true)} onPointerCancel={() => endGesture(false)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => endGesture(true)} ref={rowRef} spacing={ROW_GAP / 8} sx={{ minHeight: 32, minWidth: 'max-content', pb: hasTags ? 2.5 : 0.5, position: 'relative', pt: 0.5, px: 2, touchAction: 'pan-x', userSelect: 'none' }}>
           {/* One tinted piece per commit, 2px apart, each with the same corners, so even the whole MR reads as separate commits. */}
           {shownBand && range ? pieces(shownBand).map((piece) => <Box aria-hidden key={piece.key} sx={{ bgcolor: 'surface.selected', borderRadius: 1, height: shownBand.height, left: piece.left, pointerEvents: 'none', position: 'absolute', top: shownBand.top, transition: preview ? 'none' : `left 160ms ${GROW_EASE}, width 160ms ${GROW_EASE}`, width: piece.width, zIndex: 1, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }} />) : null}
