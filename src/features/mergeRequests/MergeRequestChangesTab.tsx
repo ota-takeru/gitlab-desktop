@@ -456,6 +456,14 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     scroller?.scrollBy?.({ behavior: 'smooth', left: direction * scroller.clientWidth * 0.8 })
   }
   const scrollable = overflow.left || overflow.right
+  // A clicked box moves to the middle of the row, so the commits on both sides of it stay in view.
+  const centre = (element: HTMLElement) => {
+    const scroller = scrollerRef.current
+    if (!scroller) return
+    const view = scroller.getBoundingClientRect()
+    const box = element.getBoundingClientRect()
+    scroller.scrollBy?.({ behavior: 'smooth', left: box.left + box.width / 2 - (view.left + view.width / 2) })
+  }
 
   // The range reaches past its boxes on both sides by the same amount as each piece inside it.
   const bandOf = (box: BandBox) => ({ height: box.height, left: box.left - GROW_REACH, top: box.top, width: box.width + GROW_REACH * 2 })
@@ -521,7 +529,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       // Apart from the commits: the working tree is not on GitLab.
       <Divider flexItem key="local-divider" orientation="vertical" sx={{ my: 1.5 }} />,
       range && index === range[0] && growStart ? growButton('start') : null,
-      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item onClick={() => { if (skipClick.current) skipClick.current = false; else { setAnchorSha(null); local.onSelect() } }} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? (end > start ? 'outline' : 'none') : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
+      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(null); local.onSelect() } }} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? (end > start ? 'outline' : 'none') : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
     ] : null
     const { commit } = at
     const time = commit.committedAt || commit.createdAt
@@ -531,7 +539,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       range && index === range[0] && growStart ? growButton('start') : null,
       <Box key={commit.id} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative' }}>
         {/* Above the row like the arrows' tips, and a little late, so passing over the row does not cover the tabs above. */}
-        <Tooltip describeChild enterDelay={600} placement="top" title={`${shortSha(commit.id)} ${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item onClick={() => { if (skipClick.current) skipClick.current = false; else { setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
+        <Tooltip describeChild enterDelay={600} placement="top" title={`${shortSha(commit.id)} ${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
         {tag ? <Tooltip title={t('review.changes.versionFrom', { version: tag })}><ButtonBase data-version-tag onClick={() => { setAnchorSha(null); choose(index + 1, headCell) }} sx={{ ...tagSx, borderRadius: 1, px: 0.5, transition: 'color 120ms', '&:hover, &.Mui-focusVisible': { color: 'primary.main', textDecoration: 'underline' } }}>{tag}</ButtonBase></Tooltip> : null}
       </Box>,
       range && index === range[1] && growEnd ? growButton('end') : null,
