@@ -13,7 +13,6 @@ import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined'
 import TocRoundedIcon from '@mui/icons-material/TocRounded'
 import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded'
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded'
-import type { Theme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
@@ -28,7 +27,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import InputAdornment from '@mui/material/InputAdornment'
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { hairline, panelFrame } from '../../components/hairline'
 import { gridLine } from '../../theme'
@@ -37,9 +36,13 @@ import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { ColumnResizeHandle } from './ColumnResizeHandle'
 import { DiffFileTree, FileThreadMark } from './DiffFileTree'
 import { FILE_LIST_MODE_KEY, readFileListMode, splitPath, type FileListMode } from './diffFileOrder'
+import { matchesFilePath } from './filePathSearch'
 import type { GapExpansion } from './DiffGap'
 import { SplitDiff, UnifiedDiff, type LineSelection, type RowSelection } from './DiffRows'
 import { DiffOutlineList } from './DiffOutlineList'
+import { diffGaps } from './diffGaps'
+import { lineHasThreads } from './diffLineThreads'
+import { foldRanges, useLineFolds } from './lineFolds'
 import { diffOutline, outlineEntryAt, type DiffOutline, type OutlineEntry } from './diffOutline'
 import { firstVisibleFileLine, LineCounts, matchesPosition, positionLineId, scrollNearestBy } from './diffShared'
 import { FullFileView } from './FullFileView'
@@ -65,13 +68,12 @@ import { useReviewedFiles, type ReviewedFileContext } from './useReviewedFiles'
 import { useT } from '../../i18n/useT'
 import { useStableCallback } from '../shared/useStableCallback'
 import { Row } from '../../components/Row'
+import { DiffMaximizeContext, MAXIMIZED_SX } from './diffMaximize'
 
 /** Keep the file list and code inside the window so long diffs scroll in place. */
 /** Below the MR header, which stays at the top of the detail while it scrolls. */
 const BELOW_DETAIL_HEADER = 'calc(var(--detail-header-height, 0px) + 8px)'
 const EMPTY_PARSED_DIFF: ParsedDiff = { lines: [], status: 'valid' }
-/** Over the whole window and its own scroll, with the same elements, so open comment editors and opened lines stay as they are. */
-const MAXIMIZED_SX = { '--detail-header-height': '0px', bgcolor: 'background.default', inset: 0, overflowX: 'hidden', overflowY: 'auto', p: 1, position: 'fixed', zIndex: (theme: Theme) => theme.zIndex.drawer + 1 }
 const READER_MOVES = ['wheel', 'pointerdown', 'keydown'] as const
 
 interface DiffViewerProps {
@@ -217,7 +219,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const fileSearchMatches = useMemo(() => {
     const query = fileSearch.trim().toLocaleLowerCase()
     return diffs.map((diff, index) => ({ diff, index, path: diff.newPath || diff.oldPath }))
-      .filter(({ path }) => !query || path.toLocaleLowerCase().includes(query))
+      .filter(({ path }) => matchesFilePath(path, query))
   }, [diffs, fileSearch])
   const displayedFileMatchIndex = fileSearchMatches.findIndex(({ path }) => path === displayedPath)
   const [layout, setLayout] = useState<DiffLayout>(readDiffLayout)
@@ -241,9 +243,12 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const composer = useMemo(() => commentsEnabled && lineComposer ? { key: lineKey(lineComposer.position), node: lineComposer.node, position: lineComposer.position } : undefined, [commentsEnabled, lineComposer])
   const draftsByLine = useMemo(() => pendingDraftsByLine(pendingDrafts, selectedDiff, discussionHeadSha), [discussionHeadSha, pendingDrafts, selectedDiff])
   const threadSessionId = fileSource?.sessionId
-  const [maximized, setMaximized] = useState(false)
+  const sharedMaximize = useContext(DiffMaximizeContext)
+  const [ownMaximized, setOwnMaximized] = useState(false)
+  const maximized = sharedMaximize ? sharedMaximize.maximized : ownMaximized
+  const setMaximized = sharedMaximize ? sharedMaximize.setMaximized : setOwnMaximized
   // A discussion opens in the tab under the maximized diff.
-  const openDiscussion = useMemo(() => onOpenDiscussion && ((id: string) => { setMaximized(false); onOpenDiscussion(id) }), [onOpenDiscussion])
+  const openDiscussion = useMemo(() => onOpenDiscussion && ((id: string) => { setMaximized(() => false); onOpenDiscussion(id) }), [onOpenDiscussion, setMaximized])
   const threadView = useMemo(() => (discussions || composer || draftsByLine.size) && parsed.status === 'valid' ? { actions: threadActions, composer, drafts: draftsByLine, onOpen: openDiscussion, sessionId: threadSessionId, suggestionActions, threads: lineThreads.byLine } : undefined, [composer, discussions, draftsByLine, lineThreads.byLine, openDiscussion, parsed.status, suggestionActions, threadActions, threadSessionId])
 
   // Lines chosen for a comment: the open editor's lines, or a range being chosen
@@ -681,17 +686,24 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const [wholePageKey, setWholePageKey] = useState<string | null>(null)
   // The lines chosen for a comment, offered to Blame as a range to follow.
   const blameSelection = chosenRange ? chosenLineRange(displayLines.slice(chosenRange[0], chosenRange[1] + 1)) : undefined
+  // Folds run within a hunk, as the lines GitLab left out between hunks could close any block.
+  const lineFoldRanges = useMemo(() => {
+    const gaps = diffGaps(displayLines, 0)
+    return foldRanges(displayLines.map((line) => line.text), markdownDiff, (index) => displayLines[index].hunk !== displayLines[index - 1].hunk || gaps[index].count > 0)
+  }, [displayLines, markdownDiff])
+  const lineHoldsThreads = useCallback((index: number) => lineHasThreads(displayLines[index], threadView), [displayLines, threadView])
+  const folds = useLineFolds(lineFoldRanges, diffKey, [selectedLineIndex, currentSearchMatch, chosenRange?.[0] ?? -1, chosenRange?.[1] ?? -1, shownOutlineTarget?.lineIndex ?? -1], lineHoldsThreads)
   const firstRows = wholePageKey === diffKey ? displayLines.length : Math.max(selectedLineIndex, currentSearchMatch, chosenRange?.[1] ?? -1, shownOutlineTarget?.lineIndex ?? -1) + 1
   const diffContent = renderedMarkdownDiff
     ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{markdownNeedsFile && gapQuery && sourceSessionId && !selectedDiff?.deletedFile
       ? <FetchedMarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} query={gapQuery} sessionId={sourceSessionId} source={markdownSource} />
       : <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} source={markdownSource} />}</MarkdownLinkProvider>
     : layout === 'split'
-    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
-    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
+    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
+    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
 
   return (
-    <Box data-diff-maximized={maximized ? 'true' : undefined} ref={rootRef} sx={maximized ? MAXIMIZED_SX : undefined}>
+    <Box data-diff-maximized={maximized && !sharedMaximize ? 'true' : undefined} data-diff-viewer ref={rootRef} sx={maximized && !sharedMaximize ? MAXIMIZED_SX : undefined}>
       {diffs.length ? <Row spacing={1} sx={{ flexWrap: 'wrap', mb: 1, px: 0.5 }} useFlexGap>
         <Typography color="textSecondary" variant="caption">{t('review.diff.summary.files', { count: diffs.length })}</Typography>
         <LineCounts added={lineTotals.added} label={t('review.diff.lineCounts', { added: lineTotals.added, removed: lineTotals.removed })} removed={lineTotals.removed} />

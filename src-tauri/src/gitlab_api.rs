@@ -27,6 +27,14 @@ pub const MAX_ACTION_BODY_BYTES: usize = 64 * 1024;
 /// Retries after a dropped connection or a passing server error. A read that
 /// timed out is not repeated: it has already held its slot for the whole limit.
 const MAX_GET_RETRIES: usize = 2;
+/// How long a merge waits for GitLab to finish rechecking whether the MR can
+/// merge (for example after its target branch moved) before it is sent.
+const MERGE_STATUS_CHECKS: usize = 10;
+const MERGE_STATUS_INTERVAL: Duration = if cfg!(test) {
+    Duration::from_millis(10)
+} else {
+    Duration::from_secs(1)
+};
 const PER_PAGE: u32 = 30;
 /// Group candidates for the search condition picker.
 const GROUP_PER_PAGE: u32 = 20;
@@ -113,6 +121,9 @@ enum ResponseKind {
 enum MutationPreflight<'a> {
     None,
     HeadSha(&'a str),
+    /// The head must be unchanged, and GitLab must have finished checking
+    /// whether the MR can merge.
+    MergeHead(&'a str),
     Position(&'a Position),
     Draft(&'a str),
     People(&'static str, &'a [String]),
@@ -1013,7 +1024,7 @@ pub async fn mutate(
                 Method::PUT,
                 url,
                 Value::Object(payload),
-                MutationPreflight::HeadSha(sha),
+                MutationPreflight::MergeHead(sha),
             )
         }
         Action::CancelAutoMerge { project_id, iid } => {
@@ -1188,6 +1199,9 @@ pub async fn mutate(
         MutationPreflight::None => {}
         MutationPreflight::HeadSha(expected_head_sha) => {
             ensure_head_sha(client, api_base, project_id, iid, expected_head_sha).await?
+        }
+        MutationPreflight::MergeHead(expected_head_sha) => {
+            wait_for_merge_status(client, api_base, project_id, iid, expected_head_sha).await?
         }
         MutationPreflight::Position(position) => {
             ensure_position_refs(client, api_base, project_id, iid, position).await?
@@ -1469,7 +1483,7 @@ fn write_refusal(action: &Action) -> fn(StatusCode) -> Option<AppError> {
             ).key("native.merge.forbidden")),
             StatusCode::METHOD_NOT_ALLOWED => Some(AppError::new(
                 "INVALID_INPUT",
-                "GitLabがマージを受け付けませんでした。現在はマージできない状態です。再読み込みして理由を確認してください。",
+                "GitLabがマージを受け付けませんでした。現在はマージできない状態です。理由はマージパネルに表示される最新の状態で確認してください。",
             ).key("native.merge.refused")),
             StatusCode::CONFLICT => Some(stale_merge_request()),
             StatusCode::BAD_REQUEST
@@ -2882,15 +2896,53 @@ async fn ensure_head_sha(
 ) -> Result<(), AppError> {
     let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
     let value = get_json_once(client, &url).await?;
-    let actual = value
-        .get("diff_refs")
-        .and_then(|diff_refs| diff_refs.get("head_sha"))
-        .and_then(scalar_to_string)
-        .or_else(|| value.get("sha").and_then(scalar_to_string));
-    if actual.as_deref() != Some(expected) {
+    if merge_request_head_sha(&value).as_deref() != Some(expected) {
         return Err(stale_merge_request());
     }
     Ok(())
+}
+
+fn merge_request_head_sha(value: &Value) -> Option<String> {
+    value
+        .get("diff_refs")
+        .and_then(|diff_refs| diff_refs.get("head_sha"))
+        .and_then(scalar_to_string)
+        .or_else(|| value.get("sha").and_then(scalar_to_string))
+}
+
+/// GitLab rechecks whether an MR can merge when its target branch moves, and
+/// its merge endpoint refuses (405) while that check runs instead of waiting.
+/// Reading the MR also moves the check on, so this reads it until the check is
+/// done. What the finished check says is left for GitLab to apply to the merge.
+async fn wait_for_merge_status(
+    client: &Client,
+    api_base: &Url,
+    project_id: &str,
+    iid: &str,
+    expected_head_sha: &str,
+) -> Result<(), AppError> {
+    let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
+    for check in 1..=MERGE_STATUS_CHECKS {
+        let value = get_json_once(client, &url).await?;
+        if merge_request_head_sha(&value).as_deref() != Some(expected_head_sha) {
+            return Err(stale_merge_request());
+        }
+        let checking = matches!(
+            value.get("detailed_merge_status").and_then(Value::as_str),
+            Some("approvals_syncing" | "checking" | "preparing" | "unchecked")
+        );
+        if !checking {
+            return Ok(());
+        }
+        if check < MERGE_STATUS_CHECKS {
+            tokio::time::sleep(MERGE_STATUS_INTERVAL).await;
+        }
+    }
+    Err(AppError::new(
+        "INVALID_INPUT",
+        "GitLabがマージできるかを確認しているため、マージを送りませんでした。しばらくしてから再試行してください。",
+    )
+    .key("native.merge.checking"))
 }
 
 async fn ensure_people(

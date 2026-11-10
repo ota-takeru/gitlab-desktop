@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
+import { focusManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 
@@ -852,4 +853,12 @@ it('shows a list and an MR visited before as they were left, without building th
   fireEvent.click(within(screen.getByRole('region', { name: '一覧' })).getByText('Add searchable list'))
   await waitFor(() => expect(heading).toBeVisible())
   expect(screen.getByRole('heading', { level: 1, name: 'Add searchable list' })).toBe(heading)
+})
+
+it('tells the queries when the window regains focus from another app without a visibility change', () => {
+  const listener = vi.fn()
+  const unsubscribe = focusManager.subscribe(listener)
+  window.dispatchEvent(new Event('focus'))
+  unsubscribe()
+  expect(listener).toHaveBeenCalledTimes(1)
 })

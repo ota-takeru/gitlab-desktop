@@ -52,7 +52,7 @@ describe('LocalChanges', () => {
 
     expect(await screen.findByText('two')).toBeInTheDocument()
     expect(mocks.linkLocalRepository).toHaveBeenCalledWith('s1', '7', 'group/app', '"C:\\repos\\app"')
-    expect(mocks.getLocalChanges).toHaveBeenCalledWith('s1', '7', 'a'.repeat(40), 'feature')
+    expect(mocks.getLocalChanges).toHaveBeenCalledWith('s1', '7', 'a'.repeat(40), 'feature', undefined)
     expect(screen.getByText('C:/repos/app')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /行にコメント/u })).not.toBeInTheDocument()
   })

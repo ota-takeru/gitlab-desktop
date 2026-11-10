@@ -24,7 +24,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
+import { focusManager, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { lazy, memo, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
@@ -162,6 +162,19 @@ function trackConnectivity() {
     },
   })
 }
+
+// TanStack Query only watches visibilitychange, which does not fire when the user comes back
+// from another app whose window covered this one; the window's focus event covers that case.
+// The focus state itself is still read from the visibility, so a covered window keeps polling.
+focusManager.setEventListener((handleFocus) => {
+  const listener = () => handleFocus()
+  globalThis.addEventListener('visibilitychange', listener)
+  globalThis.addEventListener('focus', listener)
+  return () => {
+    globalThis.removeEventListener('visibilitychange', listener)
+    globalThis.removeEventListener('focus', listener)
+  }
+})
 
 /** The development fixtures still pass a fixed light/dark mode with a toggle. */
 type ClientAppProps = ColorPreferenceProps | { mode: ColorMode; onModeChange: () => void }

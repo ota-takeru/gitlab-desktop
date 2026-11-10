@@ -2887,6 +2887,101 @@ fn request_body(request: &str) -> Value {
     serde_json::from_str(&request[request.find("\r\n\r\n").unwrap() + 4..]).unwrap()
 }
 
+fn merge_status_response(status: &str) -> String {
+    response(
+        "200 OK",
+        &format!(
+            r#"{{"id":1,"diff_refs":{{"head_sha":"{HEAD_SHA}"}},"detailed_merge_status":"{status}"}}"#
+        ),
+        "",
+    )
+}
+
+#[test]
+fn merge_waits_while_gitlab_rechecks_whether_it_can_merge() {
+    // The target branch moved, so GitLab is rechecking; the merge is sent once it is done.
+    let fixture = Fixture::new(vec![
+        merge_status_response("unchecked"),
+        merge_status_response("checking"),
+        merge_status_response("mergeable"),
+        response("200 OK", r#"{"id":1,"state":"merged"}"#, ""),
+    ]);
+    runtime()
+        .block_on(mutate(
+            &Client::new(),
+            &fixture.url(),
+            &merge_action(false),
+            "7",
+        ))
+        .unwrap();
+    let requests = fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[..3]
+        .iter()
+        .all(|request| request.starts_with("GET /api/v4/projects/42/merge_requests/9 ")));
+    assert!(requests[3].starts_with("PUT /api/v4/projects/42/merge_requests/9/merge "));
+    drop(requests);
+
+    // A finished check that blocks the merge is left for GitLab to answer.
+    let fixture = Fixture::new(vec![
+        merge_status_response("discussions_not_resolved"),
+        response(
+            "405 Method Not Allowed",
+            r#"{"message":"405 Method Not Allowed"}"#,
+            "",
+        ),
+    ]);
+    let error = runtime()
+        .block_on(mutate(
+            &Client::new(),
+            &fixture.url(),
+            &merge_action(false),
+            "7",
+        ))
+        .unwrap_err();
+    assert_eq!(error.message_key.as_deref(), Some("native.merge.refused"));
+    assert_eq!(fixture.requests.lock().unwrap().len(), 2);
+
+    // A check that does not finish in time sends nothing.
+    let fixture = Fixture::new(vec![merge_status_response("checking"); MERGE_STATUS_CHECKS]);
+    let error = runtime()
+        .block_on(mutate(
+            &Client::new(),
+            &fixture.url(),
+            &merge_action(false),
+            "7",
+        ))
+        .unwrap_err();
+    assert_eq!(error.message_key.as_deref(), Some("native.merge.checking"));
+    let requests = fixture.requests.lock().unwrap();
+    assert_eq!(requests.len(), MERGE_STATUS_CHECKS);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+    drop(requests);
+
+    // A head that moved while waiting is not the one the user agreed to merge.
+    let fixture = Fixture::new(vec![
+        merge_status_response("checking"),
+        response(
+            "200 OK",
+            r#"{"id":1,"diff_refs":{"head_sha":"0000000000000000000000000000000000000000"},"detailed_merge_status":"mergeable"}"#,
+            "",
+        ),
+    ]);
+    let error = runtime()
+        .block_on(mutate(
+            &Client::new(),
+            &fixture.url(),
+            &merge_action(false),
+            "7",
+        ))
+        .unwrap_err();
+    assert_eq!(
+        error.message_key.as_deref(),
+        Some("native.write.staleMergeRequest")
+    );
+    assert_eq!(fixture.requests.lock().unwrap().len(), 2);
+}
+
 fn merge_action(auto_merge: bool) -> Action {
     Action::Merge {
         project_id: "42".to_owned(),

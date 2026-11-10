@@ -31,14 +31,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from 'react'
 import { ClientNavItem } from '../../components/ClientNavItem'
 import { frame, hairline, panelFrame } from '../../components/hairline'
-import { type NotifyOptions } from '../../components/Feedback'
 import { useNotify } from '../../components/feedbackContext'
 import { moveListRowFocus } from '../../components/listRowFocus'
 import { NotificationBellIcon, NotificationCount } from '../../components/NotificationBellIcon'
 import { PaneEmpty } from '../../components/Pane'
 import { RelativeTime } from '../../components/RelativeTime'
 import { StateIcon, type StateIconTone } from '../../components/StateIcon'
-import { translate, type MessageKey } from '../../i18n/i18n'
+import { type MessageKey } from '../../i18n/i18n'
 import { useT } from '../../i18n/useT'
 import { setAppBadge } from '../../lib/appBadge'
 import { formatFetchedAt } from '../../lib/format'
@@ -47,11 +46,11 @@ import { normalizeGitLabError, queryGitLab } from '../../lib/gitlab'
 import type { GitLabCommandError, GitLabSession, GitLabTodo, TodosQuery } from '../../types/gitlab'
 import { useConnection } from '../connections/connectionContext'
 import { mrRefKey, usePersonalWorkspace, type MrRef } from '../shared/personalWorkspace'
-import { runGitLabMutation, useGitLabMutation } from '../shared/useGitLabMutation'
+import { useGitLabMutation } from '../shared/useGitLabMutation'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
 import { mentionsUser, todoNoteId, type ActivityKind, type MergeRequestActivity } from './activityFeed'
 import { useLoadedActivity } from './activityStore'
-import { forgetDoneTodos, isNotificationTodo } from './todoCache'
+import { forgetDoneTodos, isNotificationTodo, markNotificationRead } from './todoCache'
 import { Row } from '../../components/Row'
 
 const actionLabels: Record<string, MessageKey> = { assigned: 'mrList.notifications.action.assigned', mentioned: 'mrList.notifications.action.mentioned', directly_addressed: 'mrList.notifications.action.directlyAddressed', approval_required: 'mrList.notifications.action.approvalRequired', marked: 'mrList.notifications.action.marked', build_failed: 'mrList.notifications.action.buildFailed', unmergeable: 'mrList.notifications.action.unmergeable', merge_train_removed: 'mrList.notifications.action.mergeTrainRemoved', review_requested: 'mrList.notifications.action.reviewRequested' }
@@ -393,24 +392,6 @@ function NotificationCard({ disabled, group, onOpen }: { disabled: boolean; grou
       </ButtonBase>
     </Box>
   </Box>
-}
-
-/**
- * Marks one notification read, which marks its GitLab To-Do done. The write is recorded against
- * the To-Do's MR, so an unknown outcome stops further writes to that MR until it is checked there.
- * The caller drops what was read from the loaded pages. With `notify` null the caller reports the
- * outcome; `announceSuccess` also reports a success.
- */
-async function markNotificationRead(notify: ((options: NotifyOptions) => void) | null, sessionId: string, todo: GitLabTodo, announceSuccess: boolean): Promise<boolean> {
-  const result = await runGitLabMutation(sessionId, JSON.stringify({ iid: todo.iid, projectId: todo.projectId }), { iid: todo.iid, kind: 'markTodoDone', projectId: todo.projectId, todoId: todo.id })
-  if (result.ok) {
-    if (announceSuccess) notify?.({ message: translate('mrList.notifications.marked'), severity: 'success' })
-  } else if (result.status === 'unknown') {
-    notify?.({ message: translate('mrList.notifications.markUnknown'), severity: 'warning' })
-  } else if (result.error) {
-    notify?.({ message: translate('mrList.notifications.markFailed', { error: result.error.message }), severity: 'error' })
-  }
-  return result.ok
 }
 
 /** The MR view's button for its pending notification. */

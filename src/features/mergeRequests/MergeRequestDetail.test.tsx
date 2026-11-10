@@ -661,45 +661,60 @@ describe('suggestions and versions', () => {
     expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
   })
 
-  it('shows one commit, or the range up to or from it, from the same row', async () => {
-    detailMocks.commits = [{ id: 'head-abc', title: '最新のコミット' }, { id: 'bbbbbbbb2', title: '二番目のコミット' }, { id: 'aaaaaaaa1', title: '最初のコミット' }]
+  it('chooses one commit or neighbouring commits on the row, and grows the range to either end', async () => {
+    // The fixture's versions: v1 ends with the first commit, v2 with the second, and the latest with the last.
+    detailMocks.commits = [{ id: 'head-abc', title: '最新のコミット' }, { id: 'b'.repeat(40), title: '二番目のコミット' }, { id: 'a'.repeat(40), title: '最初のコミット' }]
     try {
       renderDetail('changes')
-      // Oldest at the left: the target, then the commits, then the latest.
       const row = await screen.findByRole('toolbar', { name: '比較対象' })
+      const box = (title: RegExp) => within(row).getByRole('button', { name: title })
       await within(row).findByRole('button', { name: /最初のコミット/u })
-      // The buttons show on hover or focus; hidden, they have no accessible name, so they are found by their group's label.
-      const rangeAction = (sha: string, action: string) => within(row.querySelector(`[aria-label="${sha} で範囲を選ぶ"]`) as HTMLElement).getByText(action)
-      expect(within(row).getAllByRole('button', { hidden: true }).map((button) => button.getAttribute('aria-label') ?? button.textContent?.slice(0, 9))).toEqual([
-        // The fixture's earlier versions are not among these commits, as after a rebase.
-        'rebase前', '時点 ターゲット base-abc（始点）', 'aaaaaaaa1', 'ここから', 'これだけ', 'ここまで', '時点 aaaaaaaa1', 'bbbbbbbb2', 'ここから', 'これだけ', 'ここまで', '時点 bbbbbbbb2', 'head-abc最', 'ここから', 'これだけ', 'ここまで', '時点 最新 head-abc（終点）', 'ローカルの変更', '時点 ローカルの作業ツリー',
-      ])
+      // Oldest at the left, and the band over every commit: the whole MR.
+      expect(within(row).getAllByRole('button').filter((button) => button.dataset.cellIndex && button.textContent?.includes('コミット')).map((button) => button.textContent)).toEqual(['最初のコミット', '二番目のコミット', '最新のコミット'])
+      for (const title of [/最初のコミット/u, /二番目のコミット/u, /最新のコミット/u]) expect(box(title)).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByText('ターゲット base-abc → 最新 head-abc')).toBeInTheDocument()
 
-      fireEvent.click(rangeAction('bbbbbbbb2', 'ここまで'))
-      await waitFor(() => expect(detailMocks.queryCalls).toContainEqual({ fromSha: 'base-abc', iid: '120', kind: 'versionCompare', page: 1, projectId: '7', toSha: 'bbbbbbbb2' }))
-      expect(screen.getByText('ターゲット base-abc → bbbbbbbb2')).toBeInTheDocument()
-      expect(within(row).getByRole('button', { name: /最初のコミット/u })).toHaveAttribute('aria-pressed', 'true')
-      expect(within(row).getByRole('button', { name: /最新のコミット/u })).toHaveAttribute('aria-pressed', 'false')
-      expect(screen.getByRole('button', { name: '時点 bbbbbbbb2（終点）' })).toBeInTheDocument()
-
-      // A point moves the nearer end of the range: here the start, to after the first commit.
-      fireEvent.click(screen.getByRole('button', { name: '時点 aaaaaaaa1' }))
+      // A click puts the band on one commit.
+      fireEvent.click(box(/二番目のコミット/u))
       expect(await screen.findByText('表示中のコミット')).toBeInTheDocument()
       // The row may shorten the title; the status line has it in full.
       expect(screen.getAllByText('二番目のコミット')).toHaveLength(2)
-      expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'commitDiff', sha: 'bbbbbbbb2' }))
+      expect(detailMocks.queryCalls).toContainEqual(expect.objectContaining({ kind: 'commitDiff', sha: 'b'.repeat(40) }))
+      expect(box(/最初のコミット/u)).toHaveAttribute('aria-pressed', 'false')
 
-      // From the first commit, the end stays where it was.
-      fireEvent.click(rangeAction('aaaaaaaa1', 'ここから'))
-      await waitFor(() => expect(screen.getByText('ターゲット base-abc → bbbbbbbb2')).toBeInTheDocument())
+      // Shift+click stretches the band to the commit clicked.
+      fireEvent.pointerDown(box(/最新のコミット/u), { button: 0, shiftKey: true })
+      fireEvent.click(box(/最新のコミット/u), { shiftKey: true })
+      await waitFor(() => expect(detailMocks.queryCalls).toContainEqual({ fromSha: 'a'.repeat(40), iid: '120', kind: 'versionCompare', page: 1, projectId: '7', toSha: 'head-abc' }))
+      expect(screen.getByText('bbbbbbbb 〜 head-abc（2件）')).toBeInTheDocument()
+      expect(screen.getByText(/ターゲットブランチ由来の変更も含まれます/u)).toBeInTheDocument()
 
-      fireEvent.click(rangeAction('head-abc', 'これだけ'))
-      expect(await screen.findByText('コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。')).toBeInTheDocument()
-
-      // The start moved back to the target reaches the latest: the whole MR, with its comments.
-      fireEvent.click(screen.getByRole('button', { name: '時点 ターゲット base-abc' }))
+      // The button left of the range takes it to the first commit: the whole MR, with its comments.
+      expect(screen.queryByRole('button', { name: '最新まで広げる' })).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '最初まで広げる' }))
       expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'MR全体' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.queryByRole('button', { name: '最初まで広げる' })).not.toBeInTheDocument()
+
+      // Beside one commit, the buttons give the commits up to it or from it to the latest.
+      fireEvent.click(box(/二番目のコミット/u))
+      await screen.findByText('表示中のコミット')
+      fireEvent.click(screen.getByRole('button', { name: '最初からここまで' }))
+      await waitFor(() => expect(detailMocks.queryCalls).toContainEqual({ fromSha: 'base-abc', iid: '120', kind: 'versionCompare', page: 1, projectId: '7', toSha: 'b'.repeat(40) }))
+      expect(screen.getByText('aaaaaaaa 〜 bbbbbbbb（2件）')).toBeInTheDocument()
+      fireEvent.click(box(/二番目のコミット/u))
+      await screen.findByText('表示中のコミット')
+      fireEvent.click(screen.getByRole('button', { name: 'ここから最新まで' }))
+      await waitFor(() => expect(screen.getByText('bbbbbbbb 〜 head-abc（2件）')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: '最初まで広げる' }))
+      expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
+
+      // A version's tag chooses the commits pushed after it.
+      fireEvent.click(screen.getByRole('button', { name: 'v1 から最新まで' }))
+      await waitFor(() => expect(screen.getByText('bbbbbbbb 〜 head-abc（2件）')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'v2 から最新まで' }))
+      expect(await screen.findByText('表示中のコミット')).toBeInTheDocument()
+      expect(screen.getAllByText('最新のコミット')).toHaveLength(2)
     } finally {
       detailMocks.commits = []
     }
@@ -725,6 +740,8 @@ describe('suggestions and versions', () => {
   })
 
   it('shows the linked clone against the MR head read-only, without loading the MR diff', async () => {
+    detailMocks.commits = [{ id: 'head-abc', title: '最新のコミット' }]
+    onTestFinished(() => { detailMocks.commits = [] })
     localMocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/project', projectPath: 'group/project' })
     localMocks.getLocalChanges.mockResolvedValue({ aheadCount: 1, branch: 'feature', comparedSha: 'head-abc', containsMrHead: true, diffs: [{ ...detailMocks.diff, diff: '@@ -1,2 +1,3 @@\n line one\n line two\n+local line\n' }], localHead: 'c'.repeat(40), repositoryPath: 'C:/repos/project', truncated: false, untrackedCount: 2, untrackedIncluded: 0, untrackedMore: false })
     localMocks.getLocalStatus.mockResolvedValue({ aheadCount: 1, branch: 'feature', changedCount: 0, containsMrHead: true, countMore: false, localHead: 'c'.repeat(40), mrHeadPresent: true, untrackedCount: 2 })
@@ -738,9 +755,9 @@ describe('suggestions and versions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' }))
 
     expect(await screen.findByText('local line')).toBeInTheDocument()
-    expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature')
+    expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature', undefined)
     expect(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('ローカルの作業ツリー')).toBeInTheDocument()
+    expect(screen.getByText('最新 head-abc → ローカルの作業ツリー')).toBeInTheDocument()
     expect(screen.getByText(/MRの最新より1コミット先（未push）/u)).toBeInTheDocument()
     expect(screen.getByRole('note')).toHaveTextContent(/ローカルの作業ツリーまでの変更です/u)
     expect(screen.getByText(/未追跡のファイルのうち2件は/u)).toBeInTheDocument()
@@ -758,6 +775,13 @@ describe('suggestions and versions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' }))
     expect(screen.getByText('local line')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' })).toHaveAttribute('aria-pressed', 'true')
+
+    // The arrow left of it takes the commits before it too: from the target branch to the working tree.
+    fireEvent.click(screen.getByRole('button', { name: '最初からここまで' }))
+    await waitFor(() => expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature', 'base-abc'))
+    expect(screen.getByText('head-abc 〜 ローカルの作業ツリー（1件）')).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent(/選んだコミットからローカルの作業ツリーまでの変更です/u)
+    expect(screen.queryByRole('button', { name: '最初からここまで' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'MR全体' })).toHaveAttribute('aria-pressed', 'false')
   })
 })
@@ -1095,17 +1119,37 @@ describe('MergeRequestDetail header, results and pending review', () => {
     detailMocks.commits = [{ id: 'aaaaaaaa1', title: '最初のコミット' }, { id: 'bbbbbbbb2', title: '次のコミット内容' }]
     renderDetail('changes')
     // GitLab lists the newest first; the row puts it at the right.
-    const target = await screen.findByRole('button', { name: /^時点 ターゲット/u })
-    target.focus()
-    fireEvent.keyDown(target, { key: 'ArrowRight' })
-    expect(screen.getByRole('button', { name: /次のコミット内容/u })).toHaveFocus()
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'End' })
-    // The working tree of the linked clone is the right end, after the local changes.
-    expect(screen.getByRole('button', { name: '時点 ローカルの作業ツリー' })).toHaveFocus()
-    for (let step = 0; step < 3; step += 1) fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowLeft' })
+    const oldest = await screen.findByRole('button', { name: /次のコミット内容/u })
+    oldest.focus()
+    fireEvent.keyDown(oldest, { key: 'ArrowRight' })
     expect(screen.getByRole('button', { name: /最初のコミット/u })).toHaveFocus()
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'End' })
+    // The local changes of the linked clone are the right end.
+    expect(screen.getByRole('button', { name: /^ローカルの変更/u })).toHaveFocus()
+    // The fixture's versions are not among these commits, so the menu of versions before a rebase is the left end.
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Home' })
+    expect(screen.getByRole('button', { name: /^rebase前/u })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: /次のコミット内容/u }))
     expect(screen.getByText('コミット単位の表示では行コメントできません。MR全体で表示するとコメントできます。')).toBeInTheDocument()
+  })
+
+  it('folds the commit row over the maximized diff, and stays maximized when another commit is chosen there', async () => {
+    detailMocks.commits = [{ id: 'aaaaaaaa1', title: '最初のコミット' }, { id: 'bbbbbbbb2', title: '次のコミット内容' }]
+    renderDetail('changes')
+    fireEvent.click(await screen.findByRole('button', { name: '差分を最大表示' }))
+    const overlay = document.querySelector('[data-diff-maximized]')
+    expect(overlay).toContainElement(screen.getByRole('button', { name: '最大表示を解除 (Esc)' }))
+    expect(screen.queryByRole('toolbar', { name: '比較対象' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'コミットを表示' }))
+    expect(overlay).toContainElement(screen.getByRole('toolbar', { name: '比較対象' }))
+    fireEvent.click(screen.getByRole('button', { name: /次のコミット内容/u }))
+    expect(document.querySelector('[data-diff-maximized]')).toBe(overlay)
+    expect(screen.getByRole('button', { name: 'コミットを隠す' })).toHaveAttribute('aria-expanded', 'true')
+    // With no diff drawn, as for Local changes without a linked clone, Esc still restores the view.
+    fireEvent.click(screen.getByRole('button', { name: /^ローカルの変更/u }))
+    expect(overlay?.querySelector('[data-diff-viewer]')).toBeNull()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(document.querySelector('[data-diff-maximized]')).toBeNull()
   })
 
   it('adds older commits to the row as its end comes near, keeping the ones listed', async () => {
@@ -1118,16 +1162,16 @@ describe('MergeRequestDetail header, results and pending review', () => {
     detailMocks.commitPages = {
       1: [{ id: 'aaaaaaaa1', title: '一番新しいコミット' }, { id: 'bbbbbbbb2', title: '二番目のコミット' }],
       // A push moved the second commit down, so it comes again here.
-      2: [{ id: 'bbbbbbbb2', title: '二番目のコミット' }, { id: 'cccccccc3', title: '古いコミット' }],
+      2: [{ id: 'bbbbbbbb2', title: '二番目のコミット' }, { id: 'cccccccc3', title: '三番目のコミット' }],
       3: [{ id: 'dddddddd4', title: '一番古いコミット' }],
     }
     const reach = () => act(() => observers.at(-1)?.callback([{ isIntersecting: true } as IntersectionObserverEntry], observers.at(-1) as unknown as IntersectionObserver))
     try {
       renderDetail('changes')
       await screen.findByRole('button', { name: /一番新しいコミット/u })
-      expect(screen.queryByRole('button', { name: /^cccccccc/u })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /三番目のコミット/u })).not.toBeInTheDocument()
       reach()
-      expect(await screen.findByRole('button', { name: /^cccccccc?.*古いコミット/u })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: /三番目のコミット/u })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /一番新しいコミット/u })).toBeInTheDocument()
       expect(screen.getAllByRole('button', { name: /二番目のコミット/u })).toHaveLength(1)
       reach()
@@ -1323,5 +1367,54 @@ describe('reactions and To-Dos', () => {
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
     expect(screen.queryByRole('button', { name: '通知を既読にする' })).not.toBeInTheDocument()
     expect(detailMocks.queryCalls).not.toContainEqual(expect.objectContaining({ kind: 'todos' }))
+  })
+
+  describe('notifications coming while their comment is on screen', () => {
+    beforeEach(() => {
+      detailMocks.markReadMock.mockReset()
+      // The page scrolls under a header ending at 50; every comment sits at 100–140, on screen.
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        const rect = (top: number, bottom: number) => ({ bottom, height: bottom - top, left: 0, right: 0, toJSON: () => ({}), top, width: 0, x: 0, y: top })
+        if (this.tagName === 'MAIN') return rect(0, 800)
+        if (this.matches('[data-sticky-header="true"]')) return rect(0, 50)
+        return rect(100, 140)
+      })
+      onTestFinished(() => { vi.restoreAllMocks(); detailMocks.unreadIds = ['1001'] })
+    })
+
+    function renderInMain(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+      render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><main><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={vi.fn()} tab="discussion" /></main></ThemeProvider></QueryClientProvider>)
+      return client
+    }
+    const todosKey = ['gitlab', 'session-42', JSON.stringify({ kind: 'todos', page: 1 })]
+    const mention = { actionName: 'mentioned', author: colleague, body: '', createdAt: '2026-10-09T00:00:00.000Z', id: '601', iid: '120', projectId: '7', projectName: 'Project', title: 'Read-only integration sample', webUrl: 'https://gitlab.com/group/project/-/merge_requests/120#note_1001' }
+
+    it('reads a To-Do that comes for a comment shown, with the comment', async () => {
+      const client = renderInMain()
+      await screen.findAllByText('未読コメント')
+      await act(async () => { client.setQueryData(todosKey, { error: null, snapshot: { completeness: 'complete', data: [mention], fetchedAt: 2, nextPage: null, source: 'network' } }) })
+
+      await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ iid: '120', kind: 'markTodoDone', projectId: '7', todoId: '601' }))
+      expect(detailMocks.markReadMock).toHaveBeenCalledWith({ projectId: '7', iid: '120' }, [expect.objectContaining({ id: '1001' })])
+    })
+
+    it('leaves the notifications there when the MR was opened, and reads a comment that comes on screen', async () => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      client.setQueryData(todosKey, { error: null, snapshot: { completeness: 'complete', data: [mention], fetchedAt: 1, nextPage: null, source: 'network' } })
+      renderInMain(client)
+      await screen.findAllByText('未読コメント')
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+      expect(detailMocks.mutationDetailedMock).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'markTodoDone' }))
+      expect(detailMocks.markReadMock).not.toHaveBeenCalled()
+
+      const reply = { ...detailMocks.discussion.notes[1], body: '新しい返信', createdAt: '2026-04-04T00:00:00.000Z', id: '1003' }
+      detailMocks.discussions = { 1: [{ ...detailMocks.discussion, notes: [...detailMocks.discussion.notes, reply] }] }
+      detailMocks.unreadIds = ['1001', '1003']
+      fireEvent.click(screen.getByRole('button', { name: '更新' }))
+      await screen.findAllByText('新しい返信')
+
+      await waitFor(() => expect(detailMocks.markReadMock).toHaveBeenCalledWith({ projectId: '7', iid: '120' }, [expect.objectContaining({ id: '1003' })]))
+      expect(detailMocks.markReadMock).toHaveBeenCalledTimes(1)
+    })
   })
 })

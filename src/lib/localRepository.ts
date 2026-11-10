@@ -70,8 +70,9 @@ export function pickLocalRepositoryFolder(): Promise<string | null> {
   return call('pick_local_repository_folder', { title: translate('common.localRepository.pickFolderTitle') })
 }
 
-export function getLocalChanges(sessionId: string, projectId: string, headSha: string, sourceBranch?: string): Promise<LocalChanges> {
-  return call('get_local_changes', { headSha, projectId, sessionId, sourceBranch })
+/** The working tree against the MR head, or against `fromSha` when the local changes end a range of the MR's commits. */
+export function getLocalChanges(sessionId: string, projectId: string, headSha: string, sourceBranch?: string, fromSha?: string): Promise<LocalChanges> {
+  return call('get_local_changes', { fromSha, headSha, projectId, sessionId, sourceBranch })
 }
 
 /** A short summary of the linked clone against the MR head, read without a diff. */

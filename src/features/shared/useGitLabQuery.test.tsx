@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -127,6 +127,26 @@ describe('useGitLabQuery', () => {
 
     resolveNetwork(snapshot('network'))
     await waitFor(() => expect(screen.getByTestId('query-state')).toHaveTextContent('network:idle:ok'))
+  })
+
+  it('reads the comments again whenever the window regains focus, but not other recent data', async () => {
+    queryGitLabMock.mockImplementation(({ mode }: { mode: string }) => mode === 'cache' ? Promise.resolve(null) : Promise.resolve(snapshot('network')))
+    const discussionsQuery = { iid: '2', kind: 'discussions' as const, page: 1, projectId: '1' }
+    const mrQuery = { iid: '2', kind: 'mr' as const, projectId: '1' }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } })
+    function ReviewProbe() {
+      const discussions = useGitLabQuery('session-1', discussionsQuery)
+      const mr = useGitLabQuery('session-1', mrQuery)
+      return <output data-testid="review-state">{`${discussions.snapshot ? 'loaded' : 'none'}:${mr.snapshot ? 'loaded' : 'none'}`}</output>
+    }
+    render(<QueryClientProvider client={queryClient}><ReviewProbe /></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByTestId('review-state')).toHaveTextContent('loaded:loaded'))
+    const networkReads = (kind: string) => queryGitLabMock.mock.calls.filter(([request]) => request.mode === 'network' && request.query.kind === kind).length
+    expect(networkReads('discussions')).toBe(1)
+
+    act(() => focusManager.onFocus())
+    await waitFor(() => expect(networkReads('discussions')).toBe(2))
+    expect(networkReads('mr')).toBe(1)
   })
 
   it('keeps polling more slowly after a failed read, but not after a denied one', async () => {
