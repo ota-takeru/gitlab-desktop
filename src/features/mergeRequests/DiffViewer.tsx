@@ -40,6 +40,9 @@ import { FILE_LIST_MODE_KEY, readFileListMode, splitPath, type FileListMode } fr
 import type { GapExpansion } from './DiffGap'
 import { SplitDiff, UnifiedDiff, type LineSelection, type RowSelection } from './DiffRows'
 import { DiffOutlineList } from './DiffOutlineList'
+import { diffGaps } from './diffGaps'
+import { lineHasThreads } from './diffLineThreads'
+import { foldRanges, useLineFolds } from './lineFolds'
 import { diffOutline, outlineEntryAt, type DiffOutline, type OutlineEntry } from './diffOutline'
 import { firstVisibleFileLine, LineCounts, matchesPosition, positionLineId, scrollNearestBy } from './diffShared'
 import { FullFileView } from './FullFileView'
@@ -681,14 +684,21 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const [wholePageKey, setWholePageKey] = useState<string | null>(null)
   // The lines chosen for a comment, offered to Blame as a range to follow.
   const blameSelection = chosenRange ? chosenLineRange(displayLines.slice(chosenRange[0], chosenRange[1] + 1)) : undefined
+  // Folds run within a hunk, as the lines GitLab left out between hunks could close any block.
+  const lineFoldRanges = useMemo(() => {
+    const gaps = diffGaps(displayLines, 0)
+    return foldRanges(displayLines.map((line) => line.text), markdownDiff, (index) => displayLines[index].hunk !== displayLines[index - 1].hunk || gaps[index].count > 0)
+  }, [displayLines, markdownDiff])
+  const lineHoldsThreads = useCallback((index: number) => lineHasThreads(displayLines[index], threadView), [displayLines, threadView])
+  const folds = useLineFolds(lineFoldRanges, diffKey, [selectedLineIndex, currentSearchMatch, chosenRange?.[0] ?? -1, chosenRange?.[1] ?? -1, shownOutlineTarget?.lineIndex ?? -1], lineHoldsThreads)
   const firstRows = wholePageKey === diffKey ? displayLines.length : Math.max(selectedLineIndex, currentSearchMatch, chosenRange?.[1] ?? -1, shownOutlineTarget?.lineIndex ?? -1) + 1
   const diffContent = renderedMarkdownDiff
     ? <MarkdownLinkProvider repository={markdownRepository} sessionId={sourceSessionId}>{markdownNeedsFile && gapQuery && sourceSessionId && !selectedDiff?.deletedFile
       ? <FetchedMarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} query={gapQuery} sessionId={sourceSessionId} source={markdownSource} />
       : <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} source={markdownSource} />}</MarkdownLinkProvider>
     : layout === 'split'
-    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
-    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
+    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
+    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
 
   return (
     <Box data-diff-maximized={maximized ? 'true' : undefined} ref={rootRef} sx={maximized ? MAXIMIZED_SX : undefined}>

@@ -122,6 +122,37 @@ describe('DiffViewer', () => {
     expect(screen.getAllByLabelText('追加2行、削除1行')).toHaveLength(2)
   })
 
+  it('folds an indented block like an editor, in both layouts, and opens it again', () => {
+    localStorage.removeItem('gitlab-desktop:diff-layout')
+    const diff = makeDiff('@@ -1,5 +1,6 @@\n function a() {\n   one()\n-  two()\n+  three()\n+  four()\n }\n b()\n')
+    renderViewer(diff)
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(7)
+    fireEvent.click(screen.getByRole('button', { name: '4行を折りたたむ' }))
+    // The closing brace stays, as in an editor.
+    expect(screen.getAllByTestId('diff-line').map((row) => row.textContent)).toEqual([expect.stringContaining('function a() {⋯ 4行'), expect.stringContaining('}'), expect.stringContaining('b()')])
+    fireEvent.click(screen.getByRole('button', { name: '左右に並べて比較' }))
+    expect(screen.getAllByTestId('diff-split-row')).toHaveLength(3)
+    fireEvent.click(screen.getByText('⋯ 4行'))
+    expect(screen.getAllByTestId('diff-split-row')).toHaveLength(6)
+    expect(screen.getByRole('button', { name: '4行を折りたたむ' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('opens a fold to show the search result inside it', () => {
+    const diff = makeDiff('@@ -1,3 +1,3 @@\n if (x) {\n-  hidden()\n+  found()\n }\n')
+    renderViewer(diff)
+    fireEvent.click(screen.getByRole('button', { name: '2行を折りたたむ' }))
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(2)
+    fireEvent.change(screen.getByRole('textbox', { name: '差分内を検索' }), { target: { value: 'found' } })
+    fireEvent.click(screen.getByRole('button', { name: '次の差分内検索結果' }))
+    expect(screen.getAllByTestId('diff-line')).toHaveLength(4)
+  })
+
+  it('folds blocks of the whole file too', () => {
+    renderViewer(makeDiff('@@ -1 +1 @@\n-old\n+new\n'), { fileContent: 'class A {\n  a() {\n    x()\n  }\n}\n', view: 'file' })
+    fireEvent.click(screen.getByRole('button', { name: '3行を折りたたむ' }))
+    expect(screen.getAllByTestId('file-line').map((row) => row.textContent)).toEqual(['1class A {⋯ 3行', '5}'])
+  })
+
   it('totals the changed lines of every file and says which files it could not count', () => {
     const omitted = { ...makeDiff('', 'src/huge.ts'), tooLarge: true }
     renderMany([makeDiff('@@ -1 +1,2 @@\n-a\n+b\n+c\n', 'src/one.ts'), makeDiff('@@ -1,2 +1 @@\n-a\n-b\n+c\n', 'src/two.ts'), omitted])

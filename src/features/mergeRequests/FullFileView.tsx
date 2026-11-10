@@ -17,6 +17,8 @@ import { changeMarkerStyles } from './changeMarkerStyles'
 import { PageControls } from './DiffPageControls'
 import { splitFileLines, type ParsedLine } from './diffParser'
 import { FILE_PAGE_SIZE, firstVisibleFileLine, renderCode, scrollNearestBy, syntaxStyles } from './diffShared'
+import { foldStyles, foldSummary, foldToggle } from './LineFold'
+import { foldRanges, useLineFolds } from './lineFolds'
 import { annotateFullFile, filePageStart, type FullFileDiffAnnotations, type RemovedFileLines } from './fullFileAnnotations'
 
 // Rendered Markdown without diff marks still labels its blocks with their source lines, so switching views keeps the place.
@@ -33,9 +35,12 @@ function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: b
   </Box>
   // Keep the blame and line-number gutters continuous so removed code lines up with the file's code column.
   return blameEnabled
-    ? <Row align="stretch"><span className="blame-cell" /><Box sx={{ ...hairline('right'), flex: '0 0 52px' }} />{deletion}</Row>
+    ? <Row align="stretch"><span className="blame-cell" /><Box sx={{ ...hairline('right'), flex: `0 0 ${LINE_NUMBER_WIDTH}px` }} />{deletion}</Row>
     : deletion
 }
+
+/** The line number, then the fold toggle. */
+const LINE_NUMBER_WIDTH = 68
 
 export function FullFileView({ blameEnabled = false, content, diffLines, language, loading, path, targetLine, targetTop }: { blameEnabled?: boolean; content?: string | null; diffLines?: ParsedLine[]; language: string | null; loading: boolean; path?: string | null; targetLine?: number; /** Where on screen `targetLine` is put, as it was in the view switched from; centred without it. */ targetTop?: number }) {
   const t = useT()
@@ -67,6 +72,8 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
     rootRef.current?.scrollIntoView?.({ behavior: 'auto', block: 'start' })
   }
   const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
+  const lineFoldRanges = useMemo(() => foldRanges(lines, markdown), [lines, markdown])
+  const folds = useLineFolds(lineFoldRanges, `${path ?? ''}\0${contentKey}`, useMemo(() => targetLine ? [targetLine - 1] : [], [targetLine]))
   const visibleTokens = useMemo(() => markdown && !showSource ? [] : highlightLines(visibleLines, language), [language, markdown, showSource, visibleLines])
 
   useLayoutEffect(() => {
@@ -129,15 +136,16 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
         })}><MockMarkdown body={content} renderBlame={blameEnabled ? (line) => <BlameCell line={line} side="new" /> : undefined} review={changeMarkers ?? NO_FILE_ANNOTATIONS} size="body1" /></Box>
         : <>
           <PageControls offset={offset} pageSize={FILE_PAGE_SIZE} total={lines.length} onNext={nextPage} onPrevious={previousPage} />
-          <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), py: 0.5 })}>{visibleLines.map((line, index) => {
+          <Box data-testid="file-lines" sx={(theme) => ({ ...syntaxStyles(theme), ...foldStyles(theme, '2px'), py: 0.5 })}>{visibleLines.map((line, index) => {
             const fileLine = offset + index + 1
+            if (folds.hidden.has(fileLine - 1)) return null
             const additions = changeMarkers?.addedLines.has(fileLine)
             return <Fragment key={fileLine}>
               {(changeMarkers?.removedByAnchor.get(fileLine) ?? []).map((item, removedIndex) => <RemovedFullFileLines blameEnabled={blameEnabled} item={item} key={`${item.oldStart}:${removedIndex}`} />)}
               <Row data-change={additions ? 'add' : undefined} data-file-line={fileLine} data-testid="file-line" align="stretch" sx={(theme) => ({
                 backgroundColor: additions ? theme.palette.diff?.addedBackground : undefined,
                 boxShadow: additions ? `inset 3px 0 0 ${theme.palette.success.main}` : undefined, minHeight: 20,
-              })}>{blameEnabled ? <BlameCell line={fileLine} side="new" /> : null}<Typography color="textSecondary" sx={{ ...hairline('right'), flex: '0 0 52px', px: 1, textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}</Typography></Row>
+              })}>{blameEnabled ? <BlameCell line={fileLine} side="new" /> : null}<Typography color="textSecondary" sx={{ ...hairline('right'), flex: `0 0 ${LINE_NUMBER_WIDTH}px`, pl: 1, position: 'relative', pr: '20px', textAlign: 'right', userSelect: 'none' }} variant="code">{fileLine}{foldToggle(fileLine - 1, folds)}</Typography><Typography component="span" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', px: 1, whiteSpace: 'pre-wrap' }} variant="code">{renderCode(visibleTokens[index] ?? [{ text: line }], '')}{foldSummary(fileLine - 1, folds)}</Typography></Row>
             </Fragment>
           })}
           {offset + visibleLines.length >= lines.length ? (changeMarkers?.removedByAnchor.get(lines.length + 1) ?? []).map((item, index) => <RemovedFullFileLines blameEnabled={blameEnabled} item={item} key={`last:${item.oldStart}:${index}`} />) : null}

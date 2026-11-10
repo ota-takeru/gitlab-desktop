@@ -455,5 +455,9 @@
   "gap.showTitle": "Afficher les lignes inchangées",
   "gap.fetchError": "Impossible de les afficher, car le fichier n’a pas pu être chargé.",
   "gap.loading": "⋯ Chargement de {count, plural, one {# ligne inchangée} many {# lignes inchangées} other {# lignes inchangées}}…",
-  "gap.mismatch": "Impossible de les afficher, car le contenu du fichier ne correspond pas au diff."
+  "gap.mismatch": "Impossible de les afficher, car le contenu du fichier ne correspond pas au diff.",
+  "fold.collapse": "Replier {count, plural, one {# ligne} other {# lignes}}",
+  "fold.expand": "Déplier {count, plural, one {# ligne} other {# lignes}}",
+  "fold.summary": "⋯ {count, plural, one {# ligne} other {# lignes}}",
+  "fold.hasThreads": "commentaires"
 }

@@ -455,5 +455,9 @@
   "gap.showTitle": "顯示未變更的行",
   "gap.fetchError": "無法載入檔案，因此無法顯示。",
   "gap.loading": "⋯ 正在載入 {count, plural, other {# 行未變更的內容}}…",
-  "gap.mismatch": "檔案內容與差異不符，因此無法顯示。"
+  "gap.mismatch": "檔案內容與差異不符，因此無法顯示。",
+  "fold.collapse": "摺疊 {count} 行",
+  "fold.expand": "展開已摺疊的 {count} 行",
+  "fold.summary": "⋯ {count} 行",
+  "fold.hasThreads": "有留言"
 }

@@ -455,5 +455,9 @@
   "gap.showTitle": "Unveränderte Zeilen anzeigen",
   "gap.fetchError": "Kann nicht angezeigt werden, da die Datei nicht geladen werden konnte.",
   "gap.loading": "⋯ {count, plural, one {# unveränderte Zeile wird} other {# unveränderte Zeilen werden}} geladen…",
-  "gap.mismatch": "Kann nicht angezeigt werden, da der Dateiinhalt nicht mit dem Diff übereinstimmt."
+  "gap.mismatch": "Kann nicht angezeigt werden, da der Dateiinhalt nicht mit dem Diff übereinstimmt.",
+  "fold.collapse": "{count, plural, one {# Zeile} other {# Zeilen}} einklappen",
+  "fold.expand": "{count, plural, one {# eingeklappte Zeile} other {# eingeklappte Zeilen}} ausklappen",
+  "fold.summary": "⋯ {count, plural, one {# Zeile} other {# Zeilen}}",
+  "fold.hasThreads": "Kommentare"
 }

@@ -455,5 +455,9 @@
   "gap.showTitle": "変更のない行を表示",
   "gap.fetchError": "ファイルを取得できなかったため表示できません。",
   "gap.loading": "⋯ 変更のない{count}行を読み込み中…",
-  "gap.mismatch": "ファイルの内容が差分と一致しないため表示できません。"
+  "gap.mismatch": "ファイルの内容が差分と一致しないため表示できません。",
+  "fold.collapse": "{count}行を折りたたむ",
+  "fold.expand": "折りたたんだ{count}行を展開",
+  "fold.summary": "⋯ {count}行",
+  "fold.hasThreads": "コメントあり"
 }

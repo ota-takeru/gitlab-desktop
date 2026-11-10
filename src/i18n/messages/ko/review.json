@@ -455,5 +455,9 @@
   "gap.showTitle": "변경되지 않은 행 표시",
   "gap.fetchError": "파일을 불러올 수 없어 표시할 수 없습니다.",
   "gap.loading": "⋯ {count, plural, other {변경되지 않은 행 #개}} 불러오는 중…",
-  "gap.mismatch": "파일 내용이 diff와 일치하지 않아 표시할 수 없습니다."
+  "gap.mismatch": "파일 내용이 diff와 일치하지 않아 표시할 수 없습니다.",
+  "fold.collapse": "{count}줄 접기",
+  "fold.expand": "접힌 {count}줄 펼치기",
+  "fold.summary": "⋯ {count}줄",
+  "fold.hasThreads": "댓글 있음"
 }

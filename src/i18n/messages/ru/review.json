@@ -455,5 +455,9 @@
   "gap.showTitle": "Показать неизменённые строки",
   "gap.fetchError": "Невозможно показать: не удалось загрузить файл.",
   "gap.loading": "⋯ Загрузка: {count, plural, one {# неизменённая строка} few {# неизменённые строки} many {# неизменённых строк} other {# неизменённой строки}}…",
-  "gap.mismatch": "Невозможно показать: содержимое файла не совпадает с diff."
+  "gap.mismatch": "Невозможно показать: содержимое файла не совпадает с diff.",
+  "fold.collapse": "Свернуть {count, plural, one {# строку} few {# строки} many {# строк} other {# строки}}",
+  "fold.expand": "Развернуть {count, plural, one {# строку} few {# строки} many {# строк} other {# строки}}",
+  "fold.summary": "⋯ {count, plural, one {# строка} few {# строки} many {# строк} other {# строки}}",
+  "fold.hasThreads": "есть комментарии"
 }

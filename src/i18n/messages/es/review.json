@@ -455,5 +455,9 @@
   "gap.showTitle": "Mostrar líneas sin cambios",
   "gap.fetchError": "No se pueden mostrar porque no se pudo cargar el archivo.",
   "gap.loading": "⋯ Cargando {count, plural, one {# línea sin cambios} other {# líneas sin cambios}}…",
-  "gap.mismatch": "No se pueden mostrar porque el contenido del archivo no coincide con el diff."
+  "gap.mismatch": "No se pueden mostrar porque el contenido del archivo no coincide con el diff.",
+  "fold.collapse": "Plegar {count, plural, one {# línea} other {# líneas}}",
+  "fold.expand": "Desplegar {count, plural, one {# línea} other {# líneas}}",
+  "fold.summary": "⋯ {count, plural, one {# línea} other {# líneas}}",
+  "fold.hasThreads": "comentarios"
 }

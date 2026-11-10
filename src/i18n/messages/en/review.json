@@ -455,5 +455,9 @@
   "gap.showTitle": "Show unchanged lines",
   "gap.fetchError": "Cannot show them because the file could not be loaded.",
   "gap.loading": "⋯ Loading {count, plural, one {# unchanged line} other {# unchanged lines}}…",
-  "gap.mismatch": "Cannot show them because the file content does not match the diff."
+  "gap.mismatch": "Cannot show them because the file content does not match the diff.",
+  "fold.collapse": "Fold {count, plural, one {# line} other {# lines}}",
+  "fold.expand": "Unfold {count, plural, one {# line} other {# lines}}",
+  "fold.summary": "⋯ {count, plural, one {# line} other {# lines}}",
+  "fold.hasThreads": "comments"
 }
