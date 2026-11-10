@@ -703,7 +703,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
 
   return (
-    <Box data-diff-maximized={maximized && !sharedMaximize ? 'true' : undefined} ref={rootRef} sx={maximized && !sharedMaximize ? MAXIMIZED_SX : undefined}>
+    <Box data-diff-maximized={maximized && !sharedMaximize ? 'true' : undefined} data-diff-viewer ref={rootRef} sx={maximized && !sharedMaximize ? MAXIMIZED_SX : undefined}>
       {diffs.length ? <Row spacing={1} sx={{ flexWrap: 'wrap', mb: 1, px: 0.5 }} useFlexGap>
         <Typography color="textSecondary" variant="caption">{t('review.diff.summary.files', { count: diffs.length })}</Typography>
         <LineCounts added={lineTotals.added} label={t('review.diff.lineCounts', { added: lineTotals.added, removed: lineTotals.removed })} removed={lineTotals.removed} />

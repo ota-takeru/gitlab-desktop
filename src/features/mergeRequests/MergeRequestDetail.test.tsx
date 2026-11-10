@@ -1145,6 +1145,11 @@ describe('MergeRequestDetail header, results and pending review', () => {
     fireEvent.click(screen.getByRole('button', { name: /次のコミット内容/u }))
     expect(document.querySelector('[data-diff-maximized]')).toBe(overlay)
     expect(screen.getByRole('button', { name: 'コミットを隠す' })).toHaveAttribute('aria-expanded', 'true')
+    // With no diff drawn, as for Local changes without a linked clone, Esc still restores the view.
+    fireEvent.click(screen.getByRole('button', { name: /^ローカルの変更/u }))
+    expect(overlay?.querySelector('[data-diff-viewer]')).toBeNull()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(document.querySelector('[data-diff-maximized]')).toBeNull()
   })
 
   it('adds older commits to the row as its end comes near, keeping the ones listed', async () => {

@@ -24,6 +24,7 @@ import type { Commit, Diff, Discussion, Draft, MrVersion, Position } from '../..
 import type { ThreadActions } from './DiffThreads'
 import { DiffViewer } from './DiffViewer'
 import { DiffMaximizeContext, MAXIMIZED_SX } from './diffMaximize'
+import { isInsideControlGroup } from '../../lib/eventTargets'
 import type { MoreCommits } from './useCommitPages'
 import type { ReviewedFileContext } from './useReviewedFiles'
 import type { SuggestionActions } from './SuggestionBlock'
@@ -78,6 +79,18 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     observer.observe(timeline)
     return () => observer.disconnect()
   }, [stickyRow])
+  // A shown diff has its own Esc, which comes first; while none is drawn (loading, failed, no local clone), Esc still restores.
+  useEffect(() => {
+    if (!maximized) return
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || rootRef.current?.querySelector('[data-diff-viewer]') || isInsideControlGroup(event.target) || document.querySelector('.MuiModal-root:not(.MuiModal-hidden)')) return
+      event.preventDefault()
+      event.stopPropagation()
+      setMaximized(false)
+    }
+    window.addEventListener('keydown', close, true)
+    return () => window.removeEventListener('keydown', close, true)
+  }, [maximized])
   return (
     <DiffMaximizeContext.Provider value={maximize}>
     <Stack data-diff-maximized={maximized ? 'true' : undefined} ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)', ...(maximized ? MAXIMIZED_SX : {}) }}>
