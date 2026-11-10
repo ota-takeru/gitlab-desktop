@@ -170,7 +170,10 @@ export const MergeRequestActions = memo(function MergeRequestActions({ disabled,
       notify({ message: t('mergeRequest.mergePanel.headChanged'), severity: 'warning' })
       return false
     }
-    return run({ ...target, kind: 'merge', ...options }, options.autoMerge ? t('mergeRequest.mergeDialog.autoMergeSet') : t('mergeRequest.mergeDialog.merged'), !options.autoMerge)
+    const ok = await run({ ...target, kind: 'merge', ...options }, options.autoMerge ? t('mergeRequest.mergeDialog.autoMergeSet') : t('mergeRequest.mergeDialog.merged'), !options.autoMerge)
+    // A refused merge means what was shown is out of date; the panel then shows why from GitLab's current state.
+    if (!ok) refreshRef.current()
+    return ok
   }
   useImperativeHandle(ref, () => ({ cancelAutoMerge, merge, rebase, toggleDraft }))
 

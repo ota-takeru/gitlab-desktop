@@ -100,6 +100,12 @@ describe('MergeRequestActions', () => {
     expect(onRun).toHaveBeenCalledWith({ ...options, iid: '3', kind: 'merge', projectId: '7' })
   })
 
+  it('reads the MR again after GitLab refuses the merge, so the panel shows why', async () => {
+    const { handle, onRefresh } = renderActions(base, vi.fn(async () => false))
+    await act(async () => { await handle.current?.merge({ autoMerge: false, removeSourceBranch: false, sha: head, squash: false }) })
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+  })
+
   it('does not merge when the confirmation is declined', async () => {
     globalThis.confirm = vi.fn(() => false)
     const { handle, onRun } = renderActions(base)
