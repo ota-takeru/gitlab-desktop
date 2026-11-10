@@ -1324,4 +1324,53 @@ describe('reactions and To-Dos', () => {
     expect(screen.queryByRole('button', { name: '通知を既読にする' })).not.toBeInTheDocument()
     expect(detailMocks.queryCalls).not.toContainEqual(expect.objectContaining({ kind: 'todos' }))
   })
+
+  describe('notifications coming while their comment is on screen', () => {
+    beforeEach(() => {
+      detailMocks.markReadMock.mockReset()
+      // The page scrolls under a header ending at 50; every comment sits at 100–140, on screen.
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        const rect = (top: number, bottom: number) => ({ bottom, height: bottom - top, left: 0, right: 0, toJSON: () => ({}), top, width: 0, x: 0, y: top })
+        if (this.tagName === 'MAIN') return rect(0, 800)
+        if (this.matches('[data-sticky-header="true"]')) return rect(0, 50)
+        return rect(100, 140)
+      })
+      onTestFinished(() => { vi.restoreAllMocks(); detailMocks.unreadIds = ['1001'] })
+    })
+
+    function renderInMain(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+      render(<QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('dark')}><main><MergeRequestDetail initialMergeRequest={detailMocks.mergeRequest as MergeRequest} onBack={() => undefined} onTabChange={vi.fn()} tab="discussion" /></main></ThemeProvider></QueryClientProvider>)
+      return client
+    }
+    const todosKey = ['gitlab', 'session-42', JSON.stringify({ kind: 'todos', page: 1 })]
+    const mention = { actionName: 'mentioned', author: colleague, body: '', createdAt: '2026-10-09T00:00:00.000Z', id: '601', iid: '120', projectId: '7', projectName: 'Project', title: 'Read-only integration sample', webUrl: 'https://gitlab.com/group/project/-/merge_requests/120#note_1001' }
+
+    it('reads a To-Do that comes for a comment shown, with the comment', async () => {
+      const client = renderInMain()
+      await screen.findAllByText('未読コメント')
+      await act(async () => { client.setQueryData(todosKey, { error: null, snapshot: { completeness: 'complete', data: [mention], fetchedAt: 2, nextPage: null, source: 'network' } }) })
+
+      await waitFor(() => expect(detailMocks.mutationDetailedMock).toHaveBeenCalledWith({ iid: '120', kind: 'markTodoDone', projectId: '7', todoId: '601' }))
+      expect(detailMocks.markReadMock).toHaveBeenCalledWith({ projectId: '7', iid: '120' }, [expect.objectContaining({ id: '1001' })])
+    })
+
+    it('leaves the notifications there when the MR was opened, and reads a comment that comes on screen', async () => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      client.setQueryData(todosKey, { error: null, snapshot: { completeness: 'complete', data: [mention], fetchedAt: 1, nextPage: null, source: 'network' } })
+      renderInMain(client)
+      await screen.findAllByText('未読コメント')
+      await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+      expect(detailMocks.mutationDetailedMock).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'markTodoDone' }))
+      expect(detailMocks.markReadMock).not.toHaveBeenCalled()
+
+      const reply = { ...detailMocks.discussion.notes[1], body: '新しい返信', createdAt: '2026-04-04T00:00:00.000Z', id: '1003' }
+      detailMocks.discussions = { 1: [{ ...detailMocks.discussion, notes: [...detailMocks.discussion.notes, reply] }] }
+      detailMocks.unreadIds = ['1001', '1003']
+      fireEvent.click(screen.getByRole('button', { name: '更新' }))
+      await screen.findAllByText('新しい返信')
+
+      await waitFor(() => expect(detailMocks.markReadMock).toHaveBeenCalledWith({ projectId: '7', iid: '120' }, [expect.objectContaining({ id: '1003' })]))
+      expect(detailMocks.markReadMock).toHaveBeenCalledTimes(1)
+    })
+  })
 })

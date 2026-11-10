@@ -1,7 +1,10 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 
+import { type NotifyOptions } from '../../components/Feedback'
+import { translate } from '../../i18n/i18n'
 import type { GitLabSnapshot, GitLabTodo } from '../../types/gitlab'
+import { runGitLabMutation } from '../shared/useGitLabMutation'
 import { useStoreInTransition } from '../shared/useStoreInTransition'
 import { useQueryCacheSubscription } from './useDiscussionPages'
 
@@ -64,4 +67,22 @@ export function forgetDoneTodos(queryClient: QueryClient, sessionId: string, tod
     ? { ...current, snapshot: { ...current.snapshot, data: current.snapshot.data.filter((todo) => !done.has(todo.id)) } }
     : current)
   void queryClient.invalidateQueries({ predicate })
+}
+
+/**
+ * Marks one notification read, which marks its GitLab To-Do done. The write is recorded against
+ * the To-Do's MR, so an unknown outcome stops further writes to that MR until it is checked there.
+ * The caller drops what was read from the loaded pages. With `notify` null the caller reports the
+ * outcome; `announceSuccess` also reports a success.
+ */
+export async function markNotificationRead(notify: ((options: NotifyOptions) => void) | null, sessionId: string, todo: GitLabTodo, announceSuccess: boolean): Promise<boolean> {
+  const result = await runGitLabMutation(sessionId, JSON.stringify({ iid: todo.iid, projectId: todo.projectId }), { iid: todo.iid, kind: 'markTodoDone', projectId: todo.projectId, todoId: todo.id })
+  if (result.ok) {
+    if (announceSuccess) notify?.({ message: translate('mrList.notifications.marked'), severity: 'success' })
+  } else if (result.status === 'unknown') {
+    notify?.({ message: translate('mrList.notifications.markUnknown'), severity: 'warning' })
+  } else if (result.error) {
+    notify?.({ message: translate('mrList.notifications.markFailed', { error: result.error.message }), severity: 'error' })
+  }
+  return result.ok
 }

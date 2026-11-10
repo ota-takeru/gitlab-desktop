@@ -107,6 +107,14 @@ export function firstDiffThreadInView(host: HTMLElement, root: ParentNode): stri
   return null
 }
 
+/** Whether the comment is on screen, below the header. */
+export function noteInView(host: HTMLElement, root: ParentNode, noteId: string): boolean {
+  const element = findNote(root, noteId)
+  if (!element) return false
+  const rect = element.getBoundingClientRect()
+  return rect.height > 0 && rect.bottom > contentTop(host) && rect.top < host.getBoundingClientRect().bottom
+}
+
 export function restoreAnchor(host: HTMLElement, root: ParentNode, anchor: ScrollAnchor): void {
   const thread = Array.from(root.querySelectorAll<HTMLElement>('[data-discussion-id]')).find((item) => item.dataset.discussionId === anchor.id)
   if (!thread) return

@@ -81,6 +81,7 @@ import type { SuggestionActions } from './SuggestionBlock'
 import { suggestionSourceLines } from './suggestions'
 import { MarkNotificationReadButton } from './NotificationPanel'
 import { useLoadedMergeRequestNotifications } from './todoCache'
+import { useReadShownNotifications } from './useReadShownNotifications'
 import { appendComposerBuffer, clearComposerBuffer, createComposerBackendKey, createComposerBufferKey, moveComposerBuffer, rememberComposerTarget, restoreComposerBuffer, useComposerBuffer, flushComposerBuffers } from './useComposerBuffer'
 import { ChangesTab } from './MergeRequestChangesTab'
 import { DraftList, type DraftStatus } from './DraftList'
@@ -326,6 +327,7 @@ export function MergeRequestDetail({ backLabel = translate('mergeRequest.detail.
   const mrAwardsQuery = useMemo<MrAwardsQuery | null>(() => activeTab === 'overview' ? { iid, kind: 'mrAwards', projectId: resourceId } : null, [activeTab, iid, resourceId])
   const mrAwardsResult = useGitLabQuery<MrAwardsQuery>(session?.id ?? null, mrAwardsQuery)
   const mergeRequestNotifications = useLoadedMergeRequestNotifications(session?.id ?? null, resourceId, iid)
+  useReadShownNotifications({ notes: commentNotes, onReadNotes: (notes) => workspace.markRead({ projectId: resourceId, iid }, notes), ready: discussionWindow.ready && !discussionWindow.error && !accessDenied, scope: `${resourceId}:${iid}`, sectionRef, sessionId: session?.id ?? null, todos: mergeRequestNotifications, unreadNoteIds })
   // These record what is shown when the MR, the account or what is known of the MR changes, reading the latest workspace.
   const recordRecent = useEffectEvent(() => { if (session && mergeRequest) workspace.recordRecent({ projectId: resourceId, iid }) })
   const mergeRequestLoaded = Boolean(mergeRequest)
