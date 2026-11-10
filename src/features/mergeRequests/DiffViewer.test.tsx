@@ -522,6 +522,11 @@ describe('DiffViewer', () => {
     fireEvent.click(screen.getByRole('button', { name: '次の一致ファイル' }))
     expect(shownPath()).toBe('src/feature/b.ts')
 
+    // A pasted location that holds the path finds the file as well.
+    fireEvent.change(screen.getByRole('textbox', { name: 'ファイル名を検索' }), { target: { value: 'https://gitlab.example/-/blob/main/SRC/Other.ts:12' } })
+    expect(within(navigation).getByRole('button', { name: fileRow('src/other.ts'), hidden: true })).toBeInTheDocument()
+    expect(within(navigation).queryByRole('button', { name: fileRow('src/feature/a.ts'), hidden: true })).not.toBeInTheDocument()
+
     fireEvent.change(screen.getByRole('textbox', { name: 'ファイル名を検索' }), { target: { value: 'does-not-exist' } })
     expect(within(navigation).getByText('一致するファイルはありません。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '次の一致ファイル' })).toBeDisabled()

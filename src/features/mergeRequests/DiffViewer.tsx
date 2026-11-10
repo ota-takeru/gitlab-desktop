@@ -37,6 +37,7 @@ import { MarkdownLinkProvider } from '../../components/MarkdownLinks'
 import { ColumnResizeHandle } from './ColumnResizeHandle'
 import { DiffFileTree, FileThreadMark } from './DiffFileTree'
 import { FILE_LIST_MODE_KEY, readFileListMode, splitPath, type FileListMode } from './diffFileOrder'
+import { matchesFilePath } from './filePathSearch'
 import type { GapExpansion } from './DiffGap'
 import { SplitDiff, UnifiedDiff, type LineSelection, type RowSelection } from './DiffRows'
 import { DiffOutlineList } from './DiffOutlineList'
@@ -220,7 +221,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const fileSearchMatches = useMemo(() => {
     const query = fileSearch.trim().toLocaleLowerCase()
     return diffs.map((diff, index) => ({ diff, index, path: diff.newPath || diff.oldPath }))
-      .filter(({ path }) => !query || path.toLocaleLowerCase().includes(query))
+      .filter(({ path }) => matchesFilePath(path, query))
   }, [diffs, fileSearch])
   const displayedFileMatchIndex = fileSearchMatches.findIndex(({ path }) => path === displayedPath)
   const [layout, setLayout] = useState<DiffLayout>(readDiffLayout)
