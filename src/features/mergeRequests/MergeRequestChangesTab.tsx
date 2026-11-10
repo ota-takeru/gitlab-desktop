@@ -65,6 +65,8 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
   const maximize = useMemo(() => ({ maximized, setMaximized }), [maximized])
   const timelineShown = showTimeline && (!maximized || commitsOpen)
   const stickyRow = showTimeline || maximized
+  // Maximized, the row sits at the very top of the view, with nothing above it to show through.
+  const timelineGap = maximized ? 0 : TIMELINE_GAP
   // The commit row stays in view under the MR header; the diff's own sticky rows start below it.
   const rootRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
@@ -72,13 +74,13 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     const root = rootRef.current
     const timeline = timelineRef.current
     if (!root) return
-    const update = () => root.style.setProperty('--commit-timeline-height', `${timeline ? timeline.offsetHeight + TIMELINE_GAP : 0}px`)
+    const update = () => root.style.setProperty('--commit-timeline-height', `${timeline ? timeline.offsetHeight + timelineGap : 0}px`)
     update()
     if (!timeline || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(update)
     observer.observe(timeline)
     return () => observer.disconnect()
-  }, [stickyRow])
+  }, [stickyRow, timelineGap])
   // A shown diff has its own Esc, which comes first; while none is drawn (loading, failed, no local clone), Esc still restores.
   useEffect(() => {
     if (!maximized) return
@@ -96,7 +98,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
     <Stack data-diff-maximized={maximized ? 'true' : undefined} ref={rootRef} spacing={1.5} sx={{ '--mr-header-height': 'var(--detail-header-height, 0px)', ...(maximized ? MAXIMIZED_SX : {}) }}>
       {commitsError && !commits.length ? <Alert severity="error">{t('review.changes.commitsError', { message: commitsError.message })}</Alert> : null}
       {commitsError && commits.length ? <Alert severity="warning">{t('review.changes.commitsStale', { message: commitsError.message })}</Alert> : null}
-      {stickyRow ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: `calc(var(--mr-header-height) + ${TIMELINE_GAP}px)`, zIndex: 2, '&::before': { bgcolor: 'background.default', content: '""', height: TIMELINE_GAP, left: 0, position: 'absolute', right: 0, top: -TIMELINE_GAP } }}>
+      {stickyRow ? <Box ref={timelineRef} sx={{ bgcolor: 'background.default', position: 'sticky', py: 0.5, top: `calc(var(--mr-header-height) + ${timelineGap}px)`, zIndex: 2, '&::before': { bgcolor: 'background.default', content: '""', height: timelineGap, left: 0, position: 'absolute', right: 0, top: -timelineGap } }}>
         {maximized ? <Button aria-expanded={commitsOpen} onClick={() => setCommitsOpen((open) => !open)} size="small" startIcon={commitsOpen ? <ExpandMoreRoundedIcon /> : <ChevronRightRoundedIcon />}>{commitsOpen ? t('review.changes.hideCommits') : t('review.changes.showCommits')}</Button> : null}
         {timelineShown ? <CommitTimeline baseSha={compareBaseSha} commits={commits} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versions={versions} /> : null}
       </Box> : null}
