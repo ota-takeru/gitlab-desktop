@@ -1236,3 +1236,26 @@ async fn a_restored_session_whose_token_names_another_user_is_ended_and_its_cach
         .is_none());
     server.join().unwrap();
 }
+
+#[test]
+fn a_full_image_cache_lets_go_of_its_oldest_entry_only() {
+    let mut cache = ImageCache::new(3);
+    for key in ["a", "b", "c"] {
+        cache.insert(key.into(), Some(key.into()));
+    }
+    // Replacing an entry keeps its place and does not evict another.
+    cache.insert("a".into(), None);
+    assert_eq!(cache.get("a"), Some(&None));
+    assert!(cache.get("b").is_some() && cache.get("c").is_some());
+    cache.insert("d".into(), Some("d".into()));
+    assert!(cache.get("a").is_none());
+    assert!(cache.get("b").is_some() && cache.get("c").is_some() && cache.get("d").is_some());
+    cache.insert("e".into(), None);
+    assert!(cache.get("b").is_none());
+    assert_eq!(cache.entries.len(), 3);
+    assert_eq!(cache.order, ["c", "d", "e"]);
+    cache.clear();
+    assert!(cache.entries.is_empty() && cache.order.is_empty());
+    cache.insert("f".into(), None);
+    assert_eq!(cache.order, ["f"]);
+}

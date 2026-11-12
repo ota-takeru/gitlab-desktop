@@ -72,18 +72,27 @@ pub struct EncodedSnapshot {
     fetched_at: u64,
 }
 
+impl EncodedSnapshot {
+    /// The saved JSON, which is also the answer's JSON for the screen.
+    pub fn into_text(self) -> String {
+        self.text
+    }
+}
+
 pub fn encode_snapshot(snapshot: &Snapshot) -> Result<EncodedSnapshot, AppError> {
     let text = serde_json::to_string(snapshot).map_err(|_| storage_error())?;
+    encoded_text(text, snapshot.fetched_at)
+}
+
+/// Readies a snapshot already written out as `text` for saving, without writing it out again.
+pub fn encoded_text(text: String, fetched_at: u64) -> Result<EncodedSnapshot, AppError> {
     if text.len() > 8 * 1024 * 1024 {
         return Err(
             AppError::new("TOO_LARGE", "保存するデータが上限を超えました。")
                 .key("native.storage.tooLarge"),
         );
     }
-    Ok(EncodedSnapshot {
-        text,
-        fetched_at: snapshot.fetched_at,
-    })
+    Ok(EncodedSnapshot { text, fetched_at })
 }
 
 pub fn parse_snapshot(text: &str) -> Result<Snapshot, AppError> {

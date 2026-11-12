@@ -98,7 +98,7 @@ pub(super) fn contains_truncation_marker(value: &Value) -> bool {
 }
 
 pub(super) fn normalize_array(
-    value: Value,
+    mut value: Value,
     wrapper: Option<&str>,
     normalize_item: fn(&Value) -> Result<Value, AppError>,
 ) -> Result<Value, AppError> {
@@ -106,7 +106,7 @@ pub(super) fn normalize_array(
         if value.is_array() {
             value
         } else {
-            value.get(wrapper).cloned().ok_or_else(|| {
+            value.get_mut(wrapper).map(Value::take).ok_or_else(|| {
                 unsupported_response("GitLabから想定外の形式の一覧が返されました。")
                     .key("native.response.unexpectedList")
             })?

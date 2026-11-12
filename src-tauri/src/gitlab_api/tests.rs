@@ -4054,3 +4054,52 @@ fn comment_templates_fall_back_to_the_users_own_when_project_templates_are_unkno
         json!([{"id": "gid://gitlab/Users::SavedReply/1", "name": "LGTM", "content": "Looks good", "scope": "user"}])
     );
 }
+
+#[test]
+fn version_compare_pages_are_moved_out_of_the_whole_list() {
+    let diffs = |count: usize| (0..count).map(|index| json!(index)).collect::<Vec<_>>();
+    let (items, next, total) = compare_page(diffs(61), 1);
+    assert_eq!(items, diffs(30));
+    assert_eq!((next, total), (Some(2), Some(3)));
+    let (items, next, total) = compare_page(diffs(61), 3);
+    assert_eq!(items, vec![json!(60)]);
+    assert_eq!((next, total), (None, Some(3)));
+    let (items, next, total) = compare_page(diffs(60), 2);
+    assert_eq!(items.first(), Some(&json!(30)));
+    assert_eq!(items.len(), 30);
+    assert_eq!((next, total), (None, Some(2)));
+    let (items, next, total) = compare_page(diffs(0), 1);
+    assert!(items.is_empty());
+    assert_eq!((next, total), (None, Some(1)));
+    assert!(compare_page(diffs(5), 4).0.is_empty());
+}
+
+#[test]
+fn merge_request_head_sha_is_read_like_the_whole_answer() {
+    let cases = [
+        r#"{"diff_refs":{"head_sha":"a","base_sha":"b"},"sha":"c","title":"t"}"#,
+        r#"{"diff_refs":null,"sha":"c"}"#,
+        r#"{"diff_refs":{"head_sha":null},"sha":"c"}"#,
+        r#"{"sha":"c"}"#,
+        r#"{"diff_refs":{"head_sha":7},"sha":"c"}"#,
+        r#"{"diff_refs":{"head_sha":true},"sha":"c"}"#,
+        r#"{"diff_refs":"x","sha":5}"#,
+        r#"{"title":"t"}"#,
+        r#"[1]"#,
+        r#"null"#,
+    ];
+    for case in cases {
+        let whole: Value = serde_json::from_str(case).unwrap();
+        assert_eq!(
+            merge_request_head_sha_in(case.as_bytes()).unwrap(),
+            merge_request_head_sha(&whole),
+            "{case}"
+        );
+    }
+    assert_eq!(
+        merge_request_head_sha_in(br#"{"diff_refs":{"head_sha":"a"}"#)
+            .unwrap_err()
+            .code,
+        "UNSUPPORTED"
+    );
+}

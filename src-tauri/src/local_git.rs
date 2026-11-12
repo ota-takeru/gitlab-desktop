@@ -404,29 +404,36 @@ pub async fn local_changes(
     if !diff.success && !diff.truncated {
         return Err(explain(&diff));
     }
-    let (mut diffs, truncated) = parse_patch(&diff.stdout, diff.truncated);
-    // Untracked files join as new files while the size budget lasts.
-    let mut budget = MAX_DIFF_BYTES.saturating_sub(diff.stdout.len());
-    let mut included = 0;
-    if !truncated {
-        for path in untracked_paths
-            .iter()
-            .take(complete_paths.min(MAX_UNTRACKED_FILES))
-        {
-            match untracked_diff(root, path, &mut budget) {
-                Ok(Some(entry)) => {
-                    diffs.push(entry);
-                    included += 1;
+    // Parsing the patch and reading untracked files run off the async workers.
+    let folder = root.to_path_buf();
+    let (diffs, truncated, included) = tokio::task::spawn_blocking(move || {
+        let (mut diffs, truncated) = parse_patch(&diff.stdout, diff.truncated);
+        // Untracked files join as new files while the size budget lasts.
+        let mut budget = MAX_DIFF_BYTES.saturating_sub(diff.stdout.len());
+        let mut included = 0;
+        if !truncated {
+            for path in untracked_paths
+                .iter()
+                .take(complete_paths.min(MAX_UNTRACKED_FILES))
+            {
+                match untracked_diff(&folder, path, &mut budget) {
+                    Ok(Some(entry)) => {
+                        diffs.push(entry);
+                        included += 1;
+                    }
+                    Ok(None) => {}
+                    Err(()) => break,
                 }
-                Ok(None) => {}
-                Err(()) => break,
             }
         }
-    }
-    diffs.sort_by(|left, right| {
-        let path = |diff: &Value| diff["newPath"].as_str().unwrap_or_default().to_owned();
-        path(left).cmp(&path(right))
-    });
+        diffs.sort_by(|left, right| {
+            let left = left["newPath"].as_str().unwrap_or_default();
+            left.cmp(right["newPath"].as_str().unwrap_or_default())
+        });
+        (diffs, truncated, included)
+    })
+    .await
+    .map_err(|_| git_failed())?;
     Ok(json!({
         "repositoryPath": root.to_string_lossy(),
         "comparedSha": from_sha.unwrap_or(head_sha),

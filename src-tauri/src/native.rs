@@ -2,13 +2,13 @@ use crate::dto::{Action, AppError, Query, Session, User};
 use crate::gitlab_api;
 use crate::local_git;
 use crate::storage::{
-    check_snapshot, encode_snapshot, now_ms, parse_snapshot, storage_error, CacheRule,
-    EncodedSnapshot, LocalDraft, Snapshot, Store,
+    check_snapshot, encode_snapshot, encoded_text, now_ms, parse_snapshot, storage_error,
+    CacheRule, EncodedSnapshot, LocalDraft, Snapshot, Store,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -53,15 +53,57 @@ pub struct LiveSession {
     retry_at: AtomicU64,
     /// Avatar images already fetched for this session, as data URLs. `None`
     /// records an avatar URL that did not yield a small image.
-    avatars: Mutex<HashMap<String, Option<String>>>,
+    avatars: Mutex<ImageCache>,
     /// Session-local cache for bounded, authenticated Markdown uploads.
-    images: Mutex<HashMap<String, Option<String>>>,
+    images: Mutex<ImageCache>,
 }
 
 const AVATAR_CACHE_LIMIT: usize = 512;
 const AVATAR_MAX_BYTES: usize = 256 * 1024;
 const MARKDOWN_IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
 const MARKDOWN_IMAGE_CACHE_LIMIT: usize = 12;
+
+/// Fetched images by URL. When full, the oldest entry makes room for a new one,
+/// so the pictures on screen are not all fetched again at once.
+struct ImageCache {
+    entries: HashMap<String, Option<String>>,
+    order: VecDeque<String>,
+    limit: usize,
+}
+
+impl ImageCache {
+    fn new(limit: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+            limit,
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<&Option<String>> {
+        self.entries.get(key)
+    }
+
+    fn insert(&mut self, key: String, value: Option<String>) {
+        if let Some(entry) = self.entries.get_mut(&key) {
+            *entry = value;
+            return;
+        }
+        while self.entries.len() >= self.limit {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            self.entries.remove(&oldest);
+        }
+        self.order.push_back(key.clone());
+        self.entries.insert(key, value);
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+    }
+}
 
 struct Inner {
     active: Option<Arc<LiveSession>>,
@@ -376,8 +418,8 @@ fn make_session(
         mutation_lock: AsyncMutex::new(()),
         revision: AtomicU64::new(0),
         retry_at: AtomicU64::new(0),
-        avatars: Mutex::new(HashMap::new()),
-        images: Mutex::new(HashMap::new()),
+        avatars: Mutex::new(ImageCache::new(AVATAR_CACHE_LIMIT)),
+        images: Mutex::new(ImageCache::new(MARKDOWN_IMAGE_CACHE_LIMIT)),
     }))
 }
 
@@ -402,13 +444,17 @@ fn query_key(query: &Query) -> Result<String, AppError> {
     Ok(key)
 }
 
-async fn encode_off_thread(snapshot: Snapshot) -> Result<(Snapshot, EncodedSnapshot), AppError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let encoded = encode_snapshot(&snapshot)?;
-        Ok((snapshot, encoded))
-    })
-    .await
-    .map_err(|_| storage_error())?
+async fn encode_off_thread(snapshot: Snapshot) -> Result<EncodedSnapshot, AppError> {
+    tauri::async_runtime::spawn_blocking(move || encode_snapshot(&snapshot))
+        .await
+        .map_err(|_| storage_error())?
+}
+
+/// A read's answer, or its JSON when it was already written out for saving, so the
+/// same answer is not written out twice for the screen.
+enum Reply {
+    Snapshot(Snapshot),
+    Text(String),
 }
 
 /// In development builds, how long each GitLab read waited for a slot and took,
@@ -878,8 +924,13 @@ impl NativeState {
             let saved = self.saved_answer(input).await?;
             return Ok(saved.unwrap_or_else(|| "null".into()));
         }
-        let answer = self.query(input).await?;
-        serde_json::to_string(&answer).map_err(|_| storage_error())
+        match self.reply(input).await? {
+            Some(Reply::Text(text)) => Ok(text),
+            Some(Reply::Snapshot(snapshot)) => {
+                serde_json::to_string(&snapshot).map_err(|_| storage_error())
+            }
+            None => Ok("null".into()),
+        }
     }
 
     async fn saved_answer(&self, input: QueryInput) -> Result<Option<String>, AppError> {
@@ -901,7 +952,17 @@ impl NativeState {
         .map_err(|_| storage_error())?
     }
 
+    /// A read's answer as a snapshot; the screen gets `answer`'s JSON instead.
+    #[cfg(test)]
     pub async fn query(&self, input: QueryInput) -> Result<Option<Snapshot>, AppError> {
+        match self.reply(input).await? {
+            Some(Reply::Text(text)) => parse_snapshot(&text).map(Some),
+            Some(Reply::Snapshot(snapshot)) => Ok(Some(snapshot)),
+            None => Ok(None),
+        }
+    }
+
+    async fn reply(&self, input: QueryInput) -> Result<Option<Reply>, AppError> {
         let session = self.active(&input.session_id)?;
         let key = query_key(&input.query)?;
         let (pending, slots) = if input.background {
@@ -954,7 +1015,7 @@ impl NativeState {
                         .await
                         .map_err(|_| storage_error())??;
                 snapshot.source = "network".into();
-                return Ok(Some(snapshot));
+                return Ok(Some(Reply::Snapshot(snapshot)));
             }
             let slot = slots.acquire_owned().await.map_err(|_| cancelled())?;
             check_cooldown(&session)?;
@@ -1015,13 +1076,13 @@ impl NativeState {
             let (client, api_base) = (session.client.clone(), session.api_base.clone());
             let ended = session.cancelled.clone();
             let session = session.clone();
-            let save = move |inner: &mut Inner, encoded: Option<EncodedSnapshot>| {
+            let save = move |inner: &mut Inner, encoded: Option<&EncodedSnapshot>| {
                 ensure_active(inner, &session)?;
                 if session.revision.load(Ordering::SeqCst) != revision {
                     return Err(cancelled());
                 }
                 match encoded {
-                    Some(encoded) => inner.store.put_encoded(&session.account, &key, &encoded),
+                    Some(encoded) => inner.store.put_encoded(&session.account, &key, encoded),
                     None => Ok(()),
                 }
             };
@@ -1029,7 +1090,15 @@ impl NativeState {
                 // A diff page is shown at once; whether its head moved during the
                 // read is confirmed afterwards, and only a confirmed page is saved.
                 // The lock stays held so an identical read waits for that save.
-                let copy = snapshot.clone();
+                // The JSON sent to the screen is also what is saved, so the
+                // answer is written out once and not copied as a whole.
+                let fetched_at = snapshot.fetched_at;
+                let text = tauri::async_runtime::spawn_blocking(move || {
+                    serde_json::to_string(&snapshot).map_err(|_| storage_error())
+                })
+                .await
+                .map_err(|_| storage_error())??;
+                let copy = text.clone();
                 let inner = self.inner.clone();
                 let query = input.query.clone();
                 tauri::async_runtime::spawn(async move {
@@ -1039,24 +1108,25 @@ impl NativeState {
                         _ = ended.cancelled() => false,
                     };
                     if confirmed {
-                        if let Ok((_, encoded)) = encode_off_thread(copy).await {
+                        if let Ok(encoded) = encoded_text(copy, fetched_at) {
                             let _ =
-                                run_blocking(inner, move |inner| save(inner, Some(encoded))).await;
+                                run_blocking(inner, move |inner| save(inner, Some(&encoded))).await;
                         }
                     }
                 });
-                return Ok(Some(snapshot));
+                return Ok(Some(Reply::Text(text)));
             }
             if !persist {
                 self.blocking(move |inner| save(inner, None)).await?;
-                return Ok(Some(snapshot));
+                return Ok(Some(Reply::Snapshot(snapshot)));
             }
             // Written out before the store is locked, so a large answer does not
             // hold back the saved answers other screens are waiting for.
-            let (snapshot, encoded) = encode_off_thread(snapshot).await?;
-            self.blocking(move |inner| save(inner, Some(encoded)))
+            let encoded = encode_off_thread(snapshot).await?;
+            let encoded = self
+                .blocking(move |inner| save(inner, Some(&encoded)).map(|()| encoded))
                 .await?;
-            Ok(Some(snapshot))
+            Ok(Some(Reply::Text(encoded.into_text())))
         };
         tokio::select! { result = work => result, _ = session.cancelled.cancelled()=>Err(cancelled()), _ = registration.token.cancelled()=>Err(cancelled()) }
     }
@@ -1344,9 +1414,6 @@ impl NativeState {
         // Network failures are not cached so a later view can retry.
         if let Some(result) = &fetched {
             let mut avatars = session.avatars.lock().map_err(|_| storage_error())?;
-            if avatars.len() >= AVATAR_CACHE_LIMIT {
-                avatars.clear();
-            }
             avatars.insert(key, result.clone());
         }
         Ok(fetched.flatten())
@@ -1391,9 +1458,6 @@ impl NativeState {
         };
         if let Some(image) = &fetched {
             let mut images = session.images.lock().map_err(|_| storage_error())?;
-            if images.len() >= MARKDOWN_IMAGE_CACHE_LIMIT {
-                images.clear();
-            }
             images.insert(key, image.clone());
         }
         Ok(fetched.flatten())
