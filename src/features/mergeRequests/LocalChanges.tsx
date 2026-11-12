@@ -91,7 +91,7 @@ export function LocalChanges({ fromSha, headSha, onSelectFile, projectId, projec
   const changes = useQuery({ enabled: Boolean(linked), queryFn: () => getLocalChanges(sessionId, projectId, headSha, sourceBranch, fromSha), queryKey: ['localChanges', sessionId, projectId, headSha, sourceBranch, fromSha, linked?.path], staleTime: 0 })
   const [unlinking, setUnlinking] = useState(false)
   const [unlinkError, setUnlinkError] = useState<string | null>(null)
-  const [viewChoice, setViewChoice] = useState<{ path: string; view: 'diff' | 'file' } | null>(null)
+  const [view, setView] = useState<'diff' | 'file'>('diff')
   // Linking or unlinking replaces the focused control, so focus moves to its
   // counterpart as soon as that mounts.
   const focusAfter = useRef<'linked' | 'unlinked' | null>(null)
@@ -104,8 +104,6 @@ export function LocalChanges({ fromSha, headSha, onSelectFile, projectId, projec
   // The shown file as it is now, for the whole-file view and for opening the lines between hunks.
   const shown = changes.data?.diffs.find((diff) => (diff.newPath || diff.oldPath) === selectedFile) ?? changes.data?.diffs[0]
   const readable = Boolean(shown && !shown.deletedFile && !shown.tooLarge)
-  const shownPath = shown ? (shown.newPath || shown.oldPath) : ''
-  const view = viewChoice?.path === shownPath ? viewChoice.view : 'diff'
   // One query per file, read again with the changes, so a refresh keeps showing the current body until the new one arrives.
   const file = useQuery({ enabled: readable, queryFn: () => getLocalFile(sessionId, projectId, shown?.newPath ?? '', sourceBranch), queryKey: ['localFile', sessionId, projectId, sourceBranch, shown?.newPath], staleTime: 0 })
   const reload = () => {
@@ -171,7 +169,7 @@ export function LocalChanges({ fromSha, headSha, onSelectFile, projectId, projec
       {data?.truncated ? <Alert severity="warning">{t('review.local.truncated')}</Alert> : null}
       {data && (data.untrackedCount > data.untrackedIncluded || data.untrackedMore) ? <Alert severity="warning">{t(data.untrackedMore ? 'review.local.untrackedOmittedMore' : 'review.local.untrackedOmitted', { count: data.untrackedCount - data.untrackedIncluded })}</Alert> : null}
       {data && !data.diffs.length && !data.truncated ? <Typography color="textSecondary" role="status" variant="body2">{t('review.local.noDiff')}</Typography> : null}
-      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isLoading} key={`local:${fromSha ?? headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={(next) => setViewChoice({ path: shownPath, view: next })} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
+      {data?.diffs.length ? <DiffViewer allowComments={false} diffs={data.diffs} fileContent={readable ? file.data?.content : null} fileLoading={file.isLoading} key={`local:${fromSha ?? headSha}`} onComment={NO_COMMENT} onSelectFile={onSelectFile} onViewChange={setView} selectedFile={selectedFile} selectedPosition={undefined} view={view} /> : null}
       {view === 'file' && shown?.deletedFile ? <Typography color="textSecondary" role="status" variant="body2">{t('review.local.fileDeleted')}</Typography> : null}
       {view === 'file' && file.error ? <Alert severity="error">{t('review.local.fileReadError', { message: normalizeGitLabError(file.error).message })}</Alert> : null}
     </Stack>

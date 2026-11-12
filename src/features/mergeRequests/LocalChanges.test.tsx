@@ -159,6 +159,21 @@ describe('LocalChanges', () => {
     expect(mocks.getLocalFile).toHaveBeenCalledWith('s1', '7', 'memo.txt', 'feature')
   })
 
+  it('keeps the whole-file view when another file is selected', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue({ ...changes, diffs: [changes.diffs[0], { ...changes.diffs[0], newPath: 'b.txt', oldPath: 'b.txt' }] })
+    mocks.getLocalFile.mockImplementation((_session: string, _project: string, path: string) => Promise.resolve({ content: `one\nbody of ${path}\n` }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = (selectedFile: string) => <QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><LocalChanges headSha={'a'.repeat(40)} onSelectFile={vi.fn()} projectId="7" projectPath="group/app" selectedFile={selectedFile} sessionId="s1" sourceBranch="feature" userId="u1" /></ThemeProvider></QueryClientProvider>
+    const { rerender } = render(view('a.txt'))
+    fireEvent.click(await screen.findByRole('button', { name: 'ファイル全体' }))
+    expect(await screen.findByText('body of a.txt')).toBeInTheDocument()
+
+    rerender(view('b.txt'))
+    expect(await screen.findByText('body of b.txt')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイル全体' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('keeps showing the whole file while it is read again with the changes', async () => {
     mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
     mocks.getLocalChanges.mockResolvedValue(changes)
