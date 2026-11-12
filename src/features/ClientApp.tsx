@@ -287,6 +287,14 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     setSidebarCollapsedBrowsing(next)
     writeLayoutPreference(SIDEBAR_COLLAPSED_BROWSING_KEY, next)
   }
+  const expandSidebar = () => {
+    if (isNarrowNav) {
+      setNarrowSidebarExpanded(true)
+      return
+    }
+    setSidebarCollapsedBrowsing(false)
+    writeLayoutPreference(SIDEBAR_COLLAPSED_BROWSING_KEY, false)
+  }
   const listParams = useMemo(() => withoutSelection(params), [params])
   const listKey = JSON.stringify(listParams)
   // The MR list reads its parameters once, so a different list remounts it. A
@@ -613,7 +621,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <Box sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
         {/* In a narrow window an expanded navigation lies over the page, like the peek, instead of taking its width. */}
-        <PeekingNavigation collapsed={sidebarIsCollapsed} overlays={isNarrowNav && !sidebarIsCollapsed} resizeHandle={sidebarIsCollapsed || isNarrowNav ? null : <SidebarResizeHandle onResize={setSidebarWidth} onResizingChange={setResizing} width={sidebarWidth} />} resizing={resizing} slotWidth={sidebarIsCollapsed || isNarrowNav ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} width={sidebarWidth}>
+        <PeekingNavigation collapsed={sidebarIsCollapsed} onPin={expandSidebar} overlays={isNarrowNav && !sidebarIsCollapsed} resizeHandle={sidebarIsCollapsed || isNarrowNav ? null : <SidebarResizeHandle onResize={setSidebarWidth} onResizingChange={setResizing} width={sidebarWidth} />} resizing={resizing} slotWidth={sidebarIsCollapsed || isNarrowNav ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} width={sidebarWidth}>
         {({ collapsed: navCollapsed, foldForNotifications, stopPeek }) => <>
           <Row sx={{ justifyContent: navCollapsed ? 'center' : 'space-between', minHeight: 36, mb: 1, pl: navCollapsed ? 0 : 1 }}>
             {navCollapsed ? null : <Typography component="div" noWrap variant="h3">GitLab Desktop</Typography>}
@@ -724,11 +732,13 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
 /**
  * The navigation's place in the layout. Collapsed, it shows in full over the page while
  * the pointer rests on it (the peek). The peek is kept here, so unfolding renders only the
- * navigation and not the screens beside it.
+ * navigation and not the screens beside it. A click anywhere in the peek keeps it expanded.
  */
-function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizing, slotWidth, width }: {
+function PeekingNavigation({ children, collapsed, onPin, overlays, resizeHandle, resizing, slotWidth, width }: {
   children: (navigation: { collapsed: boolean; foldForNotifications: (open: boolean) => void; stopPeek: () => void }) => ReactNode
   collapsed: boolean
+  /** Keeps the navigation expanded. */
+  onPin: () => void
   /** An expanded navigation that lies over the page, in a narrow window. */
   overlays: boolean
   resizeHandle: ReactNode
@@ -767,10 +777,18 @@ function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizi
     setNotificationsOpen(open)
     stopPeek()
   }
+  // After the clicked control has done its own work. Not for the notification button, which folds the peek for its
+  // panel, nor for clicks in a menu or panel opened from the navigation (portals whose events still reach here).
+  const pin = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!peeking || notificationsOpen || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
+    if (event.target instanceof Element && event.target.closest('[data-no-peek]')) return
+    stopPeek()
+    onPin()
+  }
   const navCollapsed = collapsed && !peeking
   const lies = peeking || overlays
   return (
-    <Box onMouseLeave={leave} onMouseOver={follow} sx={{ flexShrink: 0, position: 'relative', transition: resizing ? 'none' : 'width 120ms', width: slotWidth, zIndex: lies ? 'drawer' : 'auto', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+    <Box onClick={pin} onMouseLeave={leave} onMouseOver={follow} sx={{ flexShrink: 0, position: 'relative', transition: resizing ? 'none' : 'width 120ms', width: slotWidth, zIndex: lies ? 'drawer' : 'auto', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
       <Box component="aside" sx={{ bgcolor: 'surface.nav', ...hairline('right', { position: false }), bottom: 0, boxShadow: lies ? 8 : 'none', display: 'flex', flexDirection: 'column', left: 0, overflow: 'hidden', position: 'absolute', px: 1, py: 1, top: 0, transition: resizing ? 'none' : 'width 120ms', width: navCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
         {children({ collapsed: navCollapsed, foldForNotifications, stopPeek })}
       </Box>
