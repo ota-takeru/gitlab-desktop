@@ -17,6 +17,7 @@ import { useGitLabImage } from '../../features/shared/useGitLabImage'
 import { alignTop } from '../rows'
 import { mermaidSource } from '../../lib/mermaidDiagram'
 import { MarkdownMermaid } from './MarkdownMermaid'
+import { parsedBodies } from './parsedMarkdown'
 
 interface MarkdownNode { type: string; value?: string; children?: MarkdownNode[] }
 
@@ -97,15 +98,26 @@ const components: Components = {
   th: ({ node, ...props }) => <th {...props} data-short-cell={isShortCell(node)} />,
 }
 
-/** Parsed comment bodies, most recently used last; reopening a thread reuses them. */
-const parsedBodies = new Map<string, ReactElement>()
 const MAX_PARSED_BODIES = 2000
+
+/** Annotations are built once per file and not changed afterwards, so each one's key is worked out once. */
+const reviewKeys = new WeakMap<FullFileDiffAnnotations, string>()
+function reviewKeyOf(annotations: FullFileDiffAnnotations): string {
+  let key = reviewKeys.get(annotations)
+  if (key === undefined) {
+    key = `${[...annotations.addedLines].join(',')}|${[...annotations.removedByAnchor.values()].flat().map((item) => `${item.anchorLine}:${item.oldStart}:${item.text}`).join('|')}`
+    reviewKeys.set(annotations, key)
+  }
+  return key
+}
+/** The key of the empty annotations a blame-only body is given. */
+const EMPTY_REVIEW_KEY = '|'
 
 function parseMarkdown(body: string, catalog: EmojiCatalog | null, base: MarkdownLinkBase, review?: FullFileDiffAnnotations, renderBlame?: (line: number) => ReactNode): ReactElement {
   // Bodies parsed before the emoji list loaded only know the common emoji, so they are kept apart;
   // so are bodies from different projects, whose references point elsewhere.
   const annotations = review ?? (renderBlame ? { addedLines: new Set<number>(), removedByAnchor: new Map() as FullFileDiffAnnotations['removedByAnchor'], consistent: true } : undefined)
-  const reviewKey = annotations ? `${[...annotations.addedLines].join(',')}|${[...annotations.removedByAnchor.values()].flat().map((item) => `${item.anchorLine}:${item.oldStart}:${item.text}`).join('|')}` : ''
+  const reviewKey = review ? reviewKeyOf(review) : annotations ? EMPTY_REVIEW_KEY : ''
   const repository = base.repository ? `${base.repository.projectId}:${base.repository.ref ?? ''}:${base.repository.path}` : ''
   const key = `${catalog ? 'emoji' : 'common'}\n${base.instanceUrl ?? ''}\n${base.projectUrl ?? ''}\n${repository}\n${renderBlame ? 'blame' : 'plain'}\n${reviewKey}\n${body}`
   const cached = parsedBodies.get(key)

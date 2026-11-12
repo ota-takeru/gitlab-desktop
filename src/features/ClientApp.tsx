@@ -72,6 +72,8 @@ import { closeStaleTabs, hasViewedMergeRequest, mrRefKey, openWorkspaceTab, STAL
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
 import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
 import { MemoryPressure, useMemoryPressureReading } from './shared/MemoryPressure'
+import { clearParsedMarkdown } from '../components/mock/parsedMarkdown'
+import { clearMermaidDiagrams } from '../lib/mermaidDiagram'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
@@ -526,7 +528,14 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
   // spares data a screen just left and is about to show again, and spreads the release out.
   const queryClient = useQueryClient()
   const unusedAtLastReading = useRef(new Set<string>())
+  const constrainedAtLastReading = useRef(false)
   const releaseUnusedData = useCallback((constrained: boolean) => {
+    // Parsed comments and drawn diagrams are let go once as a shortage begins, not at every reading while it lasts.
+    if (constrained && !constrainedAtLastReading.current) {
+      clearParsedMarkdown()
+      clearMermaidDiagrams()
+    }
+    constrainedAtLastReading.current = constrained
     const unusedBefore = unusedAtLastReading.current
     unusedAtLastReading.current = new Set()
     if (!constrained) return

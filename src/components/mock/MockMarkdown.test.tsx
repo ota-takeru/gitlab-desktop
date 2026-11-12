@@ -1,12 +1,51 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { MarkdownLinkProvider } from '../MarkdownLinks'
+import { finishedMermaidDiagram, renderMermaidDiagram } from '../../lib/mermaidDiagram'
+import { resolveMarkdownUrl } from '../../lib/markdownLinks'
 import { MockMarkdown } from './MockMarkdown'
+import { clearParsedMarkdown } from './parsedMarkdown'
 
 const mermaidRender = vi.hoisted(() => vi.fn())
 vi.mock('mermaid', () => ({ default: { initialize: vi.fn(), render: mermaidRender } }))
+vi.mock('../../lib/markdownLinks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/markdownLinks')>()
+  return { ...actual, resolveMarkdownUrl: vi.fn(actual.resolveMarkdownUrl) }
+})
 
 describe('local Markdown preview', () => {
+  it('parses a body again only after logout, account replacement or an explicit clear', () => {
+    const body = '[参照](https://gitlab.example/cache-check)'
+    const parses = () => vi.mocked(resolveMarkdownUrl).mock.calls.filter(([url]) => url === 'https://gitlab.example/cache-check').length
+    render(<MockMarkdown body={body} />).unmount()
+    const first = parses()
+    expect(first).toBeGreaterThan(0)
+    render(<MockMarkdown body={body} />).unmount()
+    expect(parses()).toBe(first)
+    globalThis.dispatchEvent(new Event('gitlab-explicit-logout'))
+    render(<MockMarkdown body={body} />).unmount()
+    expect(parses()).toBe(first * 2)
+    globalThis.dispatchEvent(new Event('gitlab-account-replaced'))
+    render(<MockMarkdown body={body} />).unmount()
+    expect(parses()).toBe(first * 3)
+    clearParsedMarkdown()
+    render(<MockMarkdown body={body} />).unmount()
+    expect(parses()).toBe(first * 4)
+  })
+
+  it('forgets drawn diagrams after logout or account replacement', async () => {
+    for (const event of ['gitlab-explicit-logout', 'gitlab-account-replaced']) {
+      mermaidRender.mockResolvedValueOnce({ svg: '<svg/>' })
+      await renderMermaidDiagram(`graph TD
+  ${event}`, false)
+      expect(finishedMermaidDiagram(`graph TD
+  ${event}`, false)).toBeTruthy()
+      globalThis.dispatchEvent(new Event(event))
+      expect(finishedMermaidDiagram(`graph TD
+  ${event}`, false)).toBeUndefined()
+    }
+  })
+
   it('draws a mermaid block as an image, keeping its source lines for a reviewed file', async () => {
     mermaidRender.mockResolvedValueOnce({ svg: '<svg><text>確認</text></svg>' })
     const source = 'graph TD\n    A["軽量版"] -->|読む| B[("Sp")]'
