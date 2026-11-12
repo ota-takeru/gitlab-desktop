@@ -344,5 +344,6 @@ Not checked:
 - Moving with N, P or the thread outline to a folded thread that is waiting. N was checked only on a thread that is open.
 - Where the reader's place goes when threads above mount after the reader has scrolled.
 - How long a tab built again under memory pressure takes, as it mounts all its threads together.
+- How screens behave under the current rule for which tabs are kept under memory pressure. The checks above were made under the earlier rule. Under that rule, only the tab on view was kept, and a tab built again showed at once. Under the current rule, the tab shown before is kept too. A tab built again still mounts its threads the same way. However, it first waits out of sight until its saved data is read.
 - Other numbers of threads. The values in the UI design (12 threads, 4 on each side, 110 px per row, 1,000 px from the view) were not derived from measurements.
 - What the remaining longest task consists of.

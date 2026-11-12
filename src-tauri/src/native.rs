@@ -459,6 +459,23 @@ impl NativeState {
             .ok_or_else(auth_required)
     }
 
+    /// Lets go of the avatars and Markdown images fetched for the signed-in session; each is
+    /// fetched again when shown. Runs off the calling thread, as a storage job may hold the lock.
+    pub fn release_images(&self) {
+        let inner = self.inner.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let session = inner.lock().ok().and_then(|inner| inner.active.clone());
+            if let Some(session) = session {
+                if let Ok(mut avatars) = session.avatars.lock() {
+                    avatars.clear();
+                }
+                if let Ok(mut images) = session.images.lock() {
+                    images.clear();
+                }
+            }
+        });
+    }
+
     pub async fn connect(&self, input: ConnectInput) -> Result<Session, AppError> {
         let _lifecycle = self.lifecycle.lock().await;
         self.connect_locked(input, false, None).await

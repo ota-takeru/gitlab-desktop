@@ -393,11 +393,21 @@ fn runtime_info() -> RuntimeInfo {
 }
 
 /// Whether the system is short of physical memory, so the interface keeps fewer hidden screens.
-/// Each reading also updates how much memory the WebView keeps while out of focus.
+/// Each reading also updates how much memory the WebView keeps while out of focus, and the
+/// first reading of a shortage lets go of the images fetched so far.
 #[tauri::command]
-fn memory_pressure(window: tauri::WebviewWindow) -> bool {
+fn memory_pressure(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, ApplicationState>,
+) -> bool {
     memory::update_webview_memory_target(&window);
-    memory::memory_constrained()
+    let constrained = memory::memory_constrained();
+    if memory::pressure_began(constrained) {
+        if let Ok(native) = state.native() {
+            native.release_images();
+        }
+    }
+    constrained
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

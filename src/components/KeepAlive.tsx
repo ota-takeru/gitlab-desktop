@@ -59,8 +59,10 @@ interface KeptScreens {
 function keptScreens(screens: KeptScreens, activeKey: string | null, max: number, keep: readonly string[], revealWhenReady: boolean): KeptScreens {
   const kept = new Set(keep)
   let others = 0
+  // With nothing on view, `max` hidden screens stay; otherwise the active one counts toward it.
+  const hidden = Math.max(1, max) - (activeKey === null ? 0 : 1)
   const recent = [...(activeKey === null ? [] : [activeKey]), ...screens.recent.filter((key) => key !== activeKey)]
-    .filter((key) => key === activeKey || kept.has(key) || ++others < Math.max(1, max))
+    .filter((key) => key === activeKey || kept.has(key) || others++ < hidden)
   const switching = activeKey !== screens.active
   // The screen showing stays mounted, past `max` too, until the new one has arrived over it: dropped at once, it
   // would leave nothing under a screen fading in or out of sight.

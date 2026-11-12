@@ -521,11 +521,20 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     return () => globalThis.clearInterval(timer)
   }, [instanceUrl, selectedIid, selectedProjectId, userId])
   const openTabKeys = useMemo(() => workspace.open.map(mrRefKey), [workspace.open])
-  // Short of memory, only the screens on view stay mounted and fetched data nothing shows is let go:
-  // Rust's disk cache brings it back when a screen reads it again.
+  // Short of memory, fewer screens stay mounted and fetched data nothing has shown since the reading
+  // before is let go: Rust's disk cache brings it back when a screen reads it again. Waiting a reading
+  // spares data a screen just left and is about to show again, and spreads the release out.
   const queryClient = useQueryClient()
+  const unusedAtLastReading = useRef(new Set<string>())
   const releaseUnusedData = useCallback((constrained: boolean) => {
-    if (constrained) queryClient.removeQueries({ queryKey: ['gitlab'], type: 'inactive' })
+    const unusedBefore = unusedAtLastReading.current
+    unusedAtLastReading.current = new Set()
+    if (!constrained) return
+    const cache = queryClient.getQueryCache()
+    for (const query of cache.findAll({ queryKey: ['gitlab'], type: 'inactive' })) {
+      if (unusedBefore.has(query.queryHash)) cache.remove(query)
+      else unusedAtLastReading.current.add(query.queryHash)
+    }
   }, [queryClient])
   const memoryConstrained = useMemoryPressureReading(releaseUnusedData)
   const selectedHasTab = selectedPinned || Boolean(selected && openTabKeys.includes(mrRefKey(selected)))
@@ -650,7 +659,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
               <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative', ...(selected && mrRevealPending && { inset: 0, isolation: 'isolate', position: 'absolute' }) }}>
                 {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy.
                     A list shown for the first time shows once its saved data is read; the list before it stays until then. */}
-                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} arrivalBackground="surface.list" max={memoryConstrained ? 1 : 6} revealWhenReady={!memoryConstrained} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} arrivalBackground="surface.list" max={memoryConstrained ? 1 : 6} revealWhenReady renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
@@ -665,7 +674,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
                 </KeepAlive>
               </Box>
               {/* An MR opened for the first time shows once its saved data is read; the list or the MR before it stays until then. */}
-              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} onRevealPendingChange={setMrRevealPending} revealWhenReady={!memoryConstrained} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} onRevealPendingChange={setMrRevealPending} revealWhenReady sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
               {/* An MR with a sidebar tab keeps its data while hidden, so switching back shows it at once. */}
               {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab && !memoryConstrained ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute

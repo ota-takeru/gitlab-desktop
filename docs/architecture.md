@@ -156,6 +156,12 @@ While the app is hidden, the first version stops periodic updates. A target whos
 
 Offline use is mostly read-only. MRs and diffs that were not fetched are shown as not openable. Writes are not queued or resent automatically.
 
+Under memory pressure, the app keeps less in memory. The desktop app counts as under memory pressure when less than 1.5 GiB of physical memory is free. It stops counting as under memory pressure once at least 2.5 GiB is free again. The interface reads the free physical memory every 15 seconds while the window is visible. Outside Windows, the app never counts as under memory pressure.
+
+While under pressure, fewer hidden screens stay mounted. The [UI design](ui-design.md) sets how many in three places. MR screens are in the paragraph on keeping MR screens. Lists are in the Motion row. MR tabs are in "Long discussions". The app removes fetched data from memory when no shown screen used it at two readings in a row, which takes about 15 to 30 seconds. This also applies to the data of screens kept hidden. When a screen shows removed data again, it reads the data from the SQLite cache. Until that read finishes, the screen shows its loading state at once. A screen built again first waits out of sight, but this screen does not.
+
+Each time memory pressure starts, the app also empties Rust's in-memory caches of avatars and Markdown images at the first reading. Separately, the app asks the WebView to lower its memory use in two cases. The first is when the window has been minimized for 30 seconds. The second is when the window has been out of focus for 30 seconds while under memory pressure. Once neither case applies, for example when the window is focused again, the WebView returns to its normal memory use.
+
 ## 7. IPC contract and communication control
 
 Commands are split by purpose, such as `search_projects`, `search_merge_requests`, `get_merge_request`, `get_mr_diff_page` and `get_mr_discussions`. Each read command states CacheOnly or NetworkOnly. `request(url, headers)` and arbitrary SQL execution are not exposed.
