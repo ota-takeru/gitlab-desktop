@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { structuredPatch } from 'diff'
 import type { Diff, FileQuery } from '../../types/gitlab'
 import { useGitLabQuery } from '../shared/useGitLabQuery'
@@ -6,6 +6,8 @@ import { useGitLabQuery } from '../shared/useGitLabQuery'
 const CONTEXT_LINES = 3
 /** Comparing runs on the UI thread, so two very different files are given up on rather than freezing it. */
 const COMPARE_TIMEOUT_MS = 3000
+/** Characters of both versions together above which they are not compared, as the comparison and its diff would hold up the UI. */
+const MAX_COMPARE_CHARACTERS = 1_000_000
 
 export type OmittedDiffRead =
   | { status: 'loading' }
@@ -32,9 +34,10 @@ export function canReadOmittedDiff(diff: Diff, source: OmittedDiffSource | undef
 
 /**
  * The unified diff between two versions of a file, shaped as GitLab's `diff`
- * field. Null when they are not text or comparing them takes too long.
+ * field. Null when they are not text, are too large, or comparing them takes too long.
  */
 export function diffFromFiles(before: string, after: string): string | null {
+  if (before.length + after.length > MAX_COMPARE_CHARACTERS) return null
   if (before.includes('\0') || after.includes('\0')) return null
   const patch = structuredPatch('', '', before, after, undefined, undefined, { context: CONTEXT_LINES, timeout: COMPARE_TIMEOUT_MS })
   if (!patch) return null
@@ -57,12 +60,18 @@ export function OmittedDiffReader({ diff, onRead, source }: { diff: Diff; onRead
   const afterContent = afterQuery ? after.data?.content : ''
   const failure = (beforeQuery && !before.data ? before.error : null) ?? (afterQuery && !after.data ? after.error : null)
   const failureMessage = failure?.message
+  // Compared after the loading state has been painted, so the comparison does not hold up the view that opened the file.
+  const [compared, setCompared] = useState<{ after: string; before: string; diff: string | null } | null>(null)
+  useEffect(() => {
+    if (beforeContent === undefined || afterContent === undefined) return
+    const timer = setTimeout(() => setCompared({ after: afterContent, before: beforeContent, diff: diffFromFiles(beforeContent, afterContent) }))
+    return () => clearTimeout(timer)
+  }, [afterContent, beforeContent])
   const read = useMemo<OmittedDiffRead>(() => {
     if (failureMessage !== undefined) return { message: failureMessage, status: 'failed' }
-    if (beforeContent === undefined || afterContent === undefined) return { status: 'loading' }
-    const compared = diffFromFiles(beforeContent, afterContent)
-    return compared === null ? { status: 'notComparable' } : { diff: compared, status: 'ready' }
-  }, [afterContent, beforeContent, failureMessage])
+    if (!compared || compared.before !== beforeContent || compared.after !== afterContent) return { status: 'loading' }
+    return compared.diff === null ? { status: 'notComparable' } : { diff: compared.diff, status: 'ready' }
+  }, [afterContent, beforeContent, compared, failureMessage])
   useEffect(() => onRead(read), [onRead, read])
   return null
 }

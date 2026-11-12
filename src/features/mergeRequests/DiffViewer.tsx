@@ -27,7 +27,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import InputAdornment from '@mui/material/InputAdornment'
-import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useContext, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { hairline, panelFrame } from '../../components/hairline'
 import { gridLine } from '../../theme'
@@ -173,7 +173,10 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const folded = useMemo(() => whitespaceIgnored ? ignoreWhitespaceChanges(parsed.lines) : null, [parsed, whitespaceIgnored])
   const displayLines = folded?.lines ?? parsed.lines
   const whitespaceOnlyFile = Boolean(folded && !folded.changed && parsed.lines.some((line) => line.kind !== 'context'))
-  const diffKey = selectedDiff ? `${displayedPath}\0${comparedDiff ?? selectedDiff.diff}\0${whitespaceIgnored}` : ''
+  const shownDiffText = selectedDiff ? comparedDiff ?? selectedDiff.diff : null
+  // A short fingerprint of the text stands for it, so the key does not copy the whole diff on every render.
+  const shownDiffId = useMemo(() => shownDiffText === null ? '' : textFingerprint(shownDiffText), [shownDiffText])
+  const diffKey = selectedDiff ? `${displayedPath}\0${shownDiffId}\0${whitespaceIgnored}` : ''
   const markdownDiff = Boolean(displayedPath && isMarkdownFilePath(displayedPath))
   const [markdownMode, setMarkdownMode] = useState<{ key: string; mode: 'preview' | 'source' } | null>(null)
   const [diffSearch, setDiffSearch] = useState('')
@@ -187,9 +190,11 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
   const selectedLineIndex = useMemo(() => parsed.status === 'valid' && selectedPosition ? displayLines.findIndex((line) => matchesPosition(line, selectedPosition)) : -1, [displayLines, parsed.status, selectedPosition])
   const [fileSearch, setFileSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState<{ query: string; path: string; lineIndex: number } | null>(null)
+  // The search scans every line of the page, so it follows typing a step behind and the field keeps up.
+  const searchQuery = useDeferredValue(diffSearch)
   // Parse and lowercase the whole page only while searching, and only once per
   // page of diffs rather than on every keystroke.
-  const searching = Boolean(diffSearch.trim())
+  const searching = Boolean(searchQuery.trim())
   const searchableLines = useMemo(() => searching
     ? diffs.map((diff) => {
       const lines = parseDiff(diff.diff, diff.oldPath, diff.newPath).lines
@@ -197,7 +202,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     })
     : [], [diffs, searching, whitespaceIgnored])
   const searchMatches = useMemo(() => {
-    const query = diffSearch.trim().toLocaleLowerCase()
+    const query = searchQuery.trim().toLocaleLowerCase()
     if (!query) return [] as Array<{ path: string; lineIndex: number }>
     const matches: Array<{ path: string; lineIndex: number }> = []
     searchableLines.forEach((lines, fileIndex) => {
@@ -207,11 +212,11 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
       })
     })
     return matches
-  }, [diffSearch, diffs, searchableLines])
-  const activeSearchResultIndex = activeSearch?.query === diffSearch
+  }, [diffs, searchQuery, searchableLines])
+  const activeSearchResultIndex = activeSearch?.query === searchQuery
     ? searchMatches.findIndex((match) => match.path === activeSearch.path && match.lineIndex === activeSearch.lineIndex)
     : -1
-  const currentSearchMatch = activeSearch?.query === diffSearch && activeSearch.path === displayedPath
+  const currentSearchMatch = activeSearch?.query === searchQuery && activeSearch.path === displayedPath
     ? activeSearch.lineIndex
     : -1
   const diffScrollRef = useRef<HTMLDivElement | null>(null)
@@ -383,7 +388,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     if (activeSearchResultIndex < 0) nextIndex = direction > 0 ? 0 : searchMatches.length - 1
     else nextIndex = (activeSearchResultIndex + direction + searchMatches.length) % searchMatches.length
     const match = searchMatches[nextIndex]
-    setActiveSearch({ query: diffSearch, path: match.path, lineIndex: match.lineIndex })
+    setActiveSearch({ query: searchQuery, path: match.path, lineIndex: match.lineIndex })
     onViewChange('diff')
     if (match.path !== displayedPath) onSelectFile(match.path)
   }
@@ -699,8 +704,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
       ? <FetchedMarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} query={gapQuery} sessionId={sourceSessionId} source={markdownSource} />
       : <MarkdownDiffPreview blameEnabled={blameOpen && canBlame} layout={layout} lines={displayLines} source={markdownSource} />}</MarkdownLinkProvider>
     : layout === 'split'
-    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
-    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={diffSearch.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
+    ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={searchQuery.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
+    : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={searchQuery.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
 
   return (
     <Box data-diff-maximized={maximized && !sharedMaximize ? 'true' : undefined} data-diff-viewer ref={rootRef} sx={maximized && !sharedMaximize ? MAXIMIZED_SX : undefined}>
@@ -751,7 +756,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
               placeholder={t('review.diff.search.placeholder')}
               size="dense"
               value={diffSearch}
-              slotProps={{ htmlInput: { 'aria-label': t('review.diff.search.placeholder') }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{diffSearch.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><Tooltip title={t('review.diff.search.previousTooltip')}><span><IconButton aria-label={t('review.diff.search.previous')} disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title={t('review.diff.search.nextTooltip')}><span><IconButton aria-label={t('review.diff.search.next')} disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
+              slotProps={{ htmlInput: { 'aria-label': t('review.diff.search.placeholder') }, input: { endAdornment: <InputAdornment position="end"><Typography aria-live="polite" color="textSecondary" sx={{ minWidth: 48, textAlign: 'center' }} variant="caption">{searchQuery.trim() ? `${activeSearchResultIndex >= 0 ? activeSearchResultIndex + 1 : 0}/${searchMatches.length}` : ''}</Typography><Tooltip title={t('review.diff.search.previousTooltip')}><span><IconButton aria-label={t('review.diff.search.previous')} disabled={searchMatches.length === 0} onClick={() => navigateSearch(-1)} size="small"><KeyboardArrowUpRoundedIcon /></IconButton></span></Tooltip><Tooltip title={t('review.diff.search.nextTooltip')}><span><IconButton aria-label={t('review.diff.search.next')} disabled={searchMatches.length === 0} onClick={() => navigateSearch(1)} size="small"><KeyboardArrowDownRoundedIcon /></IconButton></span></Tooltip></InputAdornment> } }}
             /></Tooltip>
             {treeShown ? null : fileSearchField(false)}
           </Stack>
@@ -777,7 +782,7 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
             {pendingRangeLabel ? <Typography color="primary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.rangeSelected', { lines: positionLines(pendingRangeLabel) })}</Typography> : null}
             {threadView && lineThreads.outdated > 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.outdatedHidden', { count: lineThreads.outdated })}</Typography> : null}
             {threadView && discussionsIncomplete ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.discussionsIncomplete')}</Typography> : null}
-            {diffSearch.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.search.noMatch')}</Typography> : null}
+            {searchQuery.trim() && searchMatches.length === 0 ? <Typography color="textSecondary" role="status" sx={{ px: 1.5, pt: 1 }} variant="caption">{t('review.diff.search.noMatch')}</Typography> : null}
             {/* Always wrapped while Blame can be shown, so toggling it does not remount the diff and an open comment editor in it. */}
             {canBlame && fileSource && selectedDiff
               ? <BlameProvider beforeSha={fileSource.beforeSha} enabled={blameOpen} onHistory={openHistory} key={`${fileSource.sha}:${fileSource.beforeSha ?? ''}:${displayedPath}`} newPath={selectedDiff.newPath} oldPath={selectedDiff.oldPath} projectId={fileSource.projectId} projectUrl={fileSource.projectUrl} selectedLines={blameSelection} sessionId={fileSource.sessionId} sha={fileSource.sha}>{diffContent}</BlameProvider>
@@ -803,6 +808,13 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
 const NO_SHOWN_GAPS: ReadonlyMap<string, number> = new Map()
 const NO_HUNKS: DiffHunk[] = []
 const NO_OUTLINE: DiffOutline = { entries: [], omitted: 0 }
+
+/** The length and a 32-bit FNV-1a hash of a text: short, and different for a changed text except in a rare collision. */
+function textFingerprint(text: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < text.length; index += 1) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193)
+  return `${text.length}:${hash >>> 0}`
+}
 
 /**
  * A path on one line. Its folders give way first and its file name last, so a long path keeps the name in view.

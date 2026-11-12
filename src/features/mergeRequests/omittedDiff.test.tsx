@@ -40,6 +40,10 @@ describe('diffFromFiles', () => {
     expect(diffFromFiles('a\n', 'a\n')).toBe('')
     expect(diffFromFiles('a\0b', 'c')).toBeNull()
   })
+
+  it('gives up on two versions too large to compare on the UI thread', () => {
+    expect(diffFromFiles('a\n'.repeat(300_000), 'b\n'.repeat(250_000))).toBeNull()
+  })
 })
 
 describe('listMissesFiles', () => {
