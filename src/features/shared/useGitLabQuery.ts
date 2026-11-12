@@ -1,6 +1,7 @@
 import { keepPreviousData, notifyManager, QueryObserver, useQueryClient, type QueryClient, type QueryKey, type QueryObserverResult, type UseQueryOptions } from '@tanstack/react-query'
 import { startTransition, useCallback, useEffect, useMemo, useReducer, useState, useSyncExternalStore } from 'react'
 import { useQueryRefreshAllowed, useQueryRetention } from './QueryRefreshPolicy'
+import { useMemoryPressure } from './MemoryPressure'
 import { useScreenReadiness } from '../../components/screenReadinessContext'
 import { translate } from '../../i18n/i18n'
 
@@ -28,6 +29,8 @@ export interface GitLabQueryState<T> {
 
 /** How often a read that last failed is tried again by itself. */
 const FAILED_REFRESH_INTERVAL_MS = 5 * 60_000
+/** Short of memory, data on screen is refreshed this many times less often, so the app wakes less. */
+const CONSTRAINED_REFRESH_FACTOR = 3
 
 interface LoadedQuery<T> {
   snapshot: GitLabSnapshot<T> | null
@@ -61,6 +64,7 @@ export function useGitLabQuery<Q extends GitLabQuery>(
   const queryClient = useQueryClient()
   const autoRefresh = useQueryRefreshAllowed()
   const gcTime = useQueryRetention()
+  const memoryConstrained = useMemoryPressure()
   const queryJson = useMemo(() => (query ? JSON.stringify(query) : ''), [query])
   const queryKey = useMemo(() => ['gitlab', sessionId ?? '', queryJson] as const, [queryJson, sessionId])
   const loaded = useTransitionQuery<LoadedQuery<GitLabQueryData<Q>>, GitLabCommandError>({
@@ -75,7 +79,8 @@ export function useGitLabQuery<Q extends GitLabQuery>(
       const failure = current.state.error ?? current.state.data?.error
       if (isAccessDenied(failure)) return false
       const interval = refreshIntervalMs || 60_000
-      return failure ? Math.max(interval, FAILED_REFRESH_INTERVAL_MS, failure.retryAfterMs ?? 0) : interval
+      if (failure) return Math.max(interval, FAILED_REFRESH_INTERVAL_MS, failure.retryAfterMs ?? 0)
+      return memoryConstrained ? interval * CONSTRAINED_REFRESH_FACTOR : interval
     },
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: (current) => {

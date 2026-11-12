@@ -74,6 +74,7 @@ import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './sh
 import { MemoryPressure, useMemoryPressureReading } from './shared/MemoryPressure'
 import { clearParsedMarkdown } from '../components/mock/parsedMarkdown'
 import { clearMermaidDiagrams } from '../lib/mermaidDiagram'
+import { clearDiffTokenCache } from './mergeRequests/diffTokenCache'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
@@ -189,7 +190,11 @@ const CodeBrowser = lazy(() => loadCodeBrowser().then(({ CodeBrowser }) => ({ de
 // Local clones are set up in the settings; their module carries the diff view.
 const ScanFolders = lazy(() => import('./mergeRequests/LocalChanges').then(({ ScanFolders }) => ({ default: ScanFolders })))
 
+let screensPreloaded = false
+/** Called at the first reading of the system's memory that is not short, so a shortage leaves them to load on demand. */
 function preloadScreens() {
+  if (screensPreloaded) return
+  screensPreloaded = true
   const idle = globalThis.requestIdleCallback ?? ((callback: () => void) => globalThis.setTimeout(callback, 1))
   idle(() => { void loadMergeRequestDetail().then(() => idle(() => { void loadCodeBrowser() })).catch(() => undefined) })
 }
@@ -199,7 +204,6 @@ export function ClientApp(props: ClientAppProps) {
     ? props
     : { colorPreference: props.mode, onColorPreferenceChange: (next) => { if (next !== props.mode && next !== 'system') props.onModeChange() } }
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { gcTime: 15 * 60_000, refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } }, queryCache: trackConnectivity() }))
-  useEffect(preloadScreens, [])
   useEffect(() => {
     const handleWorkspaceReset = () => clearComposerBuffers()
     globalThis.addEventListener('gitlab-explicit-logout', handleWorkspaceReset)
@@ -534,8 +538,10 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     if (constrained && !constrainedAtLastReading.current) {
       clearParsedMarkdown()
       clearMermaidDiagrams()
+      clearDiffTokenCache()
     }
     constrainedAtLastReading.current = constrained
+    if (!constrained) preloadScreens()
     const unusedBefore = unusedAtLastReading.current
     unusedAtLastReading.current = new Set()
     if (!constrained) return
@@ -802,13 +808,21 @@ function SidebarResizeHandle({ onResize, onResizingChange, width }: { onResize: 
       event.preventDefault()
       const startX = event.clientX
       let latest = width
+      // The whole workspace renders again for a new width, so a drag applies at most one per frame.
+      let frame: number | null = null
       onResizingChange(true)
       document.body.style.cursor = 'col-resize'
       const move = (moveEvent: PointerEvent) => {
         latest = clampSidebarWidth(width + moveEvent.clientX - startX)
-        onResize(latest)
+        frame ??= globalThis.requestAnimationFrame(() => {
+          frame = null
+          onResize(latest)
+        })
       }
       const end = () => {
+        if (frame !== null) globalThis.cancelAnimationFrame(frame)
+        frame = null
+        onResize(latest)
         window.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', end)
         window.removeEventListener('pointercancel', end)

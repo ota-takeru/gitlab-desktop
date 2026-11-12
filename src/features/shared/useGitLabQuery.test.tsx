@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitLabSnapshot, Project, ProjectQuery } from '../../types/gitlab'
 import { ScreenReadinessContext } from '../../components/screenReadinessContext'
 import { applyConfirmedGitLabChange, prefetchGitLabQuery, useGitLabQuery } from './useGitLabQuery'
+import { MemoryPressure } from './MemoryPressure'
 
 const { cancelMock, queryGitLabMock } = vi.hoisted(() => ({ cancelMock: vi.fn(), queryGitLabMock: vi.fn() }))
 
@@ -165,6 +166,25 @@ describe('useGitLabQuery', () => {
     expect(interval({ state: { data: undefined, error: { code: 'RATE_LIMITED', retryAfterMs: 10 * 60_000 } } })).toBe(10 * 60_000)
     expect(interval({ state: { data: undefined, error: { code: 'FORBIDDEN' } } })).toBe(false)
     expect(interval({ state: { data: { error: null, snapshot: null }, error: null } })).toBe(60_000)
+  })
+
+  it('refreshes data on screen three times less often while memory is short, leaving the slower polling after a failure as it is', async () => {
+    queryGitLabMock.mockResolvedValue(snapshot('network'))
+    const mrQuery = { iid: '3', kind: 'mr' as const, projectId: '1' }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    function MrProbe() {
+      return <output data-testid="mr-state">{useGitLabQuery('session-1', mrQuery).snapshot?.source ?? 'none'}</output>
+    }
+    const view = (constrained: boolean) => <QueryClientProvider client={queryClient}><MemoryPressure value={constrained}><MrProbe /></MemoryPressure></QueryClientProvider>
+    const { rerender } = render(view(true))
+    await waitFor(() => expect(screen.getByTestId('mr-state')).toHaveTextContent('network'))
+
+    const cached = queryClient.getQueryCache().find({ queryKey: ['gitlab', 'session-1', JSON.stringify(mrQuery)] })!
+    const interval = () => cached.observers[0].options.refetchInterval as (current: unknown) => number | false
+    expect(interval()({ state: { data: { error: null, snapshot: null }, error: null } })).toBe(3 * 60_000)
+    expect(interval()({ state: { data: undefined, error: { code: 'NETWORK' } } })).toBe(5 * 60_000)
+    rerender(view(false))
+    expect(interval()({ state: { data: { error: null, snapshot: null }, error: null } })).toBe(60_000)
   })
 
   it('keeps a denied resource empty without retrying it in a loop', async () => {
