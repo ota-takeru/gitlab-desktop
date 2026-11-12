@@ -78,9 +78,11 @@ fn test_state(api: Url) -> (Arc<NativeState>, Arc<LiveSession>) {
         inner: Arc::new(Mutex::new(Inner {
             active: Some(live.clone()),
             store: Store::memory(),
+            memory_constrained: false,
         })),
         lifecycle: AsyncMutex::new(()),
         directory: std::env::temp_dir(),
+        memory_constrained: Arc::new(AtomicBool::new(false)),
     });
     (state, live)
 }
@@ -1258,4 +1260,47 @@ fn a_full_image_cache_lets_go_of_its_oldest_entry_only() {
     assert!(cache.entries.is_empty() && cache.order.is_empty());
     cache.insert("f".into(), None);
     assert_eq!(cache.order, ["f"]);
+}
+
+async fn available_becomes(slots: &Semaphore, wanted: usize) {
+    for _ in 0..200 {
+        if slots.available_permits() == wanted {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(slots.available_permits(), wanted);
+}
+
+#[tokio::test]
+async fn short_memory_takes_slots_only_as_reads_give_them_back() {
+    let slots = Arc::new(Semaphore::new(8));
+    let busy = slots.clone().acquire_many_owned(6).await.unwrap();
+    let reduction = Reduction::start(&slots, 5, &CancellationToken::new());
+    // Only the two free slots go at once; the reads in progress keep theirs.
+    assert_eq!(slots.available_permits(), 0);
+    drop(busy);
+    available_becomes(&slots, 3).await;
+    reduction.end();
+    assert_eq!(slots.available_permits(), 8);
+}
+
+#[tokio::test]
+async fn slots_come_back_when_memory_recovers_before_reads_finish() {
+    let slots = Arc::new(Semaphore::new(8));
+    let busy = slots.clone().acquire_many_owned(8).await.unwrap();
+    let reduction = Reduction::start(&slots, 5, &CancellationToken::new());
+    reduction.end();
+    drop(busy);
+    available_becomes(&slots, 8).await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(slots.available_permits(), 8);
+
+    let ended = CancellationToken::new();
+    let busy = slots.clone().acquire_many_owned(8).await.unwrap();
+    let _reduction = Reduction::start(&slots, 5, &ended);
+    ended.cancel();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    drop(busy);
+    assert_eq!(slots.available_permits(), 8);
 }

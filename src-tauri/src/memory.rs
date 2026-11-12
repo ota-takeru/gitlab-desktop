@@ -12,7 +12,7 @@ const RELIEVED_ABOVE: u64 = 2560 * MIB;
 const LOW_AFTER: Duration = Duration::from_secs(30);
 
 static CONSTRAINED: AtomicBool = AtomicBool::new(false);
-/// Whether the shortage was already reported by `pressure_began`.
+/// Whether the shortage was already reported by `pressure_changed`.
 static PRESSURE_NOTED: AtomicBool = AtomicBool::new(false);
 /// Whether the WebView was last asked to keep its memory low.
 static WEBVIEW_LOW: AtomicBool = AtomicBool::new(false);
@@ -39,10 +39,11 @@ fn next_constrained(was: bool, available: u64) -> bool {
     }
 }
 
-/// Whether `constrained` is the first reading of a shortage, after memory was last plentiful.
-pub fn pressure_began(constrained: bool) -> bool {
+/// `Some(true)` for the first reading of a shortage after memory was last plentiful,
+/// `Some(false)` for the first plentiful reading after a shortage, and `None` otherwise.
+pub fn pressure_changed(constrained: bool) -> Option<bool> {
     let noted = PRESSURE_NOTED.swap(constrained, Ordering::Relaxed);
-    constrained && !noted
+    (noted != constrained).then_some(constrained)
 }
 
 /// While the window is minimized, or out of focus while memory is short, the WebView is
@@ -138,11 +139,12 @@ mod tests {
     }
 
     #[test]
-    fn a_shortage_is_reported_once_until_memory_is_plentiful_again() {
-        assert!(!pressure_began(false));
-        assert!(pressure_began(true));
-        assert!(!pressure_began(true));
-        assert!(!pressure_began(false));
-        assert!(pressure_began(true));
+    fn a_shortage_and_its_end_are_each_reported_once() {
+        assert_eq!(pressure_changed(false), None);
+        assert_eq!(pressure_changed(true), Some(true));
+        assert_eq!(pressure_changed(true), None);
+        assert_eq!(pressure_changed(false), Some(false));
+        assert_eq!(pressure_changed(false), None);
+        assert_eq!(pressure_changed(true), Some(true));
     }
 }

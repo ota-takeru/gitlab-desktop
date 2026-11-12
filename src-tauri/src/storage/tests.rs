@@ -161,6 +161,8 @@ fn cache_budget_evicts_oldest_entry() {
             [MAX_CACHE_BYTES],
         )
         .unwrap();
+    // The size was changed behind the store's back, so its bound no longer covers it.
+    store.1 = CacheBudget::new();
     store.put("a", "new", &snapshot).unwrap();
     assert!(store.get("a", "old").unwrap().is_none());
     assert!(store.get("a", "new").unwrap().is_some());
@@ -580,4 +582,58 @@ fn saves_through_a_write_ahead_log_that_keeps_no_removed_payload() {
     let _ = fs::remove_file(&path);
     let _ = fs::remove_file(&log);
     let _ = fs::remove_file(format!("{}-shm", path.display()));
+}
+
+#[test]
+fn saves_prune_only_when_needed_and_never_leave_the_cache_over_its_limits() {
+    let mut store = Store::memory();
+    store.1.max_bytes = 40_000;
+    store.1.max_entries = 50;
+    let held = |store: &Store| -> (i64, i64) {
+        store
+            .0
+            .query_row(
+                "SELECT COALESCE(SUM(size),0), COUNT(*) FROM cache",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    };
+    let mut skipped = false;
+    for index in 0..400usize {
+        let snapshot = Snapshot {
+            // Mostly small answers, with now and then one near the byte limit.
+            data: serde_json::json!("x".repeat(if index % 97 == 0 { 30_000 } else { index % 700 })),
+            fetched_at: now_ms(),
+            source: "network".into(),
+            next_page: None,
+            total_pages: None,
+            completeness: "complete".into(),
+        };
+        // Some keys repeat, which replaces a saved answer instead of adding one.
+        store
+            .put("a", &format!("key-{}", index % 120), &snapshot)
+            .unwrap();
+        let (bytes, entries) = held(&store);
+        assert!(
+            bytes <= 40_000 && entries <= 50,
+            "{index}: {bytes} {entries}"
+        );
+        assert!(bytes <= store.1.bytes && entries <= store.1.entries);
+        skipped |= store.1.saves > 0;
+    }
+    assert!(skipped);
+}
+
+#[test]
+fn the_write_ahead_log_is_cut_back_after_checkpoints() {
+    let path = temporary_path("journal-limit");
+    let store = Store::open(&path).unwrap();
+    let limit: i64 = store
+        .0
+        .query_row("PRAGMA journal_size_limit", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(limit, JOURNAL_SIZE_LIMIT);
+    drop(store);
+    let _ = fs::remove_file(&path);
 }

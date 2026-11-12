@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
@@ -56,6 +56,81 @@ pub struct LiveSession {
     avatars: Mutex<ImageCache>,
     /// Session-local cache for bounded, authenticated Markdown uploads.
     images: Mutex<ImageCache>,
+    /// Slots kept out of use while memory is short; empty otherwise.
+    reductions: Mutex<Vec<Reduction>>,
+}
+
+/// Slots of one semaphore kept out of use while memory is short. Free slots are taken at
+/// once and busy ones as they are given back, so no read in progress loses its slot.
+struct Reduction {
+    slots: Arc<Semaphore>,
+    /// How many slots are out of use; `None` once they were given back.
+    taken: Arc<Mutex<Option<usize>>>,
+    stop: CancellationToken,
+}
+
+impl Reduction {
+    /// `ended` stops the wait for busy slots, so a session that ends does not leave it behind.
+    fn start(slots: &Arc<Semaphore>, by: usize, ended: &CancellationToken) -> Self {
+        let forgotten = slots.forget_permits(by);
+        let reduction = Self {
+            slots: slots.clone(),
+            taken: Arc::new(Mutex::new(Some(forgotten))),
+            stop: ended.child_token(),
+        };
+        if forgotten < by {
+            let (slots, taken, stop) = (
+                slots.clone(),
+                reduction.taken.clone(),
+                reduction.stop.clone(),
+            );
+            tauri::async_runtime::spawn(async move {
+                for _ in forgotten..by {
+                    let permit = tokio::select! {
+                        permit = slots.clone().acquire_owned() => permit,
+                        _ = stop.cancelled() => return,
+                    };
+                    let Ok(permit) = permit else { return };
+                    let Ok(mut taken) = taken.lock() else { return };
+                    // Given back meanwhile: the slot returns to use when `permit` drops.
+                    let Some(count) = taken.as_mut() else { return };
+                    permit.forget();
+                    *count += 1;
+                }
+            });
+        }
+        reduction
+    }
+
+    fn end(self) {
+        self.stop.cancel();
+        if let Ok(mut taken) = self.taken.lock() {
+            if let Some(count) = taken.take() {
+                self.slots.add_permits(count);
+            }
+        }
+    }
+}
+
+impl LiveSession {
+    /// While memory is short, at most 3 reads for the screen, 2 images and 1 background
+    /// read start at once, instead of 8, 4 and 2.
+    fn limit_for_memory(&self, constrained: bool) {
+        let Ok(mut reductions) = self.reductions.lock() else {
+            return;
+        };
+        if constrained && reductions.is_empty() {
+            *reductions = vec![
+                Reduction::start(&self.slots, 5, &self.cancelled),
+                Reduction::start(&self.image_slots, 2, &self.cancelled),
+                Reduction::start(&self.background_slots, 1, &self.cancelled),
+            ];
+        } else if !constrained {
+            for reduction in reductions.drain(..) {
+                reduction.end();
+            }
+        }
+    }
 }
 
 const AVATAR_CACHE_LIMIT: usize = 512;
@@ -108,12 +183,16 @@ impl ImageCache {
 struct Inner {
     active: Option<Arc<LiveSession>>,
     store: Store,
+    /// Whether memory was last reported short; a session made active follows it.
+    memory_constrained: bool,
 }
 
 pub struct NativeState {
     inner: Arc<Mutex<Inner>>,
     lifecycle: AsyncMutex<()>,
     directory: PathBuf,
+    /// The memory state last reported, applied under the store lock.
+    memory_constrained: Arc<AtomicBool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -420,6 +499,7 @@ fn make_session(
         retry_at: AtomicU64::new(0),
         avatars: Mutex::new(ImageCache::new(AVATAR_CACHE_LIMIT)),
         images: Mutex::new(ImageCache::new(MARKDOWN_IMAGE_CACHE_LIMIT)),
+        reductions: Mutex::new(Vec::new()),
     }))
 }
 
@@ -481,9 +561,11 @@ impl NativeState {
             inner: Arc::new(Mutex::new(Inner {
                 active: None,
                 store: Store::open(&directory.join("workspace.sqlite3"))?,
+                memory_constrained: false,
             })),
             lifecycle: AsyncMutex::new(()),
             directory: directory.to_path_buf(),
+            memory_constrained: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -507,6 +589,21 @@ impl NativeState {
 
     /// Lets go of the avatars and Markdown images fetched for the signed-in session; each is
     /// fetched again when shown. Runs off the calling thread, as a storage job may hold the lock.
+    /// Starts or ends the lower number of reads at once while memory is short. Runs off
+    /// the calling thread like `release_images`; the latest report wins if two overlap.
+    pub fn set_memory_constrained(&self, constrained: bool) {
+        self.memory_constrained.store(constrained, Ordering::SeqCst);
+        let (inner, latest) = (self.inner.clone(), self.memory_constrained.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Ok(mut inner) = inner.lock() {
+                inner.memory_constrained = latest.load(Ordering::SeqCst);
+                if let Some(session) = &inner.active {
+                    session.limit_for_memory(inner.memory_constrained);
+                }
+            }
+        });
+    }
+
     pub fn release_images(&self) {
         let inner = self.inner.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -685,6 +782,7 @@ impl NativeState {
             if let Some(old) = inner.active.take() {
                 old.cancelled.cancel();
             }
+            session.limit_for_memory(inner.memory_constrained);
             inner.active = Some(session);
             Ok(())
         })
@@ -720,6 +818,7 @@ impl NativeState {
         let session = make_session(saved, client)?;
         let public = session.public.clone();
         self.blocking(move |inner| {
+            session.limit_for_memory(inner.memory_constrained);
             inner.active = Some(session);
             Ok(())
         })
@@ -1653,15 +1752,20 @@ impl NativeState {
         let root = PathBuf::from(&linked.path);
         // The folder may have been re-pointed since it was linked.
         let instance = normalize_instance(&session.public.instance_url)?;
-        let remotes = local_git::remote_urls(&root).await?;
-        if !remotes
-            .iter()
-            .any(|remote| local_git::remote_matches(remote, &instance, &linked.project_path))
-        {
-            return Err(AppError::new("INVALID_INPUT", &format!("紐付けたフォルダのgitリモートが {} を指していません。紐付けをやり直してください。", linked.project_path)).key("native.localGit.linkedRemoteMismatch").value("projectPath", &linked.project_path));
-        }
         let result = async {
-            let root = worktree_on(root, source_branch.as_deref()).await?;
+            // The work tree is looked up while the remotes are read; a mismatch
+            // is still reported before anything about the work tree.
+            let (remotes, worktree) = tokio::join!(
+                local_git::remote_urls(&root),
+                worktree_on(root.clone(), source_branch.as_deref())
+            );
+            if !remotes?
+                .iter()
+                .any(|remote| local_git::remote_matches(remote, &instance, &linked.project_path))
+            {
+                return Err(AppError::new("INVALID_INPUT", &format!("紐付けたフォルダのgitリモートが {} を指していません。紐付けをやり直してください。", linked.project_path)).key("native.localGit.linkedRemoteMismatch").value("projectPath", &linked.project_path));
+            }
+            let root = worktree?;
             match read {
                 LocalRead::Changes(from_sha) => {
                     local_git::local_changes(&root, &head_sha, from_sha.as_deref()).await

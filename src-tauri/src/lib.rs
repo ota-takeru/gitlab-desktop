@@ -393,8 +393,9 @@ fn runtime_info() -> RuntimeInfo {
 }
 
 /// Whether the system is short of physical memory, so the interface keeps fewer hidden screens.
-/// Each reading also updates how much memory the WebView keeps while out of focus, and the
-/// first reading of a shortage lets go of the images fetched so far.
+/// Each reading also updates how much memory the WebView keeps while out of focus. The first
+/// reading of a shortage lets go of the images fetched so far, and while it lasts fewer GitLab
+/// reads run at once.
 #[tauri::command]
 fn memory_pressure(
     window: tauri::WebviewWindow,
@@ -402,9 +403,12 @@ fn memory_pressure(
 ) -> bool {
     memory::update_webview_memory_target(&window);
     let constrained = memory::memory_constrained();
-    if memory::pressure_began(constrained) {
+    if let Some(began) = memory::pressure_changed(constrained) {
         if let Ok(native) = state.native() {
-            native.release_images();
+            if began {
+                native.release_images();
+            }
+            native.set_memory_constrained(began);
         }
     }
     constrained
