@@ -172,7 +172,7 @@ When the file has threads, a file row's tooltip gives the thread count. When the
 
 Keyboard focus on a file or folder row also shows the tooltip. The path in the heading cannot take focus, so a reader using only the keyboard cannot see a cut path there. This is an accepted limit. A screen reader still gets the whole path, from the rows' accessible names and from the heading's full text.
 
-**Table of contents of a file.** A button in the file heading, labeled "Show the contents of this file" or "Hide the contents of this file", controls the table of contents. It lists places in the file's diff, for finding one's way in a long file. The table is on every screen with a diff.
+**Table of contents of a file.** A button at the right end of the file heading, labeled "Show the contents of this file" or "Hide the contents of this file", controls the table of contents. The table lists places in the file's diff, for finding one's way in a long file. It opens as a column to the right of the diff, so the button sits at the right end, on the side where the table opens, as the file-list button sits at the left end, on the side where the file list opens. When the heading's controls do not fit beside the path, they wrap onto a row below it, and the button stays at the right end of that row. The table is on every screen with a diff.
 
 Each hunk is an entry. An entry shows the number of the hunk's first line (new side when the line has one, otherwise old side) and the hunk's added and removed lines. A hunk is named by the function or heading Git gave in its header. Without one it is named by its first change, or by its first line when "Hide whitespace" leaves no change.
 
