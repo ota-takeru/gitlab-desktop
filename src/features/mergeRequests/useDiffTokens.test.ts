@@ -2,7 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { ParsedLine } from './diffParser'
-import { useDiffTokens } from './useDiffTokens'
+import { clearDiffTokenCache, useDiffTokens } from './useDiffTokens'
 
 function contextLines(count: number): ParsedLine[] {
   return Array.from({ length: count }, (_, index) => ({ commentable: true, kind: 'context', newLine: index + 1, oldLine: index + 1, prefix: ' ', text: `const value${index} = 'padding padding padding padding padding'` }) as ParsedLine)
@@ -56,5 +56,21 @@ describe('useDiffTokens', () => {
     const { result } = renderHook(() => useDiffTokens(lines, 'typescript', true))
     expect(result.current[3000][0]).toEqual({ className: 'hljs-keyword', text: 'const' })
     await waitFor(() => expect(result.current.at(-1)?.[0]).toEqual({ className: 'hljs-keyword', text: 'const' }))
+  })
+
+  it('uses the finished tokens of the same key again, until they are cleared', async () => {
+    const lines = contextLines(5000)
+    const first = renderHook(() => useDiffTokens(lines, 'typescript', true, 'file-a'))
+    await waitFor(() => expect(first.result.current.at(-1)?.[0]).toEqual({ className: 'hljs-keyword', text: 'const' }))
+    first.unmount()
+
+    // A rebuilt view parses the diff again, so the lines are new objects with the same text.
+    const again = renderHook(() => useDiffTokens(contextLines(5000), 'typescript', true, 'file-a'))
+    expect(again.result.current.at(-1)?.[0]).toEqual({ className: 'hljs-keyword', text: 'const' })
+    again.unmount()
+
+    expect(renderHook(() => useDiffTokens(contextLines(5000), 'typescript', true, 'file-b')).result.current.at(-1)).toEqual([{ text: lines.at(-1)?.text }])
+    clearDiffTokenCache()
+    expect(renderHook(() => useDiffTokens(contextLines(5000), 'typescript', true, 'file-a')).result.current.at(-1)).toEqual([{ text: lines.at(-1)?.text }])
   })
 })

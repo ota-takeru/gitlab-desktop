@@ -238,7 +238,8 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     saveDiffLayout(next)
   }
   const language = displayedPath ? languageForPath(displayedPath) : null
-  const rowTokens = useDiffTokens(displayLines, language, !renderedMarkdownDiff)
+  // The diff key names the path, the diff text and the whitespace setting, which together decide the lines.
+  const rowTokens = useDiffTokens(displayLines, language, !renderedMarkdownDiff, diffKey || null)
   const pageSearchMatches = useMemo(() => new Set(searchMatches.filter((match) => match.path === displayedPath).map((match) => match.lineIndex)), [displayedPath, searchMatches])
   const lineCounts = useMemo(() => linesCounted(displayLines), [displayLines])
   const commentable = allowComments && !selectedDiff?.collapsed && !selectedDiff?.tooLarge && parsed.status === 'valid'
