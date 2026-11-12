@@ -9,6 +9,8 @@ import { defineConfig } from '@playwright/test'
 // `npm run ui:check` compares a local run with the committed baselines, to see before a push what CI will see.
 const onCi = Boolean(process.env.CI)
 const committedBaselines = onCi || process.env.UI_SNAP_BASELINES === 'committed'
+// UI_PORT moves the server these tests start off 1420, which `npm run dev` or another checkout may hold.
+const port = Number(process.env.UI_PORT) || 1420
 
 export default defineConfig({
   testDir: 'tests/visual',
@@ -22,14 +24,14 @@ export default defineConfig({
   // Font anti-aliasing differs slightly between Windows machines; layout changes move far more pixels.
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.02 } },
   use: {
-    baseURL: 'http://localhost:1420',
+    baseURL: `http://localhost:${port}`,
     channel: 'msedge',
     locale: 'ja-JP',
     timezoneId: 'Asia/Tokyo',
   },
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:1420',
+    command: `npx vite --host localhost --port ${port} --strictPort`,
+    url: `http://localhost:${port}`,
     // A server left running from another checkout would be compared in place of this one.
     reuseExistingServer: !committedBaselines,
   },
