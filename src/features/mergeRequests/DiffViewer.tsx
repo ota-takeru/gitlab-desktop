@@ -110,9 +110,13 @@ interface DiffViewerProps {
   fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; /** The MR's; line history reads commit diffs through it. */ iid?: string; /** The project's GitLab page, for opening a commit there. */ projectUrl?: string }
   /** Applying the suggestions in the threads shown under the lines. */
   suggestionActions?: SuggestionActions
+  /** Shown before the file and line counts; with it or `summaryEnd`, the summary line stays in view above the files. */
+  summaryLead?: React.ReactNode
+  /** Shown at the right end of the summary line. */
+  summaryEnd?: React.ReactNode
 }
 
-export function DiffViewer({ allowComments = true, allowFileView = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, fileSource, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, suggestionActions, view }: DiffViewerProps) {
+export function DiffViewer({ allowComments = true, allowFileView = true, diffs, discussionHeadSha, discussions, discussionsIncomplete = false, fileContent, fileLoading = false, fileSource, lineComposer, onComment, pendingDrafts, threadActions, onOpenDiscussion, onSelectFile, onViewChange, reviewContext, selectedFile, selectedPosition, suggestionActions, summaryEnd, summaryLead, view }: DiffViewerProps) {
   const t = useT()
   const selectedDiffIndex = diffs.findIndex((diff) => (diff.newPath || diff.oldPath) === selectedFile)
   const displayedIndex = selectedDiffIndex >= 0 ? selectedDiffIndex : diffs.length > 0 ? 0 : -1
@@ -548,6 +552,18 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView?.({ behavior: 'auto', block: 'start' })
   }, [displayedPath])
 
+  // A pinned summary line stays below the outer header; the file tree and file header stick below it.
+  const summaryPinned = Boolean(summaryLead || summaryEnd)
+  const summaryRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const summary = summaryRef.current
+    const root = rootRef.current
+    if (!summary || !root || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => root.style.setProperty('--diff-summary-height', `${summary.offsetHeight}px`))
+    observer.observe(summary)
+    return () => observer.disconnect()
+  }, [summaryPinned, diffs.length])
+
   // Line comment editors stick their toolbar below the file header, which wraps to more rows when narrow.
   const fileHeaderRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -708,14 +724,22 @@ export function DiffViewer({ allowComments = true, allowFileView = true, diffs, 
     ? <SplitDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={searchQuery.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
     : <UnifiedDiff key={displayedPath ?? ''} activeSearchMatch={currentSearchMatch} allowComments={commentsEnabled} blameEnabled={blameOpen && canBlame} chosenRange={chosenRange} firstRows={firstRows} folds={folds} lines={displayLines} selection={rowSelection} scrollRef={diffScrollRef} searchMatchIndices={pageSearchMatches} searchTerm={searchQuery.trim()} selectedPosition={selectedPosition} startIndex={0} threadView={threadView} tokens={rowTokens} gapExpansion={gapExpansion} wrap={wrapLines} />
 
+  const summaryCounts = <>
+    <Typography color="textSecondary" variant="caption">{t('review.diff.summary.files', { count: diffs.length })}</Typography>
+    <LineCounts added={lineTotals.added} label={t('review.diff.lineCounts', { added: lineTotals.added, removed: lineTotals.removed })} removed={lineTotals.removed} />
+    {lineTotals.uncounted ? <Typography color="textSecondary" variant="caption">{t('review.diff.summary.uncounted', { count: lineTotals.uncounted })}</Typography> : null}
+  </>
   return (
-    <Box data-diff-maximized={maximized && !sharedMaximize ? 'true' : undefined} data-diff-viewer ref={rootRef} sx={maximized && !sharedMaximize ? MAXIMIZED_SX : undefined}>
-      {diffs.length ? <Row spacing={1} sx={{ flexWrap: 'wrap', mb: 1, px: 0.5 }} useFlexGap>
-        <Typography color="textSecondary" variant="caption">{t('review.diff.summary.files', { count: diffs.length })}</Typography>
-        <LineCounts added={lineTotals.added} label={t('review.diff.lineCounts', { added: lineTotals.added, removed: lineTotals.removed })} removed={lineTotals.removed} />
-        {lineTotals.uncounted ? <Typography color="textSecondary" variant="caption">{t('review.diff.summary.uncounted', { count: lineTotals.uncounted })}</Typography> : null}
-      </Row> : null}
-      <Row align="top" spacing={1.5} useFlexGap sx={{ minHeight: 420 }}>
+    <Box data-diff-maximized={maximized && !sharedMaximize ? 'true' : undefined} data-diff-viewer ref={rootRef} sx={{ ...(maximized && !sharedMaximize ? MAXIMIZED_SX : {}), '--diff-outer-header': 'var(--detail-header-height, 0px)' }}>
+      {diffs.length ? summaryPinned
+        ? <Row ref={summaryRef} spacing={1} sx={{ bgcolor: 'background.default', minWidth: 0, pb: 0.5, position: 'sticky', top: 'var(--detail-header-height, 0px)', zIndex: 3 }}>
+          {summaryLead}
+          <Row spacing={1} sx={{ flexShrink: 0 }}>{summaryCounts}</Row>
+          <Box sx={{ flex: 1 }} />
+          {summaryEnd}
+        </Row>
+        : <Row spacing={1} sx={{ flexWrap: 'wrap', mb: 1, px: 0.5 }} useFlexGap>{summaryCounts}</Row> : null}
+      <Row align="top" spacing={1} useFlexGap sx={{ minHeight: 420, ...(summaryPinned ? { '--detail-header-height': 'calc(var(--diff-outer-header) + var(--diff-summary-height, 0px))' } : {}) }}>
         <Box component="nav" aria-label={t('review.fileTree.title')} ref={treeRef} style={{ flexBasis: shownTreeWidth }} sx={{ ...panelFrame({ position: false }), borderRadius: 1, display: treeShown ? 'flex' : 'none', flexDirection: 'column', flexGrow: 0, flexShrink: 0, maxHeight: `calc(100vh - var(--detail-header-height, 0px) - 40px)`, minWidth: 0, position: 'sticky', top: 'var(--detail-header-height, 0px)' }}>
           {fileTreeContents(selectFile, treeShown)}
           {treeShown ? <ColumnResizeHandle column={treeRef} defaultWidth={DEFAULT_TREE_WIDTH} hint={t('review.fileTree.resizeHint')} label={t('review.fileTree.resize')} max={treeWidthLimit} min={MIN_TREE_WIDTH} onCommit={commitTreeWidth} width={shownTreeWidth} /> : null}
