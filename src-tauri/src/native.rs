@@ -114,8 +114,8 @@ impl Reduction {
 
 impl LiveSession {
     /// While memory is short, at most 2 images and 1 background read start at once,
-    /// instead of 4 and 2. Reads for the screen keep their 8 slots: opening an MR waits
-    /// on about seven of them at once, so fewer slots would add half a second per round.
+    /// instead of 4 and 2. Reads for the screen keep their 8 slots: opening an MR's changes
+    /// waits on about seven of them at once, so fewer slots would add half a second per round.
     fn limit_for_memory(&self, constrained: bool) {
         let Ok(mut reductions) = self.reductions.lock() else {
             return;
