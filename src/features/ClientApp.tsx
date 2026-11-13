@@ -191,7 +191,7 @@ const CodeBrowser = lazy(() => loadCodeBrowser().then(({ CodeBrowser }) => ({ de
 const ScanFolders = lazy(() => import('./mergeRequests/LocalChanges').then(({ ScanFolders }) => ({ default: ScanFolders })))
 
 let screensPreloaded = false
-/** Called at the first reading of the system's memory that is not short, so a shortage leaves them to load on demand. */
+/** Loads the code of the screens opened most at start-up, so opening them first does not wait for it. */
 function preloadScreens() {
   if (screensPreloaded) return
   screensPreloaded = true
@@ -204,6 +204,7 @@ export function ClientApp(props: ClientAppProps) {
     ? props
     : { colorPreference: props.mode, onColorPreferenceChange: (next) => { if (next !== props.mode && next !== 'system') props.onModeChange() } }
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { gcTime: 15 * 60_000, refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } }, queryCache: trackConnectivity() }))
+  useEffect(preloadScreens, [])
   useEffect(() => {
     const handleWorkspaceReset = () => clearComposerBuffers()
     globalThis.addEventListener('gitlab-explicit-logout', handleWorkspaceReset)
@@ -549,7 +550,6 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
       clearDiffTokenCache()
     }
     constrainedAtLastReading.current = constrained
-    if (!constrained) preloadScreens()
     const unusedBefore = unusedAtLastReading.current
     unusedAtLastReading.current = new Set()
     if (!constrained) return
