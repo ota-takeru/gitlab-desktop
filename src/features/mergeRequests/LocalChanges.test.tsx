@@ -24,7 +24,7 @@ vi.mock('../../lib/localRepository', async () => ({ ...await vi.importActual<typ
 import { summarizeLocalStatus, type LocalStatus } from '../../lib/localRepository'
 import { LocalChanges, LocalStatusBadge } from './LocalChanges'
 
-const changes = { aheadCount: 0, branch: 'feature', comparedSha: 'a'.repeat(40), containsMrHead: true, diffs: [{ collapsed: false, deletedFile: false, diff: '@@ -1 +1,2 @@\n one\n+two\n', newFile: false, newPath: 'a.txt', oldPath: 'a.txt', renamedFile: false, tooLarge: false }], localHead: 'b'.repeat(40), repositoryPath: 'C:/repos/app', truncated: false, untrackedCount: 0, untrackedIncluded: 0, untrackedMore: false }
+const changes = { aheadCount: 0, branch: 'feature', comparedSha: 'a'.repeat(40), containsMrHead: true, diffs: [{ collapsed: false, deletedFile: false, diff: '@@ -1 +1,2 @@\n one\n+two\n', newFile: false, newPath: 'a.txt', oldPath: 'a.txt', renamedFile: false, tooLarge: false }], localHead: 'b'.repeat(40), repositoryPath: 'C:/repos/app', truncated: false, untrackedCount: 0, untrackedIncluded: 0, untrackedMore: false, updatedAt: null }
 
 function renderLocal(projectPath: string | null = 'group/app') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -68,6 +68,25 @@ describe('LocalChanges', () => {
     expect(await screen.findByText('このフォルダのgitリモートは group/app を指していません。')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'ローカルリポジトリのフォルダ' })).toHaveValue('C:\\other')
     expect(mocks.getLocalChanges).not.toHaveBeenCalled()
+  })
+
+  it('shows when the local work was last changed', async () => {
+    const updatedAt = Date.parse('2026-01-02T03:04:05Z')
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue({ ...changes, updatedAt })
+    renderLocal()
+
+    const time = await screen.findByText(/^最終更新 /u)
+    expect(time).toHaveAttribute('datetime', new Date(updatedAt).toISOString())
+  })
+
+  it('shows no last-changed time when the read has none', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue(changes)
+    renderLocal()
+
+    expect(await screen.findByText('two')).toBeInTheDocument()
+    expect(screen.queryByText(/^最終更新 /u)).not.toBeInTheDocument()
   })
 
   it('cannot link without the project path from GitLab', async () => {
@@ -157,6 +176,21 @@ describe('LocalChanges', () => {
 
     expect(await screen.findByText('second line of the file')).toBeInTheDocument()
     expect(mocks.getLocalFile).toHaveBeenCalledWith('s1', '7', 'memo.txt', 'feature')
+  })
+
+  it('keeps the whole-file view when another file is selected', async () => {
+    mocks.getLocalRepository.mockResolvedValue({ path: 'C:/repos/app', projectPath: 'group/app' })
+    mocks.getLocalChanges.mockResolvedValue({ ...changes, diffs: [changes.diffs[0], { ...changes.diffs[0], newPath: 'b.txt', oldPath: 'b.txt' }] })
+    mocks.getLocalFile.mockImplementation((_session: string, _project: string, path: string) => Promise.resolve({ content: `one\nbody of ${path}\n` }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = (selectedFile: string) => <QueryClientProvider client={client}><ThemeProvider theme={createAppTheme('light')}><LocalChanges headSha={'a'.repeat(40)} onSelectFile={vi.fn()} projectId="7" projectPath="group/app" selectedFile={selectedFile} sessionId="s1" sourceBranch="feature" userId="u1" /></ThemeProvider></QueryClientProvider>
+    const { rerender } = render(view('a.txt'))
+    fireEvent.click(await screen.findByRole('button', { name: 'ファイル全体' }))
+    expect(await screen.findByText('body of a.txt')).toBeInTheDocument()
+
+    rerender(view('b.txt'))
+    expect(await screen.findByText('body of b.txt')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイル全体' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('keeps showing the whole file while it is read again with the changes', async () => {

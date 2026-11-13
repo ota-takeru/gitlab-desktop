@@ -11,6 +11,7 @@ use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+use tokio::sync::Semaphore;
 use url::Url;
 
 const MAX_DIFF_BYTES: usize = 16 * 1024 * 1024;
@@ -22,6 +23,9 @@ const MAX_UNTRACKED_FILES: usize = 300;
 pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_ERROR_OUTPUT: usize = 8 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// At most this many git processes run at once, across every clone, so reads
+/// started together do not crowd the disk and the same repository.
+static GIT_SLOTS: Semaphore = Semaphore::const_new(2);
 const SAFE_ENV: &[&str] = &[
     "PATH",
     "SystemRoot",
@@ -122,6 +126,8 @@ async fn run(
         // CREATE_NO_WINDOW: reading the clone must not open a console window.
         command.creation_flags(0x0800_0000);
     }
+    // Waiting for a slot does not count toward the command's time limit.
+    let _slot = GIT_SLOTS.acquire().await.map_err(|_| git_failed())?;
     tokio::time::timeout(TIMEOUT, async {
         let mut child = command.spawn().map_err(|_| git_failed())?;
         let stdout = child.stdout.take().ok_or_else(git_failed)?;
@@ -336,7 +342,16 @@ pub async fn local_changes(
         .key("native.localGit.linkedFolderMissing"));
     }
     let program = resolve_program()?;
-    if !commit_present(&program, root, head_sha).await? {
+    // Reads that do not use each other's results run together; their results
+    // are checked in the order they used to run, so the same error is reported.
+    let (head_present, from_present) =
+        tokio::join!(commit_present(&program, root, head_sha), async {
+            match from_sha {
+                Some(from_sha) => commit_present(&program, root, from_sha).await.map(Some),
+                None => Ok(None),
+            }
+        });
+    if !head_present? {
         return Err(AppError::new(
             "NOT_FOUND",
             &format!(
@@ -347,8 +362,8 @@ pub async fn local_changes(
         .key("native.localGit.headMissing")
         .value("sha", &head_sha[..8]));
     }
-    if let Some(from_sha) = from_sha {
-        if !commit_present(&program, root, from_sha).await? {
+    if let (Some(from_sha), Some(present)) = (from_sha, from_present?) {
+        if !present {
             return Err(AppError::new(
                 "NOT_FOUND",
                 &format!(
@@ -360,15 +375,43 @@ pub async fn local_changes(
             .value("sha", &from_sha[..8]));
         }
     }
-    let (local_head, branch, contains_head, ahead) =
-        head_facts(&program, root, Some(head_sha)).await?;
-    let untracked = run(
-        &program,
-        root,
-        &["ls-files", "-z", "--others", "--exclude-standard"],
-        MAX_UNTRACKED_BYTES,
-    )
-    .await?;
+    let diff_args = [
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-M",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        from_sha.unwrap_or(head_sha),
+        "--",
+    ];
+    let (facts, head_time, untracked, diff) = tokio::join!(
+        head_facts(&program, root, Some(head_sha)),
+        run(
+            &program,
+            root,
+            &["log", "-1", "--format=%ct", "HEAD"],
+            MAX_SMALL_OUTPUT,
+        ),
+        run(
+            &program,
+            root,
+            &["ls-files", "-z", "--others", "--exclude-standard"],
+            MAX_UNTRACKED_BYTES,
+        ),
+        run(&program, root, &diff_args, MAX_DIFF_BYTES)
+    );
+    let (local_head, branch, contains_head, ahead) = facts?;
+    // Unpushed commits are local work too; pushed ones are not counted.
+    let head_time = if contains_head && ahead.is_some_and(|count| count > 0) {
+        single_line(&head_time?)
+            .and_then(|text| text.parse::<u64>().ok())
+            .map(|seconds| seconds * 1000)
+    } else {
+        None
+    };
+    let untracked = untracked?;
     if !untracked.success && !untracked.truncated {
         return Err(explain(&untracked));
     }
@@ -384,49 +427,42 @@ pub async fn local_changes(
     } else {
         untracked_paths.len()
     };
-    let diff = run(
-        &program,
-        root,
-        &[
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "-M",
-            "--src-prefix=a/",
-            "--dst-prefix=b/",
-            from_sha.unwrap_or(head_sha),
-            "--",
-        ],
-        MAX_DIFF_BYTES,
-    )
-    .await?;
+    let diff = diff?;
     if !diff.success && !diff.truncated {
         return Err(explain(&diff));
     }
-    let (mut diffs, truncated) = parse_patch(&diff.stdout, diff.truncated);
-    // Untracked files join as new files while the size budget lasts.
-    let mut budget = MAX_DIFF_BYTES.saturating_sub(diff.stdout.len());
-    let mut included = 0;
-    if !truncated {
-        for path in untracked_paths
-            .iter()
-            .take(complete_paths.min(MAX_UNTRACKED_FILES))
-        {
-            match untracked_diff(root, path, &mut budget) {
-                Ok(Some(entry)) => {
-                    diffs.push(entry);
-                    included += 1;
+    // Parsing the patch and reading untracked files run off the async workers.
+    let folder = root.to_path_buf();
+    let (diffs, truncated, included, modified) = tokio::task::spawn_blocking(move || {
+        let (mut diffs, truncated) = parse_patch(&diff.stdout, diff.truncated);
+        // Untracked files join as new files while the size budget lasts.
+        let mut budget = MAX_DIFF_BYTES.saturating_sub(diff.stdout.len());
+        let mut included = 0;
+        if !truncated {
+            for path in untracked_paths
+                .iter()
+                .take(complete_paths.min(MAX_UNTRACKED_FILES))
+            {
+                match untracked_diff(&folder, path, &mut budget) {
+                    Ok(Some(entry)) => {
+                        diffs.push(entry);
+                        included += 1;
+                    }
+                    Ok(None) => {}
+                    Err(()) => break,
                 }
-                Ok(None) => {}
-                Err(()) => break,
             }
         }
-    }
-    diffs.sort_by(|left, right| {
-        let path = |diff: &Value| diff["newPath"].as_str().unwrap_or_default().to_owned();
-        path(left).cmp(&path(right))
-    });
+        diffs.sort_by(|left, right| {
+            let left = left["newPath"].as_str().unwrap_or_default();
+            left.cmp(right["newPath"].as_str().unwrap_or_default())
+        });
+        let modified = last_modified(&folder, &diffs);
+        (diffs, truncated, included, modified)
+    })
+    .await
+    .map_err(|_| git_failed())?;
+    let updated_at = modified.into_iter().chain(head_time).max();
     Ok(json!({
         "repositoryPath": root.to_string_lossy(),
         "comparedSha": from_sha.unwrap_or(head_sha),
@@ -439,7 +475,29 @@ pub async fn local_changes(
         "untrackedIncluded": included,
         "diffs": diffs,
         "truncated": truncated,
+        "updatedAt": updated_at,
     }))
+}
+
+/// When the newest file in `diffs` was last written in the work tree, in
+/// milliseconds since the Unix epoch. Deleted files have no time to read.
+fn last_modified(root: &Path, diffs: &[Value]) -> Option<u64> {
+    diffs
+        .iter()
+        .filter(|diff| diff["deletedFile"] != true)
+        .filter_map(|diff| diff["newPath"].as_str())
+        .filter_map(|path| {
+            let path = path
+                .split('/')
+                .fold(root.to_path_buf(), |path, part| path.join(part));
+            let modified = std::fs::symlink_metadata(path).ok()?.modified().ok()?;
+            let millis = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_millis();
+            u64::try_from(millis).ok()
+        })
+        .max()
 }
 
 /// Whether `sha` names a commit in the clone. A failure other than a missing
@@ -469,44 +527,33 @@ async fn head_facts(
     root: &Path,
     head_sha: Option<&str>,
 ) -> Result<(Option<String>, Option<String>, bool, Option<u64>), AppError> {
-    let local_head = single_line(
-        &run(
+    let (local_head, branch) = tokio::join!(
+        run(
             program,
             root,
             &["rev-parse", "--verify", "-q", "HEAD"],
             MAX_SMALL_OUTPUT,
-        )
-        .await?,
-    );
-    let branch = single_line(
-        &run(
+        ),
+        run(
             program,
             root,
             &["symbolic-ref", "--short", "-q", "HEAD"],
             MAX_SMALL_OUTPUT,
         )
-        .await?,
     );
+    let local_head = single_line(&local_head?);
+    let branch = single_line(&branch?);
     let (contains_head, ahead) = match head_sha {
         Some(head_sha) if local_head.is_some() => {
-            let ancestor = run(
-                program,
-                root,
-                &["merge-base", "--is-ancestor", head_sha, "HEAD"],
-                MAX_SMALL_OUTPUT,
-            )
-            .await?;
             let range = format!("{head_sha}..HEAD");
-            let count = single_line(
-                &run(
-                    program,
-                    root,
-                    &["rev-list", "--count", &range],
-                    MAX_SMALL_OUTPUT,
-                )
-                .await?,
-            )
-            .and_then(|text| text.parse::<u64>().ok());
+            let ancestor_args = ["merge-base", "--is-ancestor", head_sha, "HEAD"];
+            let count_args = ["rev-list", "--count", &range];
+            let (ancestor, count) = tokio::join!(
+                run(program, root, &ancestor_args, MAX_SMALL_OUTPUT),
+                run(program, root, &count_args, MAX_SMALL_OUTPUT)
+            );
+            let ancestor = ancestor?;
+            let count = single_line(&count?).and_then(|text| text.parse::<u64>().ok());
             (ancestor.success, count)
         }
         _ => (false, None),
@@ -533,23 +580,29 @@ pub async fn local_status(root: &Path, head_sha: &str) -> Result<Value, AppError
     }
     let program = resolve_program()?;
     let commit = format!("{head_sha}^{{commit}}");
-    let present = run(
-        &program,
-        root,
-        &["cat-file", "-e", &commit],
-        MAX_SMALL_OUTPUT,
-    )
-    .await?
-    .success;
-    let (local_head, branch, contains_head, ahead) =
-        head_facts(&program, root, present.then_some(head_sha)).await?;
-    let status = run(
-        &program,
-        root,
-        &["status", "--porcelain=v1", "-z", "--untracked-files=normal"],
-        MAX_UNTRACKED_BYTES,
-    )
-    .await?;
+    let (facts, status) = tokio::join!(
+        async {
+            let present = run(
+                &program,
+                root,
+                &["cat-file", "-e", &commit],
+                MAX_SMALL_OUTPUT,
+            )
+            .await?
+            .success;
+            head_facts(&program, root, present.then_some(head_sha))
+                .await
+                .map(|facts| (present, facts))
+        },
+        run(
+            &program,
+            root,
+            &["status", "--porcelain=v1", "-z", "--untracked-files=normal"],
+            MAX_UNTRACKED_BYTES,
+        )
+    );
+    let (present, (local_head, branch, contains_head, ahead)) = facts?;
+    let status = status?;
     if !status.success && !status.truncated {
         return Err(explain(&status));
     }
@@ -1039,6 +1092,10 @@ mod tests {
             assert!(status.status.success(), "{args:?}");
             String::from_utf8(status.stdout).unwrap()
         };
+        let started_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         git(&["init", "-q"]);
         std::fs::write(directory.join("a.txt"), "one\n").unwrap();
         git(&["add", "a.txt"]);
@@ -1087,6 +1144,9 @@ mod tests {
         assert_eq!(result["untrackedCount"], 2);
         assert_eq!(result["untrackedIncluded"], 2);
         assert_eq!(result["truncated"], false);
+        // The newest of the changed files and the unpushed commit, within the test's run.
+        let updated_at = result["updatedAt"].as_u64().unwrap();
+        assert!(updated_at >= started_at - 2_000 && updated_at <= started_at + 600_000);
         assert_eq!(result["diffs"][0]["newPath"], "a.txt");
         assert_eq!(
             result["diffs"][0]["diff"],

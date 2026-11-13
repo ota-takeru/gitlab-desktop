@@ -113,6 +113,7 @@
   "local.untrackedIncluded": "Включая неотслеживаемые: {count}",
   "local.reloading": "Перезагрузка…",
   "local.readAt": "Прочитано",
+  "local.updatedAt": "Изменено",
   "local.reloadTooltip": "Перечитать рабочее дерево",
   "local.reload": "Перечитать локальные изменения",
   "local.unlink": "Отвязать",

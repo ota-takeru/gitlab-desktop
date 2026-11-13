@@ -113,6 +113,7 @@
   "local.untrackedIncluded": "Incluye {count} sin seguimiento",
   "local.reloading": "Recargando…",
   "local.readAt": "Leído",
+  "local.updatedAt": "Último cambio",
   "local.reloadTooltip": "Recargar el árbol de trabajo",
   "local.reload": "Recargar cambios locales",
   "local.unlink": "Desvincular",

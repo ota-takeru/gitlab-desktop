@@ -323,7 +323,7 @@ async fn fetch_version_compare(
 ) -> Result<ApiResult, AppError> {
     let (url, _) = build_query_url(api_base, query)?;
     let (bytes, _headers) = get_bytes(client, &url, MAX_RESPONSE_BYTES).await?;
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+    let mut value: Value = serde_json::from_slice(&bytes).map_err(|_| {
         AppError::new(
             "UNSUPPORTED",
             "GitLabから対応していない形式の応答が返されました。",
@@ -338,17 +338,36 @@ async fn fetch_version_compare(
     }
     // GitLab stopped comparing at its size or time limit: some files are missing.
     let timed_out = bool_field(&value, "compare_timeout");
-    let normalized = normalize_array(value, Some("diffs"), normalize_diff)?;
-    let diffs = normalized.as_array().map(Vec::as_slice).unwrap_or_default();
-    let per_page = PER_PAGE as usize;
-    let start = (page as usize).saturating_sub(1).saturating_mul(per_page);
-    let data = Value::Array(diffs.iter().skip(start).take(per_page).cloned().collect());
+    // Only the requested page is moved out and normalized; the rest is dropped.
+    let Some(Value::Array(diffs)) = value.get_mut("diffs").map(Value::take) else {
+        return Err(
+            unsupported_response("GitLabから想定外の形式の一覧が返されました。")
+                .key("native.response.unexpectedList"),
+        );
+    };
+    drop(value);
+    let (items, next_page, total_pages) = compare_page(diffs, page);
+    let data = normalize_array(Value::Array(items), None, normalize_diff)?;
     Ok(ApiResult {
         truncated: timed_out || contains_truncation_marker(&data),
         data,
-        next_page: (start.saturating_add(per_page) < diffs.len()).then_some(page + 1),
-        total_pages: u32::try_from(diffs.len().div_ceil(per_page).max(1)).ok(),
+        next_page,
+        total_pages,
     })
+}
+
+/// The files of one page of a comparison, moved out of the whole list, with the
+/// next page and the page count.
+fn compare_page(diffs: Vec<Value>, page: u32) -> (Vec<Value>, Option<u32>, Option<u32>) {
+    let per_page = PER_PAGE as usize;
+    let total = diffs.len();
+    let start = (page as usize).saturating_sub(1).saturating_mul(per_page);
+    let items = diffs.into_iter().skip(start).take(per_page).collect();
+    (
+        items,
+        (start.saturating_add(per_page) < total).then_some(page + 1),
+        u32::try_from(total.div_ceil(per_page).max(1)).ok(),
+    )
 }
 
 fn decode_page(
@@ -2328,6 +2347,11 @@ async fn ensure_pending_merge_request_todo(
 }
 
 async fn get_json_once(client: &Client, url: &Url) -> Result<Value, AppError> {
+    let bytes = get_bytes_once(client, url).await?;
+    parse_json_once(&bytes)
+}
+
+async fn get_bytes_once(client: &Client, url: &Url) -> Result<Vec<u8>, AppError> {
     let response = client
         .get(url.clone())
         .send()
@@ -2337,8 +2361,11 @@ async fn get_json_once(client: &Client, url: &Url) -> Result<Value, AppError> {
     if !status.is_success() {
         return Err(status_error(status, response.headers(), false));
     }
-    let bytes = read_limited(response, MAX_RESPONSE_BYTES).await?;
-    serde_json::from_slice(&bytes).map_err(|_| {
+    read_limited(response, MAX_RESPONSE_BYTES).await
+}
+
+fn parse_json_once(bytes: &[u8]) -> Result<Value, AppError> {
+    serde_json::from_slice(bytes).map_err(|_| {
         AppError::new(
             "UNSUPPORTED",
             "GitLabから対応していない形式の応答が返されました。",
@@ -2895,11 +2922,32 @@ async fn ensure_head_sha(
     expected: &str,
 ) -> Result<(), AppError> {
     let url = endpoint(api_base, &["projects", project_id, "merge_requests", iid])?;
-    let value = get_json_once(client, &url).await?;
-    if merge_request_head_sha(&value).as_deref() != Some(expected) {
+    let bytes = get_bytes_once(client, &url).await?;
+    if merge_request_head_sha_in(&bytes)?.as_deref() != Some(expected) {
         return Err(stale_merge_request());
     }
     Ok(())
+}
+
+/// The MR's head SHA, read without building the rest of the MR. An answer whose
+/// fields are not plain strings is read whole, as `merge_request_head_sha` does.
+fn merge_request_head_sha_in(bytes: &[u8]) -> Result<Option<String>, AppError> {
+    #[derive(serde::Deserialize)]
+    struct DiffRefs {
+        head_sha: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Head {
+        diff_refs: Option<DiffRefs>,
+        sha: Option<String>,
+    }
+    if let Ok(head) = serde_json::from_slice::<Head>(bytes) {
+        return Ok(head
+            .diff_refs
+            .and_then(|diff_refs| diff_refs.head_sha)
+            .or(head.sha));
+    }
+    Ok(merge_request_head_sha(&parse_json_once(bytes)?))
 }
 
 fn merge_request_head_sha(value: &Value) -> Option<String> {

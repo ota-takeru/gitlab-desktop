@@ -715,6 +715,20 @@ describe('suggestions and versions', () => {
       fireEvent.click(screen.getByRole('button', { name: 'v2 から最新まで' }))
       expect(await screen.findByText('表示中のコミット')).toBeInTheDocument()
       expect(screen.getAllByText('最新のコミット')).toHaveLength(2)
+
+      // A commit outside the range has the same buttons under the pointer, without choosing it first.
+      fireEvent.click(box(/最初のコミット/u))
+      await waitFor(() => expect(screen.getAllByText('最初のコミット')).toHaveLength(2))
+      fireEvent.mouseEnter(box(/二番目のコミット/u))
+      fireEvent.click(screen.getByRole('button', { name: '最初からここまで' }))
+      await waitFor(() => expect(screen.getByText('aaaaaaaa 〜 bbbbbbbb（2件）')).toBeInTheDocument())
+      fireEvent.mouseEnter(box(/最新のコミット/u))
+      fireEvent.click(screen.getByRole('button', { name: '最初からここまで' }))
+      expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
+      // A commit inside the range has them too.
+      fireEvent.mouseEnter(box(/二番目のコミット/u))
+      fireEvent.click(screen.getByRole('button', { name: '最初からここまで' }))
+      await waitFor(() => expect(screen.getByText('aaaaaaaa 〜 bbbbbbbb（2件）')).toBeInTheDocument())
     } finally {
       detailMocks.commits = []
     }

@@ -17,6 +17,10 @@ interface Diagram {
 /** Rendered diagrams, most recently used last; reopening a thread reuses them. */
 const diagrams = new Map<string, Diagram>()
 const MAX_DIAGRAMS = 200
+/** Empties the rendered diagrams: on logout, on account replacement and when memory runs short. */
+export function clearMermaidDiagrams() { diagrams.clear() }
+globalThis.addEventListener?.('gitlab-explicit-logout', clearMermaidDiagrams)
+globalThis.addEventListener?.('gitlab-account-replaced', clearMermaidDiagrams)
 
 /** Mermaid's settings are global, so each diagram waits for the one before it. */
 let queue: Promise<unknown> = Promise.resolve()

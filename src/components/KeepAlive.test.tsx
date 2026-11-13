@@ -29,6 +29,16 @@ it('drops the screens beyond a lowered limit without waiting for the next screen
   expect(container.querySelector('[data-screen-active="true"]')).toHaveTextContent('c')
 })
 
+it('keeps the last screen hidden when nothing is on view, even with a limit of one', () => {
+  const view = (active: string | null) => <KeepAlive activeKey={active} max={1}>{active}</KeepAlive>
+  const { container, rerender } = render(view('a'))
+  rerender(view('b'))
+  const b = container.querySelector('[data-screen-active="true"]')
+  rerender(view(null))
+  expect(container.children).toHaveLength(1)
+  expect(container.firstElementChild).toBe(b)
+})
+
 // jsdom has no AnimationEvent, so React listens for the prefixed name.
 const endFade = (element: Element) => fireEvent(element, new Event('webkitAnimationEnd', { bubbles: true }))
 

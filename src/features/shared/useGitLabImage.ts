@@ -11,8 +11,13 @@ globalThis.addEventListener?.('gitlab-account-replaced', clearCache)
 function load(sessionId: string, url: string): Promise<string | null> {
   const key = `${sessionId}\n${url}`
   const existing = cache.get(key)
-  if (existing) return existing
-  if (cache.size >= IMAGE_CACHE_LIMIT) cache.clear()
+  if (existing) {
+    // Most recently used last, so a full cache lets go of the image unused longest.
+    cache.delete(key)
+    cache.set(key, existing)
+    return existing
+  }
+  if (cache.size >= IMAGE_CACHE_LIMIT) cache.delete(cache.keys().next().value!)
   const request = getGitLabImage(sessionId, url).catch(() => { cache.delete(key); return null })
   cache.set(key, request)
   return request

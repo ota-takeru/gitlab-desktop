@@ -7,6 +7,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_CACHE_BYTES: i64 = 128 * 1024 * 1024;
 const MAX_CACHE_ENTRIES: i64 = 10_000;
+/// A save that cannot pass a cache limit prunes anyway after this many saves, so expired
+/// answers are still removed.
+const PRUNE_EVERY: u32 = 64;
+/// The write-ahead log is cut back to this size after a checkpoint instead of keeping the
+/// largest size it reached.
+const JOURNAL_SIZE_LIMIT: i64 = 4 * 1024 * 1024;
 const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 const STORAGE_SCHEMA_VERSION: u32 = 2;
 const MAX_LOCAL_DRAFTS: i64 = 100;
@@ -72,18 +78,27 @@ pub struct EncodedSnapshot {
     fetched_at: u64,
 }
 
+impl EncodedSnapshot {
+    /// The saved JSON, which is also the answer's JSON for the screen.
+    pub fn into_text(self) -> String {
+        self.text
+    }
+}
+
 pub fn encode_snapshot(snapshot: &Snapshot) -> Result<EncodedSnapshot, AppError> {
     let text = serde_json::to_string(snapshot).map_err(|_| storage_error())?;
+    encoded_text(text, snapshot.fetched_at)
+}
+
+/// Readies a snapshot already written out as `text` for saving, without writing it out again.
+pub fn encoded_text(text: String, fetched_at: u64) -> Result<EncodedSnapshot, AppError> {
     if text.len() > 8 * 1024 * 1024 {
         return Err(
             AppError::new("TOO_LARGE", "保存するデータが上限を超えました。")
                 .key("native.storage.tooLarge"),
         );
     }
-    Ok(EncodedSnapshot {
-        text,
-        fetched_at: snapshot.fetched_at,
-    })
+    Ok(EncodedSnapshot { text, fetched_at })
 }
 
 pub fn parse_snapshot(text: &str) -> Result<Snapshot, AppError> {
@@ -114,7 +129,30 @@ pub fn check_snapshot(text: &str) -> Result<(), AppError> {
         .map_err(|_| storage_error())
 }
 
-pub struct Store(Connection);
+pub struct Store(Connection, CacheBudget);
+
+/// The cache's limits and an upper bound of what it holds, kept from the last prune by
+/// adding each save, so a save prunes only when it could pass a limit. Removals only
+/// lower what the cache holds, so the bound stays above it.
+struct CacheBudget {
+    max_bytes: i64,
+    max_entries: i64,
+    bytes: i64,
+    entries: i64,
+    saves: u32,
+}
+
+impl CacheBudget {
+    fn new() -> Self {
+        Self {
+            max_bytes: MAX_CACHE_BYTES,
+            max_entries: MAX_CACHE_ENTRIES,
+            bytes: MAX_CACHE_BYTES,
+            entries: MAX_CACHE_ENTRIES,
+            saves: 0,
+        }
+    }
+}
 
 impl Store {
     #[cfg(test)]
@@ -154,6 +192,9 @@ impl Store {
         connection
             .pragma_update(None, "synchronous", "NORMAL")
             .map_err(|_| storage_error())?;
+        connection
+            .pragma_update(None, "journal_size_limit", JOURNAL_SIZE_LIMIT)
+            .map_err(|_| storage_error())?;
         {
             let migration = connection.transaction().map_err(|_| storage_error())?;
             migration
@@ -161,7 +202,7 @@ impl Store {
                 .map_err(|_| storage_error())?;
             migration.commit().map_err(|_| storage_error())?;
         }
-        let mut store = Self(connection);
+        let mut store = Self(connection, CacheBudget::new());
         store.prune()?;
         Ok(store)
     }
@@ -248,19 +289,25 @@ impl Store {
         encoded: &EncodedSnapshot,
     ) -> Result<(), AppError> {
         let text = &encoded.text;
+        let size = (text.len() + key.len() + account.len() + 256) as i64;
         self.0
             .execute(
                 "INSERT OR REPLACE INTO cache(account,key,snapshot,fetched,size) VALUES(?,?,?,?,?)",
-                params![
-                    account,
-                    key,
-                    text,
-                    encoded.fetched_at as i64,
-                    (text.len() + key.len() + account.len() + 256) as i64
-                ],
+                params![account, key, text, encoded.fetched_at as i64, size],
             )
             .map_err(|_| storage_error())?;
-        self.prune()
+        let budget = &mut self.1;
+        budget.bytes = budget.bytes.saturating_add(size);
+        budget.entries = budget.entries.saturating_add(1);
+        budget.saves += 1;
+        if budget.bytes > budget.max_bytes
+            || budget.entries > budget.max_entries
+            || budget.saves >= PRUNE_EVERY
+        {
+            self.prune()
+        } else {
+            Ok(())
+        }
     }
 
     fn prune(&mut self) -> Result<(), AppError> {
@@ -277,11 +324,27 @@ impl Store {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|_| storage_error())?;
-        let mut excess_size = size - MAX_CACHE_BYTES;
-        let mut excess_count = count - MAX_CACHE_ENTRIES;
+        let (max_bytes, max_entries) = (self.1.max_bytes, self.1.max_entries);
+        let mut excess_size = size - max_bytes;
+        let mut excess_count = count - max_entries;
         if excess_size <= 0 && excess_count <= 0 {
+            self.1 = CacheBudget {
+                bytes: size,
+                entries: count,
+                saves: 0,
+                ..self.1
+            };
             return Ok(());
         }
+        // A limit that was passed is pruned a thirty-second below it, so the saves that
+        // follow do not each prune again.
+        if excess_size > 0 {
+            excess_size += max_bytes / 32;
+        }
+        if excess_count > 0 {
+            excess_count += max_entries / 32;
+        }
+        let (mut kept_size, mut kept_count) = (size, count);
         let mut oldest = Vec::new();
         {
             let mut statement = self
@@ -294,8 +357,11 @@ impl Store {
                     break;
                 };
                 oldest.push(row.get::<_, i64>(0).map_err(|_| storage_error())?);
-                excess_size -= row.get::<_, i64>(1).map_err(|_| storage_error())?;
+                let removed = row.get::<_, i64>(1).map_err(|_| storage_error())?;
+                excess_size -= removed;
                 excess_count -= 1;
+                kept_size -= removed;
+                kept_count -= 1;
             }
         }
         let eviction = self.0.transaction().map_err(|_| storage_error())?;
@@ -304,7 +370,14 @@ impl Store {
                 .execute("DELETE FROM cache WHERE rowid=?", [rowid])
                 .map_err(|_| storage_error())?;
         }
-        eviction.commit().map_err(|_| storage_error())
+        eviction.commit().map_err(|_| storage_error())?;
+        self.1 = CacheBudget {
+            bytes: kept_size,
+            entries: kept_count,
+            saves: 0,
+            ..self.1
+        };
+        Ok(())
     }
 
     pub fn clear_account(&mut self, account: &str) -> Result<(), AppError> {

@@ -113,6 +113,7 @@
   "local.untrackedIncluded": "包括 {count} 个未跟踪",
   "local.reloading": "正在重新加载…",
   "local.readAt": "读取时间",
+  "local.updatedAt": "最后更新",
   "local.reloadTooltip": "重新加载工作树",
   "local.reload": "重新加载本地更改",
   "local.unlink": "取消关联",

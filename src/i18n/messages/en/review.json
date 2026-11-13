@@ -113,6 +113,7 @@
   "local.untrackedIncluded": "Includes {count} untracked",
   "local.reloading": "Reloading…",
   "local.readAt": "Read",
+  "local.updatedAt": "Last changed",
   "local.reloadTooltip": "Reload the working tree",
   "local.reload": "Reload local changes",
   "local.unlink": "Unlink",

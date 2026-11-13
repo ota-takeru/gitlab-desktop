@@ -1,10 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CommitDiffQuery, Diff, DiffsQuery, GitLabSnapshot, VersionCompareQuery } from '../../types/gitlab'
-import { useGitLabQuery, type GitLabQueryState } from '../shared/useGitLabQuery'
+import { prefetchGitLabQuery, useGitLabQuery, type GitLabQueryState } from '../shared/useGitLabQuery'
 
 /** Pages read for one diff (30 files each); GitLab stops listing an MR's files well before this. */
 const MAX_DIFF_PAGES = 100
+/** Pages read at the same time: the one being read and those after it read ahead. */
+const PAGES_AT_ONCE = 3
 
 type DiffPageQuery = DiffsQuery | CommitDiffQuery | VersionCompareQuery
 
@@ -19,9 +21,11 @@ interface ReadPages {
   fresh: boolean
   /** The last read taken in, so each read is taken once. */
   seen: { page: number; fetchedAt: number } | null
+  /** GitLab's page count, once a page has reported it. */
+  total: number | null
 }
 
-const startReading = (key: string): ReadPages => ({ done: false, fresh: false, key, page: 1, pages: [], seen: null, truncated: [] })
+const startReading = (key: string): ReadPages => ({ done: false, fresh: false, key, page: 1, pages: [], seen: null, total: null, truncated: [] })
 
 /** Takes in the page being read and moves on to the next one, if there is one. */
 function takePage(read: ReadPages, snapshot: GitLabSnapshot<Diff[]>): ReadPages {
@@ -29,12 +33,14 @@ function takePage(read: ReadPages, snapshot: GitLabSnapshot<Diff[]>): ReadPages 
   const more = snapshot.nextPage !== null && read.page < MAX_DIFF_PAGES
   const pages = [...read.pages.slice(0, index), snapshot.data, ...more ? read.pages.slice(index + 1) : []]
   const truncated = [...read.truncated.slice(0, index), snapshot.completeness === 'truncated' || (snapshot.nextPage !== null && !more), ...more ? read.truncated.slice(index + 1) : []]
-  return { ...read, done: read.done || !more, fresh: more && read.fresh, page: more ? read.page + 1 : read.page, pages, seen: { fetchedAt: snapshot.fetchedAt, page: read.page }, truncated }
+  return { ...read, done: read.done || !more, fresh: more && read.fresh, page: more ? read.page + 1 : read.page, pages, seen: { fetchedAt: snapshot.fetchedAt, page: read.page }, total: snapshot.totalPages ?? read.total, truncated }
 }
 
 /**
- * Every page of a diff, read one after another and shown as one list, so the
- * changes tab lists all of the files rather than the first page of them.
+ * Every page of a diff, taken in one after another and shown as one list, so the
+ * changes tab lists all of the files rather than the first page of them. Once GitLab
+ * has reported the page count, the pages after the one being read are read ahead,
+ * `PAGES_AT_ONCE` at a time; a refresh still reads each page in turn.
  * `loading` holds until the last page is read; a refresh reads them all again.
  */
 export function useAllDiffPages<Q extends DiffPageQuery>(sessionId: string | null, query: Q | null): GitLabQueryState<Diff[]> {
@@ -57,6 +63,14 @@ export function useAllDiffPages<Q extends DiffPageQuery>(sessionId: string | nul
     }
     setStored(next)
   }
+
+  const { done, fresh, page, total } = read
+  useEffect(() => {
+    if (!sessionId || !query || done || fresh || total === null) return
+    const last = Math.min(page + PAGES_AT_ONCE - 1, total, MAX_DIFF_PAGES)
+    // A page still held is not read again, and one already being read is joined.
+    for (let ahead = page + 1; ahead <= last; ahead += 1) prefetchGitLabQuery(queryClient, sessionId, { ...query, page: ahead })
+  }, [done, fresh, page, query, queryClient, sessionId, total])
 
   const refresh = useCallback(() => {
     if (read.page === 1) refreshPage()

@@ -51,7 +51,7 @@ export interface VersionChoice {
 }
 
 /** The tab's top padding: the commit row sticks exactly where it rests, so scrolling does not move it, and its `::before` covers what scrolls through the gap. */
-const TIMELINE_GAP = 12
+const TIMELINE_GAP = 8
 
 export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, pendingDrafts, lineComposer, discussions, discussionHeadSha, discussionsIncomplete, onOpenDiscussion, reviewContext, allowComments, changesError, changesLoading, changesMissing, changesTruncated, commits, commitsError, commitsLoading, diffs, fileResult, fileView, moreCommits, onComment, onSelectCommit, onSelectFile, onViewChange, selectedCommit, selectedFile, selectedPosition, suggestionActions, versions }: { compareBaseSha?: string; local?: LocalChoice; fileSource?: { sessionId: string; projectId: string; sha: string; beforeSha?: string; iid?: string; projectUrl?: string }; reviewContext?: ReviewedFileContext; allowComments: boolean; changesError: Error | null; changesLoading: boolean; /** GitLab's list leaves out files of the MR: its count of them, when it does. */ changesMissing?: string | null; changesTruncated: boolean; commits: Commit[]; commitsError: Error | null; commitsLoading: boolean; diffs: Diff[]; fileResult: { data: { content: string } | null; loading: boolean; error: Error | null }; fileView: 'diff' | 'file'; moreCommits: MoreCommits | null; onComment: (position: Position) => void; onSelectCommit: (sha: string | null) => void; onSelectFile: (path: string) => void; onViewChange: (view: 'diff' | 'file') => void; selectedCommit: string | null; selectedFile: string | null; selectedPosition?: Position; discussions?: Discussion[]; discussionHeadSha?: string; discussionsIncomplete: boolean; onOpenDiscussion: (discussionId: string) => void; lineComposer?: { position: Position; node: React.ReactNode }; pendingDrafts?: Draft[]; threadActions?: ThreadActions; suggestionActions?: SuggestionActions; versions: VersionChoice }) {
   const t = useT()
@@ -102,7 +102,7 @@ export function ChangesTab({ compareBaseSha, local, fileSource, threadActions, p
         {maximized ? <Button aria-expanded={commitsOpen} onClick={() => setCommitsOpen((open) => !open)} size="small" startIcon={commitsOpen ? <ExpandMoreRoundedIcon /> : <ChevronRightRoundedIcon />}>{commitsOpen ? t('review.changes.hideCommits') : t('review.changes.showCommits')}</Button> : null}
         {timelineShown ? <CommitTimeline baseSha={compareBaseSha} commits={commits} local={local} headSha={discussionHeadSha} loading={commitsLoading} more={moreCommits} onSelect={onSelectCommit} selected={selectedCommit} versions={versions} /> : null}
       </Box> : null}
-      <Stack spacing={1.5} sx={{ '--detail-header-height': 'calc(var(--mr-header-height) + var(--commit-timeline-height, 0px))' }}>
+      <Stack spacing={1} sx={{ '--detail-header-height': 'calc(var(--mr-header-height) + var(--commit-timeline-height, 0px))' }}>
       {showingLocal ? local?.content : <>
       {changesTruncated ? <Alert severity="warning">{t('review.changes.truncated')}</Alert> : null}
       {changesMissing ? <Alert severity="warning">{t('review.changes.filesMissing', { shown: diffs.length, total: changesMissing })}</Alert> : null}
@@ -152,7 +152,7 @@ type RowCell = { kind: 'rebased' } | { kind: 'more' } | { kind: 'commit'; commit
 interface BandBox { height: number; left: number; top: number; width: number }
 
 /** The row's measured pieces: the range shown, where it parts between its commits (where one piece ends and the next starts, in px), and the range a button would give. */
-interface RowLayout { aimed: BandBox | null; partings: [number, number][]; range: BandBox | null }
+interface RowLayout { aimed: BandBox | null; hovered: BandBox | null; partings: [number, number][]; range: BandBox | null }
 
 /** A drag across boxes to choose them. */
 interface RowGesture { anchor: number; x: number; moved: boolean }
@@ -174,7 +174,8 @@ const growLeft = keyframes`from { clip-path: inset(0 0 0 100%) } to { clip-path:
 
 /**
  * The comparison row, oldest at the left. One tinted piece marks the commits whose changes are shown: one box is that commit alone, neighbouring boxes are their changes together. A click chooses one commit;
- * the buttons beside the piece take it to the first or the latest commit; a drag across boxes or a Shift+click
+ * the buttons beside the piece take it to the first or the latest commit, and the same buttons beside a commit under
+ * the pointer give the commits up to it or from it; a drag across boxes or a Shift+click
  * chooses the commits between.
  */
 function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSelect, selected, versions }: { baseSha?: string; commits: Commit[]; local?: LocalChoice; headSha?: string; loading: boolean; more: MoreCommits | null; onSelect: (sha: string | null) => void; selected: string | null; versions: VersionChoice }) {
@@ -266,10 +267,18 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   const growable = !preview && range !== null && (cells[range[1]]?.kind === 'commit' || cells[range[1]]?.kind === 'local')
   const growStart = growable && range !== null && baseCell >= 0 && range[0] > baseCell
   const growEnd = growable && range !== null && range[1] < headCell
+  // A commit under the pointer has the same buttons beside it, so the commits up to it or from it can be chosen
+  // without choosing it first. The one commit shown alone has them already, and an end of the range keeps its own.
+  const [hoverCell, setHoverCell] = useState(-1)
+  const hovered = !preview && cells[hoverCell]?.kind === 'commit' && !(range && range[0] === range[1] && hoverCell === range[0]) ? hoverCell : -1
+  const hoverStart = hovered >= 0 && baseCell >= 0 && hovered > baseCell && !(growStart && hovered === range?.[0])
+  const hoverEnd = hovered >= 0 && hovered < headCell && !(growEnd && hovered === range?.[1])
   // The pointer (or focus) on one of those buttons: the range it would give is shown before anything changes.
-  const [aim, setAim] = useState<{ pressed: boolean; side: 'start' | 'end' } | null>(null)
-  const activeAim = aim && (aim.side === 'start' ? growStart : growEnd) ? aim : null
-  const aimed: [number, number] | null = activeAim && range ? (activeAim.side === 'start' ? [baseCell, range[1]] : [range[0], headCell]) : null
+  const [aim, setAim] = useState<{ pressed: boolean; side: 'start' | 'end'; target: 'range' | 'hover' } | null>(null)
+  const activeAim = aim && (aim.target === 'range' ? (aim.side === 'start' ? growStart : growEnd) : (aim.side === 'start' ? hoverStart : hoverEnd)) ? aim : null
+  // The cells the aimed button grows from: the range, or the commit under the pointer.
+  const aimFrom: [number, number] | null = activeAim?.target === 'hover' ? [hovered, hovered] : activeAim ? range : null
+  const aimed: [number, number] | null = activeAim && aimFrom ? (activeAim.side === 'start' ? [baseCell, aimFrom[1]] : [aimFrom[0], headCell]) : null
   const scrollerRef = useRef<HTMLDivElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const cellRefs = useRef(new Map<number, HTMLElement>())
@@ -374,6 +383,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       }
       const next: RowLayout = {
         aimed: aimStart >= 0 ? place(aimStart, aimEnd) : null,
+        hovered: hovered >= 0 ? place(hovered, hovered) : null,
         // Between each pair of neighbouring boxes in the range: one piece ends `GROW_REACH` past the first box and
         // the next starts `GROW_REACH` before the second.
         partings: start >= 0 ? Array.from({ length: Math.max(0, end - start) }, (_, offset): [number, number] | null => {
@@ -392,7 +402,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     observer.observe(row)
     cellRefs.current.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
-  }, [start, end, aimStart, aimEnd, cells.length])
+  }, [start, end, aimStart, aimEnd, hovered, cells.length])
 
   // A box has no frame of its own: the tinted pieces behind the range say what is chosen. Under the pointer, a box
   // outside the range is tinted; a box inside a range of several commits is outlined as the piece a click would leave
@@ -405,6 +415,9 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     '&::before': { borderRadius: 1, bottom: 0, content: '""', left: -reach, outline: '1px solid transparent', outlineOffset: -3, pointerEvents: 'none', position: 'absolute', right: -reach, top: 0, transition: 'background-color 120ms, outline-color 120ms', zIndex: -1 },
     '&:hover': { bgcolor: 'transparent', color: hover === 'tint' ? 'text.primary' : undefined },
     '&:hover::before': hover === 'tint' ? { bgcolor: 'action.hover' } : hover === 'outline' ? { outlineColor: 'primary.main' } : {},
+    // Stays tinted (or outlined) while the pointer is on one of its buttons.
+    '&[data-hovered]': hover === 'tint' ? { color: 'text.primary' } : {},
+    '&[data-hovered]::before': hover === 'tint' ? { bgcolor: 'action.hover' } : hover === 'outline' ? { outlineColor: 'primary.main' } : {},
   })
   // One tab stop for the row (the last box of the range); ←/→ Home/End move between boxes.
   const tabStop = end >= 0 ? end : firstCommit
@@ -470,7 +483,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   const pull = activeAim ? (activeAim.pressed ? GROW_PULL_PRESSED : GROW_PULL) : 0
   const rangeBand = layout?.range ? bandOf(layout.range) : null
   // Over a button, the range leans a little towards the end it would reach.
-  const shownBand = rangeBand && activeAim ? { ...rangeBand, left: rangeBand.left - (activeAim.side === 'start' ? pull : 0), width: rangeBand.width + pull } : rangeBand
+  const shownBand = rangeBand && activeAim?.target === 'range' ? { ...rangeBand, left: rangeBand.left - (activeAim.side === 'start' ? pull : 0), width: rangeBand.width + pull } : rangeBand
   // The range split at the partings into one piece per commit; the outer ends keep the range's own reach and lean.
   const pieces = (band: { left: number; width: number }) => {
     const cuts = layout?.partings ?? []
@@ -478,33 +491,41 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     return Array.from({ length: cuts.length + 1 }, (_, index) => ({ key: start + index, left: edges[index * 2], width: edges[index * 2 + 1] - edges[index * 2] }))
   }
   const aimedBand = layout?.aimed && activeAim ? bandOf(layout.aimed) : null
-  const growButton = (side: 'start' | 'end') => {
-    if (!range || !layout?.range) return null
-    const on = activeAim?.side === side
-    const single = range[0] === range[1]
+  const growButton = (side: 'start' | 'end', target: 'range' | 'hover' = 'range') => {
+    const edges = target === 'range' ? layout?.range : layout?.hovered
+    const from = target === 'range' ? range : hovered >= 0 ? [hovered, hovered] : null
+    if (!from || !edges) return null
+    const on = activeAim?.side === side && activeAim.target === target
+    const single = from[0] === from[1]
     const label = side === 'start' ? t(single ? 'review.changes.upToHere' : 'review.changes.extendToStart') : t(single ? 'review.changes.fromHere' : 'review.changes.extendToEnd')
-    const middle = side === 'start' ? layout.range.left + (BOX_INSET - GROW_REACH) / 2 : layout.range.left + layout.range.width - (BOX_INSET - GROW_REACH) / 2
+    const middle = side === 'start' ? edges.left + (BOX_INSET - GROW_REACH) / 2 : edges.left + edges.width - (BOX_INSET - GROW_REACH) / 2
     const x = middle + (on ? (side === 'start' ? -pull : pull) / 2 : 0)
     const Icon = side === 'start' ? ChevronLeftRoundedIcon : ChevronRightRoundedIcon
     // Above the row, so the tip never covers the version marks under the boxes, and pulled close to the row so it
     // stays clear of the tab names above.
-    return <Tooltip enterDelay={300} key={`grow-${side}`} placement="top" slotProps={{ popper: { modifiers: [{ name: 'offset', options: { offset: [0, -10] } }] } }} title={label}>
+    const grow = () => {
+      if (target === 'range') { extend(side); return }
+      const at = cells[hovered]
+      if (at?.kind === 'commit') setAnchorSha(at.commit.id)
+      choose(side === 'start' ? baseCell : hovered, side === 'end' ? headCell : hovered)
+    }
+    return <Tooltip enterDelay={300} key={`grow-${target}-${side}`} placement="top" slotProps={{ popper: { modifiers: [{ name: 'offset', options: { offset: [0, -10] } }] } }} title={label}>
       <ButtonBase
         aria-label={label}
         data-commit-item
         data-range-grow={side}
         onBlur={() => setAim(null)}
-        onClick={() => { setAim(null); extend(side) }}
-        onFocus={() => setAim({ pressed: false, side })}
-        onMouseEnter={() => setAim({ pressed: false, side })}
+        onClick={() => { setAim(null); grow() }}
+        onFocus={() => setAim({ pressed: false, side, target })}
+        onMouseEnter={() => setAim({ pressed: false, side, target })}
         onMouseLeave={() => setAim(null)}
-        onPointerDown={() => setAim({ pressed: true, side })}
+        onPointerDown={() => setAim({ pressed: true, side, target })}
         onPointerUp={() => setAim((current) => current && { ...current, pressed: false })}
         sx={{
           // No fill of its own under the pointer: the range leaning towards it and the outline say enough, and a filled
           // square on the tinted range would read as a third surface.
           // The lighter blue stands out from the tinted range in the dark theme too.
-          borderRadius: 1, color: on ? 'primary.light' : 'text.secondary', height: layout.range.height, left: x - 10, position: 'absolute', top: layout.range.top, transform: on && activeAim?.pressed ? 'scale(0.9)' : 'none', transition: `left 160ms ${GROW_EASE}, background-color 120ms, color 120ms, transform 120ms ${GROW_EASE}`, width: 20, zIndex: 3,
+          borderRadius: 1, color: on ? 'primary.light' : 'text.secondary', height: edges.height, left: x - 10, position: 'absolute', top: edges.top, transform: on && activeAim?.pressed ? 'scale(0.9)' : 'none', transition: `left 160ms ${GROW_EASE}, background-color 120ms, color 120ms, transform 120ms ${GROW_EASE}`, width: 20, zIndex: 3,
           // The button takes the full height of the row, and its hit area reaches a little past the range's edge and
           // over the start of the box's text, so it is easy to take without the arrow looking any bigger. The box
           // under it is already in the range, so a click there loses little.
@@ -522,7 +543,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     const at = cells[index]
     const inBand = index >= start && index <= end
     const wanted = aimed !== null && !inBand && index >= aimed[0] && index <= aimed[1]
-    const delay = wanted && range ? Math.max(0, (activeAim?.side === 'end' ? index - range[1] : range[0] - index) - 1) * 35 : 0
+    const delay = wanted && aimFrom ? Math.max(0, (activeAim?.side === 'end' ? index - aimFrom[1] : aimFrom[0] - index) - 1) * 35 : 0
     if (at.kind === 'rebased') return <Box key="rebased" ref={cellRef(index)} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative', zIndex: 2 }}><RebasedVersions active={rebased.some((version) => version.headCommitSha === versions.compareFrom)} items={rebased} more={versions.more} numberOf={(version) => versions.more ? null : versions.items.length - versions.items.indexOf(version)} onPick={(sha) => versions.onSelect(sha, null)} /></Box>
     if (at.kind === 'more') return more ? <Box data-cell-index={index} key="more" ref={cellRef(index)} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative', zIndex: 2 }}><MoreCommitsEnd more={more} rootRef={scrollerRef} /></Box> : null
     if (at.kind === 'local') return local ? [
@@ -537,12 +558,14 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     const tag = latest ? undefined : versionLabel(commit.id)
     return [
       range && index === range[0] && growStart ? growButton('start') : null,
+      index === hovered && hoverStart ? growButton('start', 'hover') : null,
       <Box key={commit.id} sx={{ alignSelf: 'center', flexShrink: 0, position: 'relative' }}>
         {/* Above the row like the arrows' tips, and a little late, so passing over the row does not cover the tabs above. */}
-        <Tooltip describeChild enterDelay={600} placement="top" title={`${shortSha(commit.id)} ${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
+        <Tooltip describeChild enterDelay={600} placement="top" title={`${shortSha(commit.id)} ${commit.title}\n${formatAbsoluteTime(time)}`}><Button aria-pressed={inBand} color="inherit" data-cell-index={index} data-commit-item data-hovered={index === hovered || undefined} onMouseEnter={() => setHoverCell(index)} onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(commit.id); onSelect(commit.id) } }} ref={cellRef(index)} sx={{ ...box(inBand || wanted, delay, inBand ? (end > start ? 'outline' : 'none') : 'tint'), justifyContent: 'flex-start', maxWidth: 200 }} tabIndex={index === tabStop ? 0 : -1}><Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{commit.title}</Box></Button></Tooltip>
         {tag ? <Tooltip title={t('review.changes.versionFrom', { version: tag })}><ButtonBase data-version-tag onClick={() => { setAnchorSha(null); choose(index + 1, headCell) }} sx={{ ...tagSx, borderRadius: 1, px: 0.5, transition: 'color 120ms', '&:hover, &.Mui-focusVisible': { color: 'primary.main', textDecoration: 'underline' } }}>{tag}</ButtonBase></Tooltip> : null}
       </Box>,
       range && index === range[1] && growEnd ? growButton('end') : null,
+      index === hovered && hoverEnd ? growButton('end', 'hover') : null,
     ]
   }
 
@@ -568,7 +591,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   return <Stack spacing={0.5}>
     <Row spacing={0.5} sx={{ minWidth: 0 }}>
       <Box aria-label={t('review.changes.compareTarget')} onKeyDown={moveFocus} ref={scrollerRef} role="toolbar" sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', overscrollBehaviorX: 'contain' }}>
-        <Row onLostPointerCapture={() => endGesture(true)} onPointerCancel={() => endGesture(false)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => endGesture(true)} ref={rowRef} spacing={ROW_GAP / 8} sx={{ minHeight: 32, minWidth: 'max-content', pb: hasTags ? 2.5 : 0.5, position: 'relative', pt: 0.5, px: 2, touchAction: 'pan-x', userSelect: 'none' }}>
+        <Row onLostPointerCapture={() => endGesture(true)} onMouseLeave={() => setHoverCell(-1)} onPointerCancel={() => endGesture(false)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={() => endGesture(true)} ref={rowRef} spacing={ROW_GAP / 8} sx={{ minHeight: 32, minWidth: 'max-content', pb: hasTags ? 2.5 : 0.5, position: 'relative', pt: 0.5, px: 2, touchAction: 'pan-x', userSelect: 'none' }}>
           {/* One tinted piece per commit, 2px apart, each with the same corners, so even the whole MR reads as separate commits. */}
           {shownBand && range ? pieces(shownBand).map((piece) => <Box aria-hidden key={piece.key} sx={{ bgcolor: 'surface.selected', borderRadius: 1, height: shownBand.height, left: piece.left, pointerEvents: 'none', position: 'absolute', top: shownBand.top, transition: preview ? 'none' : `left 160ms ${GROW_EASE}, width 160ms ${GROW_EASE}`, width: piece.width, zIndex: 1, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }} />) : null}
           {aimedBand ? <Box aria-hidden key={activeAim?.side} sx={{ animation: `${activeAim?.side === 'start' ? growLeft : growRight} 240ms ${GROW_EASE}`, borderRadius: 1, height: aimedBand.height, left: aimedBand.left, pointerEvents: 'none', position: 'absolute', top: aimedBand.top, width: aimedBand.width, zIndex: 1, ...frame({ color: 'primary.main' }), '@media (prefers-reduced-motion: reduce)': { animation: 'none', transition: 'none' } }} /> : null}

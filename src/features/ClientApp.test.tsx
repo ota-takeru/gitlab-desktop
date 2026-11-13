@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { ThemeProvider } from '@mui/material/styles'
 import { focusManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 
 import { setLocalePreference } from '../i18n/i18n'
 import { createAppTheme } from '../theme'
@@ -609,6 +609,25 @@ it('keeps the navigation folded while the notifications are open', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '通知' })).not.toBeInTheDocument())
   fireEvent.mouseLeave(aside)
   localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
+})
+
+it('keeps the peeked navigation expanded after a click anywhere in it', async () => {
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  localStorage.removeItem('gitlab-desktop:sidebar-collapsed')
+  onTestFinished(() => localStorage.removeItem('gitlab-desktop:sidebar-collapsed'))
+  render(<ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' }))
+  const aside = screen.getByRole('complementary')
+
+  fireEvent.mouseOver(screen.getByRole('button', { name: 'MR一覧' }))
+  await act(() => new Promise((resolve) => globalThis.setTimeout(resolve, 400)))
+  fireEvent.click(screen.getByText('GitLab Desktop'))
+
+  // Leaving it no longer folds it, and the choice is kept.
+  fireEvent.mouseLeave(aside)
+  expect(screen.getByText('GitLab Desktop')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'ナビゲーションを折りたたむ' })).toBeInTheDocument()
+  expect(localStorage.getItem('gitlab-desktop:sidebar-collapsed')).toBe('false')
 })
 
 it('keeps places in the navigation, the reader\'s own MRs in chips, and opening by URL beside the title', () => {

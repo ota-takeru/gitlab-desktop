@@ -344,5 +344,58 @@ Not checked:
 - Moving with N, P or the thread outline to a folded thread that is waiting. N was checked only on a thread that is open.
 - Where the reader's place goes when threads above mount after the reader has scrolled.
 - How long a tab built again under memory pressure takes, as it mounts all its threads together.
+- How a tab built again under memory pressure behaves now that it first waits out of sight until its saved data is read. The checks above were made when such a tab showed at once. It still mounts its threads the same way.
 - Other numbers of threads. The values in the UI design (12 threads, 4 on each side, 110 px per row, 1,000 px from the view) were not derived from measurements.
 - What the remaining longest task consists of.
+
+## MR tabs kept under memory pressure
+
+Added 2026-11-13. Under memory pressure, an MR keeps only the tab on view. The [UI design](ui-design.md) describes this under "Long discussions". For a time, an MR also kept the tab shown before. This section gives the measurements that led back to keeping one tab.
+
+Measured on 2026-11-12 and 2026-11-13 with the fixture client (`?fixture=ready`). Memory pressure was simulated with `&lowMemory`, so memory pressure was already on when the app started. Every MR had generated files. One file had 3,000 lines and rendered as 3,600 diff rows. Three production builds were compared:
+
+- f290a5c: the rules for memory pressure before 5fc71a4. Only the tab on view was kept. No MR was kept under the list. A new screen showed at once instead of waiting out of sight. The colors of a diff were not kept.
+- 5120616: The tab shown before was kept too. The MR shown last stayed under the list. A new screen waited out of sight. It also contains the changes to the diff view made after f290a5c. One of them keeps the colors of the 4 files colored last.
+- e4a8bfb: as 5120616, but only the tab on view is kept. It also contains one commit that changes the Changes tab (the range arrows) and one that changes the sidebar.
+
+Each run used a new browser context in headless Microsoft Edge (Playwright) at 1280×840. The CPU was slowed 4× unless noted. The order of the builds changed from round to round. The tables give medians of 5 rounds. Rows measured at normal CPU speed give medians of 3 rounds.
+
+"First rows" is the time from the click on the Changes tab until its rows show. Long tasks were read with a `PerformanceObserver`. Memory was read after a forced garbage collection.
+
+The PC had other work running, so compare the builds with each other, not with other sections. The scripts are not in the repository.
+
+Returning to the Changes tab from the Discussion tab, under memory pressure:
+
+| Target | f290a5c | 5120616 | e4a8bfb |
+| --- | --- | --- | --- |
+| First rows | 1,479 ms | 2,860 ms | 1,411 ms |
+| Every row of the first file colored | 4,859 ms | 2,860 ms | 2,840 ms |
+| All long tasks added up | 2,575 ms | 2,725 ms | 901 ms |
+| First rows, normal CPU speed | 401 ms | 953 ms | 310 ms |
+
+Opening the same MR again from the list, under memory pressure:
+
+| Target | f290a5c | 5120616 | e4a8bfb |
+| --- | --- | --- | --- |
+| MR on screen | 904 ms | 307 ms | 294 ms |
+| Until 500 ms pass with no long task | 2,288 ms | 396 ms | 420 ms |
+
+Memory under memory pressure, read 35 seconds after returning to the list. Before returning, each of 3 MRs was opened and its 4 tabs were shown one after another:
+
+| Target | f290a5c | 5120616 | e4a8bfb |
+| --- | --- | --- | --- |
+| JavaScript heap | 19.3 MB | 27.9 MB (largest run 85.1 MB) | 26.2 MB (largest run 26.5 MB) |
+| DOM nodes | 636 | 1,502 (largest run 176,924) | 1,042 (largest run 1,042) |
+
+What can be said:
+
+- With the tab shown before kept, the first rows of a returning Changes tab showed about twice as late as with one tab kept. The long tasks added up to about 3 times as much.
+- In 5120616, one run in 5 ended with 176,924 DOM nodes and 85 MB of heap on the page, against about 1,500 nodes and 28 MB in the others. In an earlier round of the same measurement, one run in 5 ended with 114 MB on the page.
+- A hidden screen had stayed in those runs, but which one was not recorded. By the rule of 5120616, the Changes tab was not among the tabs kept at that point. The large diff therefore does not explain the hidden screen, and the cause is not known. e4a8bfb did not show this in 5 runs, which does not prove that the cause is gone.
+- Opening the MR shown last again is faster in 5120616 and e4a8bfb. e4a8bfb held about 7 MB and 400 DOM nodes more than f290a5c. The difference includes the MR kept under the list and the other changes between the builds. How much each part holds was not measured.
+- Without memory pressure, returning to the Changes tab did not differ beyond the noise. Opening the Changes tab the first time and switching to the Discussion tab were slower in e4a8bfb than in f290a5c. The first rows of the Changes tab showed at 1,950 ms in e4a8bfb against 1,556 ms in f290a5c. These steps and opening an MR were measured again on ab491b1 against f290a5c at normal CPU speed, over 20 pairs in a balanced order. In the CPU time of the page's main thread, only opening the Changes tab the first time differed (8% more, medians of the per-pair ratios; more in 13 of 20 pairs). In elapsed time until settled, every step was a little longer in ab491b1 (ratios 1.05 for opening an MR, 1.11 for opening the Changes tab, 1.04 for switching to the Discussion tab and 1.06 for returning to the Changes tab). In 5 pairs, the medians of the elements whose style was computed again and of the DOM nodes were the same within 1% on every step, and the medians of the React commits differed by at most one. The PC was 31% to 86% busy, and the cause of the longer times was not separated.
+
+Not checked:
+
+- WebView2 and real memory pressure from the system.
+- A switch from normal to memory pressure while the app is running.

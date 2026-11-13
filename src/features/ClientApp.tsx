@@ -72,6 +72,9 @@ import { closeStaleTabs, hasViewedMergeRequest, mrRefKey, openWorkspaceTab, STAL
 import { WorkspaceMonitor } from './shared/WorkspaceMonitor'
 import { QueryRefreshPolicy, QueryRetention, useQueryRefreshAllowed } from './shared/QueryRefreshPolicy'
 import { MemoryPressure, useMemoryPressureReading } from './shared/MemoryPressure'
+import { clearParsedMarkdown } from '../components/mock/parsedMarkdown'
+import { clearMermaidDiagrams } from '../lib/mermaidDiagram'
+import { clearDiffTokenCache } from './mergeRequests/diffTokenCache'
 import { AutoUpdateSafetyProvider } from './shared/AutoUpdateSafety'
 import { useAutoUpdateAllowed } from './shared/autoUpdateSafetyContext'
 import { GitLabUserAvatar } from './shared/GitLabUserAvatar'
@@ -187,7 +190,11 @@ const CodeBrowser = lazy(() => loadCodeBrowser().then(({ CodeBrowser }) => ({ de
 // Local clones are set up in the settings; their module carries the diff view.
 const ScanFolders = lazy(() => import('./mergeRequests/LocalChanges').then(({ ScanFolders }) => ({ default: ScanFolders })))
 
+let screensPreloaded = false
+/** Called at the first reading of the system's memory that is not short, so a shortage leaves them to load on demand. */
 function preloadScreens() {
+  if (screensPreloaded) return
+  screensPreloaded = true
   const idle = globalThis.requestIdleCallback ?? ((callback: () => void) => globalThis.setTimeout(callback, 1))
   idle(() => { void loadMergeRequestDetail().then(() => idle(() => { void loadCodeBrowser() })).catch(() => undefined) })
 }
@@ -197,7 +204,6 @@ export function ClientApp(props: ClientAppProps) {
     ? props
     : { colorPreference: props.mode, onColorPreferenceChange: (next) => { if (next !== props.mode && next !== 'system') props.onModeChange() } }
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { gcTime: 15 * 60_000, refetchOnWindowFocus: false, retry: false, staleTime: 30_000 } }, queryCache: trackConnectivity() }))
-  useEffect(preloadScreens, [])
   useEffect(() => {
     const handleWorkspaceReset = () => clearComposerBuffers()
     globalThis.addEventListener('gitlab-explicit-logout', handleWorkspaceReset)
@@ -280,6 +286,14 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     const next = !sidebarIsCollapsed
     setSidebarCollapsedBrowsing(next)
     writeLayoutPreference(SIDEBAR_COLLAPSED_BROWSING_KEY, next)
+  }
+  const expandSidebar = () => {
+    if (isNarrowNav) {
+      setNarrowSidebarExpanded(true)
+      return
+    }
+    setSidebarCollapsedBrowsing(false)
+    writeLayoutPreference(SIDEBAR_COLLAPSED_BROWSING_KEY, false)
   }
   const listParams = useMemo(() => withoutSelection(params), [params])
   const listKey = JSON.stringify(listParams)
@@ -521,11 +535,29 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     return () => globalThis.clearInterval(timer)
   }, [instanceUrl, selectedIid, selectedProjectId, userId])
   const openTabKeys = useMemo(() => workspace.open.map(mrRefKey), [workspace.open])
-  // Short of memory, only the screens on view stay mounted and fetched data nothing shows is let go:
-  // Rust's disk cache brings it back when a screen reads it again.
+  // Short of memory, fewer screens stay mounted and fetched data nothing has shown since the reading
+  // before is let go: Rust's disk cache brings it back when a screen reads it again. Waiting a reading
+  // spares data a screen just left and is about to show again, and spreads the release out.
   const queryClient = useQueryClient()
+  const unusedAtLastReading = useRef(new Set<string>())
+  const constrainedAtLastReading = useRef(false)
   const releaseUnusedData = useCallback((constrained: boolean) => {
-    if (constrained) queryClient.removeQueries({ queryKey: ['gitlab'], type: 'inactive' })
+    // Parsed comments and drawn diagrams are let go once as a shortage begins, not at every reading while it lasts.
+    if (constrained && !constrainedAtLastReading.current) {
+      clearParsedMarkdown()
+      clearMermaidDiagrams()
+      clearDiffTokenCache()
+    }
+    constrainedAtLastReading.current = constrained
+    if (!constrained) preloadScreens()
+    const unusedBefore = unusedAtLastReading.current
+    unusedAtLastReading.current = new Set()
+    if (!constrained) return
+    const cache = queryClient.getQueryCache()
+    for (const query of cache.findAll({ queryKey: ['gitlab'], type: 'inactive' })) {
+      if (unusedBefore.has(query.queryHash)) cache.remove(query)
+      else unusedAtLastReading.current.add(query.queryHash)
+    }
   }, [queryClient])
   const memoryConstrained = useMemoryPressureReading(releaseUnusedData)
   const selectedHasTab = selectedPinned || Boolean(selected && openTabKeys.includes(mrRefKey(selected)))
@@ -589,7 +621,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
     <Box sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0 }}>
       <Box sx={{ alignItems: 'stretch', display: 'flex', flex: 1, minHeight: 0 }}>
         {/* In a narrow window an expanded navigation lies over the page, like the peek, instead of taking its width. */}
-        <PeekingNavigation collapsed={sidebarIsCollapsed} overlays={isNarrowNav && !sidebarIsCollapsed} resizeHandle={sidebarIsCollapsed || isNarrowNav ? null : <SidebarResizeHandle onResize={setSidebarWidth} onResizingChange={setResizing} width={sidebarWidth} />} resizing={resizing} slotWidth={sidebarIsCollapsed || isNarrowNav ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} width={sidebarWidth}>
+        <PeekingNavigation collapsed={sidebarIsCollapsed} onPin={expandSidebar} overlays={isNarrowNav && !sidebarIsCollapsed} resizeHandle={sidebarIsCollapsed || isNarrowNav ? null : <SidebarResizeHandle onResize={setSidebarWidth} onResizingChange={setResizing} width={sidebarWidth} />} resizing={resizing} slotWidth={sidebarIsCollapsed || isNarrowNav ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth} width={sidebarWidth}>
         {({ collapsed: navCollapsed, foldForNotifications, stopPeek }) => <>
           <Row sx={{ justifyContent: navCollapsed ? 'center' : 'space-between', minHeight: 36, mb: 1, pl: navCollapsed ? 0 : 1 }}>
             {navCollapsed ? null : <Typography component="div" noWrap variant="h3">GitLab Desktop</Typography>}
@@ -650,7 +682,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
               <Box aria-label={t('app.pane.list')} component="section" data-list-pane="true" sx={{ bgcolor: 'surface.list', display: (selected && !mrRevealPending) || route === 'settings' ? 'none' : 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0, position: 'relative', ...(selected && mrRevealPending && { inset: 0, isolation: 'isolate', position: 'absolute' }) }}>
                 {/* Under an open MR the list follows only which MR is open (for J/K) and the refresh policy.
                     A list shown for the first time shows once its saved data is read; the list before it stays until then. */}
-                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} arrivalBackground="surface.list" max={memoryConstrained ? 1 : 6} revealWhenReady={!memoryConstrained} renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                <KeepAlive activeKey={route === 'settings' ? null : listScreenKey} arrivalBackground="surface.list" max={memoryConstrained ? 1 : 6} revealWhenReady renderKey={selected ? `${params.mr}:${refreshAllowed}` : undefined} sx={{ display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
                 <QueryRefreshPolicy value={refreshAllowed}>
                 <AppErrorBoundary compact>
                 {route === 'projects' ? <ProjectView onOpenProject={openProject} onOpenProjectId={openProjectId} /> : null}
@@ -665,7 +697,7 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
                 </KeepAlive>
               </Box>
               {/* An MR opened for the first time shows once its saved data is read; the list or the MR before it stays until then. */}
-              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} onRevealPendingChange={setMrRevealPending} revealWhenReady={!memoryConstrained} sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
+              <KeepAlive activeKey={selected && route !== 'settings' ? mrRefKey(selected) : null} component="main" keep={memoryConstrained ? undefined : openTabKeys} max={memoryConstrained ? 1 : 5} onRevealPendingChange={setMrRevealPending} revealWhenReady sx={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
               {/* An MR with a sidebar tab keeps its data while hidden, so switching back shows it at once. */}
               {selected ? <QueryRefreshPolicy value={refreshAllowed}><QueryRetention value={selectedHasTab && !memoryConstrained ? STALE_TAB_MS : undefined}><AppErrorBoundary compact key={`${selected.projectId}:${selected.iid}`}>
                 <MergeRequestRoute
@@ -700,11 +732,13 @@ function ClientWorkspace({ colorPreference, onColorPreferenceChange, sessionKey,
 /**
  * The navigation's place in the layout. Collapsed, it shows in full over the page while
  * the pointer rests on it (the peek). The peek is kept here, so unfolding renders only the
- * navigation and not the screens beside it.
+ * navigation and not the screens beside it. A click anywhere in the peek keeps it expanded.
  */
-function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizing, slotWidth, width }: {
+function PeekingNavigation({ children, collapsed, onPin, overlays, resizeHandle, resizing, slotWidth, width }: {
   children: (navigation: { collapsed: boolean; foldForNotifications: (open: boolean) => void; stopPeek: () => void }) => ReactNode
   collapsed: boolean
+  /** Keeps the navigation expanded. */
+  onPin: () => void
   /** An expanded navigation that lies over the page, in a narrow window. */
   overlays: boolean
   resizeHandle: ReactNode
@@ -743,10 +777,18 @@ function PeekingNavigation({ children, collapsed, overlays, resizeHandle, resizi
     setNotificationsOpen(open)
     stopPeek()
   }
+  // After the clicked control has done its own work. Not for the notification button, which folds the peek for its
+  // panel, nor for clicks in a menu or panel opened from the navigation (portals whose events still reach here).
+  const pin = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!peeking || notificationsOpen || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
+    if (event.target instanceof Element && event.target.closest('[data-no-peek]')) return
+    stopPeek()
+    onPin()
+  }
   const navCollapsed = collapsed && !peeking
   const lies = peeking || overlays
   return (
-    <Box onMouseLeave={leave} onMouseOver={follow} sx={{ flexShrink: 0, position: 'relative', transition: resizing ? 'none' : 'width 120ms', width: slotWidth, zIndex: lies ? 'drawer' : 'auto', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
+    <Box onClick={pin} onMouseLeave={leave} onMouseOver={follow} sx={{ flexShrink: 0, position: 'relative', transition: resizing ? 'none' : 'width 120ms', width: slotWidth, zIndex: lies ? 'drawer' : 'auto', '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
       <Box component="aside" sx={{ bgcolor: 'surface.nav', ...hairline('right', { position: false }), bottom: 0, boxShadow: lies ? 8 : 'none', display: 'flex', flexDirection: 'column', left: 0, overflow: 'hidden', position: 'absolute', px: 1, py: 1, top: 0, transition: resizing ? 'none' : 'width 120ms', width: navCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width, '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}>
         {children({ collapsed: navCollapsed, foldForNotifications, stopPeek })}
       </Box>
@@ -784,13 +826,21 @@ function SidebarResizeHandle({ onResize, onResizingChange, width }: { onResize: 
       event.preventDefault()
       const startX = event.clientX
       let latest = width
+      // The whole workspace renders again for a new width, so a drag applies at most one per frame.
+      let frame: number | null = null
       onResizingChange(true)
       document.body.style.cursor = 'col-resize'
       const move = (moveEvent: PointerEvent) => {
         latest = clampSidebarWidth(width + moveEvent.clientX - startX)
-        onResize(latest)
+        frame ??= globalThis.requestAnimationFrame(() => {
+          frame = null
+          onResize(latest)
+        })
       }
       const end = () => {
+        if (frame !== null) globalThis.cancelAnimationFrame(frame)
+        frame = null
+        onResize(latest)
         window.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', end)
         window.removeEventListener('pointercancel', end)

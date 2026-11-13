@@ -113,6 +113,7 @@
   "local.untrackedIncluded": "Inklusive {count} nicht verfolgte",
   "local.reloading": "Wird neu geladen…",
   "local.readAt": "Gelesen",
+  "local.updatedAt": "Zuletzt geändert",
   "local.reloadTooltip": "Arbeitsverzeichnis neu laden",
   "local.reload": "Lokale Änderungen neu laden",
   "local.unlink": "Verknüpfung aufheben",
