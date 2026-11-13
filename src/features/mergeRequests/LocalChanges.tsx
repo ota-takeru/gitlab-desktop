@@ -156,6 +156,7 @@ export function LocalChanges({ fromSha, headSha, onSelectFile, projectId, projec
       <Row spacing={1} sx={{ minWidth: 0 }}>
         <Tooltip title={readPath}><Typography color="textSecondary" noWrap sx={{ flex: '0 1 auto', minWidth: 48 }} variant="caption"><Box component="span" sx={codeSx}>{readPath}</Box></Typography></Tooltip>
         <Tooltip title={factsText}><Typography color="textSecondary" noWrap sx={{ flex: '1 1 auto', minWidth: 0 }} variant="caption">{facts.map((fact, index) => <span key={index}>{index ? ' · ' : ''}{fact}</span>)}</Typography></Tooltip>
+        {data?.updatedAt ? <Box sx={{ flexShrink: 0 }}><RelativeTime prefix={t('review.local.updatedAt')} value={new Date(data.updatedAt).toISOString()} /></Box> : null}
         {changes.isFetching && data ? <Typography color="textSecondary" role="status" sx={{ flexShrink: 0 }} variant="caption">{t('review.local.reloading')}</Typography> : changes.dataUpdatedAt && data ? <Box sx={{ flexShrink: 0 }}><RelativeTime prefix={t('review.local.readAt')} value={new Date(changes.dataUpdatedAt).toISOString()} /></Box> : null}
         <Tooltip title={t('review.local.reloadTooltip')}><span><IconButton aria-disabled={changes.isFetching} aria-label={t('review.local.reload')} onClick={reload} ref={focusOnMount('linked')}><RefreshRoundedIcon /></IconButton></span></Tooltip>
         <Button disabled={unlinking} onClick={() => void unlink()} size="small" sx={{ flexShrink: 0 }}>{t('review.local.unlink')}</Button>

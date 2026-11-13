@@ -113,6 +113,7 @@
   "local.untrackedIncluded": "未追跡{count}件を含む",
   "local.reloading": "読み直し中…",
   "local.readAt": "読み取り",
+  "local.updatedAt": "最終更新",
   "local.reloadTooltip": "作業ツリーを読み直す",
   "local.reload": "ローカルの変更を読み直す",
   "local.unlink": "紐付けを解除",

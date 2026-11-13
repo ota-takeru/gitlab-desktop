@@ -31,6 +31,8 @@ export interface LocalChanges {
   diffs: Diff[]
   /** The diff was cut at the size limit; later files are missing. */
   truncated: boolean
+  /** When the local work was last changed, in ms since the epoch: the newest changed file in the work tree or unpushed commit. Null when neither has a time. */
+  updatedAt: number | null
 }
 
 async function call<T>(command: string, args: Record<string, unknown>): Promise<T> {
