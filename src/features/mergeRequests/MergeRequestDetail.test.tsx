@@ -797,6 +797,15 @@ describe('suggestions and versions', () => {
     expect(screen.getByRole('note')).toHaveTextContent(/選んだコミットからローカルの作業ツリーまでの変更です/u)
     expect(screen.queryByRole('button', { name: '最初からここまで' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'MR全体' })).toHaveAttribute('aria-pressed', 'false')
+
+    // Local changes under the pointer have the same arrow, without choosing them first.
+    fireEvent.click(screen.getByRole('button', { name: 'MR全体' }))
+    expect(await screen.findByRole('button', { name: 'src/example.tsの2行にコメント' })).toBeInTheDocument()
+    localMocks.getLocalChanges.mockClear()
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'ローカルの変更未コミット2 · 未push1' }))
+    fireEvent.click(screen.getByRole('button', { name: '最初からここまで' }))
+    await waitFor(() => expect(localMocks.getLocalChanges).toHaveBeenCalledWith('session-42', '7', 'head-abc', 'feature', 'base-abc'))
+    expect(screen.getByText('head-abc 〜 ローカルの作業ツリー（1件）')).toBeInTheDocument()
   })
 })
 
