@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { GitLabSession, Note } from '../../types/gitlab'
 import { clearPreferences, preferenceScope, scopedKey } from './preferences'
-import { closeStaleTabs, markActivityRead, observeComments, openWorkspaceTab, readWorkspace, STALE_TAB_MS, startActivity, unreadComments, usePersonalWorkspace, workspaceUnreadCount } from './personalWorkspace'
+import { closeStaleTabs, lastMergeRequestScreen, markActivityRead, observeComments, openWorkspaceTab, readWorkspace, rememberMergeRequestScreen, STALE_TAB_MS, startActivity, unreadComments, usePersonalWorkspace, workspaceUnreadCount } from './personalWorkspace'
 
 const scope = preferenceScope('https://gitlab.example/GitLab', '42')
 const ref = { iid: '3', projectId: '77' }
@@ -203,6 +203,30 @@ describe('open tabs', () => {
     expect(readWorkspace(scope).open).toEqual([ref])
     closeStaleTabs(scope, null, now + STALE_TAB_MS)
     expect(readWorkspace(scope).open).toEqual([])
+  })
+})
+
+describe('last MR screens', () => {
+  beforeEach(() => clearPreferences(scope))
+
+  it('remembers the screen of each MR per account, bounded to the most recently changed MRs', () => {
+    rememberMergeRequestScreen(scope, ref, 'changes')
+    rememberMergeRequestScreen(scope, { iid: '4', projectId: '77' }, 'pipelines')
+    expect(lastMergeRequestScreen(scope, ref)).toBe('changes')
+    expect(lastMergeRequestScreen(scope, { iid: '4', projectId: '77' })).toBe('pipelines')
+    expect(lastMergeRequestScreen(preferenceScope(scope.instanceUrl, '43'), ref)).toBeUndefined()
+
+    for (let iid = 10; iid < 209; iid += 1) rememberMergeRequestScreen(scope, { iid: String(iid), projectId: '77' }, 'overview')
+    // The first MR changed again stays; the one left untouched is dropped.
+    rememberMergeRequestScreen(scope, ref, 'discussion')
+    expect(lastMergeRequestScreen(scope, ref)).toBe('discussion')
+    expect(lastMergeRequestScreen(scope, { iid: '4', projectId: '77' })).toBeUndefined()
+  })
+
+  it('clears the remembered screens with preferences', () => {
+    rememberMergeRequestScreen(scope, ref, 'changes')
+    clearPreferences(scope)
+    expect(lastMergeRequestScreen(scope, ref)).toBeUndefined()
   })
 })
 

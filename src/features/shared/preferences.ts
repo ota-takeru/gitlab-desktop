@@ -118,6 +118,7 @@ export function clearPreferences(scope: PreferenceScope): void {
     globalThis.localStorage?.removeItem(scopedKey(scope, 'saved-searches'))
     globalThis.localStorage?.removeItem(scopedKey(scope, 'reviewed-files'))
     globalThis.localStorage?.removeItem(scopedKey(scope, 'personal-workspace'))
+    globalThis.localStorage?.removeItem(scopedKey(scope, 'mr-screens'))
     globalThis.dispatchEvent(new Event('gitlab-workspace-preferences-change'))
   } catch {
     // Optional local preferences should never block logout.

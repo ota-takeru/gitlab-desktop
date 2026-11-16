@@ -70,6 +70,8 @@ beforeEach(() => {
   gitlabQueryMock.mockReset().mockImplementation(() => emptyQueryResult())
   connection.session = sessionFixture
   connection.status = 'connected'
+  // Each test opens MRs without the tabs earlier tests left them on.
+  localStorage.removeItem(scopedKey({ instanceUrl: sessionFixture.instanceUrl, userId: sessionFixture.user.id }, 'mr-screens'))
 })
 afterEach(() => window.history.replaceState(null, '', '/'))
 
@@ -375,12 +377,41 @@ it('opens an MR on its overview the first time and on the discussion after that'
   expect(await screen.findByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
   first.unmount()
 
+  // Without a recorded tab, such as for an MR viewed before tabs were recorded.
+  localStorage.removeItem(scopedKey({ instanceUrl: sessionFixture.instanceUrl, userId: sessionFixture.user.id }, 'mr-screens'))
   render(app())
   expect(await screen.findByRole('tab', { name: /議論/u })).toHaveAttribute('aria-selected', 'true')
   // The overview chosen by hand is named in the location, so Back returns to it.
   fireEvent.click(screen.getByRole('tab', { name: '概要' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7&tab=overview'))
   expect(screen.getByRole('tab', { name: '概要' })).toHaveAttribute('aria-selected', 'true')
+})
+
+it('opens an MR on the tab it last showed, also from the list and after a restart', async () => {
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened')
+  invokeMock.mockResolvedValue({ configured: false, version: null, notes: null })
+  gitlabQueryMock.mockImplementation((_sessionId: string | null, query: { kind?: string } | null) => {
+    if (query?.kind === 'mrs') return { ...emptyQueryResult(), data: [mergeRequestFixture], snapshot: snapshot([mergeRequestFixture]) }
+    if (query?.kind === 'mr') return { ...emptyQueryResult(), data: mergeRequestFixture, snapshot: snapshot(mergeRequestFixture) }
+    return emptyQueryResult()
+  })
+  const app = () => <ThemeProvider theme={createAppTheme('dark')}><ClientApp colorPreference="dark" onColorPreferenceChange={() => undefined} /></ThemeProvider>
+  const first = render(app())
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
+  fireEvent.click(await screen.findByRole('tab', { name: '変更' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7&tab=changes'))
+  fireEvent.click(screen.getByRole('button', { name: 'レビュー依頼に戻る' }))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+
+  // Opened again from the list, the MR names its last tab in the location.
+  fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
+  await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7&tab=changes'))
+  first.unmount()
+
+  // Reached without a tab, after a restart, it opens on that tab too.
+  window.history.replaceState(null, '', '#client/mrs?reviewer=self&state=opened&mr=42-7')
+  render(app())
+  expect(await screen.findByRole('tab', { name: '変更' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('preserves MR search filters when returning from an opened request', async () => {
