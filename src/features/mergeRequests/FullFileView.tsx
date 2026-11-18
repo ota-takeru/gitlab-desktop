@@ -8,6 +8,7 @@ import { hairline } from '../../components/hairline'
 import { MockMarkdown } from '../../components/mock/MockMarkdown'
 import { Row } from '../../components/Row'
 import { useT } from '../../i18n/useT'
+import { isHtmlFilePath } from '../../lib/htmlFiles'
 import { isMarkdownFilePath } from '../../lib/markdownFiles'
 import { highlightLines } from '../../lib/syntaxHighlight'
 import { BlameCell } from './BlamePanel'
@@ -39,6 +40,14 @@ function RemovedFullFileLines({ blameEnabled = false, item }: { blameEnabled?: b
     : deletion
 }
 
+/**
+ * The file's own HTML in a sandbox without scripts, same-origin access, forms or navigation of the app.
+ * The frame also keeps the app's CSP, so remote images, stylesheets and scripts are not loaded.
+ */
+function HtmlPreview({ content, title }: { content: string; title: string }) {
+  return <Box component="iframe" sandbox="" srcDoc={content} title={title} sx={{ bgcolor: 'common.white', border: 0, display: 'block', height: '70vh', width: '100%' }} />
+}
+
 /** The line number, then the fold toggle. */
 const LINE_NUMBER_WIDTH = 68
 
@@ -48,6 +57,8 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
   const contentKey = content ?? '__missing__'
   const focus = targetLine ?? 0
   const markdown = isMarkdownFilePath(path)
+  const html = isHtmlFilePath(path)
+  const renderable = markdown || html
   const annotations = useMemo(() => content !== null && content !== undefined && diffLines && diffLines.length ? annotateFullFile(diffLines, content) : null, [content, diffLines])
   const changeMarkers = annotations?.consistent ? annotations : null
   const firstOffset = targetLine ? filePageStart(targetLine, lines.length, FILE_PAGE_SIZE) : 0
@@ -74,7 +85,7 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
   const visibleLines = useMemo(() => lines.slice(offset, offset + FILE_PAGE_SIZE), [lines, offset])
   const lineFoldRanges = useMemo(() => foldRanges(lines, markdown), [lines, markdown])
   const folds = useLineFolds(lineFoldRanges, `${path ?? ''}\0${contentKey}`, useMemo(() => targetLine ? [targetLine - 1] : [], [targetLine]))
-  const visibleTokens = useMemo(() => markdown && !showSource ? [] : highlightLines(visibleLines, language), [language, markdown, showSource, visibleLines])
+  const visibleTokens = useMemo(() => renderable && !showSource ? [] : highlightLines(visibleLines, language), [language, renderable, showSource, visibleLines])
 
   useLayoutEffect(() => {
     const kept = keepVisible.current
@@ -122,11 +133,12 @@ export function FullFileView({ blameEnabled = false, content, diffLines, languag
   if (content === null || content === undefined) return <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.notLoaded')}</Typography>
 
   return <Box ref={rootRef} sx={blameEnabled ? (theme: Theme) => blameCellStyles(theme) : undefined}>
-    {markdown ? <Box sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}>
-      <Button aria-label={showSource ? t('review.fullFile.renderMarkdown') : t('review.fullFile.showMarkdownSource')} onClick={toggleSource} size="small" variant="outlined">{showSource ? t('review.fullFile.markdown') : t('review.fullFile.source')}</Button>
+    {renderable ? <Box sx={{ ...hairline('bottom'), px: 1, py: 0.5 }}>
+      <Button aria-label={html ? (showSource ? t('review.fullFile.renderHtml') : t('review.fullFile.showHtmlSource')) : showSource ? t('review.fullFile.renderMarkdown') : t('review.fullFile.showMarkdownSource')} onClick={toggleSource} size="small" variant="outlined">{showSource ? t(html ? 'review.fullFile.html' : 'review.fullFile.markdown') : t('review.fullFile.source')}</Button>
     </Box> : null}
     {annotations && !annotations.consistent ? <Typography color="warning.main" role="status" sx={{ px: 1.5, py: 1 }} variant="caption">{t('review.fullFile.inconsistent')}</Typography> : null}
     {!content ? <Typography color="textSecondary" sx={{ p: 2 }} variant="body2">{t('review.fullFile.empty')}</Typography>
+      : html && !showSource ? <HtmlPreview content={content} title={t('review.fullFile.htmlPreview')} />
       : markdown && !showSource ? <Box aria-label={t('review.fullFile.markdownPreview')} sx={(theme) => ({
           minWidth: 0, pl: 4, pr: 2, py: 1.5,
           '& [data-review-change="add"]': { backgroundColor: theme.palette.diff?.addedBackground, boxShadow: `inset 3px 0 0 ${theme.palette.success.main}`, borderRadius: 1, px: 0.5 },
