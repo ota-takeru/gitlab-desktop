@@ -35,6 +35,21 @@ describe('full-file diff context', () => {
     expect(screen.getByTestId('file-deletion')).toHaveTextContent('## Old section')
   })
 
+  it('renders an HTML file in a frame without scripts and switches to its source', () => {
+    const content = '<h1>Title</h1>\n<script>alert(1)</script>'
+    render(<ThemeProvider theme={theme}><FullFileView content={content} language="html" loading={false} path="site/index.HTML" /></ThemeProvider>)
+    const frame = screen.getByTitle('HTMLプレビュー')
+    expect(frame.tagName).toBe('IFRAME')
+    expect(frame).toHaveAttribute('sandbox', '')
+    expect(frame).toHaveAttribute('srcdoc', content)
+    expect(screen.queryByTestId('file-line')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'HTMLのソースを表示' }))
+    expect(screen.queryByTitle('HTMLプレビュー')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('file-line')[0]).toHaveTextContent('<h1>Title</h1>')
+    fireEvent.click(screen.getByRole('button', { name: 'HTMLをレンダリング' }))
+    expect(screen.getByTitle('HTMLプレビュー')).toBeInTheDocument()
+  })
+
   it('opens a 1,201-line source file at the matching paged line and marks the change', () => {
     const code = Array.from({ length: 1400 }, (_, i) => i === 1200 ? 'NEW' : `line ${i + 1}`).join('\n')
     const lines = parsed('src/large.ts', '@@ -1201 +1201 @@\n-OLD\n+NEW\n')

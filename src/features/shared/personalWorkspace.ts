@@ -171,6 +171,31 @@ export function hasViewedMergeRequest(scope: PreferenceScope, ref: MrRef): boole
   const refKey = mrRefKey(ref)
   return [...data.recent, ...data.open].some((item) => mrRefKey(item) === refKey)
 }
+/** Kept apart from the workspace, so switching an MR's screen writes only this small record. */
+function screensKey(scope: PreferenceScope) { return scopedKey(scope, 'mr-screens') }
+const MAX_REMEMBERED_SCREENS = 200
+function readScreens(scope: PreferenceScope): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(screensKey(scope)) ?? 'null')
+    if (!value || typeof value !== 'object') return {}
+    return Object.fromEntries(Object.entries(value).filter(([ref, screen]) => /^[1-9]\d*:[1-9]\d*$/u.test(ref) && typeof screen === 'string' && /^[a-z]{1,20}$/u.test(screen)))
+  } catch { return {} }
+}
+/** The screen (review tab) the MR last showed on this device, if any. */
+export function lastMergeRequestScreen(scope: PreferenceScope, ref: MrRef): string | undefined {
+  return readScreens(scope)[mrRefKey(ref)]
+}
+/** Records the screen the MR shows; the oldest records go beyond `MAX_REMEMBERED_SCREENS`. */
+export function rememberMergeRequestScreen(scope: PreferenceScope, ref: MrRef, screen: string) {
+  if (!validRef(ref) || !/^[a-z]{1,20}$/u.test(screen)) return
+  const screens = readScreens(scope)
+  const refKey = mrRefKey(ref)
+  if (screens[refKey] === screen) return
+  // Re-added last, so the most recently changed MRs are the ones kept.
+  delete screens[refKey]
+  screens[refKey] = screen
+  try { localStorage.setItem(screensKey(scope), JSON.stringify(Object.fromEntries(Object.entries(screens).slice(-MAX_REMEMBERED_SCREENS)))) } catch { /* Optional, like the workspace. */ }
+}
 /**
  * Whether an MR event is unread: newer than when events started being followed, and then a
  * comment not read where the MR list counts unread comments, any other event newer than the MR's read time.

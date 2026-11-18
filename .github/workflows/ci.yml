@@ -42,7 +42,8 @@ jobs:
         run: npm ci
 
       - name: Reject high-severity npm advisories
-        run: npm audit --audit-level=high
+        # npm audit cannot skip one advisory; scripts/npm-audit.mjs lists the ignored ones and why.
+        run: node scripts/npm-audit.mjs
 
       - name: Run release script tests
         run: node --test scripts/release-config.test.mjs

@@ -269,8 +269,9 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
   const growEnd = growable && range !== null && range[1] < headCell
   // A commit under the pointer has the same buttons beside it, so the commits up to it or from it can be chosen
   // without choosing it first. The one commit shown alone has them already, and an end of the range keeps its own.
+  // Local changes under the pointer get the left one: from the target branch to the working tree.
   const [hoverCell, setHoverCell] = useState(-1)
-  const hovered = !preview && cells[hoverCell]?.kind === 'commit' && !(range && range[0] === range[1] && hoverCell === range[0]) ? hoverCell : -1
+  const hovered = !preview && (cells[hoverCell]?.kind === 'commit' || cells[hoverCell]?.kind === 'local') &&!(range && range[0] === range[1] && hoverCell === range[0]) ? hoverCell : -1
   const hoverStart = hovered >= 0 && baseCell >= 0 && hovered > baseCell && !(growStart && hovered === range?.[0])
   const hoverEnd = hovered >= 0 && hovered < headCell && !(growEnd && hovered === range?.[1])
   // The pointer (or focus) on one of those buttons: the range it would give is shown before anything changes.
@@ -506,7 +507,7 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
     const grow = () => {
       if (target === 'range') { extend(side); return }
       const at = cells[hovered]
-      if (at?.kind === 'commit') setAnchorSha(at.commit.id)
+      setAnchorSha(at?.kind === 'commit' ? at.commit.id : null)
       choose(side === 'start' ? baseCell : hovered, side === 'end' ? headCell : hovered)
     }
     return <Tooltip enterDelay={300} key={`grow-${target}-${side}`} placement="top" slotProps={{ popper: { modifiers: [{ name: 'offset', options: { offset: [0, -10] } }] } }} title={label}>
@@ -550,7 +551,8 @@ function CommitTimeline({ baseSha, commits, local, headSha, loading, more, onSel
       // Apart from the commits: the working tree is not on GitLab.
       <Divider flexItem key="local-divider" orientation="vertical" sx={{ my: 1.5 }} />,
       range && index === range[0] && growStart ? growButton('start') : null,
-      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(null); local.onSelect() } }} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? (end > start ? 'outline' : 'none') : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
+      index === hovered && hoverStart ? growButton('start', 'hover') : null,
+      <Tooltip describeChild key="local" title={t('review.changes.localHint')}><Button aria-pressed={showingLocal} color="inherit" data-cell-index={index} data-commit-item data-hovered={index === hovered || undefined} onMouseEnter={() => setHoverCell(index)} onClick={(event) => { if (skipClick.current) skipClick.current = false; else { centre(event.currentTarget); setAnchorSha(null); local.onSelect() } }} ref={cellRef(index)} startIcon={<LaptopRoundedIcon fontSize="small" />} sx={{ ...box(inBand, 0, inBand ? (end > start ? 'outline' : 'none') : 'tint'), alignSelf: 'center' }} tabIndex={index === tabStop ? 0 : -1}>{t('review.changes.local')}{local.badge}</Button></Tooltip>,
     ] : null
     const { commit } = at
     const time = commit.committedAt || commit.createdAt
