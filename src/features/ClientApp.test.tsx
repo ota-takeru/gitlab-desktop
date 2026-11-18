@@ -402,6 +402,7 @@ it('opens an MR on the tab it last showed, also from the list and after a restar
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened&mr=42-7&tab=changes'))
   fireEvent.click(screen.getByRole('button', { name: 'レビュー依頼に戻る' }))
   await waitFor(() => expect(window.location.hash).toBe('#client/mrs?reviewer=self&state=opened'))
+  await renderBack()
 
   // Opened again from the list, the MR names its last tab in the location.
   fireEvent.click(await within(screen.getByRole('region', { name: '一覧' })).findByText('Add searchable list'))
